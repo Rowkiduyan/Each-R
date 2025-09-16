@@ -1,5 +1,5 @@
 /* To access this page use "http://localhost:5173/applicant/login" */
-
+import Logo from './Logo.png';
 function ApplicantLogin() {
   return (
     <div className="flex flex-col items-center min-h-screen bg-neutral-100">
@@ -15,9 +15,9 @@ function ApplicantLogin() {
 
       <div className="flex flex-col items-center justify-center bg-neutral-200 p-10 rounded-lg shadow-md max-w-sm w-full mt-10">
         <img
-          src=""
+          src={Logo}
           alt="Roadwise Logo"
-          className="w-20 h-20 mb-4"
+          className="w-30 h-20 mb-4"
         />
         <h2 className="text-black text-xl font-semibold mb-4">
           Applicant Log In

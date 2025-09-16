@@ -1,11 +1,11 @@
 import { Link } from "react-router-dom"; /* To access this page use "http://localhost:5173/applicant/register" */
-
+import Logo from './Logo.png'; 
 function ApplicantRegister() {
   return (
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <form className="w-full max-w-md p-8 space-y-4 rounded-2xl">
         <div className="flex justify-center mb-6">
-          <img src="/roadwise-logo.png" alt="Roadwise" className="h-12" />
+          <img src={Logo} alt="Roadwise" className="h-12" />
         </div>
 
         <h1 className="text-2xl font-bold text-center mb-2">

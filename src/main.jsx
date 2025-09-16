@@ -7,6 +7,6 @@ import HrHome from "./HrHome.jsx";
 //import EmHome from './EmHome';//
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <HrHome />
+    <App />
   </StrictMode>
 );
