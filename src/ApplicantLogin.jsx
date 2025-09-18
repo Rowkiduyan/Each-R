@@ -1,13 +1,16 @@
 /* To access this page use "http://localhost:5173/applicant/login" */
 import Logo from './Logo.png';
+import { Link } from "react-router-dom";
 function ApplicantLogin() {
   return (
     <div className="flex flex-col items-center min-h-screen bg-neutral-100">
 
       <div className="flex justify-end gap-2 w-full bg-neutral-100 p-5">
-        <button className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700">
+        <Link
+          to="/verify/agency"
+          className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700">
           Add a Record
-        </button>
+        </Link>
         <button className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700">
           Apply Now!
         </button>
@@ -41,6 +44,20 @@ function ApplicantLogin() {
         <p className="mt-3 text-gray-500 text-sm underline cursor-pointer hover:text-gray-700"> {/* Forgot Password button */}
           Forgot Password?
         </p>
+
+      <div className="mt-3 flex justify-center w-full space-x-6 max-w-xs mx-auto">
+          <Link
+            to="/applicant/register"
+            className="text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
+            Create Account
+          </Link>
+
+          <p
+              onClick={() => alert("Logged in as Guest")}
+              className="text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
+              Login As Guest
+          </p>
+       </div>
       </div>
     </div>
   );
