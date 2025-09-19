@@ -154,7 +154,7 @@ function Employees() {
           <h2 className="text-xl font-bold mb-4 text-gray-700">Employee List</h2>
 
           {/* Controls */}
-          <div className="flex flex-wrap gap-2 mb-4">
+          <div className="flex flex-wrap justify-between gap-2 mb-4">
             <input
               type="text"
               placeholder="Search Employee..."
@@ -198,7 +198,7 @@ function Employees() {
                   <td className="px-4 py-2">{emp.depot}</td>
                   <td className="px-4 py-2">
                     <span className={emp.status === "Active" ? "text-green-600 font-bold" : "text-red-600 font-bold"}>
-                      {emp.status}
+                      {emp.status} 
                     </span>
                   </td>
                 </tr>
