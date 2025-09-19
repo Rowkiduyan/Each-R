@@ -58,7 +58,7 @@ function ApplicantLogin() {
 
           <Link
               to="/applicantg/home"
-              onClick={() => Toast("Logged in as Guest")}
+              onClick={() => alert("Logged in as Guest")}
               className="text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
               Login As Guest
           </Link>
