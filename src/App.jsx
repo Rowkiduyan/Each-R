@@ -7,11 +7,10 @@ import Employees from "./Employees";
 import ApplicantGHome from "./ApplicantGHome";
 import ApplicantLHome from "./ApplicantLHome";
 
-
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<ApplicantRegister />} /> {/* default route */}
+      <Route path="/" element={<ApplicantGHome />} />
       <Route path="/applicant/register" element={<ApplicantRegister />} />
       <Route path="/applicant/login" element={<ApplicantLogin />} />
       <Route path="/hr/home" element={<HrHome />} />
