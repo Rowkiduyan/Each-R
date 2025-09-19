@@ -1,6 +1,8 @@
 /* To access this page use "http://localhost:5173/applicant/login" */
 import Logo from './Logo.png';
 import { Link } from "react-router-dom";
+import ApplicantGHome from "./ApplicantGHome";
+
 function ApplicantLogin() {
   return (
     <div className="flex flex-col items-center min-h-screen bg-neutral-100">
@@ -38,7 +40,7 @@ function ApplicantLogin() {
         />
 
         <Link
-         to="/hr/home"
+         to="/applicantl/home"
          className="w-1/3 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700 flex justify-center items-center">
           LOGIN
         </Link>
@@ -54,11 +56,12 @@ function ApplicantLogin() {
             Create Account
           </Link>
 
-          <p
-              onClick={() => alert("Logged in as Guest")}
+          <Link
+              to="/applicantg/home"
+              onClick={() => Toast("Logged in as Guest")}
               className="text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
               Login As Guest
-          </p>
+          </Link>
        </div>
       </div>
     </div>

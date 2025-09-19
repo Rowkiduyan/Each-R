@@ -4,6 +4,8 @@ import ApplicantLogin from "./ApplicantLogin";
 import HrHome from "./HrHome";
 import DriverAddRecord from "./DriverAddRecord";
 import Employees from "./Employees";
+import ApplicantGHome from "./ApplicantGHome";
+import ApplicantLHome from "./ApplicantLHome";
 
 
 function App() {
@@ -15,6 +17,8 @@ function App() {
       <Route path="/hr/home" element={<HrHome />} />
       <Route path="/driver/add/record" element={<DriverAddRecord />} />
       <Route path="/employees" element={<Employees />} />
+      <Route path="/applicantg/home" element={<ApplicantGHome />} />
+      <Route path="/applicantl/home" element={<ApplicantLHome />} />
     </Routes>
   );
 }
