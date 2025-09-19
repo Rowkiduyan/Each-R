@@ -10,7 +10,7 @@ import ApplicantGHome from './ApplicantGHome.jsx';
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <BrowserRouter> {/* ✅ Wrap App with BrowserRouter once */}
-      <ApplicantGHome />
+      <App/>
     </BrowserRouter>
   </StrictMode>
 );
