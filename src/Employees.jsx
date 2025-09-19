@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 
+
 function Employees() {
   // --- Depots and Colors ---
   const depots = [
@@ -72,7 +73,7 @@ function Employees() {
           <div className="flex justify-between items-center h-25">
             <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">Each-R</div>
             <div className="flex space-x-6 ml-0 md:ml-32 lg:ml-10 flex-wrap">
-              <a href="/" className="text-gray-700 hover:text-red-600 font-medium">Home</a>
+              <a href="/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</a>
               <a href="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</a>
               {["Recruitment","Agencies","Trainings/Seminars","Evaluation","Seperation","Notifications","Logout"].map((link,i)=>(
                 <a key={i} href="#" className="text-gray-700 hover:text-red-600 font-medium">{link}</a>
