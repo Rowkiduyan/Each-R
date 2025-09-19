@@ -2,8 +2,8 @@ import { Routes, Route } from "react-router-dom";
 import ApplicantRegister from "./ApplicantRegister";
 import ApplicantLogin from "./ApplicantLogin";
 import HrHome from "./HrHome";
-import VerifyAgency from "./VerifyAgency";
 import DriverAddRecord from "./DriverAddRecord";
+import Employees from "./Employees";
 
 function App() {
   return (
@@ -12,8 +12,8 @@ function App() {
       <Route path="/applicant/register" element={<ApplicantRegister />} />
       <Route path="/applicant/login" element={<ApplicantLogin />} />
       <Route path="/hr/home" element={<HrHome />} />
-      <Route path="/verify/agency" element={<VerifyAgency />} />
       <Route path="/driver/add/record" element={<DriverAddRecord />} />
+      <Route path="/employees" element={<Employees />} />
     </Routes>
   );
 }

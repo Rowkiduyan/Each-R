@@ -7,7 +7,7 @@ function ApplicantLogin() {
 
       <div className="flex justify-end gap-2 w-full bg-neutral-100 p-5">
         <Link
-          to="/verify/agency"
+          to="/driver/add/record"
           className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700">
           Add a Record
         </Link>
@@ -37,9 +37,11 @@ function ApplicantLogin() {
           className="w-3/4 p-2 mb-4 border border-gray-300 rounded bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-red-400"
         />
 
-        <button className="w-1/3 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700">
+        <Link
+         to="/hr/home"
+         className="w-1/3 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700 flex justify-center items-center">
           LOGIN
-        </button>
+        </Link>
 
         <p className="mt-3 text-gray-500 text-sm underline cursor-pointer hover:text-gray-700"> {/* Forgot Password button */}
           Forgot Password?

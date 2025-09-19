@@ -14,7 +14,7 @@ function HrHome() {
           </div>
           <div className="flex space-x-6 ml-0 md:ml-32 lg:ml-10">
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Home</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Employees</a>
+            <a href="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</a>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</a>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Agencies</a>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</a>
