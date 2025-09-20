@@ -6,7 +6,10 @@ import DriverAddRecord from "./DriverAddRecord";
 import Employees from "./Employees";
 import ApplicantGHome from "./ApplicantGHome";
 import ApplicantLHome from "./ApplicantLHome";
-import EmployeeDetails from "./EmployeeDetails";  
+import EmployeeDetails from "./EmployeeDetails"; 
+import EmployeeLogin from "./EmployeeLogin";
+import EmHome from "./EmHome";
+import AdminHome from "./AdminHome";
 
 function App() {
   return (
@@ -20,6 +23,9 @@ function App() {
       <Route path="/applicantg/home" element={<ApplicantGHome />} />
       <Route path="/applicantl/home" element={<ApplicantLHome />} />
       <Route path="/employee/details" element={<EmployeeDetails />} />
+      <Route path="/employee/login" element={<EmployeeLogin />} />
+      <Route path="/employee/home" element={<EmHome />} />
+      <Route path="/admin/home" element={<AdminHome />} />
     </Routes>
   );
 }

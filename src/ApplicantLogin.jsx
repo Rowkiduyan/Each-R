@@ -8,14 +8,13 @@ function ApplicantLogin() {
     <div className="flex flex-col items-center min-h-screen bg-neutral-100">
 
       <div className="flex justify-end gap-2 w-full bg-neutral-100 p-5">
-        <Link
-          to="/driver/add/record"
-          className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700">
-          Add a Record
-        </Link>
-        <button className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700">
-          Apply Now!
-        </button>
+
+            <Link
+                to="/applicantg/home"
+                onClick={() => alert("Logged in as Guest")}
+                className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
+                View Jobs as Guest
+            </Link>
       </div>
 
       <div className="flex flex-col items-center justify-center bg-neutral-200 p-10 rounded-lg shadow-md max-w-sm w-full mt-10">
@@ -54,13 +53,6 @@ function ApplicantLogin() {
             to="/applicant/register"
             className="text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
             Create Account
-          </Link>
-
-          <Link
-              to="/applicantg/home"
-              onClick={() => alert("Logged in as Guest")}
-              className="text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
-              Login As Guest
           </Link>
        </div>
       </div>
