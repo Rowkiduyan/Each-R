@@ -330,23 +330,31 @@ function EmployeeDetails() {
           </div>
         )}
 
- {activeTab === "Onboarding" && (
+{activeTab === "Onboarding" && (
   <div>
     <h3 className="text-lg font-bold mb-4">Onboarding Items</h3>
-    <table className="w-full border text-sm">
+    <table className="w-full border-collapse text-sm">
       <thead className="bg-gray-100">
         <tr>
-          <th className="border px-2 py-1">Item</th>
-          <th className="border px-2 py-1">Description</th>
-          <th className="border px-2 py-1">Date Issued</th>
-          <th className="border px-2 py-1">Related Files</th>
+          <th className="border border-gray-300 font-medium px-3 py-2 text-left">
+            Item
+          </th>
+          <th className="border border-gray-300 font-medium px-3 py-2 text-left">
+            Description
+          </th>
+          <th className="border border-gray-300 font-medium px-3 py-2 text-left">
+            Date Issued
+          </th>
+          <th className="border border-gray-300 font-medium px-3 py-2 text-left">
+            Related Files
+          </th>
         </tr>
       </thead>
       <tbody>
         {onboardingItems.map((ob) => (
-          <tr key={ob.id} className="group">
-            {/* Item with delete button inside */}
-            <td className="border px-2 py-1 relative">
+          <tr key={ob.id} className="hover:bg-gray-50 relative">
+            {/* Item */}
+            <td className="border border-gray-300 px-3 py-2">
               <input
                 type="text"
                 value={ob.item}
@@ -357,25 +365,12 @@ function EmployeeDetails() {
                     )
                   )
                 }
-                className="w-full border rounded px-1 py-0.5"
+                className="w-full border border-gray-300 rounded px-2 py-1"
               />
-              <button
-                onClick={() => {
-                  if (window.confirm("Are you sure you want to delete this item?")) {
-                    setOnboardingItems((prev) =>
-                      prev.filter((item) => item.id !== ob.id)
-                    );
-                  }
-                }}
-                className="absolute -top-2 -right-2 text-red-500 font-bold opacity-0 group-hover:opacity-100 transition"
-                title="Remove item"
-              >
-                ×
-              </button>
             </td>
 
             {/* Description */}
-            <td className="border px-2 py-1">
+            <td className="border border-gray-300 px-3 py-2">
               <input
                 type="text"
                 value={ob.description}
@@ -388,15 +383,19 @@ function EmployeeDetails() {
                     )
                   )
                 }
-                className="w-full border rounded px-1 py-0.5"
+                className="w-full border border-gray-300 rounded px-2 py-1"
               />
             </td>
 
             {/* Date Issued */}
-            <td className="border px-2 py-1">
+            <td className="border border-gray-300 px-3 py-2">
               <input
                 type="date"
-                value={ob.date ? new Date(ob.date).toISOString().substring(0, 10) : ""}
+                value={
+                  ob.date
+                    ? new Date(ob.date).toISOString().substring(0, 10)
+                    : ""
+                }
                 onChange={(e) =>
                   setOnboardingItems((prev) =>
                     prev.map((item) =>
@@ -404,15 +403,28 @@ function EmployeeDetails() {
                     )
                   )
                 }
-                className="w-full border rounded px-1 py-0.5"
+                className="w-full border border-gray-300 rounded px-2 py-1"
               />
             </td>
 
-            {/* Related Files */}
-            <td className="border px-2 py-1">
+            {/* Related Files + Remove Button */}
+            <td className="border border-gray-300 px-3 py-2 flex items-center justify-between relative">
               <a href="#" className="text-blue-500 underline">
                 {ob.file}
               </a>
+              <button
+                onClick={() => {
+                  if (window.confirm("Are you sure you want to delete this item?")) {
+                    setOnboardingItems((prev) =>
+                      prev.filter((item) => item.id !== ob.id)
+                    );
+                  }
+                }}
+                className="ml-3 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-lg font-bold hover:bg-red-600 shadow"
+                title="Remove item"
+              >
+                ×
+              </button>
             </td>
           </tr>
         ))}
@@ -429,7 +441,7 @@ function EmployeeDetails() {
               id: Date.now(),
               item: `New Item ${prev.length + 1}`,
               description: "Description here",
-              date: new Date().toLocaleDateString(),
+              date: new Date().toISOString().substring(0, 10),
               file: "file.pdf",
             },
           ])
@@ -441,6 +453,8 @@ function EmployeeDetails() {
     </div>
   </div>
 )}
+
+
 
 
 
