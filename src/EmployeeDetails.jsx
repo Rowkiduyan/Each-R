@@ -6,10 +6,12 @@ function EmployeeDetails() {
   const location = useLocation();
   const navigate = useNavigate();
   const { employee } = location.state || {};
+  
 
   // ✅ All hooks must be at the top
   const [activeTab, setActiveTab] = useState("Profiling");
   const [documents, setDocuments] = useState([]);
+  const [evaluationDocs, setEvaluationDocs] = useState([]);
   const [validations, setValidations] = useState({
     sss: false,
     philhealth: false,
@@ -31,6 +33,13 @@ function EmployeeDetails() {
     { id: "drivetest", name: "Drive Test", file: null, previewUrl: null, uploadedAt: null, validated: false, validatedAt: null },
   ]);
   const [confirmReqDocId, setConfirmReqDocId] = useState(null);
+
+  const [onboardingItems, setOnboardingItems] = useState([
+    { id: 1, item: "Uniform", description: "Company Shirt", date: "9/20/25", file: "file.pdf" },
+    { id: 2, item: "Laptop", description: "Lenovo 8GB RAM", date: "9/21/25", file: "file.pdf" },
+  ]);
+
+  
 
   // === Handlers ===
   const toggleValidation = (key) => {
@@ -321,7 +330,7 @@ function EmployeeDetails() {
           </div>
         )}
 
-        {activeTab === "Onboarding" && (
+ {activeTab === "Onboarding" && (
   <div>
     <h3 className="text-lg font-bold mb-4">Onboarding Items</h3>
     <table className="w-full border text-sm">
@@ -334,26 +343,110 @@ function EmployeeDetails() {
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td className="border px-2 py-1">Uniform</td>
-          <td className="border px-2 py-1">Company Shirt</td>
-          <td className="border px-2 py-1">9/20/25</td>
-          <td className="border px-2 py-1">
-            <a href="#" className="text-blue-500 underline">file.pdf</a>
-          </td>
-        </tr>
-        <tr>
-          <td className="border px-2 py-1">Laptop</td>
-          <td className="border px-2 py-1">Lenovo 8GB RAM</td>
-          <td className="border px-2 py-1">9/21/25</td>
-          <td className="border px-2 py-1">
-            <a href="#" className="text-blue-500 underline">file.pdf</a>
-          </td>
-        </tr>
+        {onboardingItems.map((ob) => (
+          <tr key={ob.id} className="group">
+            {/* Item with delete button inside */}
+            <td className="border px-2 py-1 relative">
+              <input
+                type="text"
+                value={ob.item}
+                onChange={(e) =>
+                  setOnboardingItems((prev) =>
+                    prev.map((item) =>
+                      item.id === ob.id ? { ...item, item: e.target.value } : item
+                    )
+                  )
+                }
+                className="w-full border rounded px-1 py-0.5"
+              />
+              <button
+                onClick={() => {
+                  if (window.confirm("Are you sure you want to delete this item?")) {
+                    setOnboardingItems((prev) =>
+                      prev.filter((item) => item.id !== ob.id)
+                    );
+                  }
+                }}
+                className="absolute -top-2 -right-2 text-red-500 font-bold opacity-0 group-hover:opacity-100 transition"
+                title="Remove item"
+              >
+                ×
+              </button>
+            </td>
+
+            {/* Description */}
+            <td className="border px-2 py-1">
+              <input
+                type="text"
+                value={ob.description}
+                onChange={(e) =>
+                  setOnboardingItems((prev) =>
+                    prev.map((item) =>
+                      item.id === ob.id
+                        ? { ...item, description: e.target.value }
+                        : item
+                    )
+                  )
+                }
+                className="w-full border rounded px-1 py-0.5"
+              />
+            </td>
+
+            {/* Date Issued */}
+            <td className="border px-2 py-1">
+              <input
+                type="date"
+                value={ob.date ? new Date(ob.date).toISOString().substring(0, 10) : ""}
+                onChange={(e) =>
+                  setOnboardingItems((prev) =>
+                    prev.map((item) =>
+                      item.id === ob.id ? { ...item, date: e.target.value } : item
+                    )
+                  )
+                }
+                className="w-full border rounded px-1 py-0.5"
+              />
+            </td>
+
+            {/* Related Files */}
+            <td className="border px-2 py-1">
+              <a href="#" className="text-blue-500 underline">
+                {ob.file}
+              </a>
+            </td>
+          </tr>
+        ))}
       </tbody>
     </table>
+
+    {/* Add Item Button */}
+    <div className="mt-4 flex justify-end">
+      <button
+        onClick={() =>
+          setOnboardingItems((prev) => [
+            ...prev,
+            {
+              id: Date.now(),
+              item: `New Item ${prev.length + 1}`,
+              description: "Description here",
+              date: new Date().toLocaleDateString(),
+              file: "file.pdf",
+            },
+          ])
+        }
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
+      >
+        + Add Item
+      </button>
+    </div>
   </div>
 )}
+
+
+
+
+
+
 
 {activeTab === "Separation" && (
   <div className="text-gray-700">
@@ -423,40 +516,154 @@ function EmployeeDetails() {
   </div>
 )}
 
-{/* Fallback for other tabs */}
-{activeTab !== "Profiling" &&
-  activeTab !== "Documents" &&
-  activeTab !== "Onboarding" &&
-  activeTab !== "Separation" && (
-    <div className="text-gray-500">
-      <h3 className="font-bold mb-4">{activeTab} Content</h3>
-      <p>Content for the {activeTab} tab goes here.</p>
+{activeTab === "Evaluation" && (
+  <div className="p-6 bg-white rounded-2xl shadow-lg">
+    <h3 className="text-xl font-bold mb-6 text-gray-800">Evaluation Documents</h3>
+
+    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+      <table className="min-w-full border-collapse">
+        <thead className="bg-gray-100 text-gray-700">
+          <tr>
+            <th className="px-4 py-3 border-b text-left font-semibold">Document Name</th>
+            <th className="px-4 py-3 border-b text-left font-semibold">File</th>
+            <th className="px-4 py-3 border-b text-left font-semibold">Upload Date</th>
+            <th className="px-4 py-3 border-b text-left font-semibold">Remarks</th>
+            <th className="px-4 py-3 border-b text-left font-semibold">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {evaluationDocs.length === 0 ? (
+            <tr>
+              <td colSpan="5" className="py-6 text-center text-gray-500">
+                No evaluation documents yet.
+              </td>
+            </tr>
+          ) : (
+            evaluationDocs.map((doc) => {
+              const status = doc.validated
+                ? "Validated"
+                : doc.file
+                ? "Submitted"
+                : "No File";
+              const badgeClass =
+                status === "Validated"
+                  ? "bg-green-100 text-green-700"
+                  : status === "Submitted"
+                  ? "bg-orange-100 text-orange-700"
+                  : "bg-red-100 text-red-700";
+
+              return (
+                <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-4 py-3 border-b font-medium">Evaluation</td>
+                  <td className="px-4 py-3 border-b">
+                    {doc.file ? (
+                      <a
+                        href={doc.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-500 underline"
+                      >
+                        {doc.file.name}
+                      </a>
+                    ) : (
+                      <label className="cursor-pointer px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                        Upload File
+                        <input
+                          type="file"
+                          onChange={(e) => {
+                            const file = e.target.files && e.target.files[0];
+                            if (!file) return;
+                            setEvaluationDocs((prev) =>
+                              prev.map((d) =>
+                                d.id === doc.id
+                                  ? {
+                                      ...d,
+                                      file,
+                                      url: URL.createObjectURL(file),
+                                      date: new Date().toLocaleDateString(),
+                                    }
+                                  : d
+                              )
+                            );
+                          }}
+                          className="hidden"
+                        />
+                      </label>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 border-b">{doc.date || "—"}</td>
+                  <td className="px-4 py-3 border-b">
+                    <span className={`px-2 py-1 rounded text-sm font-semibold ${badgeClass}`}>
+                      {status}
+                    </span>
+                    {!doc.file && (
+                      <div className="text-xs text-red-500 mt-1">Late for 8 Days</div>
+                    )}
+                    {doc.validated && doc.date && (
+                      <div className="text-xs mt-1 text-gray-600">
+                        Validated on {doc.date}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 border-b">
+                    {!doc.validated && doc.file && (
+                      <button
+                        onClick={() =>
+                          setEvaluationDocs((prev) =>
+                            prev.map((d) =>
+                              d.id === doc.id ? { ...d, validated: true } : d
+                            )
+                          )
+                        }
+                        className="px-3 py-2 bg-green-100 text-green-700 rounded hover:bg-green-200"
+                      >
+                        Validate
+                      </button>
+                    )}
+                    {doc.validated && (
+                      <button
+                        className="px-3 py-2 bg-green-600 text-white rounded cursor-not-allowed"
+                        disabled
+                      >
+                        Validated
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
     </div>
+
+    <div className="mt-4 flex justify-end">
+      <button
+        onClick={() =>
+          setEvaluationDocs((prev) => [
+            ...prev,
+            {
+              id: Date.now(),
+              name: "Evaluation",
+              file: null,
+              url: null,
+              date: null,
+              validated: false,
+            },
+          ])
+        }
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
+      >
+        + Add Evaluation
+      </button>
+    </div>
+  </div>
 )}
 
 
-{/* Fallback for remaining tabs */}
-{activeTab !== "Profiling" &&
-  activeTab !== "Documents" &&
-  activeTab !== "Onboarding" &&
-  activeTab !== "Separation" && (
-    <div className="text-gray-500">
-      <h3 className="font-bold mb-4">{activeTab} Content</h3>
-      <p>Content for the {activeTab} tab goes here.</p>
-    </div>
-)}
 
 
-        {/* Fallback for any remaining tabs */}
-{activeTab !== "Profiling" &&
-  activeTab !== "Documents" &&
-  activeTab !== "Onboarding" &&
-  activeTab !== "Separation" && (
-    <div className="text-gray-500">
-      <h3 className="font-bold mb-4">{activeTab} Content</h3>
-      <p>Content for the {activeTab} tab goes here.</p>
-    </div>
-)}
+
       </div>
     </div>
   );
