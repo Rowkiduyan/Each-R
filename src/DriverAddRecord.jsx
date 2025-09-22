@@ -29,6 +29,30 @@ function DriverAddRecord() {
     }
   };
 
+  const [workExperiences, setWorkExperiences] = useState([
+  { date: "", company: "", role: "", notes: "", tasks: "", reason: "" },
+]);
+
+const addWorkExperience = () => {
+  setWorkExperiences([
+    ...workExperiences,
+    { date: "", company: "", role: "", notes: "", tasks: "", reason: "" },
+  ]);
+};
+
+const removeWorkExperience = (index) => {
+  const updated = [...workExperiences];
+  updated.splice(index, 1);
+  setWorkExperiences(updated);
+};
+
+const updateWorkExperience = (index, updatedExp) => {
+  const updated = [...workExperiences];
+  updated[index] = updatedExp;
+  setWorkExperiences(updated);
+};
+
+
   return (
     <div className="min-h-screen bg-neutral-100 p-6 space-y-6">
       {/* Header */}
@@ -162,8 +186,516 @@ function DriverAddRecord() {
         </>
       )}
 
+
       {/* Placeholder for Steps 2–7 */}
-      {step > 1 && <div className="bg-white p-4 rounded shadow">Step {step} content here</div>}
+{step === 2 && (
+  <div className="space-y-6">
+    {/* Educational Background */}
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <h2 className="text-lg font-semibold">Educational Background</h2>
+      <div className="grid grid-cols-2 gap-4">
+        <select className="p-2 border rounded">
+          <option>Educational Attainment</option>
+          <option>High School Graduate</option>
+          <option>College Graduate</option>
+          <option>Vocational/Trade</option>
+          <option>Post Graduate</option>
+        </select>
+      </div>
+    </div>
+
+    {/* Institution Name + Secondary */}
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <h3 className="text-md font-semibold">Institution Name & Years Graduated</h3>
+      <div className="grid grid-cols-2 gap-4">
+        <input className="p-2 border rounded" placeholder="Secondary Education" />
+        <input type="number" className="p-2 border rounded" placeholder="Year Graduated" />
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <input className="p-2 border rounded" placeholder="Tertiary Education" />
+        <input type="number" className="p-2 border rounded" placeholder="Year Graduated" />
+        <input className="p-2 border rounded" placeholder="Program" />
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <input className="p-2 border rounded" placeholder="Graduate Studies" />
+        <input type="number" className="p-2 border rounded" placeholder="Year Graduated" />
+        <input className="p-2 border rounded" placeholder="Program" />
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <input className="p-2 border rounded" placeholder="Specialized Training/Trade School" />
+        <input type="number" className="p-2 border rounded" placeholder="Year Graduated" />
+        <input className="p-2 border rounded" placeholder="Program" />
+      </div>
+    </div>
+
+    {/* Skills Section */}
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <h3 className="text-md font-semibold">Skills & Proficiency</h3>
+      <textarea
+        className="w-full p-2 border rounded"
+        rows={4}
+        placeholder="Please list the employee's areas of highest proficiency, special skills, or other items that may contribute to their abilities in performing the position being endorsed to"
+      ></textarea>
+    </div>
+  </div>
+)}
+
+
+{/* Step 3: License Information */}
+{step === 3 && (
+  <div className="space-y-6">
+    {/* License Information */}
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <h2 className="text-lg font-semibold">License Information</h2>
+      <div className="grid grid-cols-2 gap-4">
+        <input type="date" className="p-2 border rounded" placeholder="License Expiry Date *" />
+        <select className="p-2 border rounded">
+          <option>License Classification</option>
+          <option>Non-Professional</option>
+          <option>Professional</option>
+          <option>Student Permit</option>
+          <option>Conductor</option>
+          <option>International Driving Permit</option>
+        </select>
+      </div>
+    </div>
+
+    {/* Restriction Codes Note */}
+    <div className="bg-white p-4 rounded shadow space-y-2">
+      <p className="text-sm text-gray-700">
+        <strong>To qualify as a driver, applicants must possess one of the following restriction codes:</strong>
+      </p>
+      <ul className="list-disc list-inside text-sm text-gray-700">
+        <li><strong>Code 3</strong> - Equivalent to Code C in the new LTO license system</li>
+        <li><strong>Code B2</strong> - They can only drive up to 1T vehicles</li>
+        <li><strong>Code C</strong> - They can drive up to 1T and 2T vehicles</li>
+      </ul>
+      <p className="text-sm text-gray-600">
+        <em>Preference is given to applicants with Code 3 or Code C.</em>
+      </p>
+    </div>
+
+    {/* Restriction Codes Checklist */}
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <h3 className="text-md font-semibold">Check all that apply:</h3>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+        {[
+          "A - MOTORCYCLE",
+          "1 - MOTORCYLES / MOTORIZED TRICYCLE",
+          "A1 - TRICYLE",
+          "2 - VEHICLE UP TO 4500 GVW",
+          "B - UP TO 5000 KGS GVW / 8 SEATS",
+          "3 - VEHICLE ABOVE 4500 GVW *",
+          "B1 - UP TO 5000 KGS GVW / 9 OR MORE SEATS",
+          "4 - AUTOMATIC CLUTCH UP TO 4500 GVW",
+          "B2 - GOODS < 3500 KGS GVW *",
+          "5 - AUTOMATIC CLUTCH UP ABOVE 4500 GVW",
+          "C - GOODS > 3500 KGS GVW *",
+          "6 - ARTICULATED VEHICLE 1600 GVW AND BELOW",
+          "D - BUS > 5000 KGS GVW / 9 OR MORE SEATS",
+          "7 - ARTICULATED VEHICLE 1601 UP TO 4500 GVW",
+          "BE - TRAILERS < 3500 KGS",
+          "8 - ARTICULATED VEHICLE 4501 & ABOVE GVW",
+          "CE - ARTICULATED C > 3500 KGS COMBINED GVW",
+        ].map((code) => (
+          <label key={code} className="flex items-center gap-2">
+            <input type="checkbox" className="accent-red-600" />
+            {code}
+          </label>
+        ))}
+      </div>
+    </div>
+  </div>
+)}
+
+{/* Step 4: Driving History */}
+{step === 4 && (
+  <div className="space-y-6">
+    {/* Driving Experience */}
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <h2 className="text-lg font-semibold">Driving History</h2>
+      <div className="grid grid-cols-2 gap-4">
+        <input
+          type="number"
+          className="p-2 border rounded"
+          placeholder="Years of Driving Experience"
+        />
+        <div className="flex items-center gap-4">
+          <span>Has basic truck troubleshooting knowledge?</span>
+          <label>
+            <input type="radio" name="truckKnowledge" className="accent-red-600" /> Yes
+          </label>
+          <label>
+            <input type="radio" name="truckKnowledge" className="accent-red-600" /> No
+          </label>
+        </div>
+      </div>
+    </div>
+
+    {/* Troubleshooting Tasks */}
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <h3 className="text-md font-semibold">
+        Read each item and check all the boxes that describe the employee.
+      </h3>
+      <p className="text-sm text-gray-700">
+        Choose which of these tasks the employee knows how to do on a truck:
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+        {[
+          "Replacing lights or bulbs for the headlights, brake lights, etc.",
+          "Adding brake fluid.",
+          "Adding engine oil.",
+          "Adding power steering fluid.",
+          "Adjusting the engine belt.",
+          "Replacing the tire.",
+          "No knowledge of basic troubleshooting.",
+        ].map((task) => (
+          <label key={task} className="flex items-center gap-2">
+            <input type="checkbox" className="accent-red-600" />
+            {task}
+          </label>
+        ))}
+      </div>
+    </div>
+
+    {/* Accident/Driving Behavior */}
+    <div className="bg-white p-4 rounded shadow space-y-2">
+      {[
+        "Been involved in 2 or more serious accidents in the last 3 years?",
+        "Been involved in 2 or more overspeeding incidents in the last 3 years?",
+        "Been involved in a near-accident in the past year?",
+        "Experiences stress from the length of duty or driving hours?",
+        "Experiences extreme fatigue due to long hours and working at night?",
+      ].map((item) => (
+        <label key={item} className="flex items-center gap-2 text-sm">
+          <input type="checkbox" className="accent-red-600" />
+          {item}
+        </label>
+      ))}
+    </div>
+
+    {/* Medical and Drug Test */}
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" className="accent-red-600" />
+        Currently taking any maintenance medications?
+      </label>
+      <input
+        className="w-full p-2 border rounded"
+        placeholder="Please specify reason for taking any maintenance medications:"
+      />
+
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" className="accent-red-600" />
+        Took medical and drug test?
+      </label>
+      <input
+        className="w-full p-2 border rounded"
+        placeholder="When was the last time you took it?:"
+      />
+    </div>
+
+    {/* Vehicle Types Driven */}
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <h3 className="text-md font-semibold">What types of vehicles has the employee driven?</h3>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+        {[
+          "Sedan or Car",
+          "Van",
+          "L300",
+          "Hino / Canter (4 wheels - 6 wheels)",
+          "10 Wheeler",
+          "None",
+        ].map((vehicle) => (
+          <label key={vehicle} className="flex items-center gap-2">
+            <input type="checkbox" className="accent-red-600" />
+            {vehicle}
+          </label>
+        ))}
+      </div>
+    </div>
+  </div>
+)}
+
+{/* Step 5: Previous Work Experience */}
+{step === 5 && (
+  <div className="space-y-6">
+    <div className="bg-white p-4 rounded shadow space-y-4">
+      <h2 className="text-lg font-semibold">Previous Work Experience</h2>
+
+      {workExperiences.map((exp, index) => (
+        <div
+          key={index}
+          className="border rounded p-4 space-y-4 bg-gray-50 relative"
+        >
+          <h3 className="font-semibold text-md">Work Experience #{index + 1}</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <input
+            placeholder="Date Employed"
+              type="date"
+              className="p-2 border rounded"
+              
+              value={exp.date}
+              onChange={(e) =>
+                updateWorkExperience(index, { ...exp, date: e.target.value })
+              }
+            />
+            <input
+              className="p-2 border rounded"
+              placeholder="Company Name and Location"
+              value={exp.company}
+              onChange={(e) =>
+                updateWorkExperience(index, { ...exp, company: e.target.value })
+              }
+            />
+          </div>
+          <input
+            className="p-2 border rounded w-full"
+            placeholder="Role/Title"
+            value={exp.role}
+            onChange={(e) =>
+              updateWorkExperience(index, { ...exp, role: e.target.value })
+            }
+          />
+          <textarea
+            className="p-2 border rounded w-full"
+            rows={2}
+            placeholder="Job Notes"
+            value={exp.notes}
+            onChange={(e) =>
+              updateWorkExperience(index, { ...exp, notes: e.target.value })
+            }
+          ></textarea>
+          <textarea
+            className="p-2 border rounded w-full"
+            rows={2}
+            placeholder="Tasks Performed"
+            value={exp.tasks}
+            onChange={(e) =>
+              updateWorkExperience(index, { ...exp, tasks: e.target.value })
+            }
+          ></textarea>
+          <input
+            className="p-2 border rounded w-full"
+            placeholder="Reason for Leaving"
+            value={exp.reason}
+            onChange={(e) =>
+              updateWorkExperience(index, { ...exp, reason: e.target.value })
+            }
+          />
+          {workExperiences.length > 1 && (
+            <button
+              onClick={() => removeWorkExperience(index)}
+              className="absolute top-2 right-2 text-xs bg-red-500 text-white rounded px-2 py-1 hover:bg-red-600"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      ))}
+
+      <button
+        onClick={addWorkExperience}
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      >
+        + Add Another Work Experience
+      </button>
+    </div>
+  </div>
+)}
+
+{step === 6 && (
+  <div className="space-y-6">
+    {/* Tabs */}
+    <div className="flex items-center space-x-4">
+      <button className="px-4 py-2 bg-red-600 text-white rounded-t font-semibold border border-red-700">
+        Applicant No. 1
+      </button>
+      <button className="px-4 py-2 bg-gray-200 rounded-t font-semibold border border-gray-400">
+        Applicant No. 2
+      </button>
+      <button className="px-4 py-2 text-blue-600 hover:underline border border-transparent">
+        + Add Another Employee
+      </button>
+      <button className="ml-auto px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 border border-red-700">
+        + Import File
+      </button>
+    </div>
+
+    {/* Documents Section */}
+    <div className="bg-white p-4 rounded shadow border border-gray-300 space-y-4">
+      <h2 className="text-lg font-semibold">Documents</h2>
+      <p className="text-sm text-gray-600">
+        Upload all the necessary documents. If any are unavailable, you may
+        submit them later through HR Coordinator’s email.
+      </p>
+
+      {/* ID Numbers */}
+      <div className="grid grid-cols-4 gap-4 border border-gray-300 p-4 rounded">
+        <input placeholder="SSS No." className="p-2 border rounded" type="text" />
+        <input placeholder="Philhealth No." className="p-2 border rounded" type="text" />
+        <input placeholder="Pag-IBIG No." className="p-2 border rounded" type="text" />
+        <input placeholder="TIN No." className="p-2 border rounded" type="text" />
+      </div>
+
+      {/* File Uploads */}
+      <div className="grid grid-cols-2 gap-6 border border-gray-300 p-4 rounded">
+        {[
+          "Photocopy of PSA Birth Certificate *",
+          "1x1 Picture w/ White Background",
+          "Photocopy of Driver's License (Front and Back) *",
+          "Photocopy of TIN ID / BIR FORM 1905/1902",
+          "Photocopy of SSS ID",
+          "Photocopy of HDMF (Pag-IBIG) (Home Development Mutual Fund)",
+          "Photocopy of Philhealth ID / MDR (Members Data Record)",
+          "Photocopy of TIN ID",
+        ].map((label, idx) => (
+          <div key={idx} className="border border-gray-300 rounded p-3">
+            <label className="block text-sm font-semibold mb-2">{label}</label>
+            <div className="flex items-center space-x-3">
+              <label
+                className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm"
+              >
+                Choose File
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={(e) =>
+                    console.log(`Selected for ${label}:`, e.target.files[0]?.name)
+                  }
+                />
+              </label>
+              <span className="text-xs text-gray-500">No file chosen</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Footer Buttons */}
+      <div className="flex justify-between pt-6 border-t border-gray-300">
+        <button
+          onClick={() => setStep(step - 1)}
+          className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 border border-gray-400"
+        >
+          Back
+        </button>
+        <button
+          onClick={() => setStep(step + 1)}
+          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 border border-red-700"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{step === 7 && (
+  <div className="p-6 bg-white rounded-xl shadow-md space-y-6">
+    <h2 className="text-lg font-bold">Step 7: Additional Requirements</h2>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Curriculum Vitae */}
+      <div className="border rounded-lg p-4">
+        <label className="block font-medium mb-2">Curriculum Vitae</label>
+        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
+          Choose File
+          <input type="file" className="hidden" />
+        </label>
+        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
+      </div>
+
+      {/* NBI Clearance */}
+      <div className="border rounded-lg p-4 space-y-2">
+        <label className="block font-medium">Photocopy of NBI Clearance</label>
+        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
+          Choose File
+          <input type="file" className="hidden" />
+        </label>
+        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-sm text-gray-600">Date Validity:</span>
+          <input type="date" className="border rounded p-1 text-sm" />
+        </div>
+      </div>
+
+      {/* Police Clearance */}
+      <div className="border rounded-lg p-4 space-y-2">
+        <label className="block font-medium">Photocopy of Police Clearance</label>
+        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
+          Choose File
+          <input type="file" className="hidden" />
+        </label>
+        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-sm text-gray-600">Date Validity:</span>
+          <input type="date" className="border rounded p-1 text-sm" />
+        </div>
+      </div>
+
+      {/* Medical Examination */}
+      <div className="border rounded-lg p-4 space-y-2">
+        <label className="block font-medium">Medical Examination Results</label>
+        <p className="text-xs text-gray-500">
+          (X-RAY, STOOL, CBC, URINE, CBC, DRUG TEST, HEPA)  
+          <strong> *Attach all in one file</strong>
+        </p>
+        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
+          Choose File
+          <input type="file" className="hidden" />
+        </label>
+        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
+      </div>
+
+      {/* Sketch of Direction */}
+      <div className="border rounded-lg p-4 space-y-2 md:col-span-2">
+        <label className="block font-medium">
+          Sketch of Direction of Residence (House to Depot)
+        </label>
+        <p className="text-xs text-gray-500">*For non-delivery crew only</p>
+        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
+          Choose File
+          <input type="file" className="hidden" />
+        </label>
+        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
+      </div>
+    </div>
+
+    {/* Submit Button */}
+    <div className="flex justify-end">
+      <button
+        onClick={() => {
+          const notif = document.getElementById("notif");
+          notif.classList.remove("hidden");
+          setTimeout(() => notif.classList.add("hidden"), 3000);
+        }}
+        className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded shadow"
+      >
+        Submit
+      </button>
+    </div>
+
+    {/* Notification */}
+    <div
+      id="notif"
+      className="hidden fixed top-6 right-6 bg-green-600 text-white px-4 py-2 rounded shadow"
+    >
+      Submitted Successfully
+    </div>
+  </div>
+)}
+
+
+
+
+
+
+
+
+
+
+
+
 
       {/* Navigation Buttons */}
       <div className="flex justify-between mt-4">
