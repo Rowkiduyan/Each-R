@@ -10,6 +10,8 @@ import EmployeeDetails from "./EmployeeDetails";
 import EmployeeLogin from "./EmployeeLogin";
 import EmHome from "./EmHome";
 import AdminHome from "./AdminHome";
+import HrTrainings from "./HrTrainings";
+import EmployeeTrainings from "./EmployeeTrainings";
 
 function App() {
   return (
@@ -26,6 +28,8 @@ function App() {
       <Route path="/employee/login" element={<EmployeeLogin />} />
       <Route path="/employee/home" element={<EmHome />} />
       <Route path="/admin/home" element={<AdminHome />} />
+      <Route path="/hr/trainings" element={<HrTrainings />} />
+      <Route path="/employee/trainings" element={<EmployeeTrainings />} />
     </Routes>
   );
 }

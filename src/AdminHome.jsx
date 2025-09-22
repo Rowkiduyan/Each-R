@@ -31,7 +31,7 @@ function AdminHome() {
     
         
                 <div className="flex-1 text-center">
-                  <h1 className="text-3xl font-bold text-gray-800">Admin Homepage</h1>
+                  <h1 className="text-3xl font-bold text-gray-800">Welcome Admin!</h1>
                 </div>
     
     

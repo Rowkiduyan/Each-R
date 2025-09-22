@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
+import { Link } from 'react-router-dom';
 
 function HrHome() {
   const [date, setDate] = useState(new Date ());
@@ -17,7 +18,7 @@ function HrHome() {
             <a href="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</a>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</a>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Agencies</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</a>
+            <Link to ="/hr/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</Link>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</a>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Seperation</a>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Notifications</a>

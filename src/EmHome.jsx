@@ -12,8 +12,9 @@ function EmHome() {
                 <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Home</a>
                 <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Notifications</a>
                 <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Seperation</a>
+                <Link to ="/employee/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings</Link>
                 <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Profile</a>
-                <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Logout</a>
+                <Link to ="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
             </div>
             </div>
         </div>
