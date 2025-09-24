@@ -7,7 +7,6 @@ function EmployeeDetails() {
   const navigate = useNavigate();
   const { employee } = location.state || {};
   
-
   // ✅ All hooks must be at the top
   const [activeTab, setActiveTab] = useState("Profiling");
   const [documents, setDocuments] = useState([]);
@@ -18,6 +17,7 @@ function EmployeeDetails() {
     pagibig: false,
     tin: false,
   });
+  
   const [validationDates, setValidationDates] = useState({
     sss: null,
     philhealth: null,
@@ -38,6 +38,13 @@ function EmployeeDetails() {
     { id: 1, item: "Uniform", description: "Company Shirt", date: "9/20/25", file: "file.pdf" },
     { id: 2, item: "Laptop", description: "Lenovo 8GB RAM", date: "9/21/25", file: "file.pdf" },
   ]);
+
+  const [showOptions, setShowOptions] = useState(false);
+const [showTerminateModal, setShowTerminateModal] = useState(false);
+const [showConfirmTerminate, setShowConfirmTerminate] = useState(false);
+const [showSuccess, setShowSuccess] = useState(false);
+const [terminateFiles, setTerminateFiles] = useState([]);
+const [terminateDate, setTerminateDate] = useState("");
 
   
 
@@ -679,6 +686,180 @@ function EmployeeDetails() {
 
 
       </div>
+      {/* === Options Button Bottom Left === */}
+<button
+  onClick={() => setShowOptions(!showOptions)}
+  className="fixed bottom-6 right-6 bg-gray-800 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700 z-40"
+>
+  Options
+</button>
+
+{/* Options Dropdown */}
+{showOptions && (
+  <div className="fixed bottom-20 right-6 bg-white shadow-lg rounded-lg border w-56 z-40">
+    <ul className="divide-y divide-gray-200">
+      <li>
+        <button
+          onClick={() => {
+            setShowOptions(false);
+            setShowTerminateModal(true);
+          }}
+          className="w-full text-left px-4 py-2 hover:bg-gray-100"
+        >
+          Request to Terminate
+        </button>
+      </li>
+      <li>
+        <button
+          onClick={() => {
+            setShowOptions(false);
+            alert("Edit Information logic here.");
+          }}
+          className="w-full text-left px-4 py-2 hover:bg-gray-100"
+        >
+          Edit Informations
+        </button>
+      </li>
+      <li>
+        <button
+          onClick={() => {
+            setShowOptions(false);
+            alert("Download ID logic here.");
+          }}
+          className="w-full text-left px-4 py-2 hover:bg-gray-100"
+        >
+          Download ID
+        </button>
+      </li>
+    </ul>
+  </div>
+)}
+
+{/* === Request Termination Modal Step 1 === */}
+{showTerminateModal && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+      <h3 className="text-lg font-bold mb-4">Request to Terminate</h3>
+      <div className="mb-4">
+        <label className="block font-medium">Name</label>
+        <input
+          value={employee.name}
+          readOnly
+          className="w-full border rounded px-3 py-2 bg-gray-100"
+        />
+      </div>
+      <div className="mb-4">
+  <label className="block font-medium mb-1">Separation Date</label>
+  <input
+    type="date"
+    value={terminateDate}
+    onChange={(e) => setTerminateDate(e.target.value)}
+    className="border rounded px-3 py-2 w-full"
+  />
+  {terminateDate && (
+    <p className="text-sm text-gray-500 mt-1">
+      Selected Terminate Date: {terminateDate}
+    </p>
+  )}
+</div>
+      <div className="mb-4">
+        <label className="block font-medium mb-2">Upload Related Documents</label>
+        <label className="inline-block bg-blue-500 text-white px-4 py-2 rounded cursor-pointer hover:bg-blue-600">
+          + Add File
+          <input
+            type="file"
+            multiple
+            onChange={(e) => setTerminateFiles([...terminateFiles, ...e.target.files])}
+            className="hidden"
+          />
+        </label>
+        <ul className="mt-2 text-sm text-gray-700">
+          {terminateFiles.map((file, idx) => (
+            <li key={idx}>{file.name}</li>
+          ))}
+        </ul>
+      </div>
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={() => {
+            setShowTerminateModal(false);
+            setTerminateFiles([]);
+            setTerminateDate("");
+          }}
+          className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => {
+            setShowTerminateModal(false);
+            setShowConfirmTerminate(true);
+          }}
+          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* === Confirm Termination Step 2 === */}
+{showConfirmTerminate && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+      <h3 className="text-lg font-bold mb-4">Request Termination</h3>
+
+      {/* 🔷 Employee details box */}
+      <div className="border border-gray-300 rounded-lg p-4 mb-4 bg-gray-50">
+        <p className="text-gray-700">
+          <span className="font-semibold">Name:</span> {employee.name}
+        </p>
+        <p className="text-gray-700 mt-2">
+          <span className="font-semibold">Position:</span> {employee.position}
+        </p>
+      </div>
+
+      <div className="flex justify-end gap-3">
+        <button
+          onClick={() => setShowConfirmTerminate(false)}
+          className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => {
+            setShowConfirmTerminate(false);
+            setShowSuccess(true);
+          }}
+          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+        >
+          Confirm
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+
+{/* === Success Box Step 3 === */}
+{showSuccess && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="bg-white rounded-lg p-6 w-full max-w-sm text-center shadow-lg">
+      <h3 className="text-lg font-bold mb-2">
+        Request Termination of Employee Success
+      </h3>
+      <button
+        onClick={() => setShowSuccess(false)}
+        className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      >
+        OK
+      </button>
+    </div>
+  </div>
+)}
+
+      
     </div>
   );
 }
