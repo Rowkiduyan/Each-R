@@ -64,22 +64,28 @@ function Employees() {
   return (
     <>
       {/* Navbar */}
-      <nav className="w-full bg-white shadow-md mb-6">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex justify-between items-center h-25">
-            <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">Each-R</div>
-            <div className="flex space-x-6 flex-wrap">
-              <Link to="/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
-              <Link to="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</Link>
-              {["Recruitment","Agencies","Trainings/Seminars","Evaluation","Seperation","Notifications","Logout"]
-                .map((link,i)=>(
-                  <span key={i} className="text-gray-700 hover:text-red-600 font-medium cursor-pointer">{link}</span>
-                ))}
-            </div>
-            <span className="text-gray-700 font-semibold">Alexis Yvone</span>
-          </div>
-        </div>
-      </nav>
+<nav className="w-full bg-white shadow-md mb-6">
+  <div className="max-w-7xl mx-auto px-4">
+    <div className="flex justify-between items-center h-25">
+      <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">
+        Each-R
+      </div>
+      <div className="flex space-x-6 flex-wrap">
+        <Link to="/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
+        <Link to="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</Link>
+        <Link to="/hr/recruitment" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</Link>
+        <Link to="/hr/agencies" className="text-gray-700 hover:text-red-600 font-medium">Agencies</Link>
+        <Link to="/hr/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</Link>
+        <Link to="/hr/evaluation" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
+        <Link to="/hr/separation" className="text-gray-700 hover:text-red-600 font-medium">Seperation</Link>
+        <Link to="/hr/notifications" className="text-gray-700 hover:text-red-600 font-medium">Notifications</Link>
+        <Link to="/logout" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
+      </div>
+      <span className="text-gray-700 font-semibold">Alexis Yvone</span>
+    </div>
+  </div>
+</nav>
+
 
       {/* Depot Compliance */}
       <div className="max-w-7xl mx-auto px-4 mb-8">

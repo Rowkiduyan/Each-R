@@ -12,6 +12,8 @@ import EmHome from "./EmHome";
 import AdminHome from "./AdminHome";
 import HrTrainings from "./HrTrainings";
 import EmployeeTrainings from "./EmployeeTrainings";
+import HrRecruitment from "./HrRecruitment";
+import ApplicantDetails from "./ApplicantDetails";
 
 function App() {
   return (
@@ -30,6 +32,8 @@ function App() {
       <Route path="/admin/home" element={<AdminHome />} />
       <Route path="/hr/trainings" element={<HrTrainings />} />
       <Route path="/employee/trainings" element={<EmployeeTrainings />} />
+      <Route path="/hr/recruitment" element={<HrRecruitment />} />
+      <Route path="/hr/recruitment/applicant/:id" element={<ApplicantDetails />} />
     </Routes>
   );
 }
