@@ -12,6 +12,10 @@ import EmHome from "./EmHome";
 import AdminHome from "./AdminHome";
 import HrTrainings from "./HrTrainings";
 import EmployeeTrainings from "./EmployeeTrainings";
+import EmployeeNotif from "./EmployeeNotif";
+import EmpProfile from "./EmProfile";
+import HrNotif from "./HrNotif";
+import HrEval from "./HrEval";
 
 function App() {
   return (
@@ -30,6 +34,10 @@ function App() {
       <Route path="/admin/home" element={<AdminHome />} />
       <Route path="/hr/trainings" element={<HrTrainings />} />
       <Route path="/employee/trainings" element={<EmployeeTrainings />} />
+      <Route path="/employee/notif" element={<EmployeeNotif />} />
+      <Route path="/employee/profile" element={<EmpProfile />} />
+      <Route path="/hr/notif" element={<HrNotif />} />
+      <Route path="/hr/eval" element={<HrEval />} />
     </Routes>
   );
 }

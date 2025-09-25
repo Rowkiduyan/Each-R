@@ -131,12 +131,14 @@ function HrTrainings() {
             <Link to = "/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
             <a href="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</a>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Agencies</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</a>
+            <Link to ="/hr/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</Link>
+            <Link to="/hr/eval" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
             <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Seperation</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Notifications</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Logout</a>
+            <Link to ="/hr/notif" className="text-gray-700 hover:text-red-600 font-medium relative">
+                    Notifications
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+            </Link>
+            <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
           </div>
           <div className="flex items-center space-x-2 lg: ml-20 max-w-7xl">
             <span className="text-gray-700 font-semibold">Alexis Yvone</span>

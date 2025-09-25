@@ -10,10 +10,13 @@ function EmHome() {
             </div>
             <div className="flex space-x-15 ml-0 md:ml-32 lg:ml-24">
                 <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Home</a>
-                <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Notifications</a>
+                <Link to ="/employee/notif" className="text-gray-700 hover:text-red-600 font-medium relative">
+                    Notifications
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                </Link>
                 <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Seperation</a>
                 <Link to ="/employee/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings</Link>
-                <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Profile</a>
+                <Link to="/employee/profile" className="text-gray-700 hover:text-red-600 font-medium">Profile</Link>
                 <Link to ="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
             </div>
             </div>
