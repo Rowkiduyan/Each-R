@@ -422,10 +422,10 @@ function AdminHome() {
             </div>
           )}
           
-          {/* Modal */}
+          
           {showModal && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-lg p-6 w-96">
+            <div className="fixed inset-0 bg-opacity-50 flex items-center justify-center z-50 border-black-300">
+              <div className="bg-white rounded-lg p-6 w-96 border-2 border-gray-300">
                 <h3 className="text-lg font-semibold mb-4">Manage Login Credentials</h3>
                 <p className="text-sm text-gray-600 mb-4">
                   Employee: {selectedEmployee?.name} ({selectedEmployee?.id})
