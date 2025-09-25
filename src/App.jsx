@@ -33,7 +33,9 @@ function App() {
       <Route path="/hr/trainings" element={<HrTrainings />} />
       <Route path="/employee/trainings" element={<EmployeeTrainings />} />
       <Route path="/hr/recruitment" element={<HrRecruitment />} />
-      <Route path="/applicant/details" element={<ApplicantDetails />} />
+      
+      {/* ✅ Fixed route for applicant details */}
+      <Route path="/hr/recruitment/applicant/:id" element={<ApplicantDetails />} />
     </Routes>
   );
 }

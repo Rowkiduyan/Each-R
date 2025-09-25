@@ -1,12 +1,13 @@
 // src/HrRecruitment.jsx
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 function HrRecruitment() {
+  const navigate = useNavigate();
   const [activeSubTab, setActiveSubTab] = useState("Applications");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionType, setActionType] = useState(null);
   const [interviewDetails, setInterviewDetails] = useState({
@@ -15,12 +16,11 @@ function HrRecruitment() {
     location: "",
     interviewer: "",
   });
-  const [summary, setSummary] = useState(null);
   const [rejectionRemarks, setRejectionRemarks] = useState("");
 
   const itemsPerPage = 5;
 
-  // Sample applicants (added some personal info for demo)
+  // Sample applicants
   const applicants = [
     {
       id: 1,
@@ -43,7 +43,67 @@ function HrRecruitment() {
       address: "Cavite City",
       agency: true,
     },
-    // ... extend with your other 30+ applicants
+    {
+    id: 3,
+    name: "Santos, Pedro",
+    position: "Driver",
+    depot: "Laguna Depot",
+    dateApplied: "Jul 05, 2023",
+    email: "pedro.santos@example.com",
+    phone: "09193456789",
+    address: "San Pedro, Laguna",
+  },
+  {
+    id: 4,
+    name: "Lopez, Ana",
+    position: "HR Assistant",
+    depot: "Quezon Depot",
+    dateApplied: "Jul 08, 2023",
+    email: "ana.lopez@example.com",
+    phone: "09204567890",
+    address: "Quezon City",
+  },
+  {
+    id: 5,
+    name: "Garcia, Mark",
+    position: "Mechanic",
+    depot: "Makati Depot",
+    dateApplied: "Jul 10, 2023",
+    email: "mark.garcia@example.com",
+    phone: "09215678901",
+    address: "Makati City",
+  },
+  {
+    id: 6,
+    name: "Torres, Liza",
+    position: "Operations Supervisor",
+    depot: "Cebu Depot",
+    dateApplied: "Jul 12, 2023",
+    email: "liza.torres@example.com",
+    phone: "09226789012",
+    address: "Cebu City",
+  },
+  {
+    id: 7,
+    name: "Mendoza, Carlo",
+    position: "Dispatcher",
+    depot: "Davao Depot",
+    dateApplied: "Jul 15, 2023",
+    email: "carlo.mendoza@example.com",
+    phone: "09237890123",
+    address: "Davao City",
+    agency: true,
+  },
+  {
+    id: 8,
+    name: "Fernandez, Grace",
+    position: "Admin Staff",
+    depot: "Iloilo Depot",
+    dateApplied: "Jul 18, 2023",
+    email: "grace.fernandez@example.com",
+    phone: "09248901234",
+    address: "Iloilo City",
+  },
   ];
 
   // 🔎 Search filter
@@ -61,22 +121,6 @@ function HrRecruitment() {
     startIndex,
     startIndex + itemsPerPage
   );
-
-  const handleRowClick = (applicant) => {
-    setSelectedApplicant(applicant);
-    setSummary(null);
-    setActionType(null);
-  };
-
-  const handleConfirmInterview = () => {
-    setSummary(interviewDetails);
-    setShowActionModal(false);
-  };
-
-  const handleConfirmRejection = () => {
-    setSummary({ rejection: rejectionRemarks });
-    setShowActionModal(false);
-  };
 
   return (
     <>
@@ -112,16 +156,28 @@ function HrRecruitment() {
               >
                 Trainings/Seminars
               </Link>
-              <a href="#" className="text-gray-700 hover:text-red-600 font-medium">
+              <a
+                href="#"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
                 Evaluation
               </a>
-              <a href="#" className="text-gray-700 hover:text-red-600 font-medium">
+              <a
+                href="#"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
                 Seperation
               </a>
-              <a href="#" className="text-gray-700 hover:text-red-600 font-medium">
+              <a
+                href="#"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
                 Notifications
               </a>
-              <a href="#" className="text-gray-700 hover:text-red-600 font-medium">
+              <a
+                href="#"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
                 Logout
               </a>
             </div>
@@ -170,6 +226,7 @@ function HrRecruitment() {
                     className="border px-3 py-1 rounded shadow-sm"
                   />
                 </div>
+
                 <div className="border rounded-lg overflow-hidden shadow-sm">
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
@@ -193,10 +250,12 @@ function HrRecruitment() {
                         <tr
                           key={a.id}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
-                          onClick={() => handleRowClick(a)}
+                          onClick={() => navigate(`/hr/recruitment/applicant/${a.id}`)}
                         >
                           <td className="px-4 py-2 border-b">
-                            {a.name}{" "}
+                            <span className="cursor-pointer hover:text-blue-600 transition-colors">
+                              {a.name}
+                            </span>
                             {a.agency && (
                               <span className="ml-2 inline-block px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full">
                                 🚩 Agency
@@ -249,96 +308,7 @@ function HrRecruitment() {
           )}
 
           {/* ✅ Applicant Details */}
-          {selectedApplicant && (
-            <div className="mt-8 border-t pt-6">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-gray-800">
-                  Applicant Details
-                </h3>
-                <button
-                  onClick={() => setShowActionModal(true)}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-                >
-                  Action
-                </button>
-              </div>
-              <div className="grid grid-cols-2 gap-6">
-                {/* Personal Info */}
-                <div>
-                  <h4 className="font-semibold text-gray-700 mb-2">
-                    Personal Information
-                  </h4>
-                  <p>
-                    <span className="font-medium">Name:</span>{" "}
-                    {selectedApplicant.name}
-                  </p>
-                  <p>
-                    <span className="font-medium">Email:</span>{" "}
-                    {selectedApplicant.email}
-                  </p>
-                  <p>
-                    <span className="font-medium">Phone:</span>{" "}
-                    {selectedApplicant.phone}
-                  </p>
-                  <p>
-                    <span className="font-medium">Address:</span>{" "}
-                    {selectedApplicant.address}
-                  </p>
-                </div>
 
-                {/* Job Info */}
-                <div>
-                  <h4 className="font-semibold text-gray-700 mb-2">
-                    Job Details
-                  </h4>
-                  <p>
-                    <span className="font-medium">Position:</span>{" "}
-                    {selectedApplicant.position}
-                  </p>
-                  <p>
-                    <span className="font-medium">Depot:</span>{" "}
-                    {selectedApplicant.depot}
-                  </p>
-                  <p>
-                    <span className="font-medium">Date Applied:</span>{" "}
-                    {selectedApplicant.dateApplied}
-                  </p>
-                </div>
-              </div>
-
-              {/* ✅ Show summary */}
-              {summary && (
-                <div className="mt-6 bg-gray-100 p-4 rounded">
-                  <h4 className="font-semibold mb-2">Summary</h4>
-                  {"rejection" in summary ? (
-                    <p>
-                      <span className="font-medium">Rejection Remarks:</span>{" "}
-                      {summary.rejection}
-                    </p>
-                  ) : (
-                    <>
-                      <p>
-                        <span className="font-medium">Interview Date:</span>{" "}
-                        {summary.date}
-                      </p>
-                      <p>
-                        <span className="font-medium">Interview Time:</span>{" "}
-                        {summary.time}
-                      </p>
-                      <p>
-                        <span className="font-medium">Location:</span>{" "}
-                        {summary.location}
-                      </p>
-                      <p>
-                        <span className="font-medium">Interviewer:</span>{" "}
-                        {summary.interviewer}
-                      </p>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
@@ -419,54 +389,46 @@ function HrRecruitment() {
                     }
                   />
                 </div>
-                <div className="flex justify-end gap-4 mt-4">
-                  <button
-                    onClick={() => setShowActionModal(false)}
-                    className="px-4 py-2 bg-gray-300 rounded"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleConfirmInterview}
-                    className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-                  >
-                    Confirm
-                  </button>
-                </div>
               </>
             )}
 
             {actionType === "reject" && (
-              <>
-                <h3 className="text-lg font-bold mb-2">Add Rejection Remarks</h3>
-                <p className="text-gray-600 text-sm mb-4">
-                  Please share your feedback or reasons for rejecting this
-                  applicant. This helps us maintain transparency and improve
-                  future communications.
-                </p>
-                <textarea
-                  rows="4"
-                  className="w-full border rounded px-3 py-2"
-                  placeholder="Enter remarks..."
-                  value={rejectionRemarks}
-                  onChange={(e) => setRejectionRemarks(e.target.value)}
-                />
-                <div className="flex justify-end gap-4 mt-4">
-                  <button
-                    onClick={() => setShowActionModal(false)}
-                    className="px-4 py-2 bg-gray-300 rounded"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleConfirmRejection}
-                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                  >
-                    Submit
-                  </button>
-                </div>
-              </>
-            )}
+  <>
+    <h3 className="text-lg font-bold mb-2">Add Rejection Remarks</h3>
+    <p className="text-gray-600 text-sm mb-4">
+      Please share your feedback or reasons for rejecting this applicant.
+      This helps us maintain transparency and improve future communications.
+    </p>
+    <textarea
+      rows="4"
+      className="w-full border rounded px-3 py-2"
+      placeholder="Enter remarks..."
+      value={rejectionRemarks}
+      onChange={(e) => setRejectionRemarks(e.target.value)}
+    />
+    <div className="flex justify-end gap-4 mt-4">
+      <button
+        onClick={() => setShowActionModal(false)}
+        className="px-4 py-2 bg-gray-300 rounded"
+      >
+        Cancel
+      </button>
+      <button
+        onClick={() => {
+          // 👉 handle rejection submit logic here
+          console.log("Rejection submitted:", rejectionRemarks);
+          setShowActionModal(false);
+          setActionType(null);
+          setRejectionRemarks("");
+        }}
+        className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+      >
+        Submit
+      </button>
+    </div>
+  </>
+)}
+
           </div>
         </div>
       )}
