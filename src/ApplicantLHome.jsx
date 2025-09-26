@@ -1,8 +1,9 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Logo from './Logo.png';
 import { useState } from 'react';
 
 function ApplicantLHome() {
+const navigate = useNavigate();
 const [activeTab, setActiveTab] = useState("Home");
 const [showModal, setShowModal] = useState(false);
 const [showSummary, setShowSummary] = useState(false);
@@ -63,7 +64,12 @@ const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
         <ul className="list-none flex space-x-6">
             {tabs.map((tab) => (
               <li key={tab}>
-                  <button type='button' onClick={() => setActiveTab(tab)}
+                  <button type='button' onClick={() => {
+                    setActiveTab(tab);
+                    if (tab === "Applications") {
+                      navigate('/applicant/applications');
+                    }
+                  }}
                   className={`appearance-none border-0 font-semibold text-white px-5 rounded-sm tracking-wider transition-colors
                     ${activeTab === tab
                       ? "bg-red-600"              

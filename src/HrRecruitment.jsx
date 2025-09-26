@@ -20,7 +20,11 @@ function HrRecruitment() {
   });
 
   const [rejectionRemarks, setRejectionRemarks] = useState("");
-  const [rejectedApplicants, setRejectedApplicants] = useState([]); // ✅ NEW
+  const [rejectedApplicants, setRejectedApplicants] = useState([
+    { id: 1, name: "Smith, John", position: "Driver", depot: "Manila Depot", dateApplied: "Jun 15, 2023", remarks: "Failed background check" },
+    { id: 2, name: "Brown, Sarah", position: "Warehouse Staff", depot: "Cebu Depot", dateApplied: "Jun 20, 2023", remarks: "Insufficient experience" },
+    { id: 3, name: "Wilson, Mike", position: "HR Assistant", depot: "Davao Depot", dateApplied: "Jun 25, 2023", remarks: "Did not meet qualifications" }
+  ]); // ✅ NEW
 
   const itemsPerPage = 5;
 
@@ -43,6 +47,27 @@ function HrRecruitment() {
 
   // 🔎 Search filter
   const filteredApplicants = applicants.filter(
+    (a) =>
+      a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.depot.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredAgreements = agreements.filter(
+    (a) =>
+      a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.depot.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredRequirements = requirements.filter(
+    (a) =>
+      a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      a.depot.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const filteredFinalAgreements = finalAgreements.filter(
     (a) =>
       a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -224,7 +249,10 @@ function HrRecruitment() {
 
               {/* Right Side */}
               <div className="col-span-1 flex flex-col gap-4 justify-start">
-                <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow">
+                <button 
+                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
+                  onClick={() => navigate('/applicantg/home')}
+                >
                   View Job Postings
                 </button>
                 <button
@@ -241,7 +269,19 @@ function HrRecruitment() {
           {activeSubTab === "Agreements" && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
-                <h3 className="text-xl font-bold text-gray-800 mb-4">Agreements</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold text-gray-800">Agreements</h3>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="border px-3 py-1 rounded shadow-sm"
+                  />
+                </div>
                 <div className="border rounded-lg overflow-hidden shadow-sm">
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
@@ -253,7 +293,7 @@ function HrRecruitment() {
                       </tr>
                     </thead>
                     <tbody>
-                      {agreements.map((a) => (
+                      {filteredAgreements.map((a) => (
                         <tr
                           key={a.id}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
@@ -271,7 +311,10 @@ function HrRecruitment() {
               </div>
 
               <div className="col-span-1 flex flex-col gap-4">
-                <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow">
+                <button 
+                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
+                  onClick={() => navigate('/applicantg/home')}
+                >
                   View Job Postings
                 </button>
                 <button
@@ -288,7 +331,19 @@ function HrRecruitment() {
           {activeSubTab === "Requirements" && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
-                <h3 className="text-xl font-bold text-gray-800 mb-4">Requirements</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold text-gray-800">Requirements</h3>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="border px-3 py-1 rounded shadow-sm"
+                  />
+                </div>
                 <div className="border rounded-lg overflow-hidden shadow-sm">
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
@@ -300,7 +355,7 @@ function HrRecruitment() {
                       </tr>
                     </thead>
                     <tbody>
-                      {requirements.map((a) => (
+                      {filteredRequirements.map((a) => (
                         <tr
                           key={a.id}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
@@ -318,7 +373,10 @@ function HrRecruitment() {
               </div>
 
               <div className="col-span-1 flex flex-col gap-4">
-                <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow">
+                <button 
+                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
+                  onClick={() => navigate('/applicantg/home')}
+                >
                   View Job Postings
                 </button>
                 <button
@@ -335,7 +393,19 @@ function HrRecruitment() {
           {activeSubTab === "Agreement" && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
-                <h3 className="text-xl font-bold text-gray-800 mb-4">Final Agreements</h3>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="text-xl font-bold text-gray-800">Final Agreements</h3>
+                  <input
+                    type="text"
+                    placeholder="Search..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="border px-3 py-1 rounded shadow-sm"
+                  />
+                </div>
                 <div className="border rounded-lg overflow-hidden shadow-sm">
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
@@ -347,7 +417,7 @@ function HrRecruitment() {
                       </tr>
                     </thead>
                     <tbody>
-                      {finalAgreements.map((a) => (
+                      {filteredFinalAgreements.map((a) => (
                         <tr
                           key={a.id}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
@@ -365,7 +435,10 @@ function HrRecruitment() {
               </div>
 
               <div className="col-span-1 flex flex-col gap-4">
-                <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow">
+                <button 
+                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
+                  onClick={() => navigate('/applicantg/home')}
+                >
                   View Job Postings
                 </button>
                 <button
@@ -493,14 +566,20 @@ function HrRecruitment() {
             {rejectedApplicants.length === 0 ? (
               <p className="text-gray-500">No rejected applicants yet.</p>
             ) : (
-              <ul className="space-y-2">
+              <div className="space-y-3">
                 {rejectedApplicants.map((r) => (
-                  <li key={r.id} className="border p-2 rounded">
-                    <strong>{r.name}</strong>
-                    <p className="text-sm text-gray-600">{r.remarks}</p>
-                  </li>
+                  <div key={r.id} className="border p-3 rounded-lg bg-gray-50">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <strong className="text-gray-800">{r.name}</strong>
+                        <p className="text-sm text-gray-600">{r.position} - {r.depot}</p>
+                        <p className="text-xs text-gray-500">Applied: {r.dateApplied}</p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-700 mt-2 italic">"{r.remarks}"</p>
+                  </div>
                 ))}
-              </ul>
+              </div>
             )}
             <div className="flex justify-end mt-4">
               <button

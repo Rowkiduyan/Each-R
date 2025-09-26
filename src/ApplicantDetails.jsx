@@ -1,11 +1,12 @@
 // src/ApplicantDetails.jsx
 import React, { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { Mail, Phone, Briefcase, MapPin, Calendar } from "lucide-react";
 
 function ApplicantDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState("Application");
 
   const [showAction, setShowAction] = useState(false);
@@ -29,8 +30,9 @@ function ApplicantDetails() {
   const [interviewFile, setInterviewFile] = useState(null);
   const [assessmentFile, setAssessmentFile] = useState(null);
 
-  // Fake applicant data (replace with real data later)
-  const applicant = {
+  // Get applicant data from navigation state or use default
+  const passedApplicant = location.state?.applicant;
+  const applicant = passedApplicant || {
     id,
     name: "Juan Dela Cruz",
     position: "Delivery Rider",
@@ -47,6 +49,7 @@ function ApplicantDetails() {
     birthday: "January 1, 1995",
     age: 30,
     maritalStatus: "Single",
+    agency: false,
   };
 
   const steps = ["Application", "Assessment", "Requirements", "Agreements"];
@@ -138,6 +141,11 @@ if (step === "Agreements") {
           <>
             <h2 className="text-3xl font-bold mb-6 text-gray-800 flex items-center gap-3">
                 {applicant.name}
+                {applicant.agency && (
+                  <span className="inline-block px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full">
+                    🚩 Agency
+                  </span>
+                )}
                 {isRejected && (
                   <span className="text-red-600 text-lg font-semibold">REJECTED</span>
                 )}
