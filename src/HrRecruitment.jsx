@@ -250,8 +250,11 @@ function HrRecruitment() {
                         <tr
                           key={a.id}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
-                          onClick={() => navigate(`/hr/recruitment/applicant/${a.id}`)}
+                          onClick={() =>
+                            navigate(`/hr/recruitment/applicant/${a.id}`, { state: { applicant: a } })
+                          }
                         >
+
                           <td className="px-4 py-2 border-b">
                             <span className="cursor-pointer hover:text-blue-600 transition-colors">
                               {a.name}
