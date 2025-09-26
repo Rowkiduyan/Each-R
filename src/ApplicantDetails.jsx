@@ -68,6 +68,18 @@ const [docs, setDocs] = useState([
   { name: "Drive Test", file: "file.pdf (9/26/26)", status: "Submitted" },
 ]);
 
+// Agreements files
+const [agreementsFiles, setAgreementsFiles] = useState([
+  {
+    name: "Employee Appointment Letter",
+    file: "applicantfile.pdf (9/26/25)",
+  },
+]);
+
+const [agreementsResult, setAgreementsResult] = useState(null); // "hire" or "reject"
+const [hired, setHired] = useState(false); // ✅ to label the applicant as Hired
+
+
 
   return (
     <div className="max-w-5xl mx-auto p-8">
@@ -98,7 +110,14 @@ if (step === "Requirements") {
   if (requirementsResult === "pass") bgClass = "bg-green-500 text-white";
   else if (requirementsResult === "reject") bgClass = "bg-red-500 text-white";
 }
-    const isDisabled = isRejected; // ✅ disable all tabs when rejected
+
+if (step === "Agreements") {
+      if (agreementsResult === "hire") bgClass = "bg-green-500 text-white";
+      else if (agreementsResult === "reject") bgClass = "bg-red-500 text-white";
+    }
+
+
+    const isDisabled = isRejected && step !== "Application"; // ✅ disable all tabs when rejected
 
     return (
       <div
@@ -114,18 +133,18 @@ if (step === "Requirements") {
   })}
 </div>
 
-
-        {/* Rejected Badge */}
-        {isRejected && (
-          <span className="absolute top-4 right-4 bg-red-600 text-white px-3 py-1 text-sm font-bold rounded">
-            REJECTED
-          </span>
-        )}
-
         {/* Tabs Content */}
         {activeTab === "Application" && (
           <>
-            <h2 className="text-3xl font-bold mb-6 text-gray-800">{applicant.name}</h2>
+            <h2 className="text-3xl font-bold mb-6 text-gray-800 flex items-center gap-3">
+                {applicant.name}
+                {isRejected && (
+                  <span className="text-red-600 text-lg font-semibold">REJECTED</span>
+                )}
+                {hired && (
+                  <span className="text-green-600 text-lg font-semibold">HIRED</span>
+                )}
+             </h2>
 
             <h3 className="text-xl font-semibold mb-3 text-gray-700">Job Details</h3>
             <div className="grid md:grid-cols-2 gap-4 text-gray-700 mb-6">
@@ -324,24 +343,70 @@ if (step === "Requirements") {
   </div>
 )}
 
+ {activeTab === "Agreements" && (
+  <div>
+    <h2 className="text-2xl font-bold mb-4 text-gray-800">Agreements</h2>
 
+    <div className="border rounded-lg overflow-hidden shadow-sm mb-4">
+      <table className="min-w-full border-collapse">
+        <thead className="bg-gray-100 text-gray-700">
+          <tr>
+            <th className="px-4 py-2 border-b text-left font-semibold">Document Name</th>
+            <th className="px-4 py-2 border-b text-left font-semibold">File</th>
+          </tr>
+        </thead>
+        <tbody>
+          {agreementsFiles.map((doc, idx) => (
+            <tr key={idx} className="hover:bg-gray-50 transition-colors">
+              <td className="px-4 py-2 border-b">{doc.name}</td>
+              <td className="px-4 py-2 border-b">{doc.file}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
 
+    {/* Upload Another File Section */}
+    <div className="mt-4">
+      <label className="inline-block px-4 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700">
+        + Upload Another File
+        <input
+          type="file"
+          onChange={(e) => {
+            if (!e.target.files[0]) return;
+            const today = new Date().toLocaleDateString();
+            setAgreementsFiles([
+              ...agreementsFiles,
+              { name: `Additional File`, file: `${e.target.files[0].name} (${today})` },
+            ]);
+          }}
+          className="hidden"
+        />
+      </label>
+    </div>
 
-        {activeTab === "Agreements" && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">Agreements</h2>
-            <p>Manage applicant agreements here.</p>
-          </div>
-        )}
+    <div className="flex justify-end mt-6">
+      <button
+        onClick={() => setShowAction(true)}
+        className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition"
+      >
+        Take Action
+      </button>
+    </div>
+  </div>
+)}
+
       </div>
 
 {showAction && (
   <div className="fixed inset-0 flex items-center justify-center bg-black/40">
     <div className="bg-white p-6 rounded-xl shadow-lg w-96">
       <h3 className="text-xl font-bold mb-4 text-gray-800">Select an action</h3>
+
       <div className="flex justify-between">
         {activeTab === "Assessment" ? (
           <>
+            {/* Pass / Reject for Assessment */}
             <button
               onClick={() => {
                 setAssessmentResult("pass");
@@ -364,40 +429,72 @@ if (step === "Requirements") {
             </button>
           </>
         ) : activeTab === "Requirements" ? (
-  <>
-    <button
-      onClick={() => {
-        setRequirementsResult("pass"); // ✅ Requirements green only
-        setIsRejected(false);
-        setShowAction(false);
-      }}
-      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
-    >
-      Pass
-    </button>
-    <button
-      onClick={() => {
-        setRequirementsResult("reject"); // ✅ Requirements red only
-        setIsRejected(true);
-        setShowAction(false);
-      }}
-      className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-    >
-      Reject
-    </button>
-  </>
-)
- : (
-          // Default behavior for other tabs (e.g., Application)
           <>
+            {/* Pass / Reject for Requirements */}
             <button
-              onClick={() => { setShowInterviewForm(true); setShowAction(false); }}
+              onClick={() => {
+                setRequirementsResult("pass");
+                setIsRejected(false);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+            >
+              Pass
+            </button>
+            <button
+              onClick={() => {
+                setRequirementsResult("reject");
+                setIsRejected(true);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Reject
+            </button>
+          </>
+        ) : activeTab === "Agreements" ? (
+          <>
+            {/* Hire / Reject for Agreements */}
+            <button
+              onClick={() => {
+                setAgreementsResult("hire");
+                setHired(true);
+                setIsRejected(false);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+            >
+              Hire
+            </button>
+            <button
+              onClick={() => {
+                setAgreementsResult("reject");
+                setHired(false);
+                setIsRejected(true);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Reject
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Default action for Application tab */}
+            <button
+              onClick={() => {
+                setShowInterviewForm(true);
+                setShowAction(false);
+              }}
               className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
             >
               Set Interview
             </button>
             <button
-              onClick={() => { setShowRejectionForm(true); setShowAction(false); }}
+              onClick={() => {
+                setShowRejectionForm(true);
+                setShowAction(false);
+              }}
               className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
             >
               Reject
@@ -408,6 +505,7 @@ if (step === "Requirements") {
     </div>
   </div>
 )}
+
 
 
       {showInterviewForm && (
