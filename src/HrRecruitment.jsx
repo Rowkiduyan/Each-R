@@ -2,8 +2,6 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
-import { NavLink } from "react-router-dom";
-
 
 function HrRecruitment() {
   const navigate = useNavigate();
@@ -12,101 +10,36 @@ function HrRecruitment() {
   const [currentPage, setCurrentPage] = useState(1);
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionType, setActionType] = useState(null);
+  const [showRejectedModal, setShowRejectedModal] = useState(false); // ✅ NEW
+
   const [interviewDetails, setInterviewDetails] = useState({
     date: "",
     time: "",
     location: "",
     interviewer: "",
   });
+
   const [rejectionRemarks, setRejectionRemarks] = useState("");
+  const [rejectedApplicants, setRejectedApplicants] = useState([]); // ✅ NEW
 
   const itemsPerPage = 5;
 
   // Sample applicants
   const applicants = [
-    {
-      id: 1,
-      name: "Dela Cruz, Juan",
-      position: "Delivery Rider",
-      depot: "Pasig Depot",
-      dateApplied: "Jun 30, 2023",
-      email: "juan.delacruz@example.com",
-      phone: "09171234567",
-      address: "Pasig City",
-    },
-    {
-      id: 2,
-      name: "Reyes, Maria",
-      position: "Warehouse Staff",
-      depot: "Cavite Depot",
-      dateApplied: "Jul 02, 2023",
-      email: "maria.reyes@example.com",
-      phone: "09182345678",
-      address: "Cavite City",
-      agency: true,
-    },
-    {
-    id: 3,
-    name: "Santos, Pedro",
-    position: "Driver",
-    depot: "Laguna Depot",
-    dateApplied: "Jul 05, 2023",
-    email: "pedro.santos@example.com",
-    phone: "09193456789",
-    address: "San Pedro, Laguna",
-  },
-  {
-    id: 4,
-    name: "Lopez, Ana",
-    position: "HR Assistant",
-    depot: "Quezon Depot",
-    dateApplied: "Jul 08, 2023",
-    email: "ana.lopez@example.com",
-    phone: "09204567890",
-    address: "Quezon City",
-  },
-  {
-    id: 5,
-    name: "Garcia, Mark",
-    position: "Mechanic",
-    depot: "Makati Depot",
-    dateApplied: "Jul 10, 2023",
-    email: "mark.garcia@example.com",
-    phone: "09215678901",
-    address: "Makati City",
-  },
-  {
-    id: 6,
-    name: "Torres, Liza",
-    position: "Operations Supervisor",
-    depot: "Cebu Depot",
-    dateApplied: "Jul 12, 2023",
-    email: "liza.torres@example.com",
-    phone: "09226789012",
-    address: "Cebu City",
-  },
-  {
-    id: 7,
-    name: "Mendoza, Carlo",
-    position: "Dispatcher",
-    depot: "Davao Depot",
-    dateApplied: "Jul 15, 2023",
-    email: "carlo.mendoza@example.com",
-    phone: "09237890123",
-    address: "Davao City",
-    agency: true,
-  },
-  {
-    id: 8,
-    name: "Fernandez, Grace",
-    position: "Admin Staff",
-    depot: "Iloilo Depot",
-    dateApplied: "Jul 18, 2023",
-    email: "grace.fernandez@example.com",
-    phone: "09248901234",
-    address: "Iloilo City",
-  },
+    { id: 1, name: "Dela Cruz, Juan", position: "Delivery Rider", depot: "Pasig Depot", dateApplied: "Jun 30, 2023", email: "juan.delacruz@example.com", phone: "09171234567", address: "Pasig City" },
+    { id: 2, name: "Reyes, Maria", position: "Warehouse Staff", depot: "Cavite Depot", dateApplied: "Jul 02, 2023", email: "maria.reyes@example.com", phone: "09182345678", address: "Cavite City", agency: true },
+    { id: 3, name: "Santos, Pedro", position: "Driver", depot: "Laguna Depot", dateApplied: "Jul 05, 2023", email: "pedro.santos@example.com", phone: "09193456789", address: "San Pedro, Laguna" },
+    { id: 4, name: "Lopez, Ana", position: "HR Assistant", depot: "Quezon Depot", dateApplied: "Jul 08, 2023", email: "ana.lopez@example.com", phone: "09204567890", address: "Quezon City" },
+    { id: 5, name: "Garcia, Mark", position: "Mechanic", depot: "Makati Depot", dateApplied: "Jul 10, 2023", email: "mark.garcia@example.com", phone: "09215678901", address: "Makati City" },
+    { id: 6, name: "Torres, Liza", position: "Operations Supervisor", depot: "Cebu Depot", dateApplied: "Jul 12, 2023", email: "liza.torres@example.com", phone: "09226789012", address: "Cebu City" },
+    { id: 7, name: "Mendoza, Carlo", position: "Dispatcher", depot: "Davao Depot", dateApplied: "Jul 15, 2023", email: "carlo.mendoza@example.com", phone: "09237890123", address: "Davao City", agency: true },
+    { id: 8, name: "Fernandez, Grace", position: "Admin Staff", depot: "Iloilo Depot", dateApplied: "Jul 18, 2023", email: "grace.fernandez@example.com", phone: "09248901234", address: "Iloilo City" },
   ];
+
+  // 🔹 Stage data
+  const agreements = applicants.slice(0, 3);
+  const requirements = applicants.slice(3, 6);
+  const finalAgreements = applicants.slice(6, 8);
 
   // 🔎 Search filter
   const filteredApplicants = applicants.filter(
@@ -146,43 +79,42 @@ function HrRecruitment() {
               >
                 Employees
               </Link>
-              <NavLink
+              <Link
                 to="/hr/recruitment"
-                className={({ isActive }) => `hover:text-red-600 ${
-                isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
-                }`}>
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
                 Recruitment
-              </NavLink>
+              </Link>
               <Link
                 to="/hr/trainings"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
                 Trainings/Seminars
               </Link>
-              <Link
-                to="/hr/eval"
+              <a
+                href="#"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
                 Evaluation
-              </Link>
-              <Link
-                to="/hr/seperation"
+              </a>
+              <a
+                href="#"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
-                Separation
-              </Link>
-              <Link
-                to="/hr/notif"
+                Seperation
+              </a>
+              <a
+                href="#"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
                 Notifications
-              </Link>
-              <Link
-                to="/employee/login"
+              </a>
+              <a
+                href="#"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
                 Logout
-              </Link>
+              </a>
             </div>
             <span className="text-gray-700 font-semibold">Alexis Yvone</span>
           </div>
@@ -194,27 +126,29 @@ function HrRecruitment() {
         <div className="w-full max-w-6xl bg-white rounded-2xl shadow-lg p-8">
           {/* Sub Tabs */}
           <div className="flex gap-6 border-b mb-6 justify-center">
-            {["Applications", "Agreements", "Requirements", "Agreement"].map(
-              (tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveSubTab(tab)}
-                  className={`px-6 py-3 font-medium ${
-                    activeSubTab === tab
-                      ? "border-b-2 border-blue-600 text-blue-600"
-                      : "text-gray-600 hover:text-blue-600"
-                  }`}
-                >
-                  {tab}
-                </button>
-              )
-            )}
+            {[
+              { label: "Applications", count: applicants.length },
+              { label: "Agreements", count: agreements.length },
+              { label: "Requirements", count: requirements.length },
+              { label: "Agreement", count: finalAgreements.length },
+            ].map((tab) => (
+              <button
+                key={tab.label}
+                onClick={() => setActiveSubTab(tab.label)}
+                className={`px-6 py-3 font-medium ${
+                  activeSubTab === tab.label
+                    ? "border-b-2 border-blue-600 text-blue-600"
+                    : "text-gray-600 hover:text-blue-600"
+                }`}
+              >
+                {tab.label} <span className="text-sm text-gray-500">({tab.count})</span>
+              </button>
+            ))}
           </div>
 
           {/* Applications Tab */}
           {activeSubTab === "Applications" && (
             <div className="grid grid-cols-3 gap-6">
-              {/* Left side */}
               <div className="col-span-2">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-xl font-bold text-gray-800">Applicants</h3>
@@ -234,18 +168,10 @@ function HrRecruitment() {
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
                       <tr>
-                        <th className="px-4 py-2 text-left font-semibold border-b">
-                          Applicant
-                        </th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">
-                          Position
-                        </th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">
-                          Depot
-                        </th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">
-                          Date Applied
-                        </th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -253,7 +179,7 @@ function HrRecruitment() {
                         <tr
                           key={a.id}
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
-                          onClick={() => navigate(`/hr/recruitment/applicant/${a.id}`)}
+                          onClick={() => navigate(`/hr/recruitment/applicant/${a.id}`, { state: { applicant: a } })}
                         >
                           <td className="px-4 py-2 border-b">
                             <span className="cursor-pointer hover:text-blue-600 transition-colors">
@@ -274,7 +200,7 @@ function HrRecruitment() {
                   </table>
                 </div>
 
-                {/* 📄 Pagination Controls */}
+                {/* Pagination */}
                 <div className="flex justify-between items-center mt-4">
                   <button
                     onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
@@ -287,9 +213,7 @@ function HrRecruitment() {
                     Page {currentPage} of {totalPages}
                   </span>
                   <button
-                    onClick={() =>
-                      setCurrentPage((p) => Math.min(p + 1, totalPages))
-                    }
+                    onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
                     disabled={currentPage === totalPages}
                     className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
                   >
@@ -298,20 +222,161 @@ function HrRecruitment() {
                 </div>
               </div>
 
-              {/* Right side */}
+              {/* Right Side */}
               <div className="col-span-1 flex flex-col gap-4 justify-start">
                 <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow">
                   View Job Postings
                 </button>
-                <button className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow">
+                <button
+                  onClick={() => setShowRejectedModal(true)} // ✅ opens rejected list
+                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
+                >
                   View Rejected Applicants
                 </button>
               </div>
             </div>
           )}
 
-          {/* ✅ Applicant Details */}
+          {/* Agreements Tab */}
+          {activeSubTab === "Agreements" && (
+            <div className="grid grid-cols-3 gap-6">
+              <div className="col-span-2">
+                <h3 className="text-xl font-bold text-gray-800 mb-4">Agreements</h3>
+                <div className="border rounded-lg overflow-hidden shadow-sm">
+                  <table className="min-w-full border-collapse">
+                    <thead className="bg-gray-100 text-gray-700">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {agreements.map((a) => (
+                        <tr
+                          key={a.id}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                          onClick={() => navigate(`/hr/recruitment/applicant/${a.id}`, { state: { applicant: a } })}
+                        >
+                          <td className="px-4 py-2 border-b">{a.name}</td>
+                          <td className="px-4 py-2 border-b">{a.position}</td>
+                          <td className="px-4 py-2 border-b">{a.depot}</td>
+                          <td className="px-4 py-2 border-b">{a.dateApplied}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
+              <div className="col-span-1 flex flex-col gap-4">
+                <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow">
+                  View Job Postings
+                </button>
+                <button
+                  onClick={() => setShowRejectedModal(true)}
+                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
+                >
+                  View Rejected Applicants
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Requirements Tab */}
+          {activeSubTab === "Requirements" && (
+            <div className="grid grid-cols-3 gap-6">
+              <div className="col-span-2">
+                <h3 className="text-xl font-bold text-gray-800 mb-4">Requirements</h3>
+                <div className="border rounded-lg overflow-hidden shadow-sm">
+                  <table className="min-w-full border-collapse">
+                    <thead className="bg-gray-100 text-gray-700">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {requirements.map((a) => (
+                        <tr
+                          key={a.id}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                          onClick={() => navigate(`/hr/recruitment/applicant/${a.id}`, { state: { applicant: a } })}
+                        >
+                          <td className="px-4 py-2 border-b">{a.name}</td>
+                          <td className="px-4 py-2 border-b">{a.position}</td>
+                          <td className="px-4 py-2 border-b">{a.depot}</td>
+                          <td className="px-4 py-2 border-b">{a.dateApplied}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="col-span-1 flex flex-col gap-4">
+                <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow">
+                  View Job Postings
+                </button>
+                <button
+                  onClick={() => setShowRejectedModal(true)}
+                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
+                >
+                  View Rejected Applicants
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Final Agreement Tab */}
+          {activeSubTab === "Agreement" && (
+            <div className="grid grid-cols-3 gap-6">
+              <div className="col-span-2">
+                <h3 className="text-xl font-bold text-gray-800 mb-4">Final Agreements</h3>
+                <div className="border rounded-lg overflow-hidden shadow-sm">
+                  <table className="min-w-full border-collapse">
+                    <thead className="bg-gray-100 text-gray-700">
+                      <tr>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
+                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {finalAgreements.map((a) => (
+                        <tr
+                          key={a.id}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                          onClick={() => navigate(`/hr/recruitment/applicant/${a.id}`, { state: { applicant: a } })}
+                        >
+                          <td className="px-4 py-2 border-b">{a.name}</td>
+                          <td className="px-4 py-2 border-b">{a.position}</td>
+                          <td className="px-4 py-2 border-b">{a.depot}</td>
+                          <td className="px-4 py-2 border-b">{a.dateApplied}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="col-span-1 flex flex-col gap-4">
+                <button className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow">
+                  View Job Postings
+                </button>
+                <button
+                  onClick={() => setShowRejectedModal(true)}
+                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
+                >
+                  View Rejected Applicants
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -349,89 +414,102 @@ function HrRecruitment() {
                     type="date"
                     className="w-full border rounded px-3 py-2"
                     value={interviewDetails.date}
-                    onChange={(e) =>
-                      setInterviewDetails({
-                        ...interviewDetails,
-                        date: e.target.value,
-                      })
-                    }
+                    onChange={(e) => setInterviewDetails({ ...interviewDetails, date: e.target.value })}
                   />
                   <input
                     type="time"
                     className="w-full border rounded px-3 py-2"
                     value={interviewDetails.time}
-                    onChange={(e) =>
-                      setInterviewDetails({
-                        ...interviewDetails,
-                        time: e.target.value,
-                      })
-                    }
+                    onChange={(e) => setInterviewDetails({ ...interviewDetails, time: e.target.value })}
                   />
                   <input
                     type="text"
                     placeholder="Location"
                     className="w-full border rounded px-3 py-2"
                     value={interviewDetails.location}
-                    onChange={(e) =>
-                      setInterviewDetails({
-                        ...interviewDetails,
-                        location: e.target.value,
-                      })
-                    }
+                    onChange={(e) => setInterviewDetails({ ...interviewDetails, location: e.target.value })}
                   />
                   <input
                     type="text"
                     placeholder="Interviewer Name"
                     className="w-full border rounded px-3 py-2"
                     value={interviewDetails.interviewer}
-                    onChange={(e) =>
-                      setInterviewDetails({
-                        ...interviewDetails,
-                        interviewer: e.target.value,
-                      })
-                    }
+                    onChange={(e) => setInterviewDetails({ ...interviewDetails, interviewer: e.target.value })}
                   />
                 </div>
               </>
             )}
 
             {actionType === "reject" && (
-  <>
-    <h3 className="text-lg font-bold mb-2">Add Rejection Remarks</h3>
-    <p className="text-gray-600 text-sm mb-4">
-      Please share your feedback or reasons for rejecting this applicant.
-      This helps us maintain transparency and improve future communications.
-    </p>
-    <textarea
-      rows="4"
-      className="w-full border rounded px-3 py-2"
-      placeholder="Enter remarks..."
-      value={rejectionRemarks}
-      onChange={(e) => setRejectionRemarks(e.target.value)}
-    />
-    <div className="flex justify-end gap-4 mt-4">
-      <button
-        onClick={() => setShowActionModal(false)}
-        className="px-4 py-2 bg-gray-300 rounded"
-      >
-        Cancel
-      </button>
-      <button
-        onClick={() => {
-          // 👉 handle rejection submit logic here
-          console.log("Rejection submitted:", rejectionRemarks);
-          setShowActionModal(false);
-          setActionType(null);
-          setRejectionRemarks("");
-        }}
-        className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-      >
-        Submit
-      </button>
-    </div>
-  </>
-)}
+              <>
+                <h3 className="text-lg font-bold mb-2">Add Rejection Remarks</h3>
+                <p className="text-gray-600 text-sm mb-4">
+                  Please share your feedback or reasons for rejecting this applicant.
+                </p>
+                <textarea
+                  rows="4"
+                  className="w-full border rounded px-3 py-2"
+                  placeholder="Enter remarks..."
+                  value={rejectionRemarks}
+                  onChange={(e) => setRejectionRemarks(e.target.value)}
+                />
+                <div className="flex justify-end gap-4 mt-4">
+                  <button
+                    onClick={() => setShowActionModal(false)}
+                    className="px-4 py-2 bg-gray-300 rounded"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => {
+                      // ✅ Add rejected applicant
+                      const rejectedApplicant = {
+                        id: Date.now(),
+                        name: "Unknown Applicant", // ideally, pass selected applicant’s data
+                        remarks: rejectionRemarks,
+                      };
+                      setRejectedApplicants((prev) => [...prev, rejectedApplicant]);
+                      console.log("Rejection submitted:", rejectionRemarks);
+                      setShowActionModal(false);
+                      setActionType(null);
+                      setRejectionRemarks("");
+                    }}
+                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                  >
+                    Submit
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
+      {/* ✅ Rejected Applicants Modal */}
+      {showRejectedModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg">
+            <h3 className="text-xl font-bold mb-4">Rejected Applicants</h3>
+            {rejectedApplicants.length === 0 ? (
+              <p className="text-gray-500">No rejected applicants yet.</p>
+            ) : (
+              <ul className="space-y-2">
+                {rejectedApplicants.map((r) => (
+                  <li key={r.id} className="border p-2 rounded">
+                    <strong>{r.name}</strong>
+                    <p className="text-sm text-gray-600">{r.remarks}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex justify-end mt-4">
+              <button
+                onClick={() => setShowRejectedModal(false)}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

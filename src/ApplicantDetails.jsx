@@ -12,6 +12,7 @@ function ApplicantDetails() {
   const [showInterviewForm, setShowInterviewForm] = useState(false);
   const [showRejectionForm, setShowRejectionForm] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
+  
 
   const [interviewDetails, setInterviewDetails] = useState({
     date: "",
@@ -23,6 +24,7 @@ function ApplicantDetails() {
   const [rejectionRemarks, setRejectionRemarks] = useState("");
   const [isRejected, setIsRejected] = useState(false);
   const [assessmentResult, setAssessmentResult] = useState(null); // "pass" or "reject"
+  const [requirementsResult, setRequirementsResult] = useState(null); // "pass" or "reject"
 
   const [interviewFile, setInterviewFile] = useState(null);
   const [assessmentFile, setAssessmentFile] = useState(null);
@@ -49,6 +51,36 @@ function ApplicantDetails() {
 
   const steps = ["Application", "Assessment", "Requirements", "Agreements"];
 
+  // Add this **after your other useState hooks** at the top, before return
+const [ids, setIds] = useState([
+  { label: "SSS No.", value: "123123123", status: "Submitted" },
+  { label: "PhilHealth No.", value: "123123123", status: "Validated", date: "9/26/25" },
+  { label: "PagIBIG No.", value: "123123123", status: "Submitted" },
+  { label: "TIN No.", value: "123123123", status: "Submitted" },
+]);
+
+const [docs, setDocs] = useState([
+  { name: "PSA Birth Certificate", file: "psabirthcert.pdf (9/26/25)", status: "Validated" },
+  { name: "Photocopy of Drivers License", file: "file.pdf (9/26/25)", status: "Submitted" },
+  { name: "Photocopy of SSS ID", file: "file.pdf (9/26/25)", status: "Re-submit" },
+  { name: "NBI Clearance", file: "file.pdf (9/26/25)", status: "Submitted" },
+  { name: "Police Clearance", file: "file.pdf (9/26/25)", status: "Submitted" },
+  { name: "Drive Test", file: "file.pdf (9/26/26)", status: "Submitted" },
+]);
+
+// Agreements files
+const [agreementsFiles, setAgreementsFiles] = useState([
+  {
+    name: "Employee Appointment Letter",
+    file: "applicantfile.pdf (9/26/25)",
+  },
+]);
+
+const [agreementsResult, setAgreementsResult] = useState(null); // "hire" or "reject"
+const [hired, setHired] = useState(false); // ✅ to label the applicant as Hired
+
+
+
   return (
     <div className="max-w-5xl mx-auto p-8">
       {/* Back Button */}
@@ -63,42 +95,56 @@ function ApplicantDetails() {
       <div className="bg-white shadow-lg rounded-2xl p-8 border relative">
 
         {/* Application Process Stepper */}
-        <div className="flex justify-between items-center mb-6">
-          {steps.map((step, index) => {
-            // Step background color logic
-            let bgClass = "bg-orange-400 text-white";
-            if (step === "Application") bgClass = "bg-green-500 text-white";
-            if (step === "Assessment" && assessmentResult === "pass") bgClass = "bg-green-500 text-white";
-            if (assessmentResult === "reject" && step !== "Application") bgClass = "bg-red-500 text-white";
+<div className="flex justify-between items-center mb-6">
+  {steps.map((step, index) => {
+    let bgClass = "bg-orange-400 text-white"; // default
 
-            // Disable other tabs if rejected
-            const isDisabled = assessmentResult === "reject" && step !== "Application";
+if (step === "Application") bgClass = "bg-green-500 text-white";
 
-            return (
-              <div
-                key={index}
-                onClick={() => !isDisabled && setActiveTab(step)}
-                className={`flex-1 text-center py-2 rounded-lg mx-1 ${
-                  isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
-                } ${bgClass}`}
-              >
-                {step}
-              </div>
-            );
-          })}
-        </div>
+if (step === "Assessment") {
+  if (assessmentResult === "pass") bgClass = "bg-green-500 text-white";
+  else if (assessmentResult === "reject") bgClass = "bg-red-500 text-white";
+}
 
-        {/* Rejected Badge */}
-        {isRejected && (
-          <span className="absolute top-4 right-4 bg-red-600 text-white px-3 py-1 text-sm font-bold rounded">
-            REJECTED
-          </span>
-        )}
+if (step === "Requirements") {
+  if (requirementsResult === "pass") bgClass = "bg-green-500 text-white";
+  else if (requirementsResult === "reject") bgClass = "bg-red-500 text-white";
+}
+
+if (step === "Agreements") {
+      if (agreementsResult === "hire") bgClass = "bg-green-500 text-white";
+      else if (agreementsResult === "reject") bgClass = "bg-red-500 text-white";
+    }
+
+
+    const isDisabled = isRejected && step !== "Application"; // ✅ disable all tabs when rejected
+
+    return (
+      <div
+        key={index}
+        onClick={() => !isDisabled && setActiveTab(step)}
+        className={`flex-1 text-center py-2 rounded-lg mx-1 ${
+          isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
+        } ${bgClass}`}
+      >
+        {step}
+      </div>
+    );
+  })}
+</div>
 
         {/* Tabs Content */}
         {activeTab === "Application" && (
           <>
-            <h2 className="text-3xl font-bold mb-6 text-gray-800">{applicant.name}</h2>
+            <h2 className="text-3xl font-bold mb-6 text-gray-800 flex items-center gap-3">
+                {applicant.name}
+                {isRejected && (
+                  <span className="text-red-600 text-lg font-semibold">REJECTED</span>
+                )}
+                {hired && (
+                  <span className="text-green-600 text-lg font-semibold">HIRED</span>
+                )}
+             </h2>
 
             <h3 className="text-xl font-semibold mb-3 text-gray-700">Job Details</h3>
             <div className="grid md:grid-cols-2 gap-4 text-gray-700 mb-6">
@@ -194,69 +240,273 @@ function ApplicantDetails() {
         )}
 
         {activeTab === "Requirements" && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">Requirements</h2>
-            <p>Upload and manage applicant requirements here.</p>
-          </div>
-        )}
+  <div>
+    <h2 className="text-2xl font-bold mb-4 text-gray-800">Requirements</h2>
 
-        {activeTab === "Agreements" && (
-          <div>
-            <h2 className="text-2xl font-bold mb-4 text-gray-800">Agreements</h2>
-            <p>Manage applicant agreements here.</p>
-          </div>
-        )}
+    {/* IDs Section */}
+    <div className="grid grid-cols-2 gap-6 mb-6">
+      {ids.map((id, idx) => (
+        <div key={idx} className="flex items-center gap-2">
+          <span className="w-32 font-medium">{id.label}</span>
+          <span>{id.value}</span>
+          <select
+            value={id.status}
+            onChange={(e) => {
+              const newIds = [...ids];
+              newIds[idx].status = e.target.value;
+              if (e.target.value === "Validated") {
+                newIds[idx].date = new Date().toLocaleDateString();
+              } else {
+                newIds[idx].date = "";
+              }
+              setIds(newIds);
+            }}
+            className={`border rounded px-2 py-1 font-medium ${
+              id.status === "Validated"
+                ? "bg-green-100 text-green-700"
+                : id.status === "Submitted"
+                ? "bg-orange-100 text-orange-700"
+                : "bg-red-100 text-red-700"
+            }`}
+          >
+            <option>Submitted</option>
+            <option>Validated</option>
+            <option>Re-submit</option>
+          </select>
+          {id.status === "Validated" && (
+            <span className="ml-2 text-gray-500 text-sm">{id.date}</span>
+          )}
+        </div>
+      ))}
+    </div>
+
+    {/* Documents Section */}
+    <h3 className="text-xl font-bold mb-3">Documents</h3>
+    <div className="border rounded-lg overflow-hidden shadow-sm mb-4">
+      <table className="min-w-full border-collapse">
+        <thead className="bg-gray-100 text-gray-700">
+          <tr>
+            <th className="px-4 py-2 border-b text-left font-semibold">Document Name</th>
+            <th className="px-4 py-2 border-b text-left font-semibold">Submission</th>
+            <th className="px-4 py-2 border-b text-left font-semibold">Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          {docs.map((doc, idx) => (
+            <tr key={idx} className="hover:bg-gray-50 transition-colors">
+              <td className="px-4 py-2 border-b">{doc.name}</td>
+              <td className="px-4 py-2 border-b">{doc.file}</td>
+              <td className="px-4 py-2 border-b">
+                <select
+                  value={doc.status}
+                  onChange={(e) => {
+                    const newDocs = [...docs];
+                    newDocs[idx].status = e.target.value;
+                    if (e.target.value === "Validated") {
+                      newDocs[idx].date = new Date().toLocaleDateString();
+                    } else {
+                      newDocs[idx].date = "";
+                    }
+                    setDocs(newDocs);
+                  }}
+                  className={`border rounded px-2 py-1 font-medium ${
+                    doc.status === "Validated"
+                      ? "bg-green-100 text-green-700"
+                      : doc.status === "Submitted"
+                      ? "bg-orange-100 text-orange-700"
+                      : "bg-red-100 text-red-700"
+                  }`}
+                >
+                  <option>Submitted</option>
+                  <option>Validated</option>
+                  <option>Re-submit</option>
+                </select>
+                {doc.status === "Validated" && (
+                  <span className="ml-2 text-gray-500 text-sm">{doc.date}</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    {/* Take Action button */}
+    <div className="flex justify-end">
+      <button
+        onClick={() => setShowAction(true)}
+        className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition"
+      >
+        Take Action
+      </button>
+    </div>
+  </div>
+)}
+
+ {activeTab === "Agreements" && (
+  <div>
+    <h2 className="text-2xl font-bold mb-4 text-gray-800">Agreements</h2>
+
+    <div className="border rounded-lg overflow-hidden shadow-sm mb-4">
+      <table className="min-w-full border-collapse">
+        <thead className="bg-gray-100 text-gray-700">
+          <tr>
+            <th className="px-4 py-2 border-b text-left font-semibold">Document Name</th>
+            <th className="px-4 py-2 border-b text-left font-semibold">File</th>
+          </tr>
+        </thead>
+        <tbody>
+          {agreementsFiles.map((doc, idx) => (
+            <tr key={idx} className="hover:bg-gray-50 transition-colors">
+              <td className="px-4 py-2 border-b">{doc.name}</td>
+              <td className="px-4 py-2 border-b">{doc.file}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    {/* Upload Another File Section */}
+    <div className="mt-4">
+      <label className="inline-block px-4 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700">
+        + Upload Another File
+        <input
+          type="file"
+          onChange={(e) => {
+            if (!e.target.files[0]) return;
+            const today = new Date().toLocaleDateString();
+            setAgreementsFiles([
+              ...agreementsFiles,
+              { name: `Additional File`, file: `${e.target.files[0].name} (${today})` },
+            ]);
+          }}
+          className="hidden"
+        />
+      </label>
+    </div>
+
+    <div className="flex justify-end mt-6">
+      <button
+        onClick={() => setShowAction(true)}
+        className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition"
+      >
+        Take Action
+      </button>
+    </div>
+  </div>
+)}
+
       </div>
 
-      {/* === Modals === */}
-      {showAction && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/40">
-          <div className="bg-white p-6 rounded-xl shadow-lg w-96">
-            <h3 className="text-xl font-bold mb-4 text-gray-800">Select an action</h3>
-            <div className="flex justify-between">
-              {activeTab === "Assessment" ? (
-                <>
-                  <button
-                    onClick={() => {
-                      setAssessmentResult("pass");
-                      setIsRejected(false);
-                      setShowAction(false);
-                    }}
-                    className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
-                  >
-                    Pass
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAssessmentResult("reject");
-                      setShowAction(false);
-                      setShowRejectionForm(true);
-                    }}
-                    className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-                  >
-                    Reject
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => { setShowInterviewForm(true); setShowAction(false); }}
-                    className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
-                  >
-                    Set Interview
-                  </button>
-                  <button
-                    onClick={() => { setShowRejectionForm(true); setShowAction(false); }}
-                    className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-                  >
-                    Reject
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+{showAction && (
+  <div className="fixed inset-0 flex items-center justify-center bg-black/40">
+    <div className="bg-white p-6 rounded-xl shadow-lg w-96">
+      <h3 className="text-xl font-bold mb-4 text-gray-800">Select an action</h3>
+
+      <div className="flex justify-between">
+        {activeTab === "Assessment" ? (
+          <>
+            {/* Pass / Reject for Assessment */}
+            <button
+              onClick={() => {
+                setAssessmentResult("pass");
+                setIsRejected(false);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+            >
+              Pass
+            </button>
+            <button
+              onClick={() => {
+                setAssessmentResult("reject");
+                setShowAction(false);
+                setShowRejectionForm(true);
+              }}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Reject
+            </button>
+          </>
+        ) : activeTab === "Requirements" ? (
+          <>
+            {/* Pass / Reject for Requirements */}
+            <button
+              onClick={() => {
+                setRequirementsResult("pass");
+                setIsRejected(false);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+            >
+              Pass
+            </button>
+            <button
+              onClick={() => {
+                setRequirementsResult("reject");
+                setIsRejected(true);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Reject
+            </button>
+          </>
+        ) : activeTab === "Agreements" ? (
+          <>
+            {/* Hire / Reject for Agreements */}
+            <button
+              onClick={() => {
+                setAgreementsResult("hire");
+                setHired(true);
+                setIsRejected(false);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+            >
+              Hire
+            </button>
+            <button
+              onClick={() => {
+                setAgreementsResult("reject");
+                setHired(false);
+                setIsRejected(true);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Reject
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Default action for Application tab */}
+            <button
+              onClick={() => {
+                setShowInterviewForm(true);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+            >
+              Set Interview
+            </button>
+            <button
+              onClick={() => {
+                setShowRejectionForm(true);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Reject
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+
 
       {showInterviewForm && (
         <div className="fixed inset-0 flex items-center justify-center bg-black/40">
