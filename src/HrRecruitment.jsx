@@ -1,6 +1,7 @@
 // src/HrRecruitment.jsx
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 function HrRecruitment() {
   const navigate = useNavigate();
@@ -66,14 +67,54 @@ function HrRecruitment() {
               Each-R
             </div>
             <div className="flex space-x-6">
-              <Link to="/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
-              <Link to="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</Link>
-              <Link to="/hr/recruitment" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</Link>
-              <Link to="/hr/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</Link>
-              <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</a>
-              <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Seperation</a>
-              <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Notifications</a>
-              <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Logout</a>
+              <Link
+                to="/hr/home"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
+                Home
+              </Link>
+              <Link
+                to="/employees"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
+                Employees
+              </Link>
+              <Link
+                to="/hr/recruitment"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
+                Recruitment
+              </Link>
+              <Link
+                to="/hr/trainings"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
+                Trainings/Seminars
+              </Link>
+              <a
+                href="#"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
+                Evaluation
+              </a>
+              <a
+                href="#"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
+                Seperation
+              </a>
+              <a
+                href="#"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
+                Notifications
+              </a>
+              <a
+                href="#"
+                className="text-gray-700 hover:text-red-600 font-medium"
+              >
+                Logout
+              </a>
             </div>
             <span className="text-gray-700 font-semibold">Alexis Yvone</span>
           </div>

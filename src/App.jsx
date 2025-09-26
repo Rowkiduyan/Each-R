@@ -14,6 +14,11 @@ import HrTrainings from "./HrTrainings";
 import EmployeeTrainings from "./EmployeeTrainings";
 import HrRecruitment from "./HrRecruitment";
 import ApplicantDetails from "./ApplicantDetails";
+import HrEval from "./HrEval";
+import HrSeperation from "./HrSeperation";
+import HrNotif from "./HrNotif";
+import EmployeeNotif from "./EmployeeNotif";
+import EmProfile from "./EmProfile";
 
 function App() {
   return (
@@ -33,6 +38,11 @@ function App() {
       <Route path="/hr/trainings" element={<HrTrainings />} />
       <Route path="/employee/trainings" element={<EmployeeTrainings />} />
       <Route path="/hr/recruitment" element={<HrRecruitment />} />
+      <Route path="/hr/eval" element={<HrEval />} />
+      <Route path="/hr/seperation" element={<HrSeperation />} />
+      <Route path="/hr/notif" element={<HrNotif />} />
+      <Route path="/employee/notif" element={<EmployeeNotif />} />
+      <Route path="/employee/profile" element={<EmProfile />} />
       
       {/* ✅ Fixed route for applicant details */}
       <Route path="/hr/recruitment/applicant/:id" element={<ApplicantDetails />} />
