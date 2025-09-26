@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 import { useNavigate, Link } from "react-router-dom"; // ✅ Added Link
+import { NavLink } from "react-router-dom";
+
 
 function Employees() {
   const navigate = useNavigate();
@@ -72,14 +74,15 @@ function Employees() {
       </div>
       <div className="flex space-x-6 flex-wrap">
         <Link to="/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
-        <Link to="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</Link>
+        <NavLink to="/employees" className={({ isActive }) => `hover:text-red-600 ${
+        isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
+        }`}>Employees</NavLink>
         <Link to="/hr/recruitment" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</Link>
-        <Link to="/hr/agencies" className="text-gray-700 hover:text-red-600 font-medium">Agencies</Link>
         <Link to="/hr/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</Link>
-        <Link to="/hr/evaluation" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
-        <Link to="/hr/separation" className="text-gray-700 hover:text-red-600 font-medium">Seperation</Link>
-        <Link to="/hr/notifications" className="text-gray-700 hover:text-red-600 font-medium">Notifications</Link>
-        <Link to="/logout" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
+        <Link to="/hr/eval" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
+        <Link to="/hr/seperation" className="text-gray-700 hover:text-red-600 font-medium">Seperation</Link>
+        <Link to="/hr/notif" className="text-gray-700 hover:text-red-600 font-medium">Notifications</Link>
+        <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
       </div>
       <span className="text-gray-700 font-semibold">Alexis Yvone</span>
     </div>

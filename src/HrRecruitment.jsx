@@ -2,6 +2,8 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
+
 
 function HrRecruitment() {
   const navigate = useNavigate();
@@ -144,42 +146,43 @@ function HrRecruitment() {
               >
                 Employees
               </Link>
-              <Link
+              <NavLink
                 to="/hr/recruitment"
-                className="text-gray-700 hover:text-red-600 font-medium"
-              >
+                className={({ isActive }) => `hover:text-red-600 ${
+                isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
+                }`}>
                 Recruitment
-              </Link>
+              </NavLink>
               <Link
                 to="/hr/trainings"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
                 Trainings/Seminars
               </Link>
-              <a
-                href="#"
+              <Link
+                to="/hr/eval"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
                 Evaluation
-              </a>
-              <a
-                href="#"
+              </Link>
+              <Link
+                to="/hr/seperation"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
-                Seperation
-              </a>
-              <a
-                href="#"
+                Separation
+              </Link>
+              <Link
+                to="/hr/notif"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
                 Notifications
-              </a>
-              <a
-                href="#"
+              </Link>
+              <Link
+                to="/employee/login"
                 className="text-gray-700 hover:text-red-600 font-medium"
               >
                 Logout
-              </a>
+              </Link>
             </div>
             <span className="text-gray-700 font-semibold">Alexis Yvone</span>
           </div>

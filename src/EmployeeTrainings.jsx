@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
+import { NavLink } from "react-router-dom";
 
 function EmployeeTrainings() {
     const [activeTab, setActiveTab] = useState("roadwise");
@@ -19,8 +20,10 @@ function EmployeeTrainings() {
                     Notifications
                     <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
                 </Link>
-                <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Seperation</a>
-                <Link to ="/employee/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings</Link>
+                <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Separation</a>
+                <NavLink to ="/employee/trainings" className={({ isActive }) => `hover:text-red-600 ${
+                isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
+                }`}>Trainings</NavLink>
                 <Link to="/employee/profile" className="text-gray-700 hover:text-red-600 font-medium">Profile</Link>
                 <Link to ="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
             </div>

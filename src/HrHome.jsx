@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
 import { Link } from 'react-router-dom';
+import { NavLink } from "react-router-dom";
 
 function HrHome() {
   const [date, setDate] = useState(new Date ());
@@ -14,14 +15,19 @@ function HrHome() {
             Each-R
           </div>
           <div className="flex space-x-6 ml-0 md:ml-32 lg:ml-10">
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Home</a>
-            <a href="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</a>
+            <NavLink to = "/hr/home" className={({ isActive }) => `hover:text-red-600 ${
+            isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
+            }`}>Home</NavLink>
+            <Link to="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</Link>
             <Link to="/hr/recruitment" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</Link>
             <Link to ="/hr/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</Link>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Seperation</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Notifications</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Logout</a>
+            <Link to="/hr/eval" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
+            <Link to="/hr/seperation" className="text-gray-700 hover:text-red-600 font-medium">Separation</Link>
+            <Link to ="/hr/notif" className="text-gray-700 hover:text-red-600 font-medium relative">
+                    Notifications
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+            </Link>
+            <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
           </div>
           <div className="flex items-center space-x-2 lg: ml-20 max-w-7xl">
             <span className="text-gray-700 font-semibold">Alexis Yvone</span>

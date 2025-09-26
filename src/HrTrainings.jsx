@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import React, { useState } from "react";
+import { NavLink } from "react-router-dom";
 
 
 
@@ -129,14 +130,16 @@ function HrTrainings() {
           </div>
           <div className="flex space-x-6 ml-0 md:ml-32 lg:ml-10">
             <Link to = "/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
-            <a href="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</a>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</a>
-            <Link to ="/hr/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</Link>
+            <Link to="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</Link>
+            <Link to="/hr/recruitment" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</Link>
+            <NavLink to ="/hr/trainings" className={({ isActive }) => `hover:text-red-600 ${
+            isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
+            }`} >Trainings/Seminars</NavLink>
             <Link to="/hr/eval" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
-            <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Seperation</a>
+            <Link to="/hr/seperation" className="text-gray-700 hover:text-red-600 font-medium">Separation</Link>
             <Link to ="/hr/notif" className="text-gray-700 hover:text-red-600 font-medium relative">
                     Notifications
-                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
             </Link>
             <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
           </div>
