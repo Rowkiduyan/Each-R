@@ -4,7 +4,7 @@ import { useState } from 'react';
 
 function ApplicantLHome() {
 const [activeTab, setActiveTab] = useState("Home");
- const tabs = ["Home", "Applications", "Notifications", "Profile"];
+ const tabs = ["Home", "Applications", "Profile"];
 
 
   return (
