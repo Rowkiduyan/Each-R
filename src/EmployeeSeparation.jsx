@@ -59,9 +59,9 @@ function  EmployeeSeparation () {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Download</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submit</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remove</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
@@ -69,17 +69,17 @@ function  EmployeeSeparation () {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               <tr>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><a href="interviewform.pdf" download>interviewform.pdf</a></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><input type="file" /></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Interview Form</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><a href="interviewform.pdf" download>interviewform.pdf</a></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><button onClick={() => setStatus2("Submitted")} className="bg-green-500 text-white rounded cursor-pointer px-4 py-2">Submit</button></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><button onClick={() => setStatus2("None")} className="bg-red-500 text-white rounded cursor-pointer px-4 py-2">Remove</button></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" style={status2 === "None" ? {backgroundColor: 'white', color: 'black'} : {backgroundColor: 'orange', color: 'white'}}>{status2}</td>
               </tr>
               <tr>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><a href="exitform.pdf" download>exitform.pdf</a></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><input type="file" /></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Exit Clearance Form</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><a href="exitform.pdf" download>exitform.pdf</a></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><button onClick={() => setStatus3("Submitted")} className="bg-green-500 text-white rounded cursor-pointer px-4 py-2">Submit</button></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900"><button onClick={() => setStatus3("None")} className="bg-red-500 text-white rounded cursor-pointer px-4 py-2">Remove</button></td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900" style={status3 === "None" ? {backgroundColor: 'white', color: 'black'} : {backgroundColor: 'orange', color: 'white'}}>{status3}</td>
