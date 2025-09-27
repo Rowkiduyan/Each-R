@@ -87,7 +87,7 @@ function  EmployeeSeparation () {
             </tbody>
           </table>
         </div>
-        {status1 === "Submitted" && status2 === "Submitted" && status3 === "Submitted" && (
+        {status1 === "Validated" && status2 === "Submitted" && status3 === "Submitted" && (
           <div className="bg-white shadow-md rounded-lg overflow-hidden mt-6">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
