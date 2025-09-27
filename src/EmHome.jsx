@@ -17,7 +17,7 @@ function EmHome() {
                     Notifications
                     <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
                 </Link>
-                <a href="#" className="text-gray-700 hover:text-red-600 font-medium">Separation</a>
+                <Link to="/employee/separation" className="text-gray-700 hover:text-red-600 font-medium">Separation</Link>
                 <Link to ="/employee/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings</Link>
                 <Link to="/employee/profile" className="text-gray-700 hover:text-red-600 font-medium">Profile</Link>
                 <Link to ="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
