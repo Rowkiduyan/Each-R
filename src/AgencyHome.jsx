@@ -9,6 +9,8 @@ function AgencyHome() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [activeProgressTab, setActiveProgressTab] = useState("application");
   const [showEmployeesDropdown, setShowEmployeesDropdown] = useState(false);
+  const [selectedHiredEmployee, setSelectedHiredEmployee] = useState(null);
+  const [showEmployeeDetails, setShowEmployeeDetails] = useState(false);
 
   const jobCards = [
     { 
@@ -466,9 +468,16 @@ function AgencyHome() {
                 </thead>
                 <tbody>
                   {hiredEmployees.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-gray-50">
+                    <tr 
+                      key={emp.id} 
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => {
+                        setSelectedHiredEmployee(emp);
+                        setShowEmployeeDetails(true);
+                      }}
+                    >
                       <td className="border px-3 py-2 text-gray-500">{emp.id}</td>
-                      <td className="border px-3 py-2 font-medium">{emp.name}</td>
+                      <td className="border px-3 py-2 font-medium text-blue-600 underline">{emp.name}</td>
                       <td className="border px-3 py-2">{emp.position}</td>
                       <td className="border px-3 py-2">{emp.depot}</td>
                       <td className="border px-3 py-2">{emp.hiredDate}</td>
@@ -488,7 +497,7 @@ function AgencyHome() {
 
       {/* Job Detail Modal */}
       {showJobModal && selectedJob && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowJobModal(false)}>
+        <div className="fixed inset-0 flex items-center justify-center z-50" onClick={() => setShowJobModal(false)}>
           <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] border-2 border-black overflow-hidden" onClick={(e) => e.stopPropagation()}>
             <div className="flex justify-between items-center p-4 border-b">
               <h2 className="text-xl font-bold text-gray-800">{selectedJob.title}</h2>
@@ -531,6 +540,160 @@ function AgencyHome() {
                   Endorse Employee
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Employee Details Modal */}
+      {showEmployeeDetails && selectedHiredEmployee && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto border-2 border-black">
+            <div className="flex justify-between items-center p-4 border-b">
+              <h2 className="text-xl font-bold text-gray-800">Employee Details - {selectedHiredEmployee.name}</h2>
+              <button 
+                onClick={() => {
+                  setShowEmployeeDetails(false);
+                  setSelectedHiredEmployee(null);
+                }} 
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                &times;
+              </button>
+            </div>
+            
+            <div className="p-6">
+              {/* Employee Info Card */}
+              <div className="bg-white shadow-md rounded-lg p-6 mb-6">
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-bold">{selectedHiredEmployee.name}</h2>
+                  <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 align-middle">
+                    <span className="text-red-500">⚑</span>
+                    Agency
+                  </span>
+                </div>
+                <span className="text-gray-500">ID: {selectedHiredEmployee.id}</span>
+                <div className="mt-2 text-gray-600">
+                  {selectedHiredEmployee.position} | {selectedHiredEmployee.depot}
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex gap-4 mb-4">
+                {["Profiling", "Documents", "Onboarding", "Evaluation", "Separation"].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-4 py-2 rounded ${
+                      activeTab === tab ? "bg-red-600 text-white" : "bg-gray-200 text-gray-700"
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-white shadow-md rounded-lg p-6">
+                {/* Profiling Tab Content */}
+                {activeTab === "Profiling" && (
+                  <>
+                    <h3 className="font-bold mb-2">Employment Details</h3>
+                    <ul className="mb-4 space-y-1">
+                      <li><span className="font-bold">Department:</span> HR</li>
+                      <li><span className="font-bold">Position:</span> {selectedHiredEmployee.position}</li>
+                      <li><span className="font-bold">Depot:</span> {selectedHiredEmployee.depot}</li>
+                      <li><span className="font-bold">Employment Start Date:</span> {selectedHiredEmployee.hiredDate}</li>
+                      <li><span className="font-bold">Resume:</span> <button className="text-blue-500 underline">View File</button></li>
+                      <li><span className="font-bold">Application Form:</span> <button className="text-blue-500 underline">View File</button></li>
+                    </ul>
+
+                    <h3 className="font-bold mb-2">Personal Information</h3>
+                    <ul className="space-y-1">
+                      <li><span className="font-bold">Full Name:</span> {selectedHiredEmployee.name}</li>
+                      <li><span className="font-bold">Address:</span> 123 Example St, City</li>
+                      <li><span className="font-bold">Contact Number:</span> 09123456789</li>
+                      <li><span className="font-bold">Email:</span> example@email.com</li>
+                      <li><span className="font-bold">Sex:</span> Male/Female</li>
+                      <li><span className="font-bold">Birthday:</span> 01/01/1990</li>
+                      <li><span className="font-bold">Age:</span> 33</li>
+                      <li><span className="font-bold">Marital Status:</span> Single</li>
+                    </ul>
+                  </>
+                )}
+
+                {/* Documents Tab Content */}
+                {activeTab === "Documents" && (
+                  <div className="text-gray-700">
+                    <h3 className="font-bold mb-3">Documents</h3>
+                    <div className="mb-4">
+                      <button className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+                        Request Additional File
+                      </button>
+                    </div>
+                    <div className="overflow-x-auto mb-6">
+                      <table className="w-full border border-gray-200">
+                        <thead className="bg-gray-100">
+                          <tr>
+                            <th className="border px-4 py-2 text-left">Document Name</th>
+                            <th className="border px-4 py-2 text-left">File</th>
+                            <th className="border px-4 py-2 text-left">Upload Date</th>
+                            <th className="border px-4 py-2 text-left">Remarks</th>
+                            <th className="border px-4 py-2 text-left">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr className="hover:bg-gray-50">
+                            <td className="border px-4 py-2 font-medium">PSA Birth Cert</td>
+                            <td className="border px-4 py-2">
+                              <a href="#" target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">
+                                PSABirthcert.pdf
+                              </a>
+                            </td>
+                            <td className="border px-4 py-2">2024-01-15</td>
+                            <td className="border px-4 py-2">
+                              <span className="px-2 py-1 rounded text-sm font-semibold bg-green-100 text-green-700">Validated</span>
+                            </td>
+                            <td className="border px-4 py-2">
+                              <select className="px-2 py-1 border border-gray-300 rounded text-sm">
+                                <option value="pending">Select Action</option>
+                                <option value="validated">Validate</option>
+                                <option value="resubmit">Resubmit</option>
+                              </select>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Other tabs content can be added similarly */}
+                {activeTab === "Onboarding" && (
+                  <div>
+                    <h3 className="text-lg font-bold mb-4">Onboarding Items</h3>
+                    <p className="text-gray-500">Onboarding content would go here...</p>
+                  </div>
+                )}
+
+                {activeTab === "Evaluation" && (
+                  <div>
+                    <h3 className="text-lg font-bold mb-4">Evaluation Documents</h3>
+                    <p className="text-gray-500">Evaluation content would go here...</p>
+                  </div>
+                )}
+
+                {activeTab === "Separation" && (
+                  <div>
+                    <h3 className="text-lg font-bold mb-4">Separation Details</h3>
+                    <p className="text-gray-500">No separation record</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Options Button */}
+              <button className="fixed bottom-6 right-6 bg-gray-800 text-white px-4 py-2 rounded-lg shadow hover:bg-gray-700 z-40">
+                Options
+              </button>
             </div>
           </div>
         </div>

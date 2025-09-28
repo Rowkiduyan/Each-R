@@ -83,9 +83,11 @@ function Employees() {
         <Link to="/hr/eval" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
         <Link to="/hr/seperation" className="text-gray-700 hover:text-red-600 font-medium">Seperation</Link>
         <Link to="/hr/notif" className="text-gray-700 hover:text-red-600 font-medium">Notifications</Link>
+      </div>
+      <div className="flex items-center space-x-4">
+        <span className="text-gray-700 font-semibold">Alexis Yvone</span>
         <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
       </div>
-      <span className="text-gray-700 font-semibold">Alexis Yvone</span>
     </div>
   </div>
 </nav>

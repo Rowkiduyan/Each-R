@@ -101,7 +101,7 @@ function HrRecruitment() {
             <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">
               Each-R
             </div>
-            <div className="flex space-x-6">
+            <div className="flex space-x-6 items-center">
               <Link
                 to="/hr/home"
                 className="text-gray-700 hover:text-red-600 font-medium"
@@ -144,6 +144,9 @@ function HrRecruitment() {
               >
                 Notifications
               </a>
+            </div>
+            <div className="flex items-center gap-4">
+              <span className="text-gray-700 font-semibold">Alexis Yvone</span>
               <a
                 href="#"
                 className="text-gray-700 hover:text-red-600 font-medium"
@@ -151,7 +154,6 @@ function HrRecruitment() {
                 Logout
               </a>
             </div>
-            <span className="text-gray-700 font-semibold">Alexis Yvone</span>
           </div>
         </div>
       </nav>

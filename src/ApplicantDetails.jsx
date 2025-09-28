@@ -121,8 +121,7 @@ if (step === "Agreements") {
     }
 
 
-    const disableRequirementsForAgency = applicant.agency && step === "Requirements";
-    const isDisabled = (isRejected && step !== "Application") || disableRequirementsForAgency; // ✅ disable all tabs when rejected or agency Requirements
+    const isDisabled = isRejected && step !== "Application";
 
     return (
       <div
@@ -135,9 +134,6 @@ if (step === "Agreements") {
         } ${bgClass}`}
       >
         {step}
-        {disableRequirementsForAgency && (
-          <span className="block text-[10px] mt-1 opacity-90">Skipped for Agency</span>
-        )}
       </div>
     );
   })}
@@ -256,11 +252,6 @@ if (step === "Agreements") {
 
         {activeTab === "Requirements" && (
   <div>
-    {applicant.agency ? (
-      <div className="p-6 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 rounded">
-        Requirements step is not required for agency-endorsed applicants.
-      </div>
-    ) : (
       <>
     <h2 className="text-2xl font-bold mb-4 text-gray-800">Requirements</h2>
 
@@ -362,7 +353,6 @@ if (step === "Agreements") {
       </button>
     </div>
       </>
-    )}
   </div>
 )}
 
@@ -513,27 +503,24 @@ if (step === "Agreements") {
             >
               Set Interview
             </button>
-            {applicant.agency ? (
-              <button
-                onClick={() => {
-                  setIsRejected(false);
-                  setShowAction(false);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Approve
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  setShowRejectionForm(true);
-                  setShowAction(false);
-                }}
-                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-              >
-                Reject
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setIsRejected(false);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Approve
+            </button>
+            <button
+              onClick={() => {
+                setShowRejectionForm(true);
+                setShowAction(false);
+              }}
+              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+            >
+              Reject
+            </button>
           </>
         )}
       </div>
