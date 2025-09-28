@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import Logo from "./Logo.png";
 
@@ -8,6 +8,8 @@ function AgencyHome() {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [showJobModal, setShowJobModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
+  const [activeProgressTab, setActiveProgressTab] = useState("application");
+  const [showEmployeesDropdown, setShowEmployeesDropdown] = useState(false);
 
   const jobCards = [
     { 
@@ -72,10 +74,30 @@ function AgencyHome() {
     { id: "AG-003", name: "Jose Rizal", position: "Driver", depot: "Cebu" },
   ];
 
+  const hiredEmployees = [
+    { id: "AG-001", name: "Juan Dela Cruz", position: "Driver", depot: "Pasig", hiredDate: "2024-01-15", status: "HIRED" },
+    { id: "AG-004", name: "Ana Garcia", position: "Helper", depot: "Manila", hiredDate: "2024-01-20", status: "HIRED" },
+    { id: "AG-005", name: "Carlos Lopez", position: "Driver", depot: "Davao", hiredDate: "2024-01-25", status: "HIRED" },
+  ];
+
+  // Close dropdown when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showEmployeesDropdown && !event.target.closest('.relative')) {
+        setShowEmployeesDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showEmployeesDropdown]);
+
   return (
     <div className="min-h-screen bg-white">
-      {/* Top Bar */}
-      <div className="bg-white shadow-sm">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -86,42 +108,82 @@ function AgencyHome() {
               </div>
             </div>
 
-            <div className="flex-1 text-center">
-              <h1 className="text-3xl font-bold text-gray-800">Agency Home</h1>
+            <div className="flex-1 flex justify-center">
+              <nav className="flex space-x-8">
+                <button 
+                  onClick={() => setActiveTab("Job Postings")}
+                  className={`pb-2 font-medium ${
+                    activeTab === "Job Postings" 
+                      ? "text-red-600 border-b-2 border-red-600" 
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Job Postings
+                </button>
+                <div className="relative">
+                  <button 
+                    onClick={() => setShowEmployeesDropdown(!showEmployeesDropdown)}
+                    className={`pb-2 font-medium flex items-center ${
+                      activeTab === "Endorsed" || activeTab === "Hired"
+                        ? "text-red-600 border-b-2 border-red-600" 
+                        : "text-gray-600 hover:text-gray-900"
+                    }`}
+                  >
+                    Employees
+                    <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                  {showEmployeesDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-md shadow-lg border z-50">
+                      <button
+                        onClick={() => {
+                          setActiveTab("Endorsed");
+                          setShowEmployeesDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        Endorsed Employees
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveTab("Hired");
+                          setShowEmployeesDropdown(false);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        Employees Hired
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <Link to="/agency/recruitment" className="text-gray-600 hover:text-gray-900 pb-2 font-medium">Recruitment</Link>
+                <Link to="/agency/trainings" className="text-gray-600 hover:text-gray-900 pb-2 font-medium">Trainings/Seminars</Link>
+                <Link to="/agency/evaluation" className="text-gray-600 hover:text-gray-900 pb-2 font-medium">Evaluation</Link>
+                <Link to="/agency/separation" className="text-gray-600 hover:text-gray-900 pb-2 font-medium">Separation</Link>
+                <div className="relative">
+                  <Link to="/agency/notifications" className="text-gray-600 hover:text-gray-900 pb-2 font-medium flex items-center">
+                    Notifications
+                    <span className="ml-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">3</span>
+                  </Link>
+                </div>
+              </nav>
             </div>
 
             <div className="flex items-center space-x-3">
-              <Link to="/employee/login" className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Logout</Link>
+              <span className="text-gray-600 font-medium">Alexis Yvone</span>
+              <Link to="/employee/login" className="text-gray-600 hover:text-gray-900 font-medium">Logout</Link>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="max-w-7xl mx-auto px-6 mt-4 flex items-center gap-2">
-        {[
-          { key: "Job Postings", label: "Job Postings" },
-          { key: "Endorsed", label: "Endorsed Employees" },
-        ].map((t) => (
-          <button
-            key={t.key}
-            onClick={() => {
-              setActiveTab(t.key);
-              setSelectedEmployee(null);
-            }}
-            className={`px-5 py-2 rounded-sm font-semibold text-white ${
-              activeTab === t.key ? "bg-red-600" : "bg-red-500 hover:bg-red-600"
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-        <div className="ml-auto">
-          <input
-            placeholder="Search"
-            className="w-80 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
-          />
-        </div>
+      {/* Search Bar */}
+      <div className="max-w-7xl mx-auto px-6 mt-4 flex justify-end">
+        <input
+          placeholder="Search"
+          className="w-80 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
+        />
       </div>
 
       {/* Content */}
@@ -205,116 +267,224 @@ function AgencyHome() {
               </table>
             </div>
 
-            {/* Document uploader for selected employee */}
+            {/* MyApplications-style view for selected employee */}
             {selectedEmployee && (
               <div className="mt-6 border-t pt-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-md font-semibold">Documents for {selectedEmployee.name}</h3>
-                  <button onClick={() => setSelectedEmployee(null)} className="text-sm px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Close</button>
+                  <h3 className="text-md font-semibold">My Applications</h3>
+                  <button onClick={() => setSelectedEmployee(null)} className="text-sm px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Back</button>
                 </div>
-
-                {/* Mandatory Numbers */}
-                <div className="grid grid-cols-4 gap-4 border border-gray-300 p-4 rounded mb-4">
-                  <input placeholder="SSS No." className="p-2 border rounded" />
-                  <input placeholder="Philhealth No." className="p-2 border rounded" />
-                  <input placeholder="Pag-IBIG No." className="p-2 border rounded" />
-                  <input placeholder="TIN No." className="p-2 border rounded" />
-                </div>
-
-                {/* File Upload Grid (moved from DriverAddRecord Step 6) */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border border-gray-300 p-4 rounded">
+                <p className="text-sm text-gray-600 mb-4">Track your progress and complete all steps.</p>
+                
+                {/* Progress Tabs */}
+                <div className="flex gap-2 mb-6">
                   {[
-                    "Photocopy of PSA Birth Certificate *",
-                    "1x1 Picture w/ White Background",
-                    "Photocopy of Driver's License (Front and Back) *",
-                    "Photocopy of TIN ID / BIR FORM 1905/1902",
-                    "Photocopy of SSS ID",
-                    "Photocopy of HDMF (Pag-IBIG) (Home Development Mutual Fund)",
-                    "Photocopy of Philhealth ID / MDR (Members Data Record)",
-                    "Photocopy of TIN ID",
-                  ].map((label, idx) => (
-                    <div key={idx} className="border border-gray-300 rounded p-3">
-                      <label className="block text-sm font-semibold mb-2">{label}</label>
-                      <div className="flex items-center space-x-3">
-                        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm">
-                          Choose File
-                          <input type="file" className="hidden" onChange={(e)=>console.log("Selected for", label, e.target.files[0]?.name)} />
-                        </label>
-                        <span className="text-xs text-gray-500">No file chosen</span>
-                      </div>
-                    </div>
+                    { key: "application", label: "Application", status: "completed" },
+                    { key: "assessment", label: "Assessment", status: "active" },
+                    { key: "requirements", label: "Requirements", status: "pending" },
+                    { key: "agreements", label: "Agreements", status: "pending" }
+                  ].map((tab) => (
+                    <button
+                      key={tab.key}
+                      onClick={() => setActiveProgressTab(tab.key)}
+                      className={`px-4 py-2 rounded text-sm font-medium ${
+                        activeProgressTab === tab.key
+                          ? tab.status === "completed" 
+                            ? "bg-green-100 text-green-700" 
+                            : tab.status === "active"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-orange-100 text-orange-700"
+                          : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
                   ))}
                 </div>
 
-                {/* Additional Requirements (moved from DriverAddRecord Step 7) */}
-                <div className="mt-8 p-4 bg-white rounded shadow border border-gray-300 space-y-4">
-                  <h3 className="text-md font-semibold">Additional Requirements</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* CV */}
-                    <div className="border rounded-lg p-4">
-                      <label className="block font-medium mb-2">Curriculum Vitae</label>
-                      <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-                        Choose File
-                        <input type="file" className="hidden" />
-                      </label>
-                      <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-                    </div>
-
-                    {/* NBI Clearance */}
-                    <div className="border rounded-lg p-4 space-y-2">
-                      <label className="block font-medium">Photocopy of NBI Clearance</label>
-                      <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-                        Choose File
-                        <input type="file" className="hidden" />
-                      </label>
-                      <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-sm text-gray-600">Date Validity:</span>
-                        <input type="date" className="border rounded p-1 text-sm" />
+                {/* Application Details Card */}
+                <div className="bg-white border border-gray-300 rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 rounded flex items-center justify-center">
+                        <span className="text-blue-600 font-semibold text-sm">
+                          {selectedEmployee.name.split(' ').map(n => n[0]).join('')}
+                        </span>
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-800">{selectedEmployee.name}</h4>
+                        <p className="text-sm text-gray-600">Position: {selectedEmployee.position}</p>
+                        <p className="text-sm text-gray-600">Applied: June 25, 2025</p>
                       </div>
                     </div>
+                    <div className="text-right">
+                      <p className="text-sm text-gray-500">#{selectedEmployee.id}</p>
+                      <button className="text-blue-500 underline text-sm">Retract Application</button>
+                    </div>
+                  </div>
 
-                    {/* Police Clearance */}
-                    <div className="border rounded-lg p-4 space-y-2">
-                      <label className="block font-medium">Photocopy of Police Clearance</label>
-                      <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-                        Choose File
-                        <input type="file" className="hidden" />
-                      </label>
-                      <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-                      <div className="flex items-center gap-2 mt-2">
-                        <span className="text-sm text-gray-600">Date Validity:</span>
-                        <input type="date" className="border rounded p-1 text-sm" />
+                  <div className="border-t pt-4">
+                    {/* Application Tab Content */}
+                    {activeProgressTab === "application" && (
+                      <div>
+                        <h5 className="font-semibold text-gray-800 mb-3">Application Details</h5>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <p><span className="font-medium">Department:</span> Delivery</p>
+                            <p><span className="font-medium">Position Applying For:</span> {selectedEmployee.position}</p>
+                            <p><span className="font-medium">Depot:</span> {selectedEmployee.depot}</p>
+                          </div>
+                          <div>
+                            <p><span className="font-medium">Current Employment Status:</span> Unemployed</p>
+                            <p><span className="font-medium">Available Start Date:</span> 10/10/25</p>
+                            <p><span className="font-medium">Resume:</span> <a href="#" className="text-blue-500 underline">delacruzresume.pdf</a></p>
+                          </div>
+                        </div>
+                        <div className="mt-4">
+                          <h6 className="font-medium mb-2">Personal Information</h6>
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                              <p><span className="font-medium">Full Name:</span> {selectedEmployee.name}</p>
+                              <p><span className="font-medium">Address:</span> Blk 4 Lot 159 Papaya St., Brgy. San Lupalop, Pasig City 1860</p>
+                              <p><span className="font-medium">Contact Number:</span> 09123456789</p>
+                              <p><span className="font-medium">Email:</span> delacruzjuan@gmail.com</p>
+                            </div>
+                            <div>
+                              <p><span className="font-medium">Sex:</span> Male</p>
+                              <p><span className="font-medium">Birthday:</span> 10/10/1978</p>
+                              <p><span className="font-medium">Age:</span> 47</p>
+                              <p><span className="font-medium">Marital Status:</span> Married</p>
+                            </div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Medical Examination */}
-                    <div className="border rounded-lg p-4 space-y-2">
-                      <label className="block font-medium">Medical Examination Results</label>
-                      <p className="text-xs text-gray-500">
-                        (X-RAY, STOOL, CBC, URINE, CBC, DRUG TEST, HEPA) <strong>*Attach all in one file</strong>
-                      </p>
-                      <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-                        Choose File
-                        <input type="file" className="hidden" />
-                      </label>
-                      <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-                    </div>
+                    {/* Assessment Tab Content */}
+                    {activeProgressTab === "assessment" && (
+                      <div>
+                        <h5 className="font-semibold text-gray-800 mb-3">Assessment</h5>
+                        <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+                          <h6 className="font-medium mb-2">Interview Schedule</h6>
+                          <div className="space-y-1 text-sm">
+                            <p><span className="font-medium">Date:</span> June 30, 2025</p>
+                            <p><span className="font-medium">Time:</span> 8:00 AM</p>
+                            <p><span className="font-medium">Location:</span> HR Office, Roadwise Pasig Depot</p>
+                            <p><span className="font-medium">Interviewer:</span> Raezelle Ferrer</p>
+                          </div>
+                          <p className="text-xs text-gray-500 italic mt-2">
+                            Important Reminder: Please confirm at least a day before your schedule.
+                          </p>
+                          <button className="mt-3 px-4 py-2 bg-red-600 text-white rounded text-sm hover:bg-red-700">
+                            Confirm Interview
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
-                    {/* Sketch of Direction */}
-                    <div className="border rounded-lg p-4 space-y-2 md:col-span-2">
-                      <label className="block font-medium">Sketch of Direction of Residence (House to Depot)</label>
-                      <p className="text-xs text-gray-500">*For non-delivery crew only</p>
-                      <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-                        Choose File
-                        <input type="file" className="hidden" />
-                      </label>
-                      <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-                    </div>
+                    {/* Requirements Tab Content */}
+                    {activeProgressTab === "requirements" && (
+                      <div>
+                        <h5 className="font-semibold text-gray-800 mb-3">Requirements</h5>
+                        <div className="space-y-4">
+                          <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+                            <h6 className="font-medium mb-2">Mandatory Numbers</h6>
+                            <div className="grid grid-cols-2 gap-4">
+                              <input placeholder="SSS No." className="p-2 border rounded" />
+                              <input placeholder="Philhealth No." className="p-2 border rounded" />
+                              <input placeholder="Pag-IBIG No." className="p-2 border rounded" />
+                              <input placeholder="TIN No." className="p-2 border rounded" />
+                            </div>
+                          </div>
+                          <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+                            <h6 className="font-medium mb-2">Required Documents</h6>
+                            <div className="space-y-2">
+                              {[
+                                "PSA Birth Certificate *",
+                                "Photocopy of Driver's License (Front and Back) *",
+                                "Photocopy of SSS ID",
+                                "Photocopy of TIN ID",
+                                "Photocopy of Philhealth MDR",
+                                "Photocopy of HDMF or Proof of HDMF No. (Pag-IBIG)",
+                                "Medical Examination Results *",
+                                "NBI Clearance",
+                                "Police Clearance"
+                              ].map((doc, idx) => (
+                                <div key={idx} className="flex items-center justify-between p-2 border rounded">
+                                  <span className="text-sm">{doc}</span>
+                                  <button className="px-3 py-1 bg-blue-500 text-white rounded text-xs hover:bg-blue-600">
+                                    Choose File
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Agreements Tab Content */}
+                    {activeProgressTab === "agreements" && (
+                      <div>
+                        <h5 className="font-semibold text-gray-800 mb-3">Agreements</h5>
+                        <div className="bg-gray-50 border border-gray-300 rounded-lg p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h6 className="font-medium">Employee Appointment Letter</h6>
+                              <p className="text-sm text-gray-600">Please review and sign the appointment letter</p>
+                            </div>
+                            <div className="text-right">
+                              <a href="#" className="text-blue-500 underline text-sm">applicantfile.pdf</a>
+                              <p className="text-xs text-gray-500">10/09/2025</p>
+                            </div>
+                          </div>
+                          <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded">
+                            <p className="text-sm text-green-800 font-medium">Important: You have been successfully hired! Please see your email for your employee account details and you may login as an employee. Thank you.</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             )}
+          </div>
+        </section>
+
+        {/* Employee's Hired */}
+        <section className={activeTab === "Hired" ? "" : "hidden"}>
+          <div className="bg-white rounded-lg shadow-md p-6">
+            <h2 className="text-lg font-bold mb-4">Employee's Hired</h2>
+            <div className="overflow-x-auto">
+              <table className="w-full border border-gray-200 text-sm">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="border px-3 py-2 text-left">ID</th>
+                    <th className="border px-3 py-2 text-left">Name</th>
+                    <th className="border px-3 py-2 text-left">Position</th>
+                    <th className="border px-3 py-2 text-left">Depot</th>
+                    <th className="border px-3 py-2 text-left">Hired Date</th>
+                    <th className="border px-3 py-2 text-left">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hiredEmployees.map((emp) => (
+                    <tr key={emp.id} className="hover:bg-gray-50">
+                      <td className="border px-3 py-2 text-gray-500">{emp.id}</td>
+                      <td className="border px-3 py-2 font-medium">{emp.name}</td>
+                      <td className="border px-3 py-2">{emp.position}</td>
+                      <td className="border px-3 py-2">{emp.depot}</td>
+                      <td className="border px-3 py-2">{emp.hiredDate}</td>
+                      <td className="border px-3 py-2">
+                        <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-semibold">
+                          {emp.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
       </div>
