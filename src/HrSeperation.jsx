@@ -109,7 +109,7 @@ function HrSeperation() {
 
       {showModal && selectedEmployee && (
         <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto border-2 border-black">
+          <div className="bg-white rounded-lg max-w-6xl md:max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto border-2 border-black">
             <div className="flex justify-between items-center p-4 border-b">
               <h2 className="text-xl font-bold text-gray-800">Separation Documents - {selectedEmployee.name}</h2>
               <div className="flex items-center space-x-4">
@@ -143,16 +143,15 @@ function HrSeperation() {
                 <table className="min-w-full divide-y divide-gray-200 w-full table-fixed">
                   <thead className="bg-gray-50 w-full">
                     <tr className="w-full">
-                      <th className="w-1/5 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Document Name</th>
-                      <th className="w-1/5 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
-                      <th className="w-1/5 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
-                      <th className="w-1/5 px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Upload</th>
+                      <th className="w-1/3 px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Document Name</th>
+                      <th className="w-1/3 px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+                      <th className="w-1/3 px-4 md:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     <tr>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Termination Letter</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">termination_letter.pdf 11/15/2024</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Resignation Letter</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">resignation_letter.pdf 11/15/2024</td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <select 
                           value={statuses[2]} 
@@ -165,16 +164,13 @@ function HrSeperation() {
                           <option value="None" style={{backgroundColor: 'white', color: 'black'}}>None</option>
                         </select>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                  
-                      </td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Exit Interview Form</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">No File Uploaded</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <select 
-                          value={statuses[1]} 
+                      <td className="px-6 py-4 text-sm text-gray-900">Exit Interview Form</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">No File Uploaded</td>
+                      <td className="px-6 py-4">
+                        <select
+                          value={statuses[1]}
                           onChange={(e) => setStatuses([statuses[0], e.target.value, statuses[2]])}
                           className={`border border-gray-300 rounded-md px-2 py-1 text-xs ${getStatusColor(statuses[1])}`}
                         >
@@ -184,17 +180,14 @@ function HrSeperation() {
                           <option value="None" style={{backgroundColor: 'white', color: 'black'}}>None</option>
                         </select>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <input type="file" className="border border-gray-300 rounded-md px-2 py-1 w-40 text-xs" />
-                      </td>
                     </tr>
                     <tr>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Exit Clearance Form</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">No File Uploaded</td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <select 
-                          value={statuses[0]} 
+                      <td className="px-6 py-4 text-sm text-gray-900">Exit Clearance Form</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">No File Uploaded</td>
+
+                      <td className="px-6 py-4">
+                        <select
+                          value={statuses[0]}
                           onChange={(e) => setStatuses([e.target.value, statuses[1], statuses[2]])}
                           className={`border border-gray-300 rounded-md px-2 py-1 text-xs ${getStatusColor(statuses[0])}`}
                         >
@@ -203,9 +196,6 @@ function HrSeperation() {
                           <option value="Re-Submit" style={{backgroundColor: 'red', color: 'white'}}>Re-Submit</option>
                           <option value="None" style={{backgroundColor: 'white', color: 'black'}}>None</option>
                         </select>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <input type="file" className="border border-gray-300 rounded-md w-40 px-2 py-1 text-xs" />
                       </td>
                     </tr>
                   </tbody>

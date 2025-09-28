@@ -20,17 +20,9 @@ const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
             
             <div className="flex items-center">
               <div className="flex items-center">
-                <div className="text-white font-bold text-xl px-3 py-2 rounded mr-2">
-                  <img
-                    src={Logo}
-                    alt="Roadwise Logo"
-                    className="w-15 h-10"
-                    />
-                </div>
-                <div className="text-black font-semibold">
-                  <div>ROADWISE</div>
-                  <div className="text-sm">LOGISTICS CORP.</div>
-                </div>
+                <div className="flex-shrink-0 text-red-600 font-bold text-3xl italic">
+                  Each-R
+              </div>
               </div>
             </div>
 
