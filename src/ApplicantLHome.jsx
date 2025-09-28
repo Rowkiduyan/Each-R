@@ -1,9 +1,11 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import Logo from './Logo.png';
 import { useState } from 'react';
 
 function ApplicantLHome() {
 const navigate = useNavigate();
+const location = useLocation();
+const newJob = location.state?.newJob;
 const [activeTab, setActiveTab] = useState("Home");
 const [showModal, setShowModal] = useState(false);
 const [showSummary, setShowSummary] = useState(false);
@@ -89,6 +91,34 @@ const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
 
             <div className="max-w-7xl mx-auto px-6 py-8">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {newJob && (
+                      <div className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
+                        {newJob.urgent && (
+                          <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1 transform">URGENT HIRING!</div>
+                        )}
+                        <div className="mt-6 flex flex-col flex-grow">
+                          <h3 className="text-xl font-bold text-gray-800 mb-2">{newJob.title}</h3>
+                          <div className="flex justify-between items-center mb-3">
+                            <span className="text-gray-700">{newJob.depot}</span>
+                            <span className="text-sm text-gray-500">Posted {newJob.posted || 'Just now'}</span>
+                          </div>
+                          <p className="text-gray-700 mb-4">{newJob.description}</p>
+                          {Array.isArray(newJob.responsibilities) && newJob.responsibilities.length > 0 && (
+                            <div className="mb-4">
+                              <h4 className="font-semibold text-gray-800 mb-2">Main Responsibilities</h4>
+                              <ul className="text-sm text-gray-700 space-y-1">
+                                {newJob.responsibilities.filter(Boolean).map((r, i) => (
+                                  <li key={i}>• {r}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          <button className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto" onClick={() => setShowModal(true)}>
+                            View
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                         <div className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
                             <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1 transform">

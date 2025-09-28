@@ -52,7 +52,7 @@ function ApplicantDetails() {
     agency: false,
   };
 
-  const steps = ["Application", "Assessment", "Requirements", "Agreements"];
+const steps = ["Application", "Assessment", "Requirements", "Agreements"];
 
   // Add this **after your other useState hooks** at the top, before return
 const [ids, setIds] = useState([

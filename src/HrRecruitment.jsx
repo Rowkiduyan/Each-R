@@ -164,9 +164,9 @@ function HrRecruitment() {
           <div className="flex gap-6 border-b mb-6 justify-center">
             {[
               { label: "Applications", count: applicants.length, show: true },
-              { label: "Agreements", count: agreements.length, show: true },
+              { label: "Interview", count: agreements.length, show: true },
               { label: "Requirements", count: filteredRequirements.length, show: filteredRequirements.length > 0 },
-              { label: "Agreement", count: finalAgreements.length, show: true },
+              { label: "Agreements", count: finalAgreements.length, show: true },
             ]
               .filter(t => t.show)
               .map((tab) => (
@@ -278,12 +278,12 @@ function HrRecruitment() {
             </div>
           )}
 
-          {/* Agreements Tab */}
-          {activeSubTab === "Agreements" && (
+          {/* Interview Tab */}
+          {activeSubTab === "Interview" && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
       <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">Agreements</h3>
+                  <h3 className="text-xl font-bold text-gray-800">Interview</h3>
                   <input
                     type="text"
                     placeholder="Search..."
@@ -402,12 +402,12 @@ function HrRecruitment() {
             </div>
           )}
 
-          {/* Final Agreement Tab */}
-          {activeSubTab === "Agreement" && (
+          {/* Agreements Tab */}
+          {activeSubTab === "Agreements" && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
       <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">Final Agreements</h3>
+                  <h3 className="text-xl font-bold text-gray-800">Agreements</h3>
                   <input
                     type="text"
                     placeholder="Search..."
