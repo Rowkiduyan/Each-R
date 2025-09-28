@@ -1,5 +1,4 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import Logo from './Logo.png';
 import { useState } from 'react';
 
 function ApplicantLHome() {
@@ -11,78 +10,71 @@ const [showModal, setShowModal] = useState(false);
 const [showSummary, setShowSummary] = useState(false);
 const [workExperiences, setWorkExperiences] = useState([{}]);
 const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
- const tabs = ["Home", "Applications", "Profile"];
 
 
   return (
 <div className="min-h-screen bg-white">
-      <div className="bg-white shadow-sm">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            
             <div className="flex items-center">
-              <div className="flex items-center">
-                <div className="flex-shrink-0 text-red-600 font-bold text-3xl italic">
-                  Each-R
-              </div>
+              <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">
+                Each-R
               </div>
             </div>
 
-    
-            <div className="flex-1 text-center">
-              <h1 className="text-3xl font-bold text-gray-800">Job Vacancy Postings</h1>
+            <div className="flex-1 flex justify-center">
+              <nav className="flex space-x-8">
+                <button 
+                  onClick={() => setActiveTab("Home")}
+                  className={`pb-2 font-medium ${
+                    activeTab === "Home" 
+                      ? "text-red-600 border-b-2 border-red-600" 
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Home
+                </button>
+                <button 
+                  onClick={() => {
+                    setActiveTab("Applications");
+                    navigate('/applicant/applications');
+                  }}
+                  className={`pb-2 font-medium ${
+                    activeTab === "Applications" 
+                      ? "text-red-600 border-b-2 border-red-600" 
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Applications
+                </button>
+                <button 
+                  onClick={() => setActiveTab("Profile")}
+                  className={`pb-2 font-medium ${
+                    activeTab === "Profile" 
+                      ? "text-red-600 border-b-2 border-red-600" 
+                      : "text-gray-600 hover:text-gray-900"
+                  }`}
+                >
+                  Profile
+                </button>
+              </nav>
             </div>
 
-
-            <div className="flex items-end space-x-5">
-              {/*<div className="flex items-center space-x-2">
-                <input 
-                  type="text" 
-                  placeholder="Search" 
-                  className="w-96 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
-                />
-
-              </div>*/}
-
-              <Link to ="/applicant/login"
-                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
-                Logout
-              </Link>
+            <div className="flex items-center space-x-3">
+              <Link to="/applicant/login" className="text-gray-600 hover:text-gray-900 font-medium">Logout</Link>
             </div>
-
           </div>
         </div>
       </div>
-      <div className="flex justify-around mt-4">
 
-        <ul className="list-none flex space-x-6">
-            {tabs.map((tab) => (
-              <li key={tab}>
-                  <button type='button' onClick={() => {
-                    setActiveTab(tab);
-                    if (tab === "Applications") {
-                      navigate('/applicant/applications');
-                    }
-                  }}
-                  className={`appearance-none border-0 font-semibold text-white px-5 rounded-sm tracking-wider transition-colors
-                    ${activeTab === tab
-                      ? "bg-red-600"              
-                      : "bg-red-500 hover:bg-red-600"}`}
-                      >
-                      {tab}
-                  </button>
-              </li>
-            ))}
-        </ul>
-
-        
-        <div className="flex items-center space-x-2">
-                <input 
-                  type="text" 
-                  placeholder="Search" 
-                  className="w-96 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
-                />
-              </div>
+      {/* Search Bar */}
+      <div className="max-w-7xl mx-auto px-6 mt-4 flex justify-end">
+        <input
+          placeholder="Search"
+          className="w-80 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
+        />
       </div>          
       
       <div className="flex flex-col items-center  min-h-screen">

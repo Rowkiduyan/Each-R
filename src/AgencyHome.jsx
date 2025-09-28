@@ -1,6 +1,5 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import Logo from "./Logo.png";
 
 function AgencyHome() {
   const navigate = useNavigate();
@@ -101,10 +100,8 @@ function AgencyHome() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <img src={Logo} alt="Roadwise Logo" className="w-15 h-10 mr-2" />
-              <div className="text-black font-semibold">
-                <div>ROADWISE</div>
-                <div className="text-sm">LOGISTICS CORP.</div>
+              <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">
+                Each-R
               </div>
             </div>
 

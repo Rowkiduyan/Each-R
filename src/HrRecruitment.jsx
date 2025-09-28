@@ -50,7 +50,7 @@ function HrRecruitment() {
 
   // 🔹 Stage data
   const agreements = applicants.slice(0, 3);
-  const requirements = applicants.slice(3, 6);
+  const requirements = [...applicants.slice(3, 6), applicants[1], applicants[6]]; // Include agency applicants
   const finalAgreements = applicants.slice(6, 8);
 
   // 🔎 Search filter
@@ -68,9 +68,8 @@ function HrRecruitment() {
       a.depot.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Exclude agency applicants from Requirements step
+  // Include all applicants in Requirements step (including agency)
   const filteredRequirements = requirements
-    .filter((a) => !a.agency)
     .filter(
       (a) =>
         a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -165,7 +164,7 @@ function HrRecruitment() {
             {[
               { label: "Applications", count: applicants.length, show: true },
               { label: "Interview", count: agreements.length, show: true },
-              { label: "Requirements", count: filteredRequirements.length, show: filteredRequirements.length > 0 },
+              { label: "Requirements", count: filteredRequirements.length, show: true },
               { label: "Agreements", count: finalAgreements.length, show: true },
             ]
               .filter(t => t.show)
@@ -340,8 +339,8 @@ function HrRecruitment() {
             </div>
           )}
 
-          {/* Requirements Tab - hidden when no non-agency applicants */}
-          {activeSubTab === "Requirements" && filteredRequirements.length > 0 && (
+          {/* Requirements Tab */}
+          {activeSubTab === "Requirements" && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
       <div className="flex justify-between items-center mb-4">

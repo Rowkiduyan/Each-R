@@ -476,84 +476,24 @@ const [terminateRemarks, setTerminateRemarks] = useState("");
 
         {/* Separation Type */}
         <div className="mb-4">
-          <label className="block font-medium mb-1">Separation Type</label>
-          <div className="flex items-center gap-2">
-            <select 
-              value={terminationData.type}
-              onChange={(e) => setTerminationData(prev => ({ ...prev, type: e.target.value }))}
-              disabled={terminationData.typeLocked}
-              className="border rounded px-3 py-2 flex-1"
-            >
-            <option value="">-- Select Separation Type --</option>
-            <option value="termination">Termination</option>
-          </select>
-            <button 
-              onClick={() => setTerminationData(prev => ({ ...prev, typeLocked: !prev.typeLocked }))}
-              className={`px-3 py-2 text-white rounded ${
-                terminationData.typeLocked 
-                  ? "bg-red-500 hover:bg-red-600" 
-                  : "bg-green-500 hover:bg-green-600"
-              }`}
-            >
-              {terminationData.typeLocked ? "✗" : "✓"}
-            </button>
-          </div>
+          <span className="font-bold">Separation Type:</span> {terminationData.type || "—"}
         </div>
 
         {/* Separation Date */}
         <div className="mb-4">
-          <label className="block font-medium mb-1">Separation Date</label>
-          <div className="flex items-center gap-2">
-          <input
-            type="date"
-              value={terminationData.date}
-              onChange={(e) => setTerminationData(prev => ({ ...prev, date: e.target.value }))}
-              disabled={terminationData.dateLocked}
-              className="border rounded px-3 py-2 flex-1"
-            />
-            <button 
-              onClick={() => setTerminationData(prev => ({ ...prev, dateLocked: !prev.dateLocked }))}
-              className={`px-3 py-2 text-white rounded ${
-                terminationData.dateLocked 
-                  ? "bg-red-500 hover:bg-red-600" 
-                  : "bg-green-500 hover:bg-green-600"
-              }`}
-            >
-              {terminationData.dateLocked ? "✗" : "✓"}
-            </button>
-          </div>
+          <span className="font-bold">Separation Date:</span> {terminationData.date || "—"}
         </div>
 
         {/* Remarks */}
         <div className="mb-6">
-          <label className="block font-medium mb-1">Remarks</label>
-          <div className="flex items-start gap-2">
-          <textarea
-            rows="3"
-            placeholder="Enter remarks..."
-              value={terminationData.remarks}
-              onChange={(e) => setTerminationData(prev => ({ ...prev, remarks: e.target.value }))}
-              disabled={terminationData.remarksLocked}
-              className="border rounded px-3 py-2 flex-1"
-            />
-            <button 
-              onClick={() => setTerminationData(prev => ({ ...prev, remarksLocked: !prev.remarksLocked }))}
-              className={`px-3 py-2 text-white rounded mt-1 ${
-                terminationData.remarksLocked 
-                  ? "bg-red-500 hover:bg-red-600" 
-                  : "bg-green-500 hover:bg-green-600"
-              }`}
-            >
-              {terminationData.remarksLocked ? "✗" : "✓"}
-            </button>
-          </div>
+          <span className="font-bold">Remarks:</span> {terminationData.remarks || "—"}
         </div>
 
         {/* File Viewing Area */}
         <h4 className="font-semibold mb-3">Related Documents</h4>
         <div className="space-y-4">
-          {terminateFiles.length > 0 ? (
-            terminateFiles.map((file, idx) => (
+          {terminationData.files && terminationData.files.length > 0 ? (
+            terminationData.files.map((file, idx) => (
               <div key={idx} className="border rounded-lg p-4 shadow-sm">
                 <label className="block font-medium mb-2">{file.name}</label>
                 <div className="flex items-center gap-2">
@@ -866,9 +806,7 @@ const [terminateRemarks, setTerminateRemarks] = useState("");
               type: "termination",
               date: terminateDate,
               remarks: terminateRemarks,
-              typeLocked: false,
-              dateLocked: false,
-              remarksLocked: false
+              files: [...terminateFiles]
             });
             // Clear termination form data
             setTerminateFiles([]);
