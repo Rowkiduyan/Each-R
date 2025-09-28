@@ -6,8 +6,8 @@ function EmHome() {
         <nav className="w-full bg-white shadow-md mb-6 ">
         <div className="max-w-7xl mx-auto px-4">
             <div className="flex justify-start items-center h-25">
-            <div className="flex-shrink-0 text-red-600 font-bold text-2xl">
-                Roadwise HRIS
+            <div className="flex-shrink-0 text-red-600 font-bold text-3xl italic">
+                  Each-R
             </div>
             <div className="flex space-x-15 ml-0 md:ml-32 lg:ml-24">
                 <NavLink to="/employee/home" className={({ isActive }) => `hover:text-red-600 ${
