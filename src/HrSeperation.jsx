@@ -151,8 +151,8 @@ function HrSeperation() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     <tr>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Resignation Letter</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">resignation_letter.pdf 11/15/2024</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Termination Letter</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">termination_letter.pdf 11/15/2024</td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <select 
                           value={statuses[2]} 

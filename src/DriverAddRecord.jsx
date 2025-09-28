@@ -1,15 +1,18 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import Logo from "./Logo.png";
 
 function DriverAddRecord() {
   const [step, setStep] = useState(1);
+  const location = useLocation();
+  const job = location.state?.job;
   const [applicants, setApplicants] = useState([
     { id: 1, name: "Applicant 1" },
     { id: 2, name: "Applicant 2" },
   ]);
   const [activeApplicant, setActiveApplicant] = useState(1);
 
-  const nextStep = () => setStep((prev) => Math.min(prev + 1, 7));
+  const nextStep = () => setStep((prev) => Math.min(prev + 1, 5));
   const prevStep = () => setStep((prev) => Math.max(prev - 1, 1));
 
   // Add a new applicant
@@ -55,6 +58,31 @@ const updateWorkExperience = (index, updatedExp) => {
 
   return (
     <div className="min-h-screen bg-neutral-100 p-6 space-y-6">
+      {/* Selected Job Post (if any) */}
+      {job && (
+        <div className="bg-white p-4 rounded shadow border border-gray-200">
+          <div className="flex items-start justify-between">
+            <div>
+              <div className="inline-block bg-red-600 text-white text-xs font-bold px-3 py-1 rounded">URGENT HIRING!</div>
+              <h2 className="text-xl font-bold text-gray-800 mt-2">{job.title}</h2>
+              <div className="text-sm text-gray-600">{job.depot} • Posted {job.posted}</div>
+              {job.description && (
+                <p className="text-gray-700 mt-3">{job.description}</p>
+              )}
+              {Array.isArray(job.responsibilities) && job.responsibilities.length > 0 && (
+                <div className="mt-3">
+                  <h4 className="font-semibold text-gray-800 mb-1">Main Responsibilities</h4>
+                  <ul className="text-sm text-gray-700 space-y-1">
+                    {job.responsibilities.map((r, i) => (
+                      <li key={i}>• {r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex justify-between items-center mb-4">
         <img src={Logo} alt="Roadwise Logo" className="w-20 h-auto" />
@@ -187,7 +215,7 @@ const updateWorkExperience = (index, updatedExp) => {
       )}
 
 
-      {/* Placeholder for Steps 2–7 */}
+      {/* Placeholder for Steps 2–4 */}
 {step === 2 && (
   <div className="space-y-6">
     {/* Educational Background */}
@@ -504,186 +532,9 @@ const updateWorkExperience = (index, updatedExp) => {
   </div>
 )}
 
-{step === 6 && (
-  <div className="space-y-6">
-    {/* Tabs */}
-    <div className="flex items-center space-x-4">
-      <button className="px-4 py-2 bg-red-600 text-white rounded-t font-semibold border border-red-700">
-        Applicant No. 1
-      </button>
-      <button className="px-4 py-2 bg-gray-200 rounded-t font-semibold border border-gray-400">
-        Applicant No. 2
-      </button>
-      <button className="px-4 py-2 text-blue-600 hover:underline border border-transparent">
-        + Add Another Employee
-      </button>
-      <button className="ml-auto px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 border border-red-700">
-        + Import File
-      </button>
-    </div>
+{/* Step 6 removed entirely */}
 
-    {/* Documents Section */}
-    <div className="bg-white p-4 rounded shadow border border-gray-300 space-y-4">
-      <h2 className="text-lg font-semibold">Documents</h2>
-      <p className="text-sm text-gray-600">
-        Upload all the necessary documents. If any are unavailable, you may
-        submit them later through HR Coordinator’s email.
-      </p>
-
-      {/* ID Numbers */}
-      <div className="grid grid-cols-4 gap-4 border border-gray-300 p-4 rounded">
-        <input placeholder="SSS No." className="p-2 border rounded" type="text" />
-        <input placeholder="Philhealth No." className="p-2 border rounded" type="text" />
-        <input placeholder="Pag-IBIG No." className="p-2 border rounded" type="text" />
-        <input placeholder="TIN No." className="p-2 border rounded" type="text" />
-      </div>
-
-      {/* File Uploads */}
-      <div className="grid grid-cols-2 gap-6 border border-gray-300 p-4 rounded">
-        {[
-          "Photocopy of PSA Birth Certificate *",
-          "1x1 Picture w/ White Background",
-          "Photocopy of Driver's License (Front and Back) *",
-          "Photocopy of TIN ID / BIR FORM 1905/1902",
-          "Photocopy of SSS ID",
-          "Photocopy of HDMF (Pag-IBIG) (Home Development Mutual Fund)",
-          "Photocopy of Philhealth ID / MDR (Members Data Record)",
-          "Photocopy of TIN ID",
-        ].map((label, idx) => (
-          <div key={idx} className="border border-gray-300 rounded p-3">
-            <label className="block text-sm font-semibold mb-2">{label}</label>
-            <div className="flex items-center space-x-3">
-              <label
-                className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm"
-              >
-                Choose File
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={(e) =>
-                    console.log(`Selected for ${label}:`, e.target.files[0]?.name)
-                  }
-                />
-              </label>
-              <span className="text-xs text-gray-500">No file chosen</span>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Footer Buttons */}
-      <div className="flex justify-between pt-6 border-t border-gray-300">
-        <button
-          onClick={() => setStep(step - 1)}
-          className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 border border-gray-400"
-        >
-          Back
-        </button>
-        <button
-          onClick={() => setStep(step + 1)}
-          className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 border border-red-700"
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
-{step === 7 && (
-  <div className="p-6 bg-white rounded-xl shadow-md space-y-6">
-    <h2 className="text-lg font-bold">Step 7: Additional Requirements</h2>
-
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-      {/* Curriculum Vitae */}
-      <div className="border rounded-lg p-4">
-        <label className="block font-medium mb-2">Curriculum Vitae</label>
-        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-          Choose File
-          <input type="file" className="hidden" />
-        </label>
-        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-      </div>
-
-      {/* NBI Clearance */}
-      <div className="border rounded-lg p-4 space-y-2">
-        <label className="block font-medium">Photocopy of NBI Clearance</label>
-        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-          Choose File
-          <input type="file" className="hidden" />
-        </label>
-        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-sm text-gray-600">Date Validity:</span>
-          <input type="date" className="border rounded p-1 text-sm" />
-        </div>
-      </div>
-
-      {/* Police Clearance */}
-      <div className="border rounded-lg p-4 space-y-2">
-        <label className="block font-medium">Photocopy of Police Clearance</label>
-        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-          Choose File
-          <input type="file" className="hidden" />
-        </label>
-        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-sm text-gray-600">Date Validity:</span>
-          <input type="date" className="border rounded p-1 text-sm" />
-        </div>
-      </div>
-
-      {/* Medical Examination */}
-      <div className="border rounded-lg p-4 space-y-2">
-        <label className="block font-medium">Medical Examination Results</label>
-        <p className="text-xs text-gray-500">
-          (X-RAY, STOOL, CBC, URINE, CBC, DRUG TEST, HEPA)  
-          <strong> *Attach all in one file</strong>
-        </p>
-        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-          Choose File
-          <input type="file" className="hidden" />
-        </label>
-        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-      </div>
-
-      {/* Sketch of Direction */}
-      <div className="border rounded-lg p-4 space-y-2 md:col-span-2">
-        <label className="block font-medium">
-          Sketch of Direction of Residence (House to Depot)
-        </label>
-        <p className="text-xs text-gray-500">*For non-delivery crew only</p>
-        <label className="px-3 py-1 bg-blue-500 text-white rounded cursor-pointer hover:bg-blue-600 text-sm inline-block">
-          Choose File
-          <input type="file" className="hidden" />
-        </label>
-        <span className="ml-2 text-sm text-gray-500">No file chosen</span>
-      </div>
-    </div>
-
-    {/* Submit Button */}
-    <div className="flex justify-end">
-      <button
-        onClick={() => {
-          const notif = document.getElementById("notif");
-          notif.classList.remove("hidden");
-          setTimeout(() => notif.classList.add("hidden"), 3000);
-        }}
-        className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded shadow"
-      >
-        Submit
-      </button>
-    </div>
-
-    {/* Notification */}
-    <div
-      id="notif"
-      className="hidden fixed top-6 right-6 bg-green-600 text-white px-4 py-2 rounded shadow"
-    >
-      Submitted Successfully
-    </div>
-  </div>
-)}
+{/* Step 5 removed */}
 
 
 
@@ -705,7 +556,7 @@ const updateWorkExperience = (index, updatedExp) => {
         >
           Back
         </button>
-        {step < 7 && (
+        {step < 4 && (
           <button
             onClick={nextStep}
             className="bg-red-600 text-white font-bold py-2 px-6 rounded hover:bg-red-700"
@@ -715,7 +566,7 @@ const updateWorkExperience = (index, updatedExp) => {
         )}
       </div>
 
-      <p className="text-sm text-gray-500 mt-2">Page {step} of 7</p>
+      <p className="text-sm text-gray-500 mt-2">Page {step} of 4</p>
     </div>
   );
 }

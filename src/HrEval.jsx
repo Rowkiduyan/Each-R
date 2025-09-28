@@ -5,7 +5,7 @@ import { NavLink } from "react-router-dom";
 
 function HrEval() {
     const [showModal, setShowModal] = useState(false);
-    const [expandedEmployee, setExpandedEmployee] = useState(null);
+    // const [expandedEmployee, setExpandedEmployee] = useState(null);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [modalRecords, setModalRecords] = useState([]);
     const [showAddForm, setShowAddForm] = useState(false);
@@ -189,8 +189,8 @@ function HrEval() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md cursor-pointer"
                   >
                     <option>Select</option>
-                    <option>Retain</option>
-                    <option>Observe</option>
+                    <option>Retained</option>
+                    <option>Observed</option>
                   </select>
                 </div>
               </div>

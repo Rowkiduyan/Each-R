@@ -26,7 +26,7 @@ function HrRecruitment() {
     { id: 3, name: "Wilson, Mike", position: "HR Assistant", depot: "Davao Depot", dateApplied: "Jun 25, 2023", remarks: "Did not meet qualifications" }
   ]); // ✅ NEW
 
-  const itemsPerPage = 5;
+  const itemsPerPage = 10;
 
   // Sample applicants
   const applicants = [
@@ -38,6 +38,14 @@ function HrRecruitment() {
     { id: 6, name: "Torres, Liza", position: "Operations Supervisor", depot: "Cebu Depot", dateApplied: "Jul 12, 2023", email: "liza.torres@example.com", phone: "09226789012", address: "Cebu City" },
     { id: 7, name: "Mendoza, Carlo", position: "Dispatcher", depot: "Davao Depot", dateApplied: "Jul 15, 2023", email: "carlo.mendoza@example.com", phone: "09237890123", address: "Davao City", agency: true },
     { id: 8, name: "Fernandez, Grace", position: "Admin Staff", depot: "Iloilo Depot", dateApplied: "Jul 18, 2023", email: "grace.fernandez@example.com", phone: "09248901234", address: "Iloilo City" },
+    // extra dummy applicants to lengthen list
+    { id: 9, name: "Navarro, Luis", position: "Driver", depot: "Baguio Depot", dateApplied: "Jul 20, 2023", email: "luis.navarro@example.com", phone: "09170000001", address: "Baguio City" },
+    { id: 10, name: "Aquino, Lea", position: "Warehouse Staff", depot: "Taguig Depot", dateApplied: "Jul 21, 2023", email: "lea.aquino@example.com", phone: "09170000002", address: "Taguig City" },
+    { id: 11, name: "Cruz, Paolo", position: "Mechanic", depot: "Zamboanga Depot", dateApplied: "Jul 22, 2023", email: "paolo.cruz@example.com", phone: "09170000003", address: "Zamboanga City" },
+    { id: 12, name: "Bautista, Rica", position: "HR Assistant", depot: "Laguna Depot", dateApplied: "Jul 23, 2023", email: "rica.bautista@example.com", phone: "09170000004", address: "Biñan, Laguna", agency: true },
+    { id: 13, name: "Santiago, Noel", position: "Dispatcher", depot: "Cavite Depot", dateApplied: "Jul 24, 2023", email: "noel.santiago@example.com", phone: "09170000005", address: "Dasmariñas" },
+    { id: 14, name: "Del Rosario, Mia", position: "Operations Supervisor", depot: "Cebu Depot", dateApplied: "Jul 25, 2023", email: "mia.delrosario@example.com", phone: "09170000006", address: "Cebu City" },
+    { id: 15, name: "Villanueva, Art", position: "Driver", depot: "Quezon Depot", dateApplied: "Jul 26, 2023", email: "art.villanueva@example.com", phone: "09170000007", address: "Quezon City" },
   ];
 
   // 🔹 Stage data
@@ -60,12 +68,15 @@ function HrRecruitment() {
       a.depot.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredRequirements = requirements.filter(
-    (a) =>
-      a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      a.depot.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Exclude agency applicants from Requirements step
+  const filteredRequirements = requirements
+    .filter((a) => !a.agency)
+    .filter(
+      (a) =>
+        a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        a.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        a.depot.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
   const filteredFinalAgreements = finalAgreements.filter(
     (a) =>
@@ -147,35 +158,37 @@ function HrRecruitment() {
       </nav>
 
       {/* ✅ Main Content */}
-      <div className="flex justify-center items-start min-h-screen bg-gray-100 px-4">
-        <div className="w-full max-w-6xl bg-white rounded-2xl shadow-lg p-8">
+      <div className="flex justify-center items-start min-h-screen bg-gray-100">
+        <div className="w-full max-w-6xl bg-white rounded-2xl shadow-lg p-6">
           {/* Sub Tabs */}
           <div className="flex gap-6 border-b mb-6 justify-center">
             {[
-              { label: "Applications", count: applicants.length },
-              { label: "Agreements", count: agreements.length },
-              { label: "Requirements", count: requirements.length },
-              { label: "Agreement", count: finalAgreements.length },
-            ].map((tab) => (
-              <button
-                key={tab.label}
-                onClick={() => setActiveSubTab(tab.label)}
-                className={`px-6 py-3 font-medium ${
-                  activeSubTab === tab.label
-                    ? "border-b-2 border-blue-600 text-blue-600"
-                    : "text-gray-600 hover:text-blue-600"
-                }`}
-              >
-                {tab.label} <span className="text-sm text-gray-500">({tab.count})</span>
-              </button>
-            ))}
+              { label: "Applications", count: applicants.length, show: true },
+              { label: "Agreements", count: agreements.length, show: true },
+              { label: "Requirements", count: filteredRequirements.length, show: filteredRequirements.length > 0 },
+              { label: "Agreement", count: finalAgreements.length, show: true },
+            ]
+              .filter(t => t.show)
+              .map((tab) => (
+                <button
+                  key={tab.label}
+                  onClick={() => setActiveSubTab(tab.label)}
+                  className={`px-6 py-3 font-medium ${
+                    activeSubTab === tab.label
+                      ? "border-b-2 border-blue-600 text-blue-600"
+                      : "text-gray-600 hover:text-blue-600"
+                  }`}
+                >
+                  {tab.label} <span className="text-sm text-gray-500">({tab.count})</span>
+                </button>
+              ))}
           </div>
 
           {/* Applications Tab */}
           {activeSubTab === "Applications" && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4">
                   <h3 className="text-xl font-bold text-gray-800">Applicants</h3>
                   <input
                     type="text"
@@ -189,7 +202,7 @@ function HrRecruitment() {
                   />
                 </div>
 
-                <div className="border rounded-lg overflow-hidden shadow-sm">
+                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
                       <tr>
@@ -206,7 +219,7 @@ function HrRecruitment() {
                           className="hover:bg-gray-50 transition-colors cursor-pointer"
                           onClick={() => navigate(`/hr/recruitment/applicant/${a.id}`, { state: { applicant: a } })}
                         >
-                          <td className="px-4 py-2 border-b">
+                          <td className="px-4 py-2 border-b whitespace-nowrap">
                             <span className="cursor-pointer hover:text-blue-600 transition-colors">
                               {a.name}
                             </span>
@@ -269,7 +282,7 @@ function HrRecruitment() {
           {activeSubTab === "Agreements" && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4">
                   <h3 className="text-xl font-bold text-gray-800">Agreements</h3>
                   <input
                     type="text"
@@ -282,7 +295,7 @@ function HrRecruitment() {
                     className="border px-3 py-1 rounded shadow-sm"
                   />
                 </div>
-                <div className="border rounded-lg overflow-hidden shadow-sm">
+                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
                       <tr>
@@ -327,11 +340,11 @@ function HrRecruitment() {
             </div>
           )}
 
-          {/* Requirements Tab */}
-          {activeSubTab === "Requirements" && (
+          {/* Requirements Tab - hidden when no non-agency applicants */}
+          {activeSubTab === "Requirements" && filteredRequirements.length > 0 && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4">
                   <h3 className="text-xl font-bold text-gray-800">Requirements</h3>
                   <input
                     type="text"
@@ -344,7 +357,7 @@ function HrRecruitment() {
                     className="border px-3 py-1 rounded shadow-sm"
                   />
                 </div>
-                <div className="border rounded-lg overflow-hidden shadow-sm">
+                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
                       <tr>
@@ -393,7 +406,7 @@ function HrRecruitment() {
           {activeSubTab === "Agreement" && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
+      <div className="flex justify-between items-center mb-4">
                   <h3 className="text-xl font-bold text-gray-800">Final Agreements</h3>
                   <input
                     type="text"
@@ -406,7 +419,7 @@ function HrRecruitment() {
                     className="border px-3 py-1 rounded shadow-sm"
                   />
                 </div>
-                <div className="border rounded-lg overflow-hidden shadow-sm">
+                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
                       <tr>

@@ -9,13 +9,45 @@ function EmployeeDetails() {
   
   // ✅ All hooks must be at the top
   const [activeTab, setActiveTab] = useState("Profiling");
-  const [documents, setDocuments] = useState([]);
-  const [evaluationDocs, setEvaluationDocs] = useState([]);
+  const [documents, setDocuments] = useState([
+    {
+      id: 1,
+      name: "Medical Certificate",
+      description: "Please upload your medical certificate",
+      required: true,
+      employeeUploaded: false,
+      fileName: null,
+      uploadDate: null,
+      status: "pending"
+    },
+    {
+      id: 2,
+      name: "Emergency Contact Form",
+      description: "Please provide emergency contact information",
+      required: false,
+      employeeUploaded: false,
+      fileName: null,
+      uploadDate: null,
+      status: "pending"
+    }
+  ]);
+  const [evaluationDocs, setEvaluationDocs] = useState([
+    {
+      id: 1,
+      name: "Evaluation",
+      file: { name: "evaluation.pdf" },
+      url: "#",
+      date: "2024-01-15",
+      remarks: "Select",
+      employeeType: "Select",
+      locked: false
+    }
+  ]);
   const [validations, setValidations] = useState({
-    sss: false,
-    philhealth: false,
-    pagibig: false,
-    tin: false,
+    sss: "not-validated",
+    philhealth: "not-validated",
+    pagibig: "not-validated",
+    tin: "not-validated",
   });
   
   const [validationDates, setValidationDates] = useState({
@@ -25,14 +57,13 @@ function EmployeeDetails() {
     tin: null,
   });
   const [requiredDocs, setRequiredDocs] = useState([
-    { id: "psa", name: "PSA Birth Cert", file: null, previewUrl: null, uploadedAt: null, validated: false, validatedAt: null },
-    { id: "dlicense", name: "Photocopy of Drivers License (Front and Back)", file: null, previewUrl: null, uploadedAt: null, validated: false, validatedAt: null },
-    { id: "sss", name: "Photocopy of SSS ID", file: null, previewUrl: null, uploadedAt: null, validated: false, validatedAt: null },
-    { id: "nbi", name: "NBI Clearance", file: null, previewUrl: null, uploadedAt: null, validated: false, validatedAt: null },
-    { id: "police", name: "Police Clearance", file: null, previewUrl: null, uploadedAt: null, validated: false, validatedAt: null },
-    { id: "drivetest", name: "Drive Test", file: null, previewUrl: null, uploadedAt: null, validated: false, validatedAt: null },
+    { id: "psa", name: "PSA Birth Cert", file: { name: "PSABirthcert.pdf" }, previewUrl: "#", uploadedAt: "2024-01-15", status: "pending", validatedAt: null },
+    { id: "dlicense", name: "Photocopy of Drivers License (Front and Back)", file: null, previewUrl: null, uploadedAt: null, status: "pending", validatedAt: null },
+    { id: "sss", name: "Photocopy of SSS ID", file: null, previewUrl: null, uploadedAt: null, status: "pending", validatedAt: null },
+    { id: "nbi", name: "NBI Clearance", file: { name: "NBIClearance.pdf" }, previewUrl: "#", uploadedAt: "2024-01-20", status: "pending", validatedAt: null },
+    { id: "police", name: "Police Clearance", file: null, previewUrl: null, uploadedAt: null, status: "pending", validatedAt: null },
+    { id: "drivetest", name: "Drive Test", file: { name: "DriveTest.pdf" }, previewUrl: "#", uploadedAt: "2024-01-25", status: "pending", validatedAt: null },
   ]);
-  const [confirmReqDocId, setConfirmReqDocId] = useState(null);
 
   const [onboardingItems, setOnboardingItems] = useState([
     { id: 1, item: "Uniform", description: "Company Shirt", date: "9/20/25", file: "file.pdf" },
@@ -45,64 +76,21 @@ const [showConfirmTerminate, setShowConfirmTerminate] = useState(false);
 const [showSuccess, setShowSuccess] = useState(false);
 const [terminateFiles, setTerminateFiles] = useState([]);
 const [terminateDate, setTerminateDate] = useState("");
+const [separationData, setSeparationData] = useState({
+  type: "",
+  date: "",
+  remarks: "",
+  typeLocked: false,
+  dateLocked: false,
+  remarksLocked: false
+});
 
   
 
   // === Handlers ===
-  const toggleValidation = (key) => {
-    setValidations((prev) => {
-      const next = !prev[key];
-      setValidationDates((prevDates) => ({
-        ...prevDates,
-        [key]: next ? new Date().toLocaleDateString() : null,
-      }));
-      return { ...prev, [key]: next };
-    });
-  };
 
-  const handleUpload = (e) => {
-    const files = Array.from(e.target.files || []);
-    if (!files.length) return;
-    const newDocs = files.map((file, i) => ({
-      id: Date.now() + "-" + i,
-      name: file.name,
-      url: URL.createObjectURL(file),
-      date: new Date().toLocaleDateString(),
-    }));
-    setDocuments((prev) => [...prev, ...newDocs]);
-  };
 
-  const handleRemove = (id) => {
-    const doc = documents.find((d) => d.id === id);
-    if (doc) URL.revokeObjectURL(doc.url);
-    setDocuments((prev) => prev.filter((d) => d.id !== id));
-  };
 
-  const handleReqFileUpload = (e, id) => {
-    const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    setRequiredDocs((prev) =>
-      prev.map((doc) =>
-        doc.id === id
-          ? { ...doc, file, previewUrl: URL.createObjectURL(file), uploadedAt: new Date().toLocaleDateString() }
-          : doc
-      )
-    );
-  };
-
-  const requestValidateReqDoc = (id) => setConfirmReqDocId(id);
-  const confirmValidateReqDoc = () => {
-    if (!confirmReqDocId) return;
-    setRequiredDocs((prev) =>
-      prev.map((doc) =>
-        doc.id === confirmReqDocId
-          ? { ...doc, validated: true, validatedAt: new Date().toLocaleDateString() }
-          : doc
-      )
-    );
-    setConfirmReqDocId(null);
-  };
-  const cancelValidateReqDoc = () => setConfirmReqDocId(null);
 
   // ✅ Fallback UI for no employee
   if (!employee) {
@@ -129,7 +117,15 @@ const [terminateDate, setTerminateDate] = useState("");
       </button>
 
       <div className="bg-white shadow-md rounded-lg p-6 mb-6">
-        <h2 className="text-2xl font-bold">{employee.name}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold">{employee.name}</h2>
+          {employee.agency && (
+            <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 align-middle">
+              <span className="text-red-500">⚑</span>
+              Agency
+            </span>
+          )}
+        </div>
         <span className="text-gray-500">ID: {employee.id}</span>
         <div className="mt-2 text-gray-600">
           {employee.position} | {employee.depot}
@@ -191,7 +187,7 @@ const [terminateDate, setTerminateDate] = useState("");
                 { key: "pagibig", label: "Pag-IBIG No.", value: "789789789789" },
                 { key: "tin", label: "TIN No.", value: "101010101010" },
               ].map((item) => {
-                const isValidated = validations[item.key];
+                const status = validations[item.key];
                 const validatedDate = validationDates[item.key];
                 return (
                   <div key={item.key} className="flex justify-between items-center bg-white p-3 rounded-md shadow-sm mb-2">
@@ -199,16 +195,38 @@ const [terminateDate, setTerminateDate] = useState("");
                       <span className="font-medium">{item.label}</span>
                       <div className="text-sm text-gray-500">{item.value}</div>
                     </div>
-                    <button
-                      onClick={() => toggleValidation(item.key)}
-                      className={`px-3 py-1 rounded text-sm transition ${
-                        isValidated
-                          ? "bg-green-500 text-white hover:bg-green-600"
-                          : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      }`}
-                    >
-                      {isValidated ? <>Validated <span className="ml-1 text-xs text-black">({validatedDate})</span></> : "Not Validated"}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={status}
+                        onChange={(e) => {
+                          const newStatus = e.target.value;
+                          setValidations((prev) => ({ ...prev, [item.key]: newStatus }));
+                          if (newStatus === "validated") {
+                            setValidationDates((prev) => ({ ...prev, [item.key]: new Date().toLocaleDateString() }));
+                          } else {
+                            setValidationDates((prev) => ({ ...prev, [item.key]: null }));
+                          }
+                        }}
+                        className="px-3 py-1 rounded text-sm border border-gray-300"
+                      >
+                        <option value="not-validated">Not Validated</option>
+                        <option value="validated">Validated</option>
+                        <option value="resubmit">Resubmit</option>
+                      </select>
+                      {status === "validated" && (
+                        <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm font-semibold">
+                          VALIDATED
+                        </span>
+                      )}
+                      {status === "resubmit" && (
+                        <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-sm font-semibold">
+                          RE-SUBMIT
+                        </span>
+                      )}
+                      {status === "validated" && validatedDate && (
+                        <span className="text-xs text-gray-500">({validatedDate})</span>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -229,66 +247,75 @@ const [terminateDate, setTerminateDate] = useState("");
                 </thead>
                 <tbody>
                   {requiredDocs.map((doc) => {
-                    const status = doc.validated ? "Validated" : doc.file ? "Submitted" : "No File";
+                    const displayStatus = doc.status === "validated" ? "Validated" : doc.status === "resubmit" ? "Re-submit" : doc.file ? "Submitted" : "No File";
                     const badgeClass =
-                      status === "Validated"
+                      doc.status === "validated"
                         ? "bg-green-100 text-green-700"
-                        : status === "Submitted"
+                        : doc.status === "resubmit"
+                        ? "bg-red-100 text-red-700"
+                        : doc.file
                         ? "bg-orange-100 text-orange-700"
-                        : "bg-red-100 text-red-700";
+                        : "bg-gray-100 text-gray-700";
                     return (
                       <tr key={doc.id} className="hover:bg-gray-50">
                         <td className="border px-4 py-2 font-medium">{doc.name}</td>
                         <td className="border px-4 py-2">
                           {doc.file ? (
-                            <div className="flex items-center gap-2">
                               <a href={doc.previewUrl} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">
                                 {doc.file.name}
                               </a>
-                              <button
-                                onClick={() => {
-                                  if (doc.previewUrl) URL.revokeObjectURL(doc.previewUrl);
-                                  setRequiredDocs((prev) =>
-                                    prev.map((d) =>
-                                      d.id === doc.id
-                                        ? { ...d, file: null, previewUrl: null, uploadedAt: null, validated: false, validatedAt: null }
-                                        : d
-                                    )
-                                  );
-                                }}
-                                className="px-2 py-1 bg-red-100 text-red-600 rounded text-xs hover:bg-red-200"
-                              >
-                                Remove
-                              </button>
-                            </div>
                           ) : (
-                            <label className="text-blue-500 underline cursor-pointer">
-                              Upload
-                              <input type="file" onChange={(e) => handleReqFileUpload(e, doc.id)} className="hidden" />
-                            </label>
+                            <span className="text-gray-500">No File</span>
                           )}
                         </td>
                         <td className="border px-4 py-2">{doc.uploadedAt || "—"}</td>
                         <td className="border px-4 py-2">
-                          <span className={`px-2 py-1 rounded text-sm font-semibold ${badgeClass}`}>{status}</span>
+                          <span className={`px-2 py-1 rounded text-sm font-semibold ${badgeClass}`}>{displayStatus}</span>
                           {!doc.file && <div className="text-xs text-red-500 mt-1">Late for 8 Days</div>}
-                          {doc.validated && doc.validatedAt && (
+                          {doc.status === "validated" && doc.validatedAt && (
                             <div className="text-xs mt-1 text-black">Validated on {doc.validatedAt}</div>
                           )}
                         </td>
                         <td className="border px-4 py-2">
-                          {!doc.validated && doc.file && (
-                            <button
-                              onClick={() => requestValidateReqDoc(doc.id)}
-                              className="px-2 py-1 bg-green-100 text-green-600 rounded hover:bg-green-200"
+                          {doc.file ? (
+                            <select
+                              value={doc.status}
+                              onChange={(e) => {
+                                const newStatus = e.target.value;
+                                if (newStatus === "validated") {
+                                  setRequiredDocs((prev) =>
+                                    prev.map((d) =>
+                                      d.id === doc.id
+                                        ? { ...d, status: "validated", validatedAt: new Date().toLocaleDateString() }
+                                        : d
+                                    )
+                                  );
+                                } else if (newStatus === "resubmit") {
+                                  setRequiredDocs((prev) =>
+                                    prev.map((d) =>
+                                      d.id === doc.id
+                                        ? { ...d, status: "resubmit", validatedAt: null }
+                                        : d
+                                    )
+                                  );
+                                } else {
+                                  setRequiredDocs((prev) =>
+                                    prev.map((d) =>
+                                      d.id === doc.id
+                                        ? { ...d, status: "pending", validatedAt: null }
+                                        : d
+                                    )
+                                  );
+                                }
+                              }}
+                              className="px-2 py-1 border border-gray-300 rounded text-sm"
                             >
-                              Validate
-                            </button>
-                          )}
-                          {doc.validated && (
-                            <button className="px-2 py-1 bg-green-600 text-white rounded" disabled>
-                              Validated
-                            </button>
+                              <option value="pending">Select Action</option>
+                              <option value="validated">Validate</option>
+                              <option value="resubmit">Resubmit</option>
+                            </select>
+                          ) : (
+                            <span className="text-gray-500 text-sm">No Action</span>
                           )}
                         </td>
                       </tr>
@@ -298,42 +325,128 @@ const [terminateDate, setTerminateDate] = useState("");
               </table>
             </div>
 
-            {confirmReqDocId && (
-              <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full">
-                  <h4 className="text-lg font-bold mb-2">Reminder</h4>
-                  <p className="mb-4">
-                    You cannot change status of this document once Validated. Click <strong>Proceed</strong> to continue.
-                  </p>
-                  <div className="flex justify-end gap-3">
-                    <button onClick={cancelValidateReqDoc} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
-                    <button onClick={confirmValidateReqDoc} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Proceed</button>
-                  </div>
-                </div>
-              </div>
-            )}
 
             <h3 className="font-bold mb-4">Employee Documents (Additional)</h3>
-            <label className="px-4 py-2 bg-gray-100 rounded cursor-pointer inline-block mb-4">
-              Upload Documents
-              <input type="file" multiple onChange={handleUpload} className="hidden" />
-            </label>
+            <p className="text-sm text-gray-600 mb-4">Add document requirements for the employee to upload</p>
 
-            {documents.length === 0 ? (
-              <p>No documents uploaded.</p>
-            ) : (
-              <ul className="space-y-2">
+            <div className="overflow-x-auto mb-4">
+              <table className="w-full border border-gray-200">
+                <thead className="bg-gray-100">
+                  <tr>
+                    <th className="border px-4 py-2 text-left">Document Name</th>
+                    <th className="border px-4 py-2 text-left">Description</th>
+                    <th className="border px-4 py-2 text-left">Required</th>
+                    <th className="border px-4 py-2 text-left">Employee Status</th>
+                    <th className="border px-4 py-2 text-left">File</th>
+                    <th className="border px-4 py-2 text-left">Upload Date</th>
+                    <th className="border px-4 py-2 text-left">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
                 {documents.map((doc) => (
-                  <li key={doc.id} className="flex justify-between items-center border p-2 rounded">
-                    <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-blue-500 underline">{doc.name}</a>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-gray-500">{doc.date}</span>
-                      <button onClick={() => handleRemove(doc.id)} className="px-2 py-1 bg-red-100 text-red-600 rounded">Remove</button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+                    <tr key={doc.id} className="hover:bg-gray-50">
+                      <td className="border px-4 py-2">
+                        <input
+                          type="text"
+                          value={doc.name}
+                          onChange={(e) => {
+                            setDocuments((prev) =>
+                              prev.map((d) =>
+                                d.id === doc.id ? { ...d, name: e.target.value } : d
+                              )
+                            );
+                          }}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                        />
+                      </td>
+                      <td className="border px-4 py-2">
+                        <input
+                          type="text"
+                          value={doc.description}
+                          onChange={(e) => {
+                            setDocuments((prev) =>
+                              prev.map((d) =>
+                                d.id === doc.id ? { ...d, description: e.target.value } : d
+                              )
+                            );
+                          }}
+                          className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                        />
+                      </td>
+                      <td className="border px-4 py-2">
+                        <select
+                          value={doc.required ? "required" : "optional"}
+                          onChange={(e) => {
+                            setDocuments((prev) =>
+                              prev.map((d) =>
+                                d.id === doc.id ? { ...d, required: e.target.value === "required" } : d
+                              )
+                            );
+                          }}
+                          className="px-2 py-1 border border-gray-300 rounded text-sm"
+                        >
+                          <option value="required">Required</option>
+                          <option value="optional">Optional</option>
+                        </select>
+                      </td>
+                      <td className="border px-4 py-2">
+                        <span className={`px-2 py-1 rounded text-sm font-semibold ${
+                          doc.employeeUploaded 
+                            ? "bg-green-100 text-green-700" 
+                            : "bg-orange-100 text-orange-700"
+                        }`}>
+                          {doc.employeeUploaded ? "Uploaded" : "Pending"}
+                        </span>
+                      </td>
+                      <td className="border px-4 py-2">
+                        {doc.employeeUploaded && doc.fileName ? (
+                          <a href="#" className="text-blue-500 underline text-sm">
+                            {doc.fileName}
+                          </a>
+                        ) : (
+                          <span className="text-gray-500 text-sm">No File</span>
+                        )}
+                      </td>
+                      <td className="border px-4 py-2 text-sm">
+                        {doc.uploadDate || "—"}
+                      </td>
+                      <td className="border px-4 py-2">
+                        <button 
+                          onClick={() => {
+                            setDocuments((prev) => prev.filter((d) => d.id !== doc.id));
+                          }}
+                          className="px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200 text-sm"
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <button
+              onClick={() => {
+                const newId = Math.max(...documents.map(d => d.id)) + 1;
+                setDocuments((prev) => [
+                  ...prev,
+                  {
+                    id: newId,
+                    name: "New Document",
+                    description: "Please upload this document",
+                    required: true,
+                    employeeUploaded: false,
+                    fileName: null,
+                    uploadDate: null,
+                    status: "pending"
+                  }
+                ]);
+              }}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              + Add Document Requirement
+            </button>
           </div>
         )}
 
@@ -476,62 +589,106 @@ const [terminateDate, setTerminateDate] = useState("");
     {/* Separation Type */}
     <div className="mb-4">
       <label className="block font-medium mb-1">Separation Type</label>
-      <select className="border rounded px-3 py-2 w-full">
+      <div className="flex items-center gap-2">
+        <select 
+          value={separationData.type}
+          onChange={(e) => setSeparationData(prev => ({ ...prev, type: e.target.value }))}
+          disabled={separationData.typeLocked}
+          className="border rounded px-3 py-2 flex-1"
+        >
         <option value="">-- Select Separation Type --</option>
-        <option value="resignation">Resignation</option>
         <option value="termination">Termination</option>
-        <option value="retirement">Retirement</option>
-        <option value="end_of_contract">End of Contract</option>
       </select>
+        <button 
+          onClick={() => setSeparationData(prev => ({ ...prev, typeLocked: !prev.typeLocked }))}
+          className={`px-3 py-2 text-white rounded ${
+            separationData.typeLocked 
+              ? "bg-red-500 hover:bg-red-600" 
+              : "bg-green-500 hover:bg-green-600"
+          }`}
+        >
+          {separationData.typeLocked ? "✗" : "✓"}
+        </button>
+      </div>
     </div>
 
     {/* Separation Date */}
     <div className="mb-4">
       <label className="block font-medium mb-1">Separation Date</label>
+      <div className="flex items-center gap-2">
       <input
         type="date"
-        className="border rounded px-3 py-2 w-full"
-      />
+          value={separationData.date}
+          onChange={(e) => setSeparationData(prev => ({ ...prev, date: e.target.value }))}
+          disabled={separationData.dateLocked}
+          className="border rounded px-3 py-2 flex-1"
+        />
+        <button 
+          onClick={() => setSeparationData(prev => ({ ...prev, dateLocked: !prev.dateLocked }))}
+          className={`px-3 py-2 text-white rounded ${
+            separationData.dateLocked 
+              ? "bg-red-500 hover:bg-red-600" 
+              : "bg-green-500 hover:bg-green-600"
+          }`}
+        >
+          {separationData.dateLocked ? "✗" : "✓"}
+        </button>
+      </div>
     </div>
 
     {/* Remarks */}
     <div className="mb-6">
       <label className="block font-medium mb-1">Remarks</label>
+      <div className="flex items-start gap-2">
       <textarea
         rows="3"
         placeholder="Enter remarks..."
-        className="border rounded px-3 py-2 w-full"
-      />
+          value={separationData.remarks}
+          onChange={(e) => setSeparationData(prev => ({ ...prev, remarks: e.target.value }))}
+          disabled={separationData.remarksLocked}
+          className="border rounded px-3 py-2 flex-1"
+        />
+        <button 
+          onClick={() => setSeparationData(prev => ({ ...prev, remarksLocked: !prev.remarksLocked }))}
+          className={`px-3 py-2 text-white rounded mt-1 ${
+            separationData.remarksLocked 
+              ? "bg-red-500 hover:bg-red-600" 
+              : "bg-green-500 hover:bg-green-600"
+          }`}
+        >
+          {separationData.remarksLocked ? "✗" : "✓"}
+        </button>
+      </div>
     </div>
 
-    {/* File Uploading Area */}
-    <h4 className="font-semibold mb-3">Upload Required Files</h4>
+    {/* File Viewing Area */}
+    <h4 className="font-semibold mb-3">Required Files</h4>
     <div className="space-y-4">
       {/* Exit Clearance */}
       <div className="border rounded-lg p-4 shadow-sm">
         <label className="block font-medium mb-2">Exit Clearance</label>
-        <label className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded cursor-pointer">
-          Choose File
-          <input type="file" className="hidden" />
-        </label>
+        <div className="flex items-center gap-2">
+          <a href="#" className="text-blue-500 underline">exit_clearance.pdf</a>
+          <span className="text-sm text-gray-500">(2024-01-15)</span>
+        </div>
       </div>
 
       {/* Resignation Letter */}
       <div className="border rounded-lg p-4 shadow-sm">
         <label className="block font-medium mb-2">Resignation Letter</label>
-        <label className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded cursor-pointer">
-          Choose File
-          <input type="file" className="hidden" />
-        </label>
+        <div className="flex items-center gap-2">
+          <a href="#" className="text-blue-500 underline">resignation_letter.pdf</a>
+          <span className="text-sm text-gray-500">(2024-01-20)</span>
+        </div>
       </div>
 
       {/* Quitclaim */}
       <div className="border rounded-lg p-4 shadow-sm">
         <label className="block font-medium mb-2">Quitclaim</label>
-        <label className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded cursor-pointer">
-          Choose File
-          <input type="file" className="hidden" />
-        </label>
+        <div className="flex items-center gap-2">
+          <a href="#" className="text-blue-500 underline">quitclaim.pdf</a>
+          <span className="text-sm text-gray-500">(2024-01-25)</span>
+        </div>
       </div>
     </div>
   </div>
@@ -548,8 +705,8 @@ const [terminateDate, setTerminateDate] = useState("");
             <th className="px-4 py-3 border-b text-left font-semibold">Document Name</th>
             <th className="px-4 py-3 border-b text-left font-semibold">File</th>
             <th className="px-4 py-3 border-b text-left font-semibold">Upload Date</th>
+            <th className="px-4 py-3 border-b text-left font-semibold">Employee Type</th>
             <th className="px-4 py-3 border-b text-left font-semibold">Remarks</th>
-            <th className="px-4 py-3 border-b text-left font-semibold">Action</th>
           </tr>
         </thead>
         <tbody>
@@ -561,18 +718,6 @@ const [terminateDate, setTerminateDate] = useState("");
             </tr>
           ) : (
             evaluationDocs.map((doc) => {
-              const status = doc.validated
-                ? "Validated"
-                : doc.file
-                ? "Submitted"
-                : "No File";
-              const badgeClass =
-                status === "Validated"
-                  ? "bg-green-100 text-green-700"
-                  : status === "Submitted"
-                  ? "bg-orange-100 text-orange-700"
-                  : "bg-red-100 text-red-700";
-
               return (
                 <tr key={doc.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3 border-b font-medium">Evaluation</td>
@@ -587,68 +732,65 @@ const [terminateDate, setTerminateDate] = useState("");
                         {doc.file.name}
                       </a>
                     ) : (
-                      <label className="cursor-pointer px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
-                        Upload File
-                        <input
-                          type="file"
-                          onChange={(e) => {
-                            const file = e.target.files && e.target.files[0];
-                            if (!file) return;
-                            setEvaluationDocs((prev) =>
-                              prev.map((d) =>
-                                d.id === doc.id
-                                  ? {
-                                      ...d,
-                                      file,
-                                      url: URL.createObjectURL(file),
-                                      date: new Date().toLocaleDateString(),
-                                    }
-                                  : d
-                              )
-                            );
-                          }}
-                          className="hidden"
-                        />
-                      </label>
+                      <span className="text-gray-500">No File</span>
                     )}
                   </td>
                   <td className="px-4 py-3 border-b">{doc.date || "—"}</td>
                   <td className="px-4 py-3 border-b">
-                    <span className={`px-2 py-1 rounded text-sm font-semibold ${badgeClass}`}>
-                      {status}
-                    </span>
-                    {!doc.file && (
-                      <div className="text-xs text-red-500 mt-1">Late for 8 Days</div>
-                    )}
-                    {doc.validated && doc.date && (
-                      <div className="text-xs mt-1 text-gray-600">
-                        Validated on {doc.date}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 border-b">
-                    {!doc.validated && doc.file && (
-                      <button
-                        onClick={() =>
+                    <div className="flex items-center gap-2">
+                      <select 
+                        value={doc.employeeType || "Select"} 
+                        onChange={(e) => {
                           setEvaluationDocs((prev) =>
                             prev.map((d) =>
-                              d.id === doc.id ? { ...d, validated: true } : d
+                              d.id === doc.id ? { ...d, employeeType: e.target.value } : d
                             )
-                          )
-                        }
-                        className="px-3 py-2 bg-green-100 text-green-700 rounded hover:bg-green-200"
+                          );
+                        }}
+                        disabled={doc.locked}
+                        className="px-2 py-1 border border-gray-300 rounded text-sm flex-1"
                       >
-                        Validate
-                      </button>
-                    )}
-                    {doc.validated && (
+                        <option value="Select">Select</option>
+                        <option value="Regular">Regular</option>
+                        <option value="Under Probation">Under Probation</option>
+                      </select>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 border-b">
+                    <div className="flex items-center gap-2">
+                      <select 
+                        value={doc.remarks || "Select"} 
+                        onChange={(e) => {
+                          setEvaluationDocs((prev) =>
+                            prev.map((d) =>
+                              d.id === doc.id ? { ...d, remarks: e.target.value } : d
+                            )
+                          );
+                        }}
+                        disabled={doc.locked}
+                        className="px-2 py-1 border border-gray-300 rounded text-sm flex-1"
+                      >
+                        <option value="Select">Select</option>
+                        <option value="Retained">Retained</option>
+                        <option value="Observed">Observed</option>
+                      </select>
                       <button
-                        className="px-3 py-2 bg-green-600 text-white rounded cursor-not-allowed"
-                        disabled
+                        onClick={() => {
+                          setEvaluationDocs((prev) =>
+                            prev.map((d) =>
+                              d.id === doc.id ? { ...d, locked: !d.locked } : d
+                            )
+                          );
+                        }}
+                        className={`px-2 py-1 rounded text-sm ${
+                          doc.locked 
+                            ? "bg-red-500 text-white hover:bg-red-600" 
+                            : "bg-green-500 text-white hover:bg-green-600"
+                        }`}
                       >
-                        Validated
+                        {doc.locked ? "✗" : "✓"}
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -669,7 +811,9 @@ const [terminateDate, setTerminateDate] = useState("");
               file: null,
               url: null,
               date: null,
-              validated: false,
+              remarks: "Select",
+              employeeType: "Select",
+              locked: false,
             },
           ])
         }
@@ -706,7 +850,7 @@ const [terminateDate, setTerminateDate] = useState("");
           }}
           className="w-full text-left px-4 py-2 hover:bg-gray-100"
         >
-          Request to Terminate
+          Terminate
         </button>
       </li>
       <li>
@@ -739,7 +883,7 @@ const [terminateDate, setTerminateDate] = useState("");
 {showTerminateModal && (
   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
-      <h3 className="text-lg font-bold mb-4">Request to Terminate</h3>
+      <h3 className="text-lg font-bold mb-4">Terminate Employee</h3>
       <div className="mb-4">
         <label className="block font-medium">Name</label>
         <input
@@ -808,7 +952,7 @@ const [terminateDate, setTerminateDate] = useState("");
 {showConfirmTerminate && (
   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
-      <h3 className="text-lg font-bold mb-4">Request Termination</h3>
+      <h3 className="text-lg font-bold mb-4">Confirm Termination</h3>
 
       {/* 🔷 Employee details box */}
       <div className="border border-gray-300 rounded-lg p-4 mb-4 bg-gray-50">
@@ -847,7 +991,7 @@ const [terminateDate, setTerminateDate] = useState("");
   <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
     <div className="bg-white rounded-lg p-6 w-full max-w-sm text-center shadow-lg">
       <h3 className="text-lg font-bold mb-2">
-        Request Termination of Employee Success
+        Employee Termination Success
       </h3>
       <button
         onClick={() => setShowSuccess(false)}

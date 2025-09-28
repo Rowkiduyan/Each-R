@@ -85,7 +85,8 @@ const [hired, setHired] = useState(false); // ✅ to label the applicant as Hire
 
 
   return (
-    <div className="max-w-5xl mx-auto p-8">
+    <div className="min-h-screen flex items-start justify-center py-10">
+      <div className="max-w-5xl w-full p-8">
       {/* Back Button */}
       <button
         onClick={() => navigate(-1)}
@@ -120,17 +121,23 @@ if (step === "Agreements") {
     }
 
 
-    const isDisabled = isRejected && step !== "Application"; // ✅ disable all tabs when rejected
+    const disableRequirementsForAgency = applicant.agency && step === "Requirements";
+    const isDisabled = (isRejected && step !== "Application") || disableRequirementsForAgency; // ✅ disable all tabs when rejected or agency Requirements
 
     return (
       <div
         key={index}
-        onClick={() => !isDisabled && setActiveTab(step)}
+        onClick={() => {
+          if (!isDisabled) setActiveTab(step);
+        }}
         className={`flex-1 text-center py-2 rounded-lg mx-1 ${
           isDisabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"
         } ${bgClass}`}
       >
         {step}
+        {disableRequirementsForAgency && (
+          <span className="block text-[10px] mt-1 opacity-90">Skipped for Agency</span>
+        )}
       </div>
     );
   })}
@@ -235,8 +242,8 @@ if (step === "Agreements") {
                     className="hidden"
                   />
                 </label>
-              </div>
-            </div>
+      </div>
+      </div>
 
             <button
               onClick={() => setShowAction(true)}
@@ -249,6 +256,12 @@ if (step === "Agreements") {
 
         {activeTab === "Requirements" && (
   <div>
+    {applicant.agency ? (
+      <div className="p-6 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 rounded">
+        Requirements step is not required for agency-endorsed applicants.
+      </div>
+    ) : (
+      <>
     <h2 className="text-2xl font-bold mb-4 text-gray-800">Requirements</h2>
 
     {/* IDs Section */}
@@ -348,6 +361,8 @@ if (step === "Agreements") {
         Take Action
       </button>
     </div>
+      </>
+    )}
   </div>
 )}
 
@@ -411,7 +426,7 @@ if (step === "Agreements") {
     <div className="bg-white p-6 rounded-xl shadow-lg w-96">
       <h3 className="text-xl font-bold mb-4 text-gray-800">Select an action</h3>
 
-      <div className="flex justify-between">
+      <div className="flex justify-center gap-3">
         {activeTab === "Assessment" ? (
           <>
             {/* Pass / Reject for Assessment */}
@@ -423,7 +438,7 @@ if (step === "Agreements") {
               }}
               className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
             >
-              Pass
+              Proceed
             </button>
             <button
               onClick={() => {
@@ -472,7 +487,7 @@ if (step === "Agreements") {
               }}
               className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
             >
-              Hire
+              Mark as Hired
             </button>
             <button
               onClick={() => {
@@ -498,15 +513,27 @@ if (step === "Agreements") {
             >
               Set Interview
             </button>
-            <button
-              onClick={() => {
-                setShowRejectionForm(true);
-                setShowAction(false);
-              }}
-              className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
-            >
-              Reject
-            </button>
+            {applicant.agency ? (
+              <button
+                onClick={() => {
+                  setIsRejected(false);
+                  setShowAction(false);
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                Approve
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  setShowRejectionForm(true);
+                  setShowAction(false);
+                }}
+                className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+              >
+                Reject
+              </button>
+            )}
           </>
         )}
       </div>
@@ -617,6 +644,7 @@ if (step === "Agreements") {
         </div>
       )}
 
+    </div>
     </div>
   );
 }
