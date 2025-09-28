@@ -12,16 +12,19 @@ function EmployeeNotif() {
               </div>
             <div className="flex space-x-15 ml-0 md:ml-32 lg:ml-24">
                 <Link to ="/employee/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
+                <Link to="/employee/separation" className="text-gray-700 hover:text-red-600 font-medium">Separation</Link>
+                <Link to ="/employee/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings</Link>
+                <Link to="/employee/profile" className="text-gray-700 hover:text-red-600 font-medium">Profile</Link>
                 <NavLink to ="/employee/notif" className={({ isActive }) => `hover:text-red-600 ${
                 isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
                 }`}>
                     Notifications
                 </NavLink>
-                <Link to="/employee/separation" className="text-gray-700 hover:text-red-600 font-medium">Separation</Link>
-                <Link to ="/employee/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings</Link>
-                <Link to="/employee/profile" className="text-gray-700 hover:text-red-600 font-medium">Profile</Link>
                 <Link to ="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
             </div>
+            <div className="flex items-center space-x-2 ml-auto max-w-7xl">
+            <span className="text-gray-700 font-semibold">Stephen Yvone</span>
+          </div>
             </div>
         </div>
         </nav>

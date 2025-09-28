@@ -16,17 +16,20 @@ function EmpProfile() {
               </div>
             <div className="flex space-x-15 ml-0 md:ml-32 lg:ml-24">
                 <Link to ="/employee/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
-                <Link to ="/employee/notif" className="text-gray-700 hover:text-red-600 font-medium relative">
-                    Notifications
-                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
-                </Link>
                 <Link to="/employee/separation" className="text-gray-700 hover:text-red-600 font-medium">Separation</Link>
                 <Link to ="/employee/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings</Link>
                 <NavLink to="/employee/profile" className={({ isActive }) => `hover:text-red-600 ${
                 isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
                 }`}>Profile</NavLink>
+                <Link to ="/employee/notif" className="text-gray-700 hover:text-red-600 font-medium relative">
+                    Notifications
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                </Link>
                 <Link to ="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
             </div>
+            <div className="flex items-center space-x-2 ml-auto max-w-7xl">
+            <span className="text-gray-700 font-semibold">Stephen Yvone</span>
+          </div>
             </div>
         </div>
         </nav>
