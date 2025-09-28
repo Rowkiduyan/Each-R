@@ -5,7 +5,7 @@ import { NavLink } from "react-router-dom";
 
 function HrEval() {
     const [showModal, setShowModal] = useState(false);
-    const [expandedEmployee, setExpandedEmployee] = useState(null);
+    // const [expandedEmployee, setExpandedEmployee] = useState(null);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
     const [modalRecords, setModalRecords] = useState([]);
     const [showAddForm, setShowAddForm] = useState(false);
@@ -41,10 +41,10 @@ function HrEval() {
                     Notifications
                     <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
                 </Link>
-                <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
               </div>
-              <div className="flex items-center space-x-2 lg: ml-20 max-w-7xl">
+              <div className="flex items-center space-x-4">
                 <span className="text-gray-700 font-semibold">Alexis Yvone</span>
+                <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
               </div>
             </div>
           </div>
@@ -189,8 +189,8 @@ function HrEval() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md cursor-pointer"
                   >
                     <option>Select</option>
-                    <option>Retain</option>
-                    <option>Observe</option>
+                    <option>Retained</option>
+                    <option>Observed</option>
                   </select>
                 </div>
               </div>

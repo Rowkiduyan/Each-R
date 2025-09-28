@@ -27,14 +27,21 @@ function HrHome() {
                     Notifications
                     <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
             </Link>
-            <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
           </div>
-          <div className="flex items-center space-x-2 lg: ml-20 max-w-7xl">
+          <div className="flex items-center space-x-4">
             <span className="text-gray-700 font-semibold">Alexis Yvone</span>
+            <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
           </div>
         </div>
       </div>
     </nav>
+
+    {/* Create Job Post CTA */}
+    <div className="max-w-7xl mx-auto px-4 mb-4">
+      <Link to="/hr/create/job" className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+        + Create Job Post
+      </Link>
+    </div>
 
     <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row gap-6">
         <div className="md:w-1/3 w-full">

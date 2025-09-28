@@ -23,10 +23,10 @@ function HrNotif() {
                 }`}>
                     Notifications
                 </NavLink>
-                <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
               </div>
-              <div className="flex items-center space-x-2 lg: ml-20 max-w-7xl">
+              <div className="flex items-center space-x-4">
                 <span className="text-gray-700 font-semibold">Alexis Yvone</span>
+                <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
               </div>
             </div>
           </div>

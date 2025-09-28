@@ -68,10 +68,10 @@ function HrSeperation() {
                 Notifications
                 <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </Link>
-              <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
             </div>
-            <div className="flex items-center space-x-2 lg: ml-20 max-w-7xl">
+            <div className="flex items-center space-x-4">
               <span className="text-gray-700 font-semibold">Alexis Yvone</span>
+              <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
             </div>
           </div>
         </div>
@@ -150,11 +150,11 @@ function HrSeperation() {
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
                     <tr>
-                      <td className="px-6 py-4 text-sm text-gray-900">Resignation Letter</td>
-                      <td className="px-6 py-4 text-sm text-gray-900">resignation_letter.pdf 11/15/2024</td>
-                      <td className="px-6 py-4">
-                        <select
-                          value={statuses[2]}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">Resignation Letter</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">resignation_letter.pdf 11/15/2024</td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <select 
+                          value={statuses[2]} 
                           onChange={(e) => setStatuses([statuses[0], statuses[1], e.target.value])}
                           className={`border border-gray-300 rounded-md px-2 py-1 text-xs ${getStatusColor(statuses[2])}`}
                         >

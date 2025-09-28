@@ -21,6 +21,9 @@ import EmployeeNotif from "./EmployeeNotif";
 import EmProfile from "./EmProfile";
 import ApplicantApplications from "./ApplicantApplications";
 import EmployeeSeparation from "./EmployeeSeparation";
+import AgencyHome from "./AgencyHome";
+import HrCreateJob from "./HrCreateJob";
+
 
 function App() {
   return (
@@ -47,7 +50,8 @@ function App() {
       <Route path="/employee/profile" element={<EmProfile />} />
       <Route path="/applicant/applications" element={<ApplicantApplications />} />
       <Route path="/employee/separation" element={<EmployeeSeparation />} />
-      
+      <Route path="/agency/home" element={<AgencyHome />} />
+      <Route path="/hr/create/job" element={<HrCreateJob />} />
       {/* ✅ Fixed route for applicant details */}
       <Route path="/hr/recruitment/applicant/:id" element={<ApplicantDetails />} />
     </Routes>

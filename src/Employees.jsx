@@ -42,6 +42,7 @@ function Employees() {
       position: positions[i % positions.length],
       depot: depots[i % depots.length],
       status: "Active",
+      agency: i % 3 === 0, // Every 3rd employee is from an agency
     }))
   );
 
@@ -82,9 +83,11 @@ function Employees() {
         <Link to="/hr/eval" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
         <Link to="/hr/seperation" className="text-gray-700 hover:text-red-600 font-medium">Seperation</Link>
         <Link to="/hr/notif" className="text-gray-700 hover:text-red-600 font-medium">Notifications</Link>
+      </div>
+      <div className="flex items-center space-x-4">
+        <span className="text-gray-700 font-semibold">Alexis Yvone</span>
         <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
       </div>
-      <span className="text-gray-700 font-semibold">Alexis Yvone</span>
     </div>
   </div>
 </nav>
@@ -152,18 +155,39 @@ function Employees() {
             </select>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {filtered.map(emp=>(
-              <div
-                key={emp.id}
-                className="relative bg-slate-50 rounded-2xl shadow-lg p-4 flex flex-col gap-2 hover:shadow-xl hover:scale-105 transition-transform cursor-pointer"
-                onClick={()=>navigate("/employee/details", { state: { employee: emp } })} // ✅ MATCHES App.jsx
-              >
-                <span className="text-gray-500 text-sm">ID: {emp.id}</span>
-                <span className="font-bold text-lg">{emp.name}</span>
-                <span className="text-gray-600 text-sm">{emp.position} | {emp.depot}</span>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full border border-gray-200">
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="border px-4 py-2 text-left">Employee ID</th>
+                  <th className="border px-4 py-2 text-left">Name</th>
+                  <th className="border px-4 py-2 text-left">Position</th>
+                  <th className="border px-4 py-2 text-left">Depot</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(emp=>(
+                  <tr
+                    key={emp.id}
+                    className="hover:bg-gray-50 cursor-pointer transition-colors"
+                    onClick={()=>navigate("/employee/details", { state: { employee: emp } })}
+                  >
+                    <td className="border px-4 py-2 text-gray-500">{emp.id}</td>
+                    <td className="border px-4 py-2 font-bold">
+                      <span>{emp.name}</span>
+                      {emp.agency && (
+                        <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 align-middle">
+                          <span className="text-red-500">⚑</span>
+                          Agency
+                        </span>
+                      )}
+                    </td>
+                    <td className="border px-4 py-2 text-gray-600">{emp.position}</td>
+                    <td className="border px-4 py-2 text-gray-600">{emp.depot}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
