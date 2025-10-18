@@ -1,58 +1,82 @@
-import { Link } from "react-router-dom"; /* To access this page use "http://localhost:5173/applicant/register" */
+import { Link, useNavigate } from "react-router-dom"; /* To access this page use "http://localhost:5173/applicant/register" */
 import { useState, useEffect } from 'react';
 import Logo from './Logo.png';
 import { supabase } from './supabaseClient';
+import emailjs from '@emailjs/browser';
 
 
 function ApplicantRegister() {
 
-      useEffect(() => {
-      const testConnection = async () => {
-        const { data, error } = await supabase.from('applicants').select('*').limit(1);
-        console.log('✅ Connected to Supabase:', data, error);
-      };
-      testConnection();
-    }, []);
+  const navigate = useNavigate();
+  const [lname, setLname] = useState('');
+  const [fname, setFname] = useState('');
+  const [mname, setMname] = useState('');
+  const [contact, setContact] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
-    const [lname, setLname] = useState('');
-    const [fname, setFname] = useState('');
-    const [mname, setMname] = useState('');
-    const [contact, setContact] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
 
-    const handleRegister = async (e) => {
-      e.preventDefault(); 
+  const handleRegister = async (e) => {
+    e.preventDefault();
 
-      if (password !== confirmPassword) {
-          alert("Passwords do not match!");
-          return;
-        }
+    if (password !== confirmPassword) {
+      alert("Passwords do not match!");
+      return;
+    }
 
-      if (!lname || !fname || !email || !password || !contact) {
-        alert("Please fill in all required fields.");
-        return;
-      }
-  
-      const { data, error } = await supabase.from('applicants').insert([
-        {
-          lname: lname,
-          fname: fname,
-          mname: mname,
-          contact_number: contact,
+    if (!lname || !fname || !email || !password || !contact) {
+      alert("Please fill in all required fields.");
+      return;
+    }
+
+    
+    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+    
+      try {
+        const emailParams = {
           email: email,
-          password: password,
-        },
-      ]);
+          user_name: fname,
+          verification_code: verificationCode,
+        };
 
-      if (error) {
-        console.error("❌ Error inserting data:", error.message);
-      } else {
-        console.log("✅ Data inserted successfully:", data);
-        alert("Account created!");
-      }
-  };
+        await emailjs.send(
+          "service_nc4wt9g",        
+          "template_x50nz3r",       
+          emailParams,
+          "m2yll-ASVS8jsxvcM"         
+        );
+
+      console.log("✅ Verification email sent!");
+
+      } catch (error) {
+        console.error("❌ Failed to send email:", error);
+        alert("Failed to send verification email. Please try again.");
+        return;
+    }
+
+    
+    const { data, error } = await supabase.from('pending_applicants').insert([
+      {
+        lname,
+        fname,
+        mname,
+        contact,
+        email,
+        password,
+        verification_code: verificationCode,
+      },
+    ]);
+
+    if (error) {
+      console.error("❌ Error inserting data:", error.message);
+    } else {
+      console.log("✅ Pending applicant added:", data);
+      alert("Verification code sent! Please check your email.");
+      navigate("/applicant/verify", { state: { email } });
+    }
+};
 
 
   return (

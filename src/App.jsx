@@ -23,6 +23,7 @@ import ApplicantApplications from "./ApplicantApplications";
 import EmployeeSeparation from "./EmployeeSeparation";
 import AgencyHome from "./AgencyHome";
 import HrCreateJob from "./HrCreateJob";
+import VerifyEmail from "./VerifyEmail";
 
 
 function App() {
@@ -30,6 +31,7 @@ function App() {
     <Routes>
       <Route path="/" element={<ApplicantGHome />} />
       <Route path="/applicant/register" element={<ApplicantRegister />} />
+      <Route path="/applicant/verify" element={<VerifyEmail />} />
       <Route path="/applicant/login" element={<ApplicantLogin />} />
       <Route path="/hr/home" element={<HrHome />} />
       <Route path="/driver/add/record" element={<DriverAddRecord />} />

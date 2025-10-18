@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@emailjs/browser": "^4.4.1",
     "@supabase/supabase-js": "^2.75.0",
     "@tailwindcss/vite": "^4.1.13",
+    "bcryptjs": "^3.0.2",
     "lucide-react": "^0.544.0",
     "react": "^19.1.1",
     "react-calendar": "^6.0.0",
