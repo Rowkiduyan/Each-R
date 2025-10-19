@@ -1,12 +1,14 @@
 import { Navigate } from "react-router-dom";
-import useUserRole from "./hooks/useUserRole";
+import { useUserRoles } from "./useUserRoles";
 
-export default function RequireRole({ role: requiredRole, children }) {
-  const { role, loading } = useUserRole();
+
+export default function RequireRole({ role, children }) {
+  const { role: userRole, loading } = useUserRoles();
 
   if (loading) return <p>Loading...</p>;
 
-  if (role !== requiredRole) {
+  // if user doesn't match the required role, redirect
+  if (userRole !== role) {
     return <Navigate to="/not-authorized" replace />;
   }
 

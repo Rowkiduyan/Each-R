@@ -1,26 +1,28 @@
 import { useEffect, useState } from "react";
-import { supabase } from "../supabaseClient";
+import { supabase } from "./supabaseClient";
 
-export default function useUserRole() {
+export function useUserRoles() {
   const [role, setRole] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const getUserRole = async () => {
+      // Get current user session
       const { data: { user } } = await supabase.auth.getUser();
 
       if (user) {
+        // Fetch user's role from "profiles" table
         const { data, error } = await supabase
           .from("profiles")
           .select("role")
           .eq("id", user.id)
           .single();
 
-        if (error) console.error(error);
-        else setRole(data.role);
+        if (!error && data) setRole(data.role);
       }
       setLoading(false);
     };
+
     getUserRole();
   }, []);
 
