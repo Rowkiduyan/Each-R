@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom"; /* To access this page use "http://localhost:5173/applicant/register" */
-import { useState, useEffect } from 'react';
+import { useState} from 'react';
 import Logo from './Logo.png';
 import { supabase } from './supabaseClient';
 import emailjs from '@emailjs/browser';
@@ -17,47 +17,40 @@ function ApplicantRegister() {
   const [confirmPassword, setConfirmPassword] = useState('');
 
 
-  const handleRegister = async (e) => {
-    e.preventDefault();
+const handleRegister = async (e) => {
+  e.preventDefault();
 
-    if (password !== confirmPassword) {
-      alert("Passwords do not match!");
-      return;
-    }
+  if (password !== confirmPassword) {
+    alert("Passwords do not match!");
+    return;
+  }
 
-    if (!lname || !fname || !email || !password || !contact) {
-      alert("Please fill in all required fields.");
-      return;
-    }
+  if (!lname || !fname || !email || !password || !contact) {
+    alert("Please fill in all required fields.");
+    return;
+  }
 
-    
-    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    
-      try {
-        const emailParams = {
-          email: email,
-          user_name: fname,
-          verification_code: verificationCode,
-        };
+  try {
+    // Send email with verification code
+    const emailParams = {
+      email,
+      user_name: fname,
+      verification_code: verificationCode,
+    };
 
-        await emailjs.send(
-          "service_nc4wt9g",        
-          "template_x50nz3r",       
-          emailParams,
-          "m2yll-ASVS8jsxvcM"         
-        );
+    await emailjs.send(
+      "service_nc4wt9g",
+      "template_x50nz3r",
+      emailParams,
+      "m2yll-ASVS8jsxvcM"
+    );
 
-      console.log("✅ Verification email sent!");
+    console.log("✅ Verification email sent!");
 
-      } catch (error) {
-        console.error("❌ Failed to send email:", error);
-        alert("Failed to send verification email. Please try again.");
-        return;
-    }
-
-    
-    const { data, error } = await supabase.from('pending_applicants').insert([
+    // Store pending registration temporarily
+    const { error } = await supabase.from("pending_applicants").insert([
       {
         lname,
         fname,
@@ -69,14 +62,16 @@ function ApplicantRegister() {
       },
     ]);
 
-    if (error) {
-      console.error("❌ Error inserting data:", error.message);
-    } else {
-      console.log("✅ Pending applicant added:", data);
-      alert("Verification code sent! Please check your email.");
-      navigate("/applicant/verify", { state: { email } });
-    }
+    if (error) throw error;
+
+    alert("Verification code sent! Please check your email.");
+    navigate("/applicant/verify", { state: { email } });
+  } catch (error) {
+    console.error("❌ Registration error:", error.message);
+    alert("Something went wrong. Please try again.");
+  }
 };
+
 
 
   return (
