@@ -7,6 +7,8 @@ export default function RequireRole({ role, children }) {
 
   if (loading) return <p>Loading...</p>;
 
+  console.log("🔍 Checking role:", userRole, "vs required:", role);
+
   // if user doesn't match the required role, redirect
   if (userRole !== role) {
     return <Navigate to="/not-authorized" replace />;

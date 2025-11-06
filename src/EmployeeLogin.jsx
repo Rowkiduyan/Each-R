@@ -28,7 +28,7 @@ function EmployeeLogin() {
     const user = data.user;
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("role")
+      .select("email, role, first_name, last_name")
       .eq("id", user.id)
       .single();
 
@@ -38,12 +38,30 @@ function EmployeeLogin() {
       return;
     }
 
+    const userData = {
+        email: user.email,
+        id: user.id,
+        role: profile.role,
+        first_name: profile.first_name,
+        last_name: profile.last_name,
+      };
+    
+    localStorage.setItem("loggedInHR", JSON.stringify(userData));
+
+    
+
     // Redirect based on role
-    if (profile.role === "HR") navigate("/hr/home");
-    else if (profile.role === "employee") navigate("/employee/home");
-    else if (profile.role === "applicant") navigate("/applicantl/home");
-    else setError("Unknown role.");
-  };
+    if (profile.role === "HR") {
+    navigate("/hr/home");
+  } else if (profile.role === "employee") {
+    navigate("/employee/home");
+  } else if (profile.role === "applicant") {
+    navigate("/applicant/home");
+  } else {
+    setError("Unknown role.");
+  }
+    
+    };
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-neutral-100">

@@ -25,6 +25,7 @@ import AgencyHome from "./AgencyHome";
 import HrCreateJob from "./HrCreateJob";
 import VerifyEmail from "./VerifyEmail";
 import RequireRole from "./RequireRole";
+import HRLayout from "./layouts/HRLayout";
 
 function App() {
   return (
@@ -37,69 +38,27 @@ function App() {
 
       {/* HR protected routes */}
       <Route
-        path="/hr/home"
+        path="/hr"
         element={
           <RequireRole role="HR">
-            <HrHome />
+            <HRLayout />
           </RequireRole>
         }
-      />
-      <Route
-        path="/hr/trainings"
-        element={
-          <RequireRole role="HR">
-            <HrTrainings />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/hr/recruitment"
-        element={
-          <RequireRole role="HR">
-            <HrRecruitment />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/hr/eval"
-        element={
-          <RequireRole role="HR">
-            <HrEval />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/hr/seperation"
-        element={
-          <RequireRole role="HR">
-            <HrSeperation />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/hr/notif"
-        element={
-          <RequireRole role="HR">
-            <HrNotif />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/hr/create/job"
-        element={
-          <RequireRole role="HR">
-            <HrCreateJob />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/hr/recruitment/applicant/:id"
-        element={
-          <RequireRole role="HR">
-            <ApplicantDetails />
-          </RequireRole>
-        }
-      />
+      >
+        <Route path="/hr/home" element={<HrHome />} />
+        <Route path="/hr/trainings" element={<HrTrainings />} />
+        <Route path="/hr/recruitment" element={<HrRecruitment />} />
+        <Route path="/hr/eval" element={<HrEval />} />
+        <Route path="/hr/seperation" element={<HrSeperation />} />
+        <Route path="/hr/notif" element={<HrNotif />} />
+        <Route path="/hr/create/job" element={<HrCreateJob />} />
+        <Route path="/hr/recruitment/applicant/:id" element={<ApplicantDetails />} />
+      </Route>
+      
+      
+      
+     
+  
 
       {/* Employee protected routes */}
       <Route
