@@ -48,7 +48,7 @@ export default function HRLayout() {
                 Home
               </NavLink>
 
-              <NavLink to="/employees" className={({ isActive }) =>
+              <NavLink to="/hr/employees" className={({ isActive }) =>
               `hover:text-red-600 ${isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700 font-medium"
                 }`
               }
@@ -98,7 +98,7 @@ export default function HRLayout() {
             </div>
 
             <div className="flex items-center space-x-10">
-              <span className="text-red-600 font-semibold">{hrUser?.first_name && hrUser?.last_name ? `${hrUser.first_name} ${hrUser.last_name}`: hrUser?.email}</span>
+              <span className="text-red-600 font-semibold border-b-2 border-red-600">{hrUser?.first_name && hrUser?.last_name ? `${hrUser.first_name} ${hrUser.last_name}`: hrUser?.email}</span>
               <button onClick={handleLogout} className="text-gray-700 hover:text-red-600 font-medium">Logout</button>
             </div>
           </div>

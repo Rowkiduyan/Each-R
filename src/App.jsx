@@ -27,6 +27,8 @@ import VerifyEmail from "./VerifyEmail";
 import RequireRole from "./RequireRole";
 import HRLayout from "./layouts/HRLayout";
 
+
+
 function App() {
   return (
     <Routes>
@@ -45,14 +47,16 @@ function App() {
           </RequireRole>
         }
       >
-        <Route path="/hr/home" element={<HrHome />} />
-        <Route path="/hr/trainings" element={<HrTrainings />} />
-        <Route path="/hr/recruitment" element={<HrRecruitment />} />
-        <Route path="/hr/eval" element={<HrEval />} />
-        <Route path="/hr/seperation" element={<HrSeperation />} />
-        <Route path="/hr/notif" element={<HrNotif />} />
-        <Route path="/hr/create/job" element={<HrCreateJob />} />
-        <Route path="/hr/recruitment/applicant/:id" element={<ApplicantDetails />} />
+        <Route path="home" element={<HrHome />} />
+        <Route path="trainings" element={<HrTrainings />} />
+        <Route path="recruitment" element={<HrRecruitment />} />
+        <Route path="eval" element={<HrEval />} />
+        <Route path="seperation" element={<HrSeperation />} />
+        <Route path="notif" element={<HrNotif />} />
+        <Route path="create/job" element={<HrCreateJob />} />
+        <Route path="recruitment/applicant/:id" element={<ApplicantDetails />} />
+        <Route path="employees" element={<Employees />} />
+        <Route path="employee/details" element={<EmployeeDetails />} />
       </Route>
       
       
@@ -104,7 +108,6 @@ function App() {
 
       {/* Public routes (no protection) */}
       <Route path="/employee/login" element={<EmployeeLogin />} />
-      <Route path="/employees" element={<Employees />} />
       <Route path="/driver/add/record" element={<DriverAddRecord />} />
       <Route path="/applicantg/home" element={<ApplicantGHome />} />
       <Route path="/applicantl/home" element={<ApplicantLHome />} />
