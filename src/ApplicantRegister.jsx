@@ -5,6 +5,7 @@ import { supabase } from './supabaseClient';
 import emailjs from '@emailjs/browser';
 
 
+
 function ApplicantRegister() {
 
   const navigate = useNavigate();
@@ -15,61 +16,67 @@ function ApplicantRegister() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
 
 const handleRegister = async (e) => {
   e.preventDefault();
+  setIsSubmitting(true);
 
   if (password !== confirmPassword) {
     alert("Passwords do not match!");
+    setIsSubmitting(false);
     return;
   }
 
   if (!lname || !fname || !email || !password || !contact) {
     alert("Please fill in all required fields.");
+    setIsSubmitting(false);
     return;
   }
 
-  const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-
   try {
-    // Send email with verification code
-    const emailParams = {
-      email,
-      user_name: fname,
-      verification_code: verificationCode,
-    };
+      //  Generate a 6-digit verification code
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    await emailjs.send(
-      "service_nc4wt9g",
-      "template_x50nz3r",
-      emailParams,
-      "m2yll-ASVS8jsxvcM"
-    );
+      //  Send verification email using EmailJS
+      await emailjs.send(
+        "service_nc4wt9g",       
+        "template_x50nz3r",     
+        {
+          user_name: fname,
+          email,
+          verification_code: verificationCode,
+        },
+        "m2yll-ASVS8jsxvcM"        
+      );
 
-    console.log("✅ Verification email sent!");
+      console.log("✅ Verification email sent!");
 
-    // Store pending registration temporarily
-    const { error } = await supabase.from("pending_applicants").insert([
-      {
-        lname,
-        fname,
-        mname,
-        contact,
-        email,
-        password,
-        verification_code: verificationCode,
-      },
-    ]);
+      // Insert into pending_applicants
+      const { error } = await supabase.from("pending_applicants").insert([
+        {
+          fname,
+          lname,
+          mname,
+          contact_number: contact,
+          email,
+          password,  // consider hashing this
+          verification_code: verificationCode
+        }
+      ]);
 
-    if (error) throw error;
+      if (error) throw error;
 
-    alert("Verification code sent! Please check your email.");
-    navigate("/applicant/verify", { state: { email } });
-  } catch (error) {
-    console.error("❌ Registration error:", error.message);
-    alert("Something went wrong. Please try again.");
-  }
+      alert("Verification code sent! Please check your email.");
+      navigate("/applicant/verify", { state: { email } });
+
+    } catch (err) {
+      console.error("❌ Registration error:", err.message);
+      alert("Something went wrong. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
 };
 
 
@@ -120,9 +127,12 @@ const handleRegister = async (e) => {
         <button
 
           type="submit" 
-          className="bg-red-600 hover:bg-red-700 text-white font-semibold py-3 rounded w-full"
+          disabled={isSubmitting}
+          className={`bg-red-600 hover:bg-red-700 text-white font-semibold py-3 rounded w-full ${
+            isSubmitting ? "opacity-50 cursor-not-allowed" : ""
+          }`}
         >
-          SIGN UP
+          {isSubmitting ? "Signing up..." : "SIGN UP"}
         </button>
 
         <p className="text-center text-sm mt-4">
