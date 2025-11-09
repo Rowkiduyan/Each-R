@@ -29,12 +29,16 @@ function VerifyEmail() {
         return;
       }
 
-      // 2️⃣ Create a Supabase Auth user
-     const { error: authError } = await supabase.auth.signUp({
-      email: pendingUser.email,
-      password: pendingUser.password,
-    });
+      const role = pendingUser.role || "Applicant";
+      let targetTable = "applicants";
+      if (role === "HR") targetTable = "hr";
+      if (role === "Admin") targetTable = "admin";
 
+      // 2️⃣ Create user in Supabase Auth first
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: pendingUser.email,
+        password: pendingUser.password,
+      });
 
       if (authError) {
         console.error("Auth signup error:", authError);
@@ -43,37 +47,25 @@ function VerifyEmail() {
         return;
       }
 
-      const authUserId = authData.user.id;
+      const userId = authData.user?.id;
+      if (!userId) {
+        alert("Failed to retrieve new user ID from Supabase Auth.");
+        setIsVerifying(false);
+        return;
+      }
 
-       const { error: profileError } = await supabase.from("profiles").insert([
-      {
-        id: authData.user.id, // use the same UUID as Auth user
-        first_name: pendingUser.fname,
-        last_name: pendingUser.lname,
-        email: pendingUser.email,
-        role: "Applicant",
-      },
-    ]);
-
-    if (profileError) {
-      console.error("Error creating profile row:", profileError);
-      alert("Error creating profile. Please contact support.");
-      setIsVerifying(false);
-      return;
-    }
-
-      // 3️⃣ Move user from pending_applicants to applicants table
-      const { error: insertError } = await supabase.from("applicants").insert([
-        {
-          id: pendingUser.id, // keep the same UUID for consistency
+      // 3️⃣ Update applicant record (the trigger already created it)
+      const { error: updateError } = await supabase
+        .from(targetTable)
+        .update({
+          fname: pendingUser.fname,
           lname: pendingUser.lname,
           mname: pendingUser.mname,
           contact_number: pendingUser.contact,
-          email: pendingUser.email,
-          password: pendingUser.password, // still plain, consider hashing later
-          role: "Applicant",
-        },
-      ]);
+          password: pendingUser.password,
+          role,
+        })
+        .eq("id", userId);
 
       if (updateError) {
         console.error("Update error:", updateError);
