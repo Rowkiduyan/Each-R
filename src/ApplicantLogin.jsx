@@ -11,51 +11,49 @@ function ApplicantLogin() {
   const [error, setError] = useState("");
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
+  e.preventDefault();
+  setLoading(true);
+  setError("");
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+  // 1️⃣ Log in the user
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password,
+  });
 
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-      return;
-    }
-
-    // Get the logged-in user’s data
-    const { user } = data;
-
-    // Fetch the user's role — check both tables
-    let { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if ((!profile || profileError) && !profile?.role) {
-      const { data: applicantData } = await supabase
-        .from("applicants")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      profile = applicantData;
-    }
-
-    if (profile?.role === "Applicant") {
-      navigate("/applicantl/home");
-    } else if (profile?.role === "HR") {
-      navigate("/hr/home");
-    } else {
-      setError("Unknown role or access not allowed");
-    }
-
+  if (error) {
+    setError(error.message);
     setLoading(false);
-  };
+    return;
+  }
+
+  const { user } = data;
+
+  // 2️⃣ Fetch the user's record from applicants table by email
+  const { data: applicantData, error: applicantError } = await supabase
+    .from("applicants")
+    .select("role")
+    .eq("email", user.email)
+    .single();
+
+  if (applicantError || !applicantData) {
+    setError("Unknown role or access not allowed");
+    setLoading(false);
+    return;
+  }
+
+  // 3️⃣ Redirect based on role
+  if (applicantData.role.toLowerCase() === "applicant") {
+    navigate("/applicantl/home");
+  } else if (applicantData.role.toLowerCase() === "hr") {
+    navigate("/hr/home");
+  } else {
+    setError("Unknown role or access not allowed");
+  }
+
+  setLoading(false);
+};
+
 
   return (
     <div className="flex flex-col items-center min-h-screen bg-neutral-100">
