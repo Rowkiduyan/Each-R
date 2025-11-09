@@ -30,11 +30,10 @@ function VerifyEmail() {
       }
 
       // 2️⃣ Create a Supabase Auth user
-     const { error: authError } = await supabase.auth.signUp({
-      email: pendingUser.email,
-      password: pendingUser.password,
-    });
-
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: pendingUser.email,
+        password: pendingUser.password,
+      });
 
       if (authError) {
         console.error("Auth signup error:", authError);
@@ -43,26 +42,25 @@ function VerifyEmail() {
         return;
       }
 
-      const authUserId = authData.user.id;
+      // 3️⃣ Insert into profiles table
+      const { error: profileError } = await supabase.from("profiles").insert([
+        {
+          id: authData.user.id, // use the same UUID as Auth user
+          first_name: pendingUser.fname,
+          last_name: pendingUser.lname,
+          email: pendingUser.email,
+          role: "Applicant",
+        },
+      ]);
 
-       const { error: profileError } = await supabase.from("profiles").insert([
-      {
-        id: authData.user.id, // use the same UUID as Auth user
-        first_name: pendingUser.fname,
-        last_name: pendingUser.lname,
-        email: pendingUser.email,
-        role: "Applicant",
-      },
-    ]);
+      if (profileError) {
+        console.error("Error creating profile row:", profileError);
+        alert("Error creating profile. Please contact support.");
+        setIsVerifying(false);
+        return;
+      }
 
-    if (profileError) {
-      console.error("Error creating profile row:", profileError);
-      alert("Error creating profile. Please contact support.");
-      setIsVerifying(false);
-      return;
-    }
-
-      // 3️⃣ Move user from pending_applicants to applicants table
+      // 4️⃣ Move user from pending_applicants to applicants table
       const { error: insertError } = await supabase.from("applicants").insert([
         {
           id: pendingUser.id, // keep the same UUID for consistency
@@ -75,18 +73,18 @@ function VerifyEmail() {
         },
       ]);
 
-      if (updateError) {
-        console.error("Update error:", updateError);
-        alert("Error updating applicant record: " + updateError.message);
+      if (insertError) {
+        console.error("Insert error:", insertError);
+        alert("Error inserting applicant record: " + insertError.message);
         setIsVerifying(false);
         return;
       }
 
-      // 4️⃣ Remove from pending_applicants
+      // 5️⃣ Remove from pending_applicants
       await supabase.from("pending_applicants").delete().eq("email", email);
 
       alert("✅ Email verified and account created successfully!");
-      navigate(`/${role.toLowerCase()}/login`);
+      navigate("/applicant/login");
     } catch (err) {
       console.error("Unexpected error:", err);
       alert("An unexpected error occurred.");
