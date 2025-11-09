@@ -29,13 +29,8 @@ function VerifyEmail() {
         return;
       }
 
-      const role = pendingUser.role || "Applicant";
-      let targetTable = "applicants";
-      if (role === "HR") targetTable = "hr";
-      if (role === "Admin") targetTable = "admin";
-
-      // 2️⃣ Create user in Supabase Auth first
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      // 2️⃣ Create a Supabase Auth user
+     const { data:authData, error: authError } = await supabase.auth.signUp({
         email: pendingUser.email,
         password: pendingUser.password,
       });
@@ -47,38 +42,57 @@ function VerifyEmail() {
         return;
       }
 
-      const userId = authData.user?.id;
-      if (!userId) {
-        alert("Failed to retrieve new user ID from Supabase Auth.");
-        setIsVerifying(false);
-        return;
-      }
+      const authUserId = authData.user.id;
 
-      // 3️⃣ Update applicant record (the trigger already created it)
-      const { error: updateError } = await supabase
-        .from(targetTable)
-        .update({
-          fname: pendingUser.fname,
+       const { error: profileError } = await supabase.from("profiles").insert([
+      {
+        id: authData.user.id, // use the same UUID as Auth user
+        first_name: pendingUser.fname,
+        last_name: pendingUser.lname,
+        email: pendingUser.email,
+        role: "Applicant",
+      },
+    ]);
+
+    if (profileError) {
+      console.error("Error creating profile row:", profileError);
+      alert("Error creating profile. Please contact support.");
+      setIsVerifying(false);
+      return;
+    }
+
+      // 3️⃣ Move user from pending_applicants to applicants table
+      const { error: insertError } = await supabase.from("applicants").insert([
+        {
+          id: authUserId,
           lname: pendingUser.lname,
           mname: pendingUser.mname,
           contact_number: pendingUser.contact,
-          password: pendingUser.password,
-          role,
-        })
-        .eq("id", userId);
+          email: pendingUser.email,
+          role: "Applicant",
+        },
+      ]);
 
-      if (updateError) {
-        console.error("Update error:", updateError);
-        alert("Error updating applicant record: " + updateError.message);
+      if (insertError) {
+        console.error(insertError);
+        alert("Error moving user to applicants table.");
         setIsVerifying(false);
         return;
       }
 
-      // 4️⃣ Remove from pending_applicants
-      await supabase.from("pending_applicants").delete().eq("email", email);
+      // 4️⃣ Remove user from pending_applicants
+      const { error: deleteError } = await supabase
+        .from("pending_applicants")
+        .delete()
+        .eq("email", email);
 
-      alert("✅ Email verified and account created successfully!");
-      navigate(`/${role.toLowerCase()}/login`);
+      if (deleteError) {
+        console.error(deleteError);
+        alert("Warning: could not remove pending applicant.");
+      }
+
+      alert("✅ Email verified successfully! You can now log in.");
+      navigate("/applicant/login");
     } catch (err) {
       console.error("Unexpected error:", err);
       alert("An unexpected error occurred.");
