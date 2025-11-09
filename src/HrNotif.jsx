@@ -5,32 +5,6 @@ import { NavLink } from "react-router-dom";
 function HrNotif() {
   return (
     <>  
-    <nav className="w-full bg-white shadow-md mb-6 ">
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="flex justify-between items-center h-25">
-              <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">
-                Each-R
-              </div>
-              <div className="flex space-x-6 ml-0 md:ml-32 lg:ml-10">
-                <Link to = "/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
-                <Link to="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</Link>
-                <Link to="/hr/recruitment" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</Link>
-                <Link to ="/hr/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</Link>
-                <Link to="/hr/eval" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
-                <Link to="/hr/seperation" className="text-gray-700 hover:text-red-600 font-medium">Separation</Link>
-                <NavLink to ="/hr/notif" className={({ isActive }) => `hover:text-red-600 ${
-                isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
-                }`}>
-                    Notifications
-                </NavLink>
-              </div>
-              <div className="flex items-center space-x-4">
-                <span className="text-gray-700 font-semibold">Alexis Yvone</span>
-                <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
-              </div>
-            </div>
-          </div>
-        </nav>
 
         <div className="max-w-7xl mx-auto px-4">
             <div className="bg-white border rounded-lg p-3 shadow mx-auto">

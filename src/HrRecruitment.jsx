@@ -95,68 +95,7 @@ function HrRecruitment() {
   return (
     <>
       {/* ✅ NavBar */}
-      <nav className="w-full bg-white shadow-md mb-6">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="flex justify-between items-center h-25">
-            <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">
-              Each-R
-            </div>
-            <div className="flex space-x-6 items-center">
-              <Link
-                to="/hr/home"
-                className="text-gray-700 hover:text-red-600 font-medium"
-              >
-                Home
-              </Link>
-              <Link
-                to="/employees"
-                className="text-gray-700 hover:text-red-600 font-medium"
-              >
-                Employees
-              </Link>
-              <Link
-                to="/hr/recruitment"
-                className="text-gray-700 hover:text-red-600 font-medium"
-              >
-                Recruitment
-              </Link>
-              <Link
-                to="/hr/trainings"
-                className="text-gray-700 hover:text-red-600 font-medium"
-              >
-                Trainings/Seminars
-              </Link>
-              <a
-                href="#"
-                className="text-gray-700 hover:text-red-600 font-medium"
-              >
-                Evaluation
-              </a>
-              <a
-                href="#"
-                className="text-gray-700 hover:text-red-600 font-medium"
-              >
-                Seperation
-              </a>
-              <a
-                href="#"
-                className="text-gray-700 hover:text-red-600 font-medium"
-              >
-                Notifications
-              </a>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-gray-700 font-semibold">Alexis Yvone</span>
-              <a
-                href="#"
-                className="text-gray-700 hover:text-red-600 font-medium"
-              >
-                Logout
-              </a>
-            </div>
-          </div>
-        </div>
-      </nav>
+  
 
       {/* ✅ Main Content */}
       <div className="flex justify-center items-start min-h-screen bg-gray-100">

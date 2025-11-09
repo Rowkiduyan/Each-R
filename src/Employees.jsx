@@ -66,31 +66,7 @@ function Employees() {
 
   return (
     <>
-      {/* Navbar */}
-<nav className="w-full bg-white shadow-md mb-6">
-  <div className="max-w-7xl mx-auto px-4">
-    <div className="flex justify-between items-center h-25">
-      <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">
-        Each-R
-      </div>
-      <div className="flex space-x-6 flex-wrap">
-        <Link to="/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
-        <NavLink to="/employees" className={({ isActive }) => `hover:text-red-600 ${
-        isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
-        }`}>Employees</NavLink>
-        <Link to="/hr/recruitment" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</Link>
-        <Link to="/hr/trainings" className="text-gray-700 hover:text-red-600 font-medium">Trainings/Seminars</Link>
-        <Link to="/hr/eval" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
-        <Link to="/hr/seperation" className="text-gray-700 hover:text-red-600 font-medium">Seperation</Link>
-        <Link to="/hr/notif" className="text-gray-700 hover:text-red-600 font-medium">Notifications</Link>
-      </div>
-      <div className="flex items-center space-x-4">
-        <span className="text-gray-700 font-semibold">Alexis Yvone</span>
-        <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
-      </div>
-    </div>
-  </div>
-</nav>
+
 
 
       {/* Depot Compliance */}
@@ -170,7 +146,7 @@ function Employees() {
                   <tr
                     key={emp.id}
                     className="hover:bg-gray-50 cursor-pointer transition-colors"
-                    onClick={()=>navigate("/employee/details", { state: { employee: emp } })}
+                    onClick={()=>navigate("/hr/employee/details", { state: { employee: emp } })}
                   >
                     <td className="border px-4 py-2 text-gray-500">{emp.id}</td>
                     <td className="border px-4 py-2 font-bold">

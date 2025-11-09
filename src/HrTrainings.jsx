@@ -122,33 +122,7 @@ function HrTrainings() {
       };
     return (
     <>
-  <nav className="w-full bg-white shadow-md mb-6 ">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex justify-between items-center h-25">
-          <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">
-            Each-R
-          </div>
-          <div className="flex space-x-6 ml-0 md:ml-32 lg:ml-10">
-            <Link to = "/hr/home" className="text-gray-700 hover:text-red-600 font-medium">Home</Link>
-            <Link to="/employees" className="text-gray-700 hover:text-red-600 font-medium">Employees</Link>
-            <Link to="/hr/recruitment" className="text-gray-700 hover:text-red-600 font-medium">Recruitment</Link>
-            <NavLink to ="/hr/trainings" className={({ isActive }) => `hover:text-red-600 ${
-            isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700"
-            }`} >Trainings/Seminars</NavLink>
-            <Link to="/hr/eval" className="text-gray-700 hover:text-red-600 font-medium">Evaluation</Link>
-            <Link to="/hr/seperation" className="text-gray-700 hover:text-red-600 font-medium">Separation</Link>
-            <Link to ="/hr/notif" className="text-gray-700 hover:text-red-600 font-medium relative">
-                    Notifications
-              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
-            </Link>
-          </div>
-          <div className="flex items-center space-x-4">
-            <span className="text-gray-700 font-semibold">Alexis Yvone</span>
-            <Link to="/employee/login" className="text-gray-700 hover:text-red-600 font-medium">Logout</Link>
-          </div>
-        </div>
-      </div>
-    </nav>
+  
 
     <div className="max-w-7xl mx-auto px-4">
       <div className="bg-white border border-red-200 rounded-lg p-4 shadow">

@@ -19,6 +19,10 @@ export function useUserRoles() {
           .single();
 
         if (!error && data) setRole(data.role);
+        if (!error && data) {
+            console.log("✅ Role fetched from Supabase:", data.role);
+            setRole(data.role);
+          }
       }
       setLoading(false);
     };
