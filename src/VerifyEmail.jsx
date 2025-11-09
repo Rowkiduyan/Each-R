@@ -15,7 +15,7 @@ function VerifyEmail() {
     setIsVerifying(true);
 
     try {
-      // 1️⃣ Check if the verification code and email match in pending_applicants
+      // 1️⃣ Get pending user from pending_applicants
       const { data: pendingUser, error: pendingError } = await supabase
         .from("pending_applicants")
         .select("*")
@@ -30,10 +30,10 @@ function VerifyEmail() {
       }
 
       // 2️⃣ Create a Supabase Auth user
-     const { data:authData, error: authError } = await supabase.auth.signUp({
-        email: pendingUser.email,
-        password: pendingUser.password,
-      });
+     const { error: authError } = await supabase.auth.signUp({
+      email: pendingUser.email,
+      password: pendingUser.password,
+    });
 
 
       if (authError) {
@@ -65,39 +65,31 @@ function VerifyEmail() {
       // 3️⃣ Move user from pending_applicants to applicants table
       const { error: insertError } = await supabase.from("applicants").insert([
         {
-          id: authUserId,
+          id: pendingUser.id, // keep the same UUID for consistency
           lname: pendingUser.lname,
-          fname: pendingUser.fname,
           mname: pendingUser.mname,
           contact_number: pendingUser.contact,
           email: pendingUser.email,
+          password: pendingUser.password, // still plain, consider hashing later
           role: "Applicant",
         },
       ]);
 
-      if (insertError) {
-        console.error(insertError);
-        alert("Error moving user to applicants table.");
+      if (updateError) {
+        console.error("Update error:", updateError);
+        alert("Error updating applicant record: " + updateError.message);
         setIsVerifying(false);
         return;
       }
 
-      // 4️⃣ Remove user from pending_applicants
-      const { error: deleteError } = await supabase
-        .from("pending_applicants")
-        .delete()
-        .eq("email", email);
+      // 4️⃣ Remove from pending_applicants
+      await supabase.from("pending_applicants").delete().eq("email", email);
 
-      if (deleteError) {
-        console.error(deleteError);
-        alert("Warning: could not remove pending applicant.");
-      }
-
-      alert("✅ Email verified successfully! You can now log in.");
-      navigate("/applicant/login");
+      alert("✅ Email verified and account created successfully!");
+      navigate(`/${role.toLowerCase()}/login`);
     } catch (err) {
-      console.error(err);
-      alert("Unexpected error occurred. Please try again.");
+      console.error("Unexpected error:", err);
+      alert("An unexpected error occurred.");
     } finally {
       setIsVerifying(false);
     }
@@ -109,7 +101,9 @@ function VerifyEmail() {
         onSubmit={handleVerify}
         className="w-full max-w-md p-8 space-y-4 rounded-2xl bg-white shadow"
       >
-        <h1 className="text-2xl font-bold text-center mb-2">Verify Your Email</h1>
+        <h1 className="text-2xl font-bold text-center mb-2">
+          Verify Your Email
+        </h1>
         <p className="text-gray-600 text-center mb-6">
           Enter the 6-digit code we sent to your email.
         </p>
