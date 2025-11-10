@@ -23,6 +23,13 @@ const handleRegister = async (e) => {
   e.preventDefault();
   setIsSubmitting(true);
 
+
+  if (password.length < 6) {
+    alert("Password is too short");
+    setIsSubmitting(false);
+    return;
+  }
+
   if (password !== confirmPassword) {
     alert("Passwords do not match!");
     setIsSubmitting(false);

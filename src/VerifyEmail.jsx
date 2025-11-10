@@ -65,9 +65,10 @@ function VerifyEmail() {
       const { error: insertError } = await supabase.from("applicants").insert([
         {
           id: authUserId,
+          fname: pendingUser.fname,
           lname: pendingUser.lname,
           mname: pendingUser.mname,
-          contact_number: pendingUser.contact,
+          contact_number: pendingUser.contact_number,
           email: pendingUser.email,
           role: "Applicant",
         },

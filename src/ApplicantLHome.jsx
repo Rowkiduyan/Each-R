@@ -1,5 +1,6 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 
 function ApplicantLHome() {
 const navigate = useNavigate();
@@ -10,6 +11,203 @@ const [showModal, setShowModal] = useState(false);
 const [showSummary, setShowSummary] = useState(false);
 const [workExperiences, setWorkExperiences] = useState([{}]);
 const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
+
+// Profile state
+const [isEditMode, setIsEditMode] = useState(false);
+const [profileData, setProfileData] = useState(null);
+const [loading, setLoading] = useState(true);
+const [saving, setSaving] = useState(false);
+const [profileForm, setProfileForm] = useState({
+  address: '',
+  sex: '',
+  birthday: '',
+  age: '',
+  marital_status: '',
+  educational_attainment: '',
+  institution_name: '',
+  year_graduated: '',
+  skills: '',
+  work_experiences: [],
+  character_references: []
+});
+
+// Fetch profile data
+useEffect(() => {
+  const fetchProfileData = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('applicants')
+        .select('*')
+        .eq('email', user.email)
+        .single();
+
+      if (error) {
+        console.error('Error fetching profile:', error);
+        setLoading(false);
+        return;
+      }
+
+      if (data) {
+        setProfileData(data);
+        setProfileForm({
+          address: data.address || '',
+          sex: data.sex || '',
+          birthday: data.birthday || '',
+          age: data.age || '',
+          marital_status: data.marital_status || '',
+          educational_attainment: data.educational_attainment || '',
+          institution_name: data.institution_name || '',
+          year_graduated: data.year_graduated || '',
+          skills: data.skills || '',
+        });
+      }
+    } catch (err) {
+      console.error('Error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  fetchProfileData();
+}, []);
+
+// Calculate age from birthday
+const calculateAge = (birthday) => {
+  if (!birthday) return '';
+  const today = new Date();
+  const birthDate = new Date(birthday);
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age.toString();
+};
+
+// Handle form input change
+const handleFormChange = (field, value) => {
+  const updatedForm = {
+    ...profileForm,
+    [field]: value
+  };
+  
+  if (field === 'birthday') {
+    updatedForm.age = calculateAge(value);
+  }
+  
+  setProfileForm(updatedForm);
+};
+
+// Handle edit button
+const handleEdit = () => {
+  setIsEditMode(true);
+};
+
+// Handle save
+const handleSave = async () => {
+  setSaving(true);
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert('User not found');
+      setSaving(false);
+      return;
+    }
+
+    const { error } = await supabase
+      .from('applicants')
+      .update({
+        address: profileForm.address,
+        sex: profileForm.sex,
+        birthday: profileForm.birthday,
+        age: profileForm.age,
+        marital_status: profileForm.marital_status,
+        educational_attainment: profileForm.educational_attainment,
+        institution_name: profileForm.institution_name,
+        year_graduated: profileForm.year_graduated,
+        skills: profileForm.skills,
+        work_experiences: profileForm.work_experiences,
+        character_references: profileForm.character_references
+      })
+      .eq('email', user.email);
+
+    if (error) {
+      console.error('Error updating profile:', error);
+      alert('Error saving profile. Please try again.');
+      setSaving(false);
+      return;
+    }
+
+    const { data: updatedData, error: fetchError } = await supabase
+      .from('applicants')
+      .select('*')
+      .eq('email', user.email)
+      .single();
+
+    if (!fetchError && updatedData) {
+      setProfileData(updatedData);
+    }
+
+    setIsEditMode(false);
+    alert('Profile updated successfully!');
+  } catch (err) {
+    console.error('Error:', err);
+    alert('Error saving profile. Please try again.');
+  } finally {
+    setSaving(false);
+  }
+};
+
+// Handle cancel
+const handleCancel = () => {
+  if (profileData) {
+    setProfileForm({
+      address: profileData.address || '',
+      sex: profileData.sex || '',
+      birthday: profileData.birthday || '',
+      age: profileData.age || '',
+      marital_status: profileData.marital_status || '',
+      educational_attainment: profileData.educational_attainment || '',
+      institution_name: profileData.institution_name || '',
+      year_graduated: profileData.year_graduated || '',
+      skills: profileData.skills || '',
+      work_experiences: profileData.work_experiences || [],
+      character_references: profileData.character_references || []
+    });
+  }
+  setIsEditMode(false);
+};
+
+// Format full name
+const getFullName = () => {
+  if (!profileData) return 'Loading...';
+  const { lname, fname, mname } = profileData;
+  const middleInitial = mname ? ` ${mname.charAt(0)}.` : '';
+  return `${lname || ''}, ${fname || ''}${middleInitial}`;
+};
+
+// Format date for display
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+};
+
+// Format date for input
+const formatDateForInput = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 
   return (
@@ -70,12 +268,15 @@ const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
       </div>
 
       {/* Search Bar */}
+      {activeTab !== "Profile" && (
       <div className="max-w-7xl mx-auto px-6 mt-4 flex justify-end">
         <input
           placeholder="Search"
           className="w-80 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
         />
-      </div>          
+      </div>
+      )}
+          
       
       <div className="flex flex-col items-center  min-h-screen">
         <div className="max-w-7xl mx-auto px-6 py-8">      
@@ -288,172 +489,239 @@ const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
                     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                         <h2 className="text-2xl font-bold text-gray-800 mb-6">Profile Information</h2>
                         
-                        {/* Personal Information */}
-                        <div className="grid grid-cols-2 gap-8">
-                            <div className="space-y-4">
-                                <div>
-                                    <span className="font-bold">Full Name:</span> Dela Cruz, Juan
+                        {loading ? (
+                            <div className="text-center py-8">Loading profile...</div>
+                        ) : profileData ? (
+                            <>
+                                {/* Personal Information */}
+                                <div className="grid grid-cols-2 gap-8">
+                                    <div className="space-y-4">
+                                        <div>
+                                            <span className="font-bold">Full Name:</span> {getFullName()}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Address:</span>{' '}
+                                            {isEditMode ? (
+                                                <input
+                                                    type="text"
+                                                    value={profileForm.address}
+                                                    onChange={(e) => handleFormChange('address', e.target.value)}
+                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 w-80"
+                                                />
+                                            ) : (
+                                                profileForm.address || 'Not provided'
+                                            )}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Contact Number:</span> {profileData.contact_number || 'Not provided'}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Email:</span> {profileData.email || 'Not provided'}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <span className="font-bold">Sex:</span>{' '}
+                                            {isEditMode ? (
+                                                <select
+                                                    value={profileForm.sex}
+                                                    onChange={(e) => handleFormChange('sex', e.target.value)}
+                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                >
+                                                    <option value="">Select</option>
+                                                    <option value="Male">Male</option>
+                                                    <option value="Female">Female</option>
+                                                </select>
+                                            ) : (
+                                                profileForm.sex || 'Not provided'
+                                            )}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Birthday:</span>{' '}
+                                            {isEditMode ? (
+                                                <input
+                                                    type="date"
+                                                    value={formatDateForInput(profileForm.birthday)}
+                                                    onChange={(e) => handleFormChange('birthday', e.target.value)}
+                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                />
+                                            ) : (
+                                                profileForm.birthday ? formatDate(profileForm.birthday) : 'Not provided'
+                                            )}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Age:</span>{' '}
+                                            {isEditMode ? (
+                                                <input
+                                                    type="text"
+                                                    value={profileForm.age}
+                                                    readOnly
+                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded bg-gray-100 w-20"
+                                                />
+                                            ) : (
+                                                profileForm.age || 'Not provided'
+                                            )}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Marital Status:</span>{' '}
+                                            {isEditMode ? (
+                                                <select
+                                                    value={profileForm.marital_status}
+                                                    onChange={(e) => handleFormChange('marital_status', e.target.value)}
+                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                >
+                                                    <option value="">Select</option>
+                                                    <option value="Single">Single</option>
+                                                    <option value="Married">Married</option>
+                                                    <option value="Widowed">Widowed</option>
+                                                    <option value="Divorced">Divorced</option>
+                                                </select>
+                                            ) : (
+                                                profileForm.marital_status || 'Not provided'
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <span className="font-bold">Address:</span> Blk 4 Lot 159 Papaya St., Brgy. San Lupalop, Pasig City 1860
+                                
+                                <div className="border-t border-gray-300 my-6"></div>
+                                
+                                {/* Application Information - Non-editable */}
+                                <div className="grid grid-cols-3 gap-8">
+                                    <div className="space-y-4">
+                                        <div>
+                                            <span className="font-bold">Application ID:</span> {profileData.application_id || 'Not available'}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Applied Position:</span> {profileData.applied_position || 'Not available'}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <span className="font-bold">Preferred Depot:</span> {profileData.preferred_depot || 'Not available'}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Application Date:</span> {profileData.application_date ? formatDate(profileData.application_date) : 'Not available'}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <span className="font-bold">Application Status:</span>{' '}
+                                            <span className="ml-2 px-2 py-1 bg-orange-500 text-white text-xs rounded">{profileData.application_status || 'Not available'}</span>
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Resume:</span>{' '}
+                                            {profileData.resume ? (
+                                                <a href={profileData.resume} className="text-blue-600">View Resume</a>
+                                            ) : (
+                                                'Not available'
+                                            )}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Available Start Date:</span> {profileData.available_start_date ? formatDate(profileData.available_start_date) : 'Not available'}
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">How did you learn about us:</span> {profileData.learned_about_us || 'Not available'}
+                                        </div>
+                                    </div>
                                 </div>
-                                <div>
-                                    <span className="font-bold">Contact Number:</span> 09123456789
-                                </div>
-                                <div>
-                                    <span className="font-bold">Email:</span> delacruzjuan@gmail.com
-                                </div>
-                            </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <span className="font-bold">Sex:</span> Male
-                                </div>
-                                <div>
-                                    <span className="font-bold">Birthday:</span> 10/10/1978
-                                </div>
-                                <div>
-                                    <span className="font-bold">Age:</span> 47
-                                </div>
-                                <div>
-                                    <span className="font-bold">Marital Status:</span> Married
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* Application Information */}
-                        <div className="grid grid-cols-2 gap-8">
-                            <div className="space-y-4">
-                                <div>
-                                    <span className="font-bold">Application ID:</span> APP-2024-001
-                                </div>
-                                <div>
-                                    <span className="font-bold">Applied Position:</span> Delivery Driver
-                                </div>
-                                <div>
-                                    <span className="font-bold">Preferred Depot:</span> Pasig
-                                </div>
-                                <div>
-                                    <span className="font-bold">Application Date:</span> 10/10/2024
-                                </div>
-                            </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <span className="font-bold">Application Status:</span> 
-                                    <span className="ml-2 px-2 py-1 bg-orange-500 text-white text-xs rounded">Under Review</span>
-                                </div>
-                                <div>
-                                    <span className="font-bold">Resume:</span> <a href="#" className="text-blue-600">delacruzresume.pdf</a>
-                                </div>
-                                <div>
-                                    <span className="font-bold">Available Start Date:</span> 11/01/2024
-                                </div>
-                                <div>
-                                    <span className="font-bold">How did you learn about us:</span> Job Portal
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* Education & Skills */}
-                        <div className="space-y-4">
-                            <div>
-                                <span className="font-bold">Educational Attainment:</span> High School Graduate
-                            </div>
-                            <div>
-                                <span className="font-bold">Institution Name:</span> Pasig High School
-                            </div>
-                            <div>
-                                <span className="font-bold">Year Graduated:</span> 1996
-                            </div>
-                            <div>
-                                <span className="font-bold">Skills:</span> Driving, Customer Service, Logistics, Time Management
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* License Information */}
-                        <div className="space-y-4">
-                            <div>
-                                <span className="font-bold">Driver's License:</span> Yes
-                            </div>
-                            <div>
-                                <span className="font-bold">License Type:</span> Code 3 (Automatic clutch up to 4500kg)
-                            </div>
-                            <div>
-                                <span className="font-bold">License Expiry Date:</span> 10/10/2025
-                            </div>
-                            <div>
-                                <span className="font-bold">Government IDs:</span> SSS, PhilHealth, TIN
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* Work Experience */}
-                        <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-gray-800">Previous Work Experience</h3>
-                            <div className="bg-gray-50 p-4 rounded-md">
-                                <div className="grid grid-cols-2 gap-4">
+                                
+                                <div className="border-t border-gray-300 my-6"></div>
+                                
+                                {/* Education & Skills */}
+                                <div className="space-y-4">
                                     <div>
-                                        <span className="font-bold">Company:</span> ABC Logistics, Manila
+                                        <span className="font-bold">Educational Attainment:</span>{' '}
+                                        {isEditMode ? (
+                                            <select
+                                                value={profileForm.educational_attainment}
+                                                onChange={(e) => handleFormChange('educational_attainment', e.target.value)}
+                                                className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                            >
+                                                <option value="">Select</option>
+                                                <option value="Elementary School">Elementary School</option>
+                                                <option value="High School Graduate">High School Graduate</option>
+                                                <option value="Secondary School Graduate">Secondary School Graduate</option>
+                                                <option value="College Graduate">College Graduate</option>
+                                            </select>
+                                        ) : (
+                                            profileForm.educational_attainment || 'Not provided'
+                                        )}
                                     </div>
                                     <div>
-                                        <span className="font-bold">Position:</span> Delivery Driver
+                                        <span className="font-bold">Institution Name:</span>{' '}
+                                        {isEditMode ? (
+                                            <input
+                                                type="text"
+                                                value={profileForm.institution_name}
+                                                onChange={(e) => handleFormChange('institution_name', e.target.value)}
+                                                className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 w-80"
+                                            />
+                                        ) : (
+                                            profileForm.institution_name || 'Not provided'
+                                        )}
                                     </div>
                                     <div>
-                                        <span className="font-bold">Duration:</span> 2015 - 2020
+                                        <span className="font-bold">Year Graduated:</span>{' '}
+                                        {isEditMode ? (
+                                            <input
+                                                type="text"
+                                                value={profileForm.year_graduated}
+                                                onChange={(e) => handleFormChange('year_graduated', e.target.value)}
+                                                className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 w-32"
+                                            />
+                                        ) : (
+                                            profileForm.year_graduated || 'Not provided'
+                                        )}
                                     </div>
                                     <div>
-                                        <span className="font-bold">Reason for Leaving:</span> Seeking new opportunities
+                                        <span className="font-bold">Skills:</span>{' '}
+                                        {isEditMode ? (
+                                            <input
+                                                type="text"
+                                                value={profileForm.skills}
+                                                onChange={(e) => handleFormChange('skills', e.target.value)}
+                                                placeholder="e.g., Driving, Customer Service, Logistics"
+                                                className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 w-96"
+                                            />
+                                        ) : (
+                                            profileForm.skills || 'Not provided'
+                                        )}
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* Character References */}
-                        <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-gray-800">Character References</h3>
-                            <div className="space-y-3">
-                                <div className="bg-gray-50 p-4 rounded-md">
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div>
-                                            <span className="font-bold">Name:</span> John Smith
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Contact:</span> 09123456780
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Remarks:</span> Reliable and hardworking
-                                        </div>
-                                    </div>
+                                
+      
+                                
+                                
+                                <div className="flex justify-end gap-3 mt-6">
+                                    {isEditMode ? (
+                                        <>
+                                            <button
+                                                onClick={handleCancel}
+                                                className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                                            >
+                                                Cancel
+                                            </button>
+                                            <button
+                                                onClick={handleSave}
+                                                disabled={saving}
+                                                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:bg-gray-400"
+                                            >
+                                                {saving ? 'Saving...' : 'Save Changes'}
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button
+                                            onClick={handleEdit}
+                                            className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                                        >
+                                            Edit Profile
+                                        </button>
+                                    )}
                                 </div>
-                                <div className="bg-gray-50 p-4 rounded-md">
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div>
-                                            <span className="font-bold">Name:</span> Jane Doe
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Contact:</span> 09123456781
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Remarks:</span> Honest and punctual
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="flex justify-end mt-6">
-                            <button className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
-                                Edit Profile
-                            </button>
-                        </div>
+                            </>
+                        ) : (
+                            <div className="text-center py-8 text-gray-500">No profile data found.</div>
+                        )}
                     </div>
                 </div>
             </section>
