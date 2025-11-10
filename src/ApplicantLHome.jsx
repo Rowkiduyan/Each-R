@@ -3,14 +3,62 @@ import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 
 function ApplicantLHome() {
-const navigate = useNavigate();
-const location = useLocation();
-const newJob = location.state?.newJob;
-const [activeTab, setActiveTab] = useState("Home");
-const [showModal, setShowModal] = useState(false);
-const [showSummary, setShowSummary] = useState(false);
-const [workExperiences, setWorkExperiences] = useState([{}]);
-const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const newJob = location.state?.newJob;
+
+  const [activeTab, setActiveTab] = useState('Home');
+  const [showModal, setShowModal] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
+
+  // NEW: jobs from DB + selected job
+  const [jobs, setJobs] = useState([]);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [jobsLoading, setJobsLoading] = useState(true);
+
+  // --- MAIN FORM STATE (simple + flat so it’s easy to wire) ---
+  const [form, setForm] = useState({
+    firstName: '',
+    middleName: '',
+    lastName: '',
+    street: '',
+    barangay: '',
+    city: '',
+    zip: '',
+    contact: '',
+    email: '',
+    birthday: '',
+    maritalStatus: '',
+    sex: '',
+    startDate: '',
+    heardFrom: '',
+    employed: '',
+    resumeName: '',
+    hasSSS: false,
+    hasPhilHealth: false,
+    hasTIN: false,
+
+    // education (two rows just like your Summary)
+    edu1Level: 'College Graduate',
+    edu1Institution: '',
+    edu1Year: '',
+    edu2Level: 'High School Graduate',
+    edu2Institution: '',
+    edu2Year: '',
+
+    // skills
+    skill1: '',
+    skill2: '',
+    skill3: '',
+
+    // license
+    licenseType: '',
+    licenseExpiry: '',
+  });
+
+  // keep using your arrays for dynamic sections
+  const [workExperiences, setWorkExperiences] = useState([{}]);
+  const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
 
   // helpers
   const handleInput = (e) => {
@@ -252,14 +300,13 @@ const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
       </div>
 
       {/* Search Bar */}
-      {activeTab !== "Profile" && (
       <div className="max-w-7xl mx-auto px-6 mt-4 flex justify-end">
         <input
           placeholder="Search"
           className="w-80 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
         />
-      </div>          
-      
+      </div>
+
       <div className="flex flex-col items-center  min-h-screen">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <section className={`p-4 ${activeTab === 'Home' ? '' : 'hidden'}`}>
@@ -467,211 +514,73 @@ const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
             {/* ... omitted for brevity – keep your original Profile section code ... */}
           </section>
 
-            <section className={`p-4 ${activeTab === "Notifications" ? "" : "hidden"}`}>
-                
-            </section>
-
-            <section className={`p-4 ${activeTab === "Profile" ? "" : "hidden"}`}>
-                <div className="max-w-7xl mx-auto px-6 py-8">
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-6">Profile Information</h2>
-                        
-                        {/* Personal Information */}
-                        <div className="grid grid-cols-2 gap-8">
-                            <div className="space-y-4">
-                                <div>
-                                    <span className="font-bold">Full Name:</span> Dela Cruz, Juan
-                                </div>
-                                <div>
-                                    <span className="font-bold">Address:</span> Blk 4 Lot 159 Papaya St., Brgy. San Lupalop, Pasig City 1860
-                                </div>
-                                <div>
-                                    <span className="font-bold">Contact Number:</span> 09123456789
-                                </div>
-                                <div>
-                                    <span className="font-bold">Email:</span> delacruzjuan@gmail.com
-                                </div>
-                            </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <span className="font-bold">Sex:</span> Male
-                                </div>
-                                <div>
-                                    <span className="font-bold">Birthday:</span> 10/10/1978
-                                </div>
-                                <div>
-                                    <span className="font-bold">Age:</span> 47
-                                </div>
-                                <div>
-                                    <span className="font-bold">Marital Status:</span> Married
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* Application Information */}
-                        <div className="grid grid-cols-2 gap-8">
-                            <div className="space-y-4">
-                                <div>
-                                    <span className="font-bold">Application ID:</span> APP-2024-001
-                                </div>
-                                <div>
-                                    <span className="font-bold">Applied Position:</span> Delivery Driver
-                                </div>
-                                <div>
-                                    <span className="font-bold">Preferred Depot:</span> Pasig
-                                </div>
-                                <div>
-                                    <span className="font-bold">Application Date:</span> 10/10/2024
-                                </div>
-                            </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <span className="font-bold">Application Status:</span> 
-                                    <span className="ml-2 px-2 py-1 bg-orange-500 text-white text-xs rounded">Under Review</span>
-                                </div>
-                                <div>
-                                    <span className="font-bold">Resume:</span> <a href="#" className="text-blue-600">delacruzresume.pdf</a>
-                                </div>
-                                <div>
-                                    <span className="font-bold">Available Start Date:</span> 11/01/2024
-                                </div>
-                                <div>
-                                    <span className="font-bold">How did you learn about us:</span> Job Portal
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* Education & Skills */}
-                        <div className="space-y-4">
-                            <div>
-                                <span className="font-bold">Educational Attainment:</span> High School Graduate
-                            </div>
-                            <div>
-                                <span className="font-bold">Institution Name:</span> Pasig High School
-                            </div>
-                            <div>
-                                <span className="font-bold">Year Graduated:</span> 1996
-                            </div>
-                            <div>
-                                <span className="font-bold">Skills:</span> Driving, Customer Service, Logistics, Time Management
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* License Information */}
-                        <div className="space-y-4">
-                            <div>
-                                <span className="font-bold">Driver's License:</span> Yes
-                            </div>
-                            <div>
-                                <span className="font-bold">License Type:</span> Code 3 (Automatic clutch up to 4500kg)
-                            </div>
-                            <div>
-                                <span className="font-bold">License Expiry Date:</span> 10/10/2025
-                            </div>
-                            <div>
-                                <span className="font-bold">Government IDs:</span> SSS, PhilHealth, TIN
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* Work Experience */}
-                        <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-gray-800">Previous Work Experience</h3>
-                            <div className="bg-gray-50 p-4 rounded-md">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <span className="font-bold">Company:</span> ABC Logistics, Manila
-                                    </div>
-                                    <div>
-                                        <span className="font-bold">Position:</span> Delivery Driver
-                                    </div>
-                                    <div>
-                                        <span className="font-bold">Duration:</span> 2015 - 2020
-                                    </div>
-                                    <div>
-                                        <span className="font-bold">Reason for Leaving:</span> Seeking new opportunities
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="border-t border-gray-300 my-6"></div>
-                        
-                        {/* Character References */}
-                        <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-gray-800">Character References</h3>
-                            <div className="space-y-3">
-                                <div className="bg-gray-50 p-4 rounded-md">
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div>
-                                            <span className="font-bold">Name:</span> John Smith
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Contact:</span> 09123456780
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Remarks:</span> Reliable and hardworking
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="bg-gray-50 p-4 rounded-md">
-                                    <div className="grid grid-cols-3 gap-4">
-                                        <div>
-                                            <span className="font-bold">Name:</span> Jane Doe
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Contact:</span> 09123456781
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Remarks:</span> Honest and punctual
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="flex justify-end mt-6">
-                            <button className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
-                                Edit Profile
-                            </button>
-                        </div>
-                    </div>
+          {/* Submit Application Modal (now controlled inputs) */}
+          {showModal && (
+            <div
+              className="fixed inset-0 bg-opacity-50 flex items-center justify-center z-50"
+              onClick={() => setShowModal(false)}
+            >
+              <div
+                className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] border-2 border-black overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center p-4 border-b">
+                  <h2 className="text-xl font-bold text-gray-800">
+                    Submit Application{selectedJob ? ` — ${selectedJob.title} (${selectedJob.depot})` : ''}
+                  </h2>
+                  <button
+                    onClick={() => setShowModal(false)}
+                    className="text-gray-500 hover:text-gray-700 text-2xl"
+                  >
+                    &times;
+                  </button>
                 </div>
-            </section>
 
-            {showModal && (
-              <div className="fixed inset-0 bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowModal(false)}>
-                <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] border-2 border-black overflow-hidden" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex justify-between items-center p-4 border-b">
-                    <h2 className="text-xl font-bold text-gray-800">Submit Application</h2>
-                    <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-                  </div>
-                  <form className="p-4 overflow-y-auto max-h-[80vh] space-y-4" onSubmit={(e) => {
-                    e.preventDefault();
-                    setShowModal(false);
-                    setShowSummary(true);
-                  }}>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
-                        <input type="text" required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
-                        <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500" />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
-                        <input type="text" required className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500" />
-                      </div>
+                <form
+                  className="p-4 overflow-y-auto max-h-[80vh] space-y-4"
+                  onSubmit={onSubmitApplication}
+                >
+                  {/* Name */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        First Name *
+                      </label>
+                      <input
+                        type="text"
+                        name="firstName"
+                        value={form.firstName}
+                        onChange={handleInput}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                      />
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Middle Name
+                      </label>
+                      <input
+                        type="text"
+                        name="middleName"
+                        value={form.middleName}
+                        onChange={handleInput}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Last Name *
+                      </label>
+                      <input
+                        type="text"
+                        name="lastName"
+                        value={form.lastName}
+                        onChange={handleInput}
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                      />
+                    </div>
+                  </div>
 
                   {/* Address */}
                   <div>
