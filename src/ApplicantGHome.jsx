@@ -1,7 +1,30 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Logo from './Logo.png';
+import { supabase } from './supabaseClient';
 
 function ApplicantGHome() {
+  const navigate = useNavigate();
+
+  // ✅ Added: checks if user is logged in before letting them view
+  // eslint-disable-next-line no-unused-vars
+  const handleView = async (jobId) => {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    if (!session) {
+      const go = confirm('You need to log in to view this job. Go to Login?');
+      if (go) {
+        // If later you add job details route, pass redirect state here:
+        // navigate('/applicant/login', { state: { redirectTo: `/jobs/${jobId}` } });
+        navigate('/applicant/login');
+      }
+      return;
+    }
+
+    // Already logged in — for now send to applicant home
+    // Later you can change this to: navigate(`/jobs/${jobId}`)
+    navigate('/applicantl/home');
+  };
+
   return (
     <div className="min-h-screen bg-white">
       <div className="bg-white shadow-sm">
@@ -71,7 +94,9 @@ function ApplicantGHome() {
                   <li>• Ensure accurate documentation</li>
                 </ul>
               </div>
-              <button className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
+              <button
+                onClick={() => handleView('delivery-driver')}
+                className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
                 View
               </button>
             </div>
@@ -100,7 +125,9 @@ function ApplicantGHome() {
                   <li>• Ensure accurate documentation</li>
                 </ul>
               </div>
-              <button className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
+              <button
+                onClick={() => handleView('delivery-helper')}
+                className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
                 View
               </button>
             </div>
@@ -131,7 +158,9 @@ function ApplicantGHome() {
                   <li>• Support the HR team</li>
                 </ul>
               </div>
-              <button className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
+              <button
+                onClick={() => handleView('hr-coordinator-butuan')}
+                className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
                 View
               </button>
             </div>
@@ -157,7 +186,9 @@ function ApplicantGHome() {
                 <li>• Prepare HR-related reports</li>
               </ul>
             </div>
-            <button className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
+            <button
+              onClick={() => handleView('hr-coordinator-cagayan')}
+              className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
               View
             </button>
           </div>
@@ -182,7 +213,9 @@ function ApplicantGHome() {
                 <li>• Prepare HR-related reports</li>
               </ul>
             </div>
-            <button className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
+            <button
+              onClick={() => handleView('hr-coordinator-pasig')}
+              className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
               View
             </button>
           </div>
@@ -206,7 +239,9 @@ function ApplicantGHome() {
                 <li>• Respond to alarms, emergencies, and incidents</li>
               </ul>
             </div>
-            <button className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
+            <button
+              onClick={() => handleView('security-personnel-cebu')}
+              className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto">
               View
             </button>
           </div>
