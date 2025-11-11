@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { supabase } from "./supabaseClient";
 import { useNavigate } from "react-router-dom";
-import Logo from './Logo.png';
+import Logo from "./Logo.png";
 
 function EmployeeLogin() {
   const [email, setEmail] = useState("");
@@ -12,7 +12,7 @@ function EmployeeLogin() {
   const handleLogin = async () => {
     setError("");
 
-    // Try to log in using Supabase
+    // Step 1: Try to log in using Supabase
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -24,8 +24,10 @@ function EmployeeLogin() {
       return;
     }
 
-    // Get the user's role from the profiles table
+    // Step 2: Get the user from the login response
     const user = data.user;
+
+    // Step 3: Fetch the user's role from the 'profiles' table
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("email, role, first_name, last_name")
@@ -38,30 +40,44 @@ function EmployeeLogin() {
       return;
     }
 
-    const userData = {
-        email: user.email,
-        id: user.id,
-        role: profile.role,
-        first_name: profile.first_name,
-        last_name: profile.last_name,
-      };
-    
-    localStorage.setItem("loggedInHR", JSON.stringify(userData));
+    // Step 4: Update the user's metadata so the JWT includes the correct role
+    const { error: updateError } = await supabase.auth.updateUser({
+      data: { role: profile.role },
+    });
 
-    
+    if (updateError) {
+      console.error("Failed to update user metadata:", updateError);
+    }
 
-    // Redirect based on role
-    if (profile.role === "HR") {
-    navigate("/hr/home");
-  } else if (profile.role === "employee") {
-    navigate("/employee/home");
-  } else if (profile.role === "applicant") {
-    navigate("/applicant/home");
-  } else {
-    setError("Unknown role.");
-  }
-    
+    // Step 5: Refresh session to apply updated role metadata
+    await supabase.auth.refreshSession();
+
+    // Step 6: Debug - check if the role is now in the JWT
+    const { data: userData } = await supabase.auth.getUser();
+    console.log("✅ JWT user role:", userData?.user?.user_metadata?.role);
+
+    // Step 7: Save HR info in localStorage
+    const userDataToSave = {
+      email: user.email,
+      id: user.id,
+      role: profile.role,
+      first_name: profile.first_name,
+      last_name: profile.last_name,
     };
+
+    localStorage.setItem("loggedInHR", JSON.stringify(userDataToSave));
+
+    // Step 8: Redirect based on role
+    if (profile.role === "HR") {
+      navigate("/hr/home");
+    } else if (profile.role === "employee") {
+      navigate("/employee/home");
+    } else if (profile.role === "applicant") {
+      navigate("/applicant/home");
+    } else {
+      setError("Unknown role.");
+    }
+  };
 
   return (
     <div className="flex justify-center items-center min-h-screen bg-neutral-100">

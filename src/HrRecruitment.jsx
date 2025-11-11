@@ -3,20 +3,18 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 
-async function markAsEmployee(applicantId, position = "", depot = "") {
-  const { error } = await supabase.rpc("move_applicant_to_employee", {
-    p_applicant_id: applicantId,
-    p_position: position,
-    p_depot: depot,
+async function markAsEmployee(applicationId) {
+  const { data, error } = await supabase.rpc("hire_applicant", {
+    p_app_id: applicationId,
   });
-
   if (error) {
-    console.error("Failed to move applicant:", error);
-    alert("❌ Failed to mark as employee: " + error.message);
-    return false;
+    console.error("Failed to hire:", error);
+    alert("❌ Failed to hire applicant: " + error.message);
+    return null;
   }
-  return true;
+  return data; // { employee_id, email }
 }
+
 
 function HrRecruitment() {
   const navigate = useNavigate();
@@ -559,22 +557,17 @@ function HrRecruitment() {
                             <button
                               className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
                               onClick={async () => {
-                                const ok = window.confirm(
-                                  `Mark ${a.name} as Employee?`
-                                );
+                                const ok = window.confirm(`Mark ${a.name} as Employee?`);
                                 if (!ok) return;
-                                const success = await markAsEmployee(
-                                  a.id,
-                                  a.position,
-                                  a.depot
-                                );
-                                if (success) {
-                                  alert("✅ Applicant moved to Employees table!");
+                                const res = await markAsEmployee(a.id); // a.id is the *application* id
+                                if (res) {
+                                  alert("✅ Applicant moved to Employees! ID: " + res.employee_id);
                                 }
                               }}
                             >
                               Mark as Employee
                             </button>
+
                           </td>
                         </tr>
                       ))}
