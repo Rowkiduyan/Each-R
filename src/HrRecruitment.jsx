@@ -2,6 +2,20 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "./supabaseClient";
+
+async function markAsEmployee(applicationId) {
+  const { data, error } = await supabase.rpc("hire_applicant", {
+    p_app_id: applicationId,
+  });
+  if (error) {
+    console.error("Failed to hire:", error);
+    alert("❌ Failed to hire applicant: " + error.message);
+    return null;
+  }
+  return data; // { employee_id, email }
+}
+
 
 function HrRecruitment() {
   const navigate = useNavigate();
@@ -380,6 +394,22 @@ function HrRecruitment() {
                           <td className="px-4 py-2 border-b">{a.position}</td>
                           <td className="px-4 py-2 border-b">{a.depot}</td>
                           <td className="px-4 py-2 border-b">{a.dateApplied}</td>
+                          <td className="px-4 py-2 border-b">
+                            <button
+                              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
+                              onClick={async () => {
+                                const ok = window.confirm(`Mark ${a.name} as Employee?`);
+                                if (!ok) return;
+                                const res = await markAsEmployee(a.id); // a.id is the *application* id
+                                if (res) {
+                                  alert("✅ Applicant moved to Employees! ID: " + res.employee_id);
+                                }
+                              }}
+                            >
+                              Mark as Employee
+                            </button>
+
+                          </td>
                         </tr>
                       ))}
                     </tbody>
