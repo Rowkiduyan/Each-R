@@ -1,7 +1,6 @@
 // src/ApplicantDetails.jsx
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Mail, Phone, Briefcase, MapPin, Calendar } from "lucide-react";
 import { supabase } from "./supabaseClient";
 
 function ApplicantDetails() {
@@ -82,97 +81,113 @@ function ApplicantDetails() {
     }
   );
 
-  // 🔎 Add this effect to check what role the logged-in user actually has
-useEffect(() => {
-  (async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error) {
-      console.log('[ROLE CHECK] getUser error:', error.message);
-      return;
-    }
-    console.log('[ROLE CHECK] app_metadata.role =', data?.user?.app_metadata?.role);
-    console.log('[ROLE CHECK] user_metadata.role =', data?.user?.user_metadata?.role);
+  // store resolved agency display name (e.g., "Acme Agency")
+  const [agencyName, setAgencyName] = useState(null);
 
-    // (Optional) also show the JWT claim (usually "authenticated")
-    const { data: sess } = await supabase.auth.getSession();
-    console.log('[ROLE CHECK] jwt claim role =', sess?.session?.user?.role);
-  })();
-}, []);
+  // 🔎 Small role-check for debugging (keeps as you had it)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (error) {
+          console.log("[ROLE CHECK] getUser error:", error.message);
+          return;
+        }
+        console.log("[ROLE CHECK] app_metadata.role =", data?.user?.app_metadata?.role);
+        console.log("[ROLE CHECK] user_metadata.role =", data?.user?.user_metadata?.role);
 
+        const { data: sess } = await supabase.auth.getSession();
+        console.log("[ROLE CHECK] jwt claim role =", sess?.session?.user?.role);
+      } catch (err) {
+        console.warn("[ROLE CHECK] unexpected:", err);
+      }
+    })();
+  }, []);
 
-  // Fetch the application from Supabase by :id, join job_posts for title/depot
+  // -------------------------
+  // Effect A: Load the application (only depends on id)
+  // -------------------------
   useEffect(() => {
     let cancelled = false;
+
     (async () => {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("applications")
-        .select(
+      try {
+        const { data, error } = await supabase
+          .from("applications")
+          .select(
+            `
+            id,
+            created_at,
+            status,
+            payload,
+            job_posts:job_posts ( id, title, depot )
           `
-          id,
-          created_at,
-          status,
-          payload,
-          job_posts:job_posts ( id, title, depot )
-        `
-        )
-        .eq("id", id)
-        .single();
+          )
+          .eq("id", id)
+          .single();
 
-      if (error) {
-        console.error("Load application error:", error);
-        setLoading(false);
-        return;
-      }
-
-      // Normalize payload
-      let p = data.payload;
-      if (typeof p === "string") {
-        try {
-          p = JSON.parse(p);
-        } catch {
-          p = {};
+        if (error) {
+          console.error("Load application error:", error);
+          if (!cancelled) setLoading(false);
+          return;
         }
-      }
-      const form = p?.form || p || {};
 
-      // Build applicant object
-      const fullName = [
-        form.firstName || "",
-        form.middleName || "",
-        form.lastName || "",
-      ]
-        .join(" ")
-        .replace(/\s+/g, " ")
-        .trim();
+        // Normalize payload
+        let p = data.payload;
+        if (typeof p === "string") {
+          try {
+            p = JSON.parse(p);
+          } catch {
+            p = {};
+          }
+        }
+        const form = p?.form || p || {};
 
-      const appObj = {
-        id: data.id,
-        name: fullName || "Unnamed Applicant",
-        position: data.job_posts?.title ?? form.appliedPosition ?? "—",
-        depot: data.job_posts?.depot ?? form.city ?? "—",
-        dateApplied: new Date(data.created_at).toLocaleDateString("en-US", {
-          month: "short",
-          day: "2-digit",
-          year: "numeric",
-        }),
-        email: form.email || "—",
-        phone: form.contact || "—",
-        department: form.department || "—",
-        employmentStatus: form.employed || "—",
-        startDate: form.startDate || "—",
-        resume: form.resumeName || "—",
-        address: [form.street, form.barangay, form.city, form.zip].filter(Boolean).join(", ") || "—",
-        sex: form.sex || "—",
-        birthday: form.birthday || "—",
-        age: "—",
-        maritalStatus: form.maritalStatus || "—",
-        agency: !!form.agency,
-      };
+        // Build applicant object
+        const fullName = [
+          form.firstName || "",
+          form.middleName || "",
+          form.lastName || "",
+        ]
+          .join(" ")
+          .replace(/\s+/g, " ")
+          .trim();
 
-      if (!cancelled) {
-        setApplicant(appObj);
-        setLoading(false);
+        const appObj = {
+          id: data.id,
+          name: fullName || "Unnamed Applicant",
+          position: data.job_posts?.title ?? form.appliedPosition ?? "—",
+          depot: data.job_posts?.depot ?? form.city ?? "—",
+          dateApplied: new Date(data.created_at).toLocaleDateString("en-US", {
+            month: "short",
+            day: "2-digit",
+            year: "numeric",
+          }),
+          email: form.email || "—",
+          phone: form.contact || "—",
+          department: form.department || "—",
+          employmentStatus: form.employed || "—",
+          startDate: form.startDate || "—",
+          resume: form.resumeName || "—",
+          address:
+            [form.street, form.barangay, form.city, form.zip].filter(Boolean).join(", ") ||
+            "—",
+          sex: form.sex || "—",
+          birthday: form.birthday || "—",
+          age: "—",
+          maritalStatus: form.maritalStatus || "—",
+          // if payload explicitly has agency flag, use it
+          agency: !!form.agency,
+        };
+
+        if (!cancelled) {
+          setApplicant(appObj);
+        }
+      } catch (err) {
+        console.error("Unexpected load application error:", err);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
 
@@ -181,43 +196,141 @@ useEffect(() => {
     };
   }, [id]);
 
+  // -------------------------
+  // Effect B: Resolve endorsement/agency separately (depends on applicant's identifying fields)
+  // This effect will try email first; fallback to a best-effort name match.
+  // -------------------------
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolveEndorsement = async () => {
+      const emailToFind = (applicant?.email || "").trim();
+      const nameToFind = (applicant?.name || "").trim();
+
+      if (!emailToFind && !nameToFind) return;
+
+      console.debug("[endorsement-resolve] trying lookup", { emailToFind, nameToFind });
+
+      try {
+        let endorsementRow = null;
+
+        // try by email first
+        if (emailToFind && emailToFind !== "—") {
+          const { data: reData, error: reErr } = await supabase
+            .from("recruitment_endorsements")
+            .select("id, agency_profile_id, agency_name, fname, lname, payload, created_at")
+            .eq("email", emailToFind)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (reErr) {
+            console.warn("[endorsement-resolve] lookup by email error:", reErr);
+          } else {
+            endorsementRow = reData || null;
+            console.debug("[endorsement-resolve] found by email:", endorsementRow);
+          }
+        }
+
+        // fallback: check recent endorsements and compare names (best-effort)
+        if (!endorsementRow && nameToFind) {
+          const { data: reData2, error: reErr2 } = await supabase
+            .from("recruitment_endorsements")
+            .select("id, agency_profile_id, agency_name, fname, lname, payload, created_at")
+            .order("created_at", { ascending: false })
+            .limit(50);
+
+          if (reErr2) {
+            console.warn("[endorsement-resolve] listing recent endorsements error:", reErr2);
+          } else if (Array.isArray(reData2)) {
+            endorsementRow =
+              reData2.find((r) => {
+                const rname = `${r.fname || ""} ${r.lname || ""}`.trim();
+                return rname && nameToFind && rname.toLowerCase() === nameToFind.toLowerCase();
+              }) || null;
+
+            console.debug("[endorsement-resolve] found by name match:", endorsementRow);
+          }
+        }
+
+        if (endorsementRow && !cancelled) {
+          // mark agency flag on applicant
+          setApplicant((prev) => ({ ...prev, agency: true }));
+
+          // prefer explicit agency_name
+          let resolved = endorsementRow.agency_name || null;
+
+          // try profile lookup if profile id present
+          if (!resolved && endorsementRow.agency_profile_id) {
+            const { data: prof, error: profErr } = await supabase
+              .from("profiles")
+              .select("id, first_name, last_name, company_name")
+              .eq("id", endorsementRow.agency_profile_id)
+              .limit(1)
+              .maybeSingle();
+
+            if (!profErr && prof) {
+              resolved = prof.company_name || `${prof.first_name || ""} ${prof.last_name || ""}`.trim();
+            }
+          }
+
+          // fallback to endorsement fname/lname
+          if (!resolved) {
+            const fallbackName = `${endorsementRow.fname || ""} ${endorsementRow.lname || ""}`.trim();
+            if (fallbackName) resolved = fallbackName;
+          }
+
+          if (resolved) setAgencyName(resolved);
+        } else {
+          console.debug("[endorsement-resolve] no endorsement found for applicant");
+          // If payload explicitly carried agency_name earlier (rare), you could set it:
+          // if (applicant?.agency && form.agency_name) setAgencyName(form.agency_name)
+        }
+      } catch (err) {
+        console.error("[endorsement-resolve] unexpected error:", err);
+      }
+    };
+
+    resolveEndorsement();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applicant?.email, applicant?.name]);
+
   // ---- Actions wired to Supabase ----
-const markAsHired = async () => {
-  if (!window.confirm("Mark this applicant as Hired?")) return;
+  const markAsHired = async () => {
+    if (!window.confirm("Mark this applicant as Hired?")) return;
 
-    const who = await supabase.rpc('who_am_i');
-    console.log('who_am_i =>', who.data);
+    // IMPORTANT: the SQL function expects p_application_id
+    const { error: rpcErr } = await supabase.rpc("move_applicant_to_employee", {
+      p_application_id: id,
+    });
 
-  // IMPORTANT: the SQL function expects p_application_id
-  const { error: rpcErr } = await supabase.rpc('move_applicant_to_employee', {
-    p_application_id: id,          // <-- application id from the URL
-  });
+    if (rpcErr) {
+      console.error("RPC move_applicant_to_employee failed:", rpcErr);
+      alert("❌ " + rpcErr.message);
+      return;
+    }
 
-  if (rpcErr) {
-    console.error('RPC move_applicant_to_employee failed:', rpcErr);
-    alert('❌ ' + rpcErr.message);
-    return;
-  }
+    // (optional) reflect status in applications table
+    const { error: updErr } = await supabase
+      .from("applications")
+      .update({ status: "hired" })
+      .eq("id", id);
 
-  // (optional) reflect status in applications table
-  const { error: updErr } = await supabase
-    .from('applications')
-    .update({ status: 'hired' })
-    .eq('id', id);
+    if (updErr) {
+      console.error("Update application status failed:", updErr);
+      // not fatal
+    }
 
-  if (updErr) {
-    console.error('Update application status failed:', updErr);
-    // not fatal
-  }
-
-  alert('✅ Marked as employee!');
-  setAgreementsResult('hire');
-  setHired(true);
-  setIsRejected(false);
-  setShowAction(false);
-  navigate('/hr/employees', { replace: true });
-};
-
+    alert("✅ Marked as employee!");
+    setAgreementsResult("hire");
+    setHired(true);
+    setIsRejected(false);
+    setShowAction(false);
+    navigate("/hr/employees", { replace: true });
+  };
 
   const rejectApplicant = async () => {
     if (!window.confirm("Reject this applicant?")) return;
@@ -309,7 +422,7 @@ const markAsHired = async () => {
                 {applicant.name}
                 {applicant.agency && (
                   <span className="inline-block px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full">
-                    🚩 Agency
+                    🚩 Agency{agencyName ? ` — ${agencyName}` : ""}
                   </span>
                 )}
                 {isRejected && (
@@ -584,7 +697,6 @@ const markAsHired = async () => {
               <div className="flex justify-center gap-3">
                 {activeTab === "Assessment" ? (
                   <>
-                    {/* Proceed / Reject for Assessment */}
                     <button
                       onClick={() => {
                         setAssessmentResult("pass");
@@ -608,7 +720,6 @@ const markAsHired = async () => {
                   </>
                 ) : activeTab === "Requirements" ? (
                   <>
-                    {/* Pass / Reject for Requirements */}
                     <button
                       onClick={() => {
                         setRequirementsResult("pass");
@@ -632,7 +743,6 @@ const markAsHired = async () => {
                   </>
                 ) : activeTab === "Agreements" ? (
                   <>
-                    {/* Hire / Reject for Agreements */}
                     <button
                       onClick={markAsHired}
                       className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
@@ -648,7 +758,6 @@ const markAsHired = async () => {
                   </>
                 ) : (
                   <>
-                    {/* Default action for Application tab */}
                     <button
                       onClick={() => {
                         setShowInterviewForm(true);

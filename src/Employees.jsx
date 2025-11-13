@@ -46,7 +46,15 @@ function Employees() {
       email: row.email || "",
       role: row.role || "Employee",
       hired_at: row.hired_at,
-      agency: false,
+      // agency detection: explicit source field, explicit agency flag, or an agency_profile id
+      agency:
+        (row.source && String(row.source).toLowerCase() === "agency")
+        || (row.role && String(row.role).toLowerCase() === "agency")
+        || !!row.agency_profile_id
+        || !!row.endorsed_by_agency_id,
+      source: row.source || null,
+      endorsed_by_agency_id: row.endorsed_by_agency_id || row.agency_profile_id || null,
+      endorsed_at: row.endorsed_at || null,
     });
 
     const load = async () => {
@@ -55,7 +63,7 @@ function Employees() {
       const { data, error } = await supabase
         .from("employees")
         .select(
-          "id, email, fname, lname, mname, contact_number, position, depot, role, hired_at"
+          "id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id"
         )
         .order("hired_at", { ascending: false });
 
@@ -252,15 +260,20 @@ function Employees() {
                       }
                     >
                       <td className="border px-4 py-2 text-gray-500">{emp.id}</td>
+
+                      {/* Name column: left name, right badge */}
                       <td className="border px-4 py-2 font-bold">
-                        <span>{emp.name}</span>
-                        {emp.agency && (
-                          <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 align-middle">
-                            <span className="text-red-500">⚑</span>
-                            Agency
-                          </span>
-                        )}
+                        <div className="flex items-center justify-between">
+                          <span className="truncate mr-4">{emp.name}</span>
+
+                          {emp.agency && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-200 ml-2">
+                              Agency
+                            </span>
+                          )}
+                        </div>
                       </td>
+
                       <td className="border px-4 py-2 text-gray-600">{emp.position}</td>
                       <td className="border px-4 py-2 text-gray-600">{emp.depot}</td>
                     </tr>

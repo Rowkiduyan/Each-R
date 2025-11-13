@@ -74,7 +74,9 @@ function EmployeeLogin() {
       navigate("/employee/home");
     } else if (profile.role === "applicant") {
       navigate("/applicant/home");
-    } else {
+    } else if (profile.role === "agency") {
+  navigate("/agency/home");
+    }else {
       setError("Unknown role.");
     }
   };

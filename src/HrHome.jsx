@@ -8,7 +8,7 @@ function HrHome() {
   const [date, setDate] = useState(new Date());
   const [hrUser, setHrUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [jwtRoles, setJwtRoles] = useState(null); // <- shows what Supabase sees in your JWT
+  // const [jwtRoles, setJwtRoles] = useState(null); // <- shows what Supabase sees in your JWT
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -90,28 +90,28 @@ useEffect(() => {
 
   
 
-  // 🔎 Debug: ask Supabase what role the backend sees in your JWT
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data, error } = await supabase.rpc("debug_claims");
-        if (error) {
-          console.error("debug_claims failed:", error);
-          setJwtRoles({ error: error.message });
-          return;
-        }
-        console.log("JWT app_metadata.role:", data?.app_metadata?.role);
-        console.log("JWT user_metadata.role:", data?.user_metadata?.role);
-        setJwtRoles({
-          app: data?.app_metadata?.role || "(none)",
-          user: data?.user_metadata?.role || "(none)",
-        });
-      } catch (e) {
-        console.error("debug_claims threw:", e);
-        setJwtRoles({ error: String(e?.message || e) });
-      }
-    })();
-  }, []);
+  // // 🔎 Debug: ask Supabase what role the backend sees in your JWT
+  // useEffect(() => {
+  //   (async () => {
+  //     try {
+  //       const { data, error } = await supabase.rpc("debug_claims");
+  //       if (error) {
+  //         console.error("debug_claims failed:", error);
+  //         setJwtRoles({ error: error.message });
+  //         return;
+  //       }
+  //       console.log("JWT app_metadata.role:", data?.app_metadata?.role);
+  //       console.log("JWT user_metadata.role:", data?.user_metadata?.role);
+  //       setJwtRoles({
+  //         app: data?.app_metadata?.role || "(none)",
+  //         user: data?.user_metadata?.role || "(none)",
+  //       });
+  //     } catch (e) {
+  //       console.error("debug_claims threw:", e);
+  //       setJwtRoles({ error: String(e?.message || e) });
+  //     }
+  //   })();
+  // }, []);
 
   // const handleLogout = () => {
   //   localStorage.removeItem("loggedInHR");

@@ -3,19 +3,6 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 
-async function markAsEmployee(applicationId) {
-  const { data, error } = await supabase.rpc("hire_applicant", {
-    p_app_id: applicationId,
-  });
-  if (error) {
-    console.error("Failed to hire:", error);
-    alert("❌ Failed to hire applicant: " + error.message);
-    return null;
-  }
-  return data; // { employee_id, email }
-}
-
-
 function HrRecruitment() {
   const navigate = useNavigate();
 
@@ -33,6 +20,7 @@ function HrRecruitment() {
     interviewer: "",
   });
   const [rejectionRemarks, setRejectionRemarks] = useState("");
+
   const [rejectedApplicants, setRejectedApplicants] = useState([
     {
       id: 1,
@@ -65,7 +53,30 @@ function HrRecruitment() {
   const [loading, setLoading] = useState(true);
   const itemsPerPage = 10;
 
-  // Fetch from public.applications + JOIN job_posts (for position/depot)
+  // detect agency-sourced row
+  const isAgency = (row) => {
+    if (!row) return false;
+    if (row.agency) return true;
+
+    const raw = row.raw || {};
+    const payload = raw.payload || {};
+    try {
+      const meta =
+        payload.meta || (payload.form && payload.form.meta) || null;
+
+      if (meta?.source === "agency" || meta?.source === "Agency") return true;
+      if (meta?.endorsed_by_profile_id || meta?.endorsed_by_auth_user_id)
+        return true;
+
+      if (payload.agency === true) return true;
+    } catch {
+      // ignore parse errors
+    }
+
+    return false;
+  };
+
+  // ---- Load applications
   useEffect(() => {
     let channel;
 
@@ -98,8 +109,8 @@ function HrRecruitment() {
       }
 
       const rows = (data || []).map((row) => {
-        // payload can be jsonb or text; normalize
         let payloadObj = row.payload;
+
         if (typeof payloadObj === "string") {
           try {
             payloadObj = JSON.parse(payloadObj);
@@ -110,13 +121,21 @@ function HrRecruitment() {
 
         const p = payloadObj.form || payloadObj || {};
 
-        // Build name
-        const first = p.firstName || "";
-        const middle = p.middleName ? ` ${p.middleName}` : "";
-        const last = p.lastName ? ` ${p.lastName}` : "";
-        const fullName = `${first}${middle}${last}`.trim() || "Unnamed Applicant";
+        const first = p.firstName || p.fname || p.first_name || "";
+        const middle =
+          p.middleName || p.mname || p.middle_name
+            ? ` ${p.middleName || p.mname || p.middle_name}`
+            : "";
+        const last =
+          p.lastName || p.lname || p.last_name
+            ? ` ${p.lastName || p.lname || p.last_name}`
+            : "";
+        const fullName =
+          `${first}${middle}${last}`.trim() ||
+          p.fullName ||
+          p.name ||
+          "Unnamed Applicant";
 
-        // Pull from job post (authoritative)
         const position = row.job_posts?.title ?? "—";
         const depot = row.job_posts?.depot ?? "—";
 
@@ -130,7 +149,7 @@ function HrRecruitment() {
             day: "2-digit",
             year: "numeric",
           }),
-          email: p.email || "—",
+          email: p.email || p.contact || "—",
           phone: p.contact || "—",
           address: [p.street, p.barangay, p.city, p.zip].filter(Boolean).join(", "),
           agency: !!p.agency,
@@ -144,7 +163,6 @@ function HrRecruitment() {
 
     load();
 
-    // realtime: refresh on INSERT
     channel = supabase
       .channel("applications-realtime")
       .on(
@@ -159,7 +177,7 @@ function HrRecruitment() {
     };
   }, []);
 
-  // ---- Derivations (placeholder buckets)
+  // ---- Derivations
   const agreements = applicants.slice(0, 3);
   const requirements = [...applicants.slice(3, 6), applicants[1]].filter(Boolean);
   const finalAgreements = applicants.slice(6, 8);
@@ -208,30 +226,24 @@ function HrRecruitment() {
           {/* Sub Tabs */}
           <div className="flex gap-6 border-b mb-6 justify-center">
             {[
-              { label: "Applications", count: applicants.length, show: true },
-              { label: "Interview", count: agreements.length, show: true },
-              {
-                label: "Requirements",
-                count: filteredRequirements.length,
-                show: true,
-              },
-              { label: "Agreements", count: finalAgreements.length, show: true },
-            ]
-              .filter((t) => t.show)
-              .map((tab) => (
-                <button
-                  key={tab.label}
-                  onClick={() => setActiveSubTab(tab.label)}
-                  className={`px-6 py-3 font-medium ${
-                    activeSubTab === tab.label
-                      ? "border-b-2 border-blue-600 text-blue-600"
-                      : "text-gray-600 hover:text-blue-600"
-                  }`}
-                >
-                  {tab.label}{" "}
-                  <span className="text-sm text-gray-500">({tab.count})</span>
-                </button>
-              ))}
+              { label: "Applications", count: applicants.length },
+              { label: "Interview", count: agreements.length },
+              { label: "Requirements", count: filteredRequirements.length },
+              { label: "Agreements", count: finalAgreements.length },
+            ].map((tab) => (
+              <button
+                key={tab.label}
+                onClick={() => setActiveSubTab(tab.label)}
+                className={`px-6 py-3 font-medium ${
+                  activeSubTab === tab.label
+                    ? "border-b-2 border-blue-600 text-blue-600"
+                    : "text-gray-600 hover:text-blue-600"
+                }`}
+              >
+                {tab.label}{" "}
+                <span className="text-sm text-gray-500">({tab.count})</span>
+              </button>
+            ))}
           </div>
 
           {/* Applications Tab */}
@@ -255,10 +267,7 @@ function HrRecruitment() {
                 {loading ? (
                   <div className="p-6 text-gray-600">Loading applications…</div>
                 ) : (
-                  <div
-                    className="border rounded-lg overflow-hidden shadow-sm mx-auto"
-                    style={{ maxWidth: "100%" }}
-                  >
+                  <div className="border rounded-lg overflow-hidden shadow-sm mx-auto">
                     <table className="min-w-full border-collapse">
                       <thead className="bg-gray-100 text-gray-700">
                         <tr>
@@ -288,14 +297,17 @@ function HrRecruitment() {
                             }
                           >
                             <td className="px-4 py-2 border-b whitespace-nowrap">
-                              <span className="cursor-pointer hover:text-blue-600 transition-colors">
-                                {a.name}
-                              </span>
-                              {a.agency && (
-                                <span className="ml-2 inline-block px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full">
-                                  🚩 Agency
+                              <div className="flex items-center justify-between">
+                                <span className="cursor-pointer hover:text-blue-600 transition-colors">
+                                  {a.name}
                                 </span>
-                              )}
+
+                                {isAgency(a) && (
+                                  <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
+                                    🚩 Agency
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="px-4 py-2 border-b">{a.position}</td>
                             <td className="px-4 py-2 border-b">{a.depot}</td>
@@ -333,7 +345,6 @@ function HrRecruitment() {
                 )}
               </div>
 
-              {/* Right Side */}
               <div className="col-span-1 flex flex-col gap-4 justify-start">
                 <button
                   className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
@@ -368,10 +379,8 @@ function HrRecruitment() {
                     className="border px-3 py-1 rounded shadow-sm"
                   />
                 </div>
-                <div
-                  className="border rounded-lg overflow-hidden shadow-sm mx-auto"
-                  style={{ maxWidth: "100%" }}
-                >
+
+                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto">
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
                       <tr>
@@ -400,7 +409,16 @@ function HrRecruitment() {
                             })
                           }
                         >
-                          <td className="px-4 py-2 border-b">{a.name}</td>
+                          <td className="px-4 py-2 border-b">
+                            <div className="flex items-center justify-between">
+                              <span>{a.name}</span>
+                              {isAgency(a) && (
+                                <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
+                                  🚩 Agency
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-4 py-2 border-b">{a.position}</td>
                           <td className="px-4 py-2 border-b">{a.depot}</td>
                           <td className="px-4 py-2 border-b">{a.dateApplied}</td>
@@ -445,10 +463,8 @@ function HrRecruitment() {
                     className="border px-3 py-1 rounded shadow-sm"
                   />
                 </div>
-                <div
-                  className="border rounded-lg overflow-hidden shadow-sm mx-auto"
-                  style={{ maxWidth: "100%" }}
-                >
+
+                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto">
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
                       <tr>
@@ -477,7 +493,16 @@ function HrRecruitment() {
                             })
                           }
                         >
-                          <td className="px-4 py-2 border-b">{a.name}</td>
+                          <td className="px-4 py-2 border-b">
+                            <div className="flex items-center justify-between">
+                              <span>{a.name}</span>
+                              {isAgency(a) && (
+                                <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
+                                  🚩 Agency
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-4 py-2 border-b">{a.position}</td>
                           <td className="px-4 py-2 border-b">{a.depot}</td>
                           <td className="px-4 py-2 border-b">{a.dateApplied}</td>
@@ -522,10 +547,8 @@ function HrRecruitment() {
                     className="border px-3 py-1 rounded shadow-sm"
                   />
                 </div>
-                <div
-                  className="border rounded-lg overflow-hidden shadow-sm mx-auto"
-                  style={{ maxWidth: "100%" }}
-                >
+
+                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto">
                   <table className="min-w-full border-collapse">
                     <thead className="bg-gray-100 text-gray-700">
                       <tr>
@@ -541,34 +564,27 @@ function HrRecruitment() {
                         <th className="px-4 py-2 text-left font-semibold border-b">
                           Date Applied
                         </th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">
-                          Action
-                        </th>
                       </tr>
                     </thead>
                     <tbody>
                       {filteredFinalAgreements.map((a) => (
-                        <tr key={a.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-2 border-b">{a.name}</td>
+                        <tr
+                          key={a.id}
+                          className="hover:bg-gray-50 transition-colors cursor-pointer"
+                        >
+                          <td className="px-4 py-2 border-b">
+                            <div className="flex items-center justify-between">
+                              <span>{a.name}</span>
+                              {isAgency(a) && (
+                                <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
+                                  🚩 Agency
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-4 py-2 border-b">{a.position}</td>
                           <td className="px-4 py-2 border-b">{a.depot}</td>
                           <td className="px-4 py-2 border-b">{a.dateApplied}</td>
-                          <td className="px-4 py-2 border-b">
-                            <button
-                              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
-                              onClick={async () => {
-                                const ok = window.confirm(`Mark ${a.name} as Employee?`);
-                                if (!ok) return;
-                                const res = await markAsEmployee(a.id); // a.id is the *application* id
-                                if (res) {
-                                  alert("✅ Applicant moved to Employees! ID: " + res.employee_id);
-                                }
-                              }}
-                            >
-                              Mark as Employee
-                            </button>
-
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -698,14 +714,13 @@ function HrRecruitment() {
                   </button>
                   <button
                     onClick={() => {
-                      const rejectedApplicant = {
-                        id: Date.now(),
-                        name: "Unknown Applicant",
-                        remarks: rejectionRemarks,
-                      };
                       setRejectedApplicants((prev) => [
                         ...prev,
-                        rejectedApplicant,
+                        {
+                          id: Date.now(),
+                          name: "Unknown Applicant",
+                          remarks: rejectionRemarks,
+                        },
                       ]);
                       setShowActionModal(false);
                       setActionType(null);
@@ -727,6 +742,7 @@ function HrRecruitment() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-lg shadow-lg">
             <h3 className="text-xl font-bold mb-4">Rejected Applicants</h3>
+
             {rejectedApplicants.length === 0 ? (
               <p className="text-gray-500">No rejected applicants yet.</p>
             ) : (
@@ -751,6 +767,7 @@ function HrRecruitment() {
                 ))}
               </div>
             )}
+
             <div className="flex justify-end mt-4">
               <button
                 onClick={() => setShowRejectedModal(false)}
