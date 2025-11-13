@@ -558,7 +558,7 @@ const formatDateForInput = (dateString) => {
                               setShowModal(true);
                             }}
                           >
-                            View
+                            Apply
                           </button>
                         </div>
                       </div>
