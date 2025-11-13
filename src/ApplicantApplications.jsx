@@ -1,10 +1,14 @@
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 import Logo from './Logo.png';
 
 function ApplicantApplications() {
   const steps = ["Application", "Assessment", "Requirements", "Agreements"];
   const [activeStep, setActiveStep] = useState("Application");
+  const [loading, setLoading] = useState(true);
+  const [applicationData, setApplicationData] = useState(null);
+  const [jobData, setJobData] = useState(null);
   // status: done -> green, pending -> yellow, waiting -> orange
   const [stepStatus, setStepStatus] = useState({
     Application: "done",
@@ -31,6 +35,7 @@ function ApplicantApplications() {
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [showRetractDialog, setShowRetractDialog] = useState(false);
   const [applicationRetracted, setApplicationRetracted] = useState(false);
+  const [retracting, setRetracting] = useState(false);
 
   const interview = {
     date: "June 30, 2025",
@@ -39,6 +44,64 @@ function ApplicantApplications() {
     interviewer: "Raezelle Ferrer",
   };
 
+  const resumeName = applicationData?.payload?.form?.resumeName;
+  const resumePath = applicationData?.payload?.form?.resumePath || resumeName;
+  const resumePublicUrl = resumePath
+    ? supabase.storage.from('resume').getPublicUrl(resumePath)?.data?.publicUrl || null
+    : null;
+
+  // Fetch application data
+  useEffect(() => {
+    const fetchApplication = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          setLoading(false);
+          return;
+        }
+
+        // Fetch application for current user
+        const { data: application, error: appError } = await supabase
+          .from('applications')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (appError) {
+          console.error('Error fetching application:', appError);
+          setLoading(false);
+          return;
+        }
+
+        if (application) {
+          setApplicationData(application);
+
+          // Fetch job data if job_id exists
+          if (application.job_id) {
+            const { data: job, error: jobError } = await supabase
+              .from('job_posts')
+              .select('title, depot')
+              .eq('id', application.job_id)
+              .single();
+
+            if (!jobError && job) {
+              setJobData(job);
+            }
+          }
+        }
+
+        setLoading(false);
+      } catch (error) {
+        console.error('Error:', error);
+        setLoading(false);
+      }
+    };
+
+    fetchApplication();
+  }, []);
+
 //   const getStepClasses = (step) => {
 //     const base = "px-4 py-1 rounded text-sm font-semibold border";
 //     const status = stepStatus[step];
@@ -46,6 +109,44 @@ function ApplicantApplications() {
 //     if (status === "pending") return `${base} bg-yellow-100 text-yellow-800 border-yellow-300`;
 //     return `${base} bg-orange-100 text-orange-800 border-orange-300`;
 //   };
+
+  const handleRetractApplication = async () => {
+    if (!applicationData?.id || retracting) return;
+    const confirmed = window.confirm('Please confirm that you want to retract this application.');
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setRetracting(true);
+      const { error } = await supabase
+        .from('applications')
+        .delete()
+        .eq('id', applicationData.id)
+        .eq('user_id', applicationData.user_id);
+
+      if (error) {
+        throw error;
+      }
+
+      setApplicationRetracted(true);
+      setApplicationData(null);
+      setJobData(null);
+      setStepStatus({
+        Application: 'waiting',
+        Assessment: 'waiting',
+        Requirements: 'waiting',
+        Agreements: 'waiting',
+      });
+      alert('Your application has been successfully retracted.');
+    } catch (err) {
+      console.error('Error retracting application:', err);
+      alert('Failed to retract application. Please try again.');
+    } finally {
+      setShowRetractDialog(false);
+      setRetracting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white">
@@ -111,152 +212,207 @@ function ApplicantApplications() {
 
         {/* Content */}
         <div className="bg-white border rounded-md shadow-sm">
-          {/* Application */}
-          <section className={`p-4 ${activeStep === "Application" ? "" : "hidden"}`}>
-            {/* Header row */}
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">JD</div>
-                <div>
-                  <div className="font-semibold text-gray-800">Dela Cruz, Juan</div>
-                  <div className="text-sm text-gray-700">Position: Delivery Driver</div>
-                  <div className="text-xs text-gray-500">Applied: June 25, 2025</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500">#003342</div>
-                <button 
-                  type="button" 
-                  className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
-                  onClick={() => setShowRetractDialog(true)}
-                  disabled={applicationRetracted}
-                >
-                  {applicationRetracted ? "Application Retracted" : "Retract Application"}
-                </button>
-              </div>
-            </div>
-
-            {/* Steps bar already above; show details below */}
-            <div className="border rounded-md overflow-hidden">
-              {/* Job Details */}
-              <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Job Details</div>
-              <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 border-b">
-                <div><span className="font-semibold">Department:</span> Delivery</div>
-                <div><span className="font-semibold">Current Employment Status:</span> Unemployed</div>
-                <div><span className="font-semibold">Position Applying For:</span> Delivery Driver</div>
-                <div><span className="font-semibold">Available Start Date:</span> 10/10/25</div>
-                <div><span className="font-semibold">Depot:</span> Pasig</div>
-                <div>
-                  <span className="font-semibold">Resume:</span> <a href="#" className="text-blue-600 hover:underline">delacruzresume.pdf</a>
-                </div>
-              </div>
-
-              {/* Personal Information */}
-              <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Personal Information</div>
-              <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
-                <div><span className="font-semibold">Full Name:</span> Dela Cruz, Juan</div>
-                <div><span className="font-semibold">Sex:</span> Male</div>
-                <div><span className="font-semibold">Address:</span> Blk 4 Lot 159 Papaya St., Brgy. San Lupalop, Pasig City 1860</div>
-                <div><span className="font-semibold">Birthday:</span> 10/10/1978</div>
-                <div><span className="font-semibold">Contact Number:</span> 09123456789</div>
-                <div><span className="font-semibold">Age:</span> 47</div>
-                <div><span className="font-semibold">Email:</span> delacruzjuan@gmail.com</div>
-                <div><span className="font-semibold">Marital Status:</span> Married</div>
-              </div>
-            </div>
-          </section>
-
-          {/* Assessment */}
-          <section className={`p-4 ${activeStep === "Assessment" ? "" : "hidden"}`}>
-            {/* Header summary */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">JD</div>
-                <div>
-                  <div className="font-semibold text-gray-800">Dela Cruz, Juan</div>
-                  <div className="text-sm text-gray-700">Position: Delivery Driver</div>
-                  <div className="text-xs text-gray-500">Applied: June 25, 2025</div>
-                </div>
-              </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500">#003342</div>
-                <button 
-                  type="button" 
-                  className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
-                  onClick={() => setShowRetractDialog(true)}
-                  disabled={applicationRetracted}
-                >
-                  {applicationRetracted ? "Application Retracted" : "Retract Application"}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold text-gray-800">Assessment</h2>
-              {stepStatus.Assessment === "done" && (
-                <span className="text-sm px-2 py-1 rounded bg-green-100 text-green-800 border border-green-300">Confirmed</span>
-              )}
-            </div>
-            <div className="bg-gray-50 border rounded-md p-4">
-              <div className="text-sm text-gray-800 font-semibold mb-2">Interview Schedule</div>
-              <div className="text-sm text-gray-700 space-y-1">
-                <div><span className="font-medium">Date:</span> {interview.date}</div>
-                <div><span className="font-medium">Time:</span> {interview.time}</div>
-                <div><span className="font-medium">Location:</span> {interview.location}</div>
-                <div><span className="font-medium">Interviewer:</span> {interview.interviewer}</div>
-              </div>
-              <div className="mt-3 flex items-center justify-between">
-                <div className="text-xs text-gray-500 italic">
-                  Important Reminder: Please confirm at least a day before your schedule.
-                </div>
-                {stepStatus.Assessment !== "done" && (
-                  <button type="button" className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700" onClick={() => setShowConfirmDialog(true)}>
-                    Confirm Interview
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* In-Person Assessments - shown after interview confirmation */}
-            {stepStatus.Assessment === "done" && (
-              <div className="mt-4">
-                <div className="text-sm font-semibold text-gray-800 mb-2">In-Person Assessments</div>
-                <div className="bg-gray-50 border rounded-md p-3">
-                  <div className="flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
-                      <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                    </svg>
-                    <a href="#" className="text-blue-600 hover:underline text-sm">delacruztestdrive(passed).pdf</a>
+          {loading ? (
+            <div className="p-8 text-center text-gray-600">Loading application data...</div>
+          ) : !applicationData ? (
+            <div className="p-8 text-center text-gray-600">No application found.</div>
+          ) : (
+            <>
+              {/* Application */}
+              <section className={`p-4 ${activeStep === "Application" ? "" : "hidden"}`}>
+                {/* Header row */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-start gap-3">
+                    <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
+                      {applicationData.payload?.form?.firstName?.[0] || ''}{applicationData.payload?.form?.lastName?.[0] || ''}
+                    </div>
+                    <div>
+                      <div className="font-semibold text-gray-800">
+                        {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Applied: {new Date(applicationData.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
+                    <button 
+                      type="button" 
+                      className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
+                      onClick={() => setShowRetractDialog(true)}
+                      disabled={applicationRetracted || retracting}
+                    >
+                      {applicationRetracted ? "Application Retracted" : "Retract Application"}
+                    </button>
                   </div>
                 </div>
-              </div>
-            )}
-          </section>
 
-          {/* Requirements */}
-          <section className={`p-4 ${activeStep === "Requirements" ? "" : "hidden"}`}>
-            {/* Header summary (same as Application header portion inside card) */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">JD</div>
-                <div>
-                  <div className="font-semibold text-gray-800">Dela Cruz, Juan</div>
-                  <div className="text-sm text-gray-700">Position: Delivery Driver</div>
-                  <div className="text-xs text-gray-500">Applied: June 25, 2025</div>
+                {/* Steps bar already above; show details below */}
+                <div className="border rounded-md overflow-hidden">
+                  {/* Job Details */}
+                  <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Job Details</div>
+                  <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 border-b">
+                    <div><span className="font-semibold">Position Applying For:</span> {jobData?.title || applicationData.payload?.job?.title || 'N/A'}</div>
+                    <div><span className="font-semibold">Current Employment Status:</span> {applicationData.payload?.form?.employed === 'Yes' ? 'Employed' : 'Unemployed'}</div>
+                    <div><span className="font-semibold">Available Start Date:</span> {applicationData.payload?.form?.startDate ? new Date(applicationData.payload.form.startDate).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A'}</div>
+                    <div><span className="font-semibold">Depot:</span> {jobData?.depot || applicationData.payload?.job?.depot || 'N/A'}</div>
+                    <div>
+                      <span className="font-semibold">Resume:</span>{' '}
+                      {resumePublicUrl ? (
+                        <a 
+                          href={resumePublicUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
+                        >
+                          {applicationData.payload.form.resumeName || 'View Resume'}
+                        </a>
+                      ) : (
+                        <span className="text-gray-500">No resume uploaded</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Personal Information */}
+                  <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Personal Information</div>
+                  <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
+                    <div>
+                      <span className="font-semibold">Full Name:</span>{' '}
+                      {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
+                    </div>
+                    <div><span className="font-semibold">Sex:</span> {applicationData.payload?.form?.sex || 'N/A'}</div>
+                    <div>
+                      <span className="font-semibold">Address:</span>{' '}
+                      {[
+                        applicationData.payload?.form?.street,
+                        applicationData.payload?.form?.barangay,
+                        applicationData.payload?.form?.city,
+                        applicationData.payload?.form?.zip
+                      ].filter(Boolean).join(', ') || 'N/A'}
+                    </div>
+                    <div>
+                      <span className="font-semibold">Birthday:</span>{' '}
+                      {applicationData.payload?.form?.birthday ? new Date(applicationData.payload.form.birthday).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A'}
+                    </div>
+                    <div><span className="font-semibold">Contact Number:</span> {applicationData.payload?.form?.contact || 'N/A'}</div>
+                    <div>
+                      <span className="font-semibold">Age:</span>{' '}
+                      {applicationData.payload?.form?.birthday ? 
+                        Math.floor((new Date() - new Date(applicationData.payload.form.birthday)) / (365.25 * 24 * 60 * 60 * 1000)) : 'N/A'}
+                    </div>
+                    <div><span className="font-semibold">Email:</span> {applicationData.payload?.form?.email || 'N/A'}</div>
+                    <div><span className="font-semibold">Marital Status:</span> {applicationData.payload?.form?.maritalStatus || 'N/A'}</div>
+                  </div>
+                </div>
+              </section>
+            </>
+          )}
+
+          {/* Assessment */}
+          {applicationData && (
+            <section className={`p-4 ${activeStep === "Assessment" ? "" : "hidden"}`}>
+              {/* Header summary */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
+                    {applicationData.payload?.form?.firstName?.[0] || ''}{applicationData.payload?.form?.lastName?.[0] || ''}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-gray-800">
+                      {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Applied: {new Date(applicationData.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
+                  <button 
+                    type="button" 
+                    className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    onClick={() => setShowRetractDialog(true)}
+                    disabled={applicationRetracted || retracting}
+                  >
+                    {applicationRetracted ? "Application Retracted" : "Retract Application"}
+                  </button>
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500">#003342</div>
-                <button 
-                  type="button" 
-                  className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
-                  onClick={() => setShowRetractDialog(true)}
-                  disabled={applicationRetracted}
-                >
-                  {applicationRetracted ? "Application Retracted" : "Retract Application"}
-                </button>
+
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-gray-800">Assessment</h2>
+                {stepStatus.Assessment === "done" && (
+                  <span className="text-sm px-2 py-1 rounded bg-green-100 text-green-800 border border-green-300">Confirmed</span>
+                )}
               </div>
-            </div>
+              <div className="bg-gray-50 border rounded-md p-4">
+                <div className="text-sm text-gray-800 font-semibold mb-2">Interview Schedule</div>
+                <div className="text-sm text-gray-700 space-y-1">
+                  <div><span className="font-medium">Date:</span> {interview.date}</div>
+                  <div><span className="font-medium">Time:</span> {interview.time}</div>
+                  <div><span className="font-medium">Location:</span> {interview.location}</div>
+                  <div><span className="font-medium">Interviewer:</span> {interview.interviewer}</div>
+                </div>
+                <div className="mt-3 flex items-center justify-between">
+                  <div className="text-xs text-gray-500 italic">
+                    Important Reminder: Please confirm at least a day before your schedule.
+                  </div>
+                  {stepStatus.Assessment !== "done" && (
+                    <button type="button" className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700" onClick={() => setShowConfirmDialog(true)}>
+                      Confirm Interview
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* In-Person Assessments - shown after interview confirmation */}
+              {stepStatus.Assessment === "done" && (
+                <div className="mt-4">
+                  <div className="text-sm font-semibold text-gray-800 mb-2">In-Person Assessments</div>
+                  <div className="bg-gray-50 border rounded-md p-3">
+                    <div className="flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
+                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                      </svg>
+                      <a href="#" className="text-blue-600 hover:underline text-sm">delacruztestdrive(passed).pdf</a>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Requirements */}
+          {applicationData && (
+            <section className={`p-4 ${activeStep === "Requirements" ? "" : "hidden"}`}>
+              {/* Header summary (same as Application header portion inside card) */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
+                    {applicationData.payload?.form?.firstName?.[0] || ''}{applicationData.payload?.form?.lastName?.[0] || ''}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-gray-800">
+                      {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Applied: {new Date(applicationData.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
+                  <button 
+                    type="button" 
+                    className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    onClick={() => setShowRetractDialog(true)}
+                    disabled={applicationRetracted || retracting}
+                  >
+                    {applicationRetracted ? "Application Retracted" : "Retract Application"}
+                  </button>
+                </div>
+              </div>
 
             {/* ID numbers row with lock/unlock */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
@@ -372,33 +528,46 @@ function ApplicantApplications() {
               </div>
             </div>
           </section>
+          )}
 
           {/* Agreements */}
-          <section className={`p-4 ${activeStep === "Agreements" ? "" : "hidden"}`}>
-            {/* Header summary */}
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">JD</div>
-                <div>
-                  <div className="font-semibold text-gray-800">Dela Cruz, Juan</div>
-                  <div className="text-sm text-gray-700">Position: Delivery Driver</div>
-                  <div className="text-xs text-gray-500">Applied: June 25, 2025</div>
+          {applicationData && (
+            <section className={`p-4 ${activeStep === "Agreements" ? "" : "hidden"}`}>
+              {/* Header summary */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
+                    {applicationData.payload?.form?.firstName?.[0] || ''}{applicationData.payload?.form?.lastName?.[0] || ''}
+                  </div>
+                  <div>
+                    <div className="font-semibold text-gray-800">
+                      {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Applied: {new Date(applicationData.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                    </div>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
+                  <button 
+                    type="button" 
+                    className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
+                    onClick={() => setShowRetractDialog(true)}
+                    disabled={applicationRetracted || retracting}
+                  >
+                    {applicationRetracted ? "Application Retracted" : "Retract Application"}
+                  </button>
+                  {applicationData.status === 'hired' && (
+                    <>
+                      <div className="text-lg font-bold text-green-600 mt-1">HIRED</div>
+                      <div className="text-xs text-gray-500">
+                        {applicationData.updated_at ? new Date(applicationData.updated_at).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : ''}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
-              <div className="text-right">
-                <div className="text-xs text-gray-500">#003342</div>
-                <button 
-                  type="button" 
-                  className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
-                  onClick={() => setShowRetractDialog(true)}
-                  disabled={applicationRetracted}
-                >
-                  {applicationRetracted ? "Application Retracted" : "Retract Application"}
-                </button>
-                <div className="text-lg font-bold text-green-600 mt-1">HIRED</div>
-                <div className="text-xs text-gray-500">10/10/2025</div>
-              </div>
-            </div>
 
             <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
             <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
@@ -422,6 +591,7 @@ function ApplicantApplications() {
               Important: You have been successfully hired! Please see your email for your employee account details and you may login as an employee. Thank you.
             </div>
           </section>
+          )}
         </div>
       </div>
 
@@ -490,15 +660,14 @@ function ApplicantApplications() {
               Are you sure you want to retract your application? This action cannot be undone and you will need to reapply if you change your mind.
             </div>
             <div className="p-4 border-t flex justify-end gap-2">
-              <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowRetractDialog(false)}>Cancel</button>
+              <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowRetractDialog(false)} disabled={retracting}>
+                Cancel
+              </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-                onClick={() => {
-                  setShowRetractDialog(false);
-                  setApplicationRetracted(true);
-                  alert("Your application has been successfully retracted.");
-                }}
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed"
+                onClick={handleRetractApplication}
+                disabled={retracting}
               >
                 Retract Application
               </button>

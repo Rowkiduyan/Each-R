@@ -54,6 +54,7 @@
       heardFrom: '',
       employed: '',
       resumeName: '',
+      resumePath: '',
       hasSSS: false,
       hasPhilHealth: false,
       hasTIN: false,
@@ -79,7 +80,9 @@
     // keep using your arrays for dynamic sections
     const [workExperiences, setWorkExperiences] = useState([{}]);
     const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
-    
+    const [resumeFile, setResumeFile] = useState(null);
+    const [userApplication, setUserApplication] = useState(null);
+
     // Fetch profile data
     useEffect(() => {
       const fetchProfileData = async () => {
@@ -164,6 +167,27 @@ const handleSave = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       alert('User not found');
+      setSaving(false);
+      return;
+    }
+
+    const requiredFields = [
+      'address',
+      'sex',
+      'birthday',
+      'age',
+      'marital_status',
+      'educational_attainment',
+      'institution_name',
+      'year_graduated',
+      'skills',
+    ];
+    const missing = requiredFields.find((key) => {
+      const val = profileForm[key];
+      return String(val ?? '').trim() === '';
+    });
+    if (missing) {
+      alert('Please fill out all fields before saving your profile.');
       setSaving(false);
       return;
     }
@@ -274,6 +298,27 @@ const formatDateForInput = (dateString) => {
     const handleResumeChange = (e) => {
       const file = e.target.files?.[0];
       setForm((f) => ({ ...f, resumeName: file ? file.name : '' }));
+      setResumeFile(file || null);
+    };
+
+    const fetchUserApplication = async (userId) => {
+      const { data, error } = await supabase
+        .from('applications')
+        .select('id, job_id, created_at, payload, status')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) {
+        console.error('Error fetching user application:', error);
+        return;
+      }
+
+      if (data && data.length > 0) {
+        setUserApplication(data[0]);
+      } else {
+        setUserApplication(null);
+      }
     };
 
     const updateWork = (idx, key, value) => {
@@ -322,8 +367,36 @@ const formatDateForInput = (dateString) => {
 
       const job = selectedJob || newJob || null;
 
+      let resumeStoragePath = form.resumePath || null;
+
+      if (resumeFile) {
+        const sanitizedFileName = resumeFile.name.replace(/\s+/g, '_');
+        const filePath = `${userId}/${Date.now()}-${sanitizedFileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('resume')
+          .upload(filePath, resumeFile, {
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error(uploadError);
+          alert('Failed to upload resume: ' + uploadError.message);
+          return;
+        }
+
+        resumeStoragePath = uploadData.path;
+        setResumeFile(null);
+        setForm((prev) => ({ ...prev, resumePath: resumeStoragePath }));
+      }
+
+      const formPayload = { ...form };
+      if (resumeStoragePath) {
+        formPayload.resumePath = resumeStoragePath;
+      }
+
       const payload = {
-        form,
+        form: formPayload,
         workExperiences,
         characterReferences,
         job, // snapshot of the job
@@ -331,19 +404,23 @@ const formatDateForInput = (dateString) => {
 
       const jobId = (job && (job.id || job.title)) || 'unknown';
 
-      const { error } = await supabase.from('applications').insert([
+      const { data: insertedData, error } = await supabase.from('applications').insert([
         {
           user_id: userId,
           job_id: jobId,
           payload,
           status: 'submitted',
         }
-      ]);
+      ]).select('id, job_id, created_at, payload, status');
 
       if (error) {
         console.error(error);
         alert('Failed to submit application: ' + error.message);
         return;
+      }
+
+      if (insertedData && insertedData.length > 0) {
+        setUserApplication(insertedData[0]);
       }
 
       alert('Application submitted successfully!');
@@ -354,6 +431,13 @@ const formatDateForInput = (dateString) => {
     };
 
     const [authChecked, setAuthChecked] = useState(false);
+    const hasExistingApplication = Boolean(userApplication);
+    const appliedJobId = userApplication?.job_id || null;
+    const applicationPayload = userApplication?.payload || null;
+    const applicationResumePath = applicationPayload?.form?.resumePath || applicationPayload?.form?.resumeName || null;
+    const applicationResumeUrl = applicationResumePath
+      ? supabase.storage.from('resume').getPublicUrl(applicationResumePath).data.publicUrl
+      : null;
 
     useEffect(() => {
       let unsub;
@@ -370,6 +454,8 @@ const formatDateForInput = (dateString) => {
         }
 
         setAuthChecked(true); // we’re good to render the page
+
+        await fetchUserApplication(session.user.id);
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_evt, sess) => {
           if (!sess) navigate('/applicant/login', { replace: true });
@@ -518,7 +604,16 @@ const formatDateForInput = (dateString) => {
                   <div className="text-gray-600">Loading jobs…</div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {jobs.map((job) => (
+                    {jobs.map((job) => {
+                      const isCurrentApplication = appliedJobId === job.id;
+                      const isApplyDisabled = hasExistingApplication && !isCurrentApplication;
+                      const isButtonDisabled = isApplyDisabled || isCurrentApplication;
+                      const buttonLabel = isCurrentApplication ? 'Applied' : 'Apply';
+                      const buttonClasses = isButtonDisabled
+                        ? 'w-full py-2 rounded-lg transition-colors mt-auto bg-gray-300 text-gray-600 cursor-not-allowed'
+                        : 'w-full py-2 rounded-lg transition-colors mt-auto bg-red-600 text-white hover:bg-red-700';
+
+                      return (
                       <div key={job.id} className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
                         {job.urgent && (
                           <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1 transform">
@@ -535,7 +630,9 @@ const formatDateForInput = (dateString) => {
                               Posted {new Date(job.created_at).toLocaleString()}
                             </span>
                           </div>
-                          <p className="text-gray-700 mb-4">{job.description}</p>
+                          <p className="text-gray-700 mb-4">
+                            {job.description}
+                          </p>
                           {Array.isArray(job.responsibilities) &&
                             job.responsibilities.length > 0 && (
                               <div className="mb-4">
@@ -552,17 +649,21 @@ const formatDateForInput = (dateString) => {
                               </div>
                             )}
                           <button
-                            className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto"
+                            type="button"
+                            className={buttonClasses}
+                            disabled={isButtonDisabled}
                             onClick={() => {
+                              if (isButtonDisabled) return;
                               setSelectedJob(job);
                               setShowModal(true);
                             }}
                           >
-                            Apply
+                            {buttonLabel}
                           </button>
                         </div>
                       </div>
-                    ))}
+                    );
+                  })}
 
                     {/* below are your static cards unchanged except the button handlers */}
                     <div className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
@@ -818,38 +919,36 @@ const formatDateForInput = (dateString) => {
                                 <div className="grid grid-cols-3 gap-8">
                                     <div className="space-y-4">
                                         <div>
-                                            <span className="font-bold">Application ID:</span> {profileData.application_id || 'Not available'}
+                                            <span className="font-bold">Application ID:</span> {userApplication?.id || 'Not available'}
                                         </div>
                                         <div>
-                                            <span className="font-bold">Applied Position:</span> {profileData.applied_position || 'Not available'}
+                                            <span className="font-bold">Applied Position:</span> {applicationPayload?.job?.title || 'Not available'}
                                         </div>
                                     </div>
                                     <div className="space-y-4">
                                         <div>
-                                            <span className="font-bold">Preferred Depot:</span> {profileData.preferred_depot || 'Not available'}
+                                            <span className="font-bold">Applied Depot:</span> {applicationPayload?.job?.depot || 'Not available'}
                                         </div>
                                         <div>
-                                            <span className="font-bold">Application Date:</span> {profileData.application_date ? formatDate(profileData.application_date) : 'Not available'}
+                                            <span className="font-bold">Application Date:</span> {userApplication?.created_at ? formatDate(userApplication.created_at) : 'Not available'}
                                         </div>
                                     </div>
                                     <div className="space-y-4">
                                         <div>
                                             <span className="font-bold">Application Status:</span>{' '}
-                                            <span className="ml-2 px-2 py-1 bg-orange-500 text-white text-xs rounded">{profileData.application_status || 'Not available'}</span>
+                                            <span className="ml-2 px-2 py-1 bg-orange-500 text-white text-xs rounded">{userApplication?.status || 'Not available'}</span>
                                         </div>
                                         <div>
                                             <span className="font-bold">Resume:</span>{' '}
-                                            {profileData.resume ? (
-                                                <a href={profileData.resume} className="text-blue-600">View Resume</a>
-                                            ) : (
-                                                'Not available'
-                                            )}
+                                            {applicationResumeUrl ? (
+                                                <a href={applicationResumeUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600">{applicationPayload?.form?.resumeName || 'View Resume'}</a>
+                                            ) : ('Not available')}
                                         </div>
                                         <div>
-                                            <span className="font-bold">Available Start Date:</span> {profileData.available_start_date ? formatDate(profileData.available_start_date) : 'Not available'}
+                                            <span className="font-bold">Available Start Date:</span> {applicationPayload?.form?.startDate ? formatDate(applicationPayload.form.startDate) : 'Not available'}
                                         </div>
                                         <div>
-                                            <span className="font-bold">How did you learn about us:</span> {profileData.learned_about_us || 'Not available'}
+                                            <span className="font-bold">How did you learn about us:</span> {applicationPayload?.form?.heardFrom || 'Not available'}
                                         </div>
                                     </div>
                                 </div>
