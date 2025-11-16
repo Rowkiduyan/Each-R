@@ -9,6 +9,7 @@ function ApplicantLogin() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showGuestModal, setShowGuestModal] = useState(false);
 
   const handleLogin = async (e) => {
   e.preventDefault();
@@ -22,7 +23,7 @@ function ApplicantLogin() {
   });
 
   if (error) {
-    setError(error.message);
+    setError("Invalid login credentials. Please check your email and password.");
     setLoading(false);
     return;
   }
@@ -37,7 +38,7 @@ function ApplicantLogin() {
     .single();
 
   if (applicantError || !applicantData) {
-    setError("Unknown role or access not allowed");
+    setError("Account not registered. Please create an account first.");
     setLoading(false);
     return;
   }
@@ -49,6 +50,7 @@ function ApplicantLogin() {
     navigate("/hr/home");
   } else {
     setError("Unknown role or access not allowed");
+    setLoading(false);
   }
 
   setLoading(false);
@@ -58,17 +60,24 @@ function ApplicantLogin() {
   return (
     <div className="flex flex-col items-center min-h-screen bg-neutral-100">
       <div className="flex justify-end gap-2 w-full bg-neutral-100 p-5">
-        <Link
-          to="/applicantg/home"
-          onClick={() => alert("Logged in as Guest")}
+        <button
+          onClick={() => setShowGuestModal(true)}
           className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
           View Jobs as Guest
-        </Link>
+        </button>
       </div>
 
       <div className="flex flex-col items-center justify-center bg-neutral-200 p-10 rounded-lg shadow-md max-w-sm w-full mt-10">
-        <img src={Logo} alt="Roadwise Logo" className="w-30 h-20 mb-4" />
+        <div className="text-red-600 font-bold text-3xl italic mb-4">
+          Each-R
+        </div>
         <h2 className="text-black text-xl font-semibold mb-4">Applicant Log In</h2>
+
+        {error && (
+          <div className="w-3/4 mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="flex flex-col items-center w-full">
           <input
@@ -96,8 +105,6 @@ function ApplicantLogin() {
           </button>
         </form>
 
-        {error && <p className="text-red-500 mt-2 text-sm">{error}</p>}
-
         <p className="mt-3 text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
           Forgot Password?
         </p>
@@ -110,6 +117,42 @@ function ApplicantLogin() {
           </Link>
         </div>
       </div>
+
+      {/* Guest Modal */}
+      {showGuestModal && (
+        <div
+          className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+          onClick={() => setShowGuestModal(false)}
+        >
+          <div
+            className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 text-center">
+              <div className="text-lg font-semibold text-gray-800 mb-4">Log in as Guest?</div>
+              <div className="flex justify-center gap-2">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  onClick={() => setShowGuestModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                  onClick={() => {
+                    setShowGuestModal(false);
+                    navigate("/applicantg/home");
+                  }}
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

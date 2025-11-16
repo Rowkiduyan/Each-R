@@ -8,11 +8,15 @@ function VerifyEmail() {
   const [email] = useState(emailFromRegister);
   const [code, setCode] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const navigate = useNavigate();
 
   const handleVerify = async (e) => {
     e.preventDefault();
     setIsVerifying(true);
+    setErrorMessage('');
+    setSuccessMessage('');
 
     try {
       // 1️⃣ Get pending user from pending_applicants
@@ -24,7 +28,7 @@ function VerifyEmail() {
         .single();
 
       if (pendingError || !pendingUser) {
-        alert("Invalid verification code or email.");
+        setErrorMessage("Invalid verification code or email.");
         setIsVerifying(false);
         return;
       }
@@ -37,7 +41,7 @@ function VerifyEmail() {
 
       if (authError) {
         console.error("Auth signup error:", authError);
-        alert("Error creating user in Supabase Auth: " + authError.message);
+        setErrorMessage("Error creating user in Supabase Auth: " + authError.message);
         setIsVerifying(false);
         return;
       }
@@ -56,7 +60,7 @@ function VerifyEmail() {
 
     if (profileError) {
       console.error("Error creating profile row:", profileError);
-      alert("Error creating profile. Please contact support.");
+      setErrorMessage("Error creating profile. Please contact support.");
       setIsVerifying(false);
       return;
     }
@@ -76,7 +80,7 @@ function VerifyEmail() {
 
       if (insertError) {
         console.error(insertError);
-        alert("Error moving user to applicants table.");
+        setErrorMessage("Error moving user to applicants table.");
         setIsVerifying(false);
         return;
       }
@@ -89,14 +93,18 @@ function VerifyEmail() {
 
       if (deleteError) {
         console.error(deleteError);
-        alert("Warning: could not remove pending applicant.");
+        setErrorMessage("Warning: could not remove pending applicant.");
+        setIsVerifying(false);
+        return;
       }
 
-      alert("✅ Email verified successfully! You can now log in.");
-      navigate("/applicant/login");
+      setSuccessMessage("✅ Email verified successfully! You can now log in.");
+      setTimeout(() => {
+        navigate("/applicant/login");
+      }, 2000);
     } catch (err) {
       console.error("Unexpected error:", err);
-      alert("An unexpected error occurred.");
+      setErrorMessage("An unexpected error occurred.");
     } finally {
       setIsVerifying(false);
     }
@@ -114,6 +122,18 @@ function VerifyEmail() {
         <p className="text-gray-600 text-center mb-6">
           Enter the 6-digit code we sent to your email.
         </p>
+
+        {errorMessage && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            {errorMessage}
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+            {successMessage}
+          </div>
+        )}
 
         <input
           className="border p-3 rounded w-full"

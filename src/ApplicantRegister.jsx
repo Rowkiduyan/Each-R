@@ -17,27 +17,36 @@ function ApplicantRegister() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
 
 const handleRegister = async (e) => {
   e.preventDefault();
   setIsSubmitting(true);
-
+  setErrorMessage('');
+  setSuccessMessage('');
 
   if (password.length < 6) {
-    alert("Password is too short");
+    setErrorMessage("Password is too short");
     setIsSubmitting(false);
     return;
   }
 
   if (password !== confirmPassword) {
-    alert("Passwords do not match!");
+    setErrorMessage("Passwords do not match!");
     setIsSubmitting(false);
     return;
   }
 
   if (!lname || !fname || !email || !password || !contact) {
-    alert("Please fill in all required fields.");
+    setErrorMessage("Please fill in all required fields.");
+    setIsSubmitting(false);
+    return;
+  }
+
+  if (contact.length !== 11 || !contact.startsWith('09')) {
+    setErrorMessage("Contact number must be 11 digits starting with 09 (e.g., 09XXXXXXXXX).");
     setIsSubmitting(false);
     return;
   }
@@ -75,12 +84,14 @@ const handleRegister = async (e) => {
 
       if (error) throw error;
 
-      alert("Verification code sent! Please check your email.");
-      navigate("/applicant/verify", { state: { email } });
+      setSuccessMessage("Verification code sent! Please check your email.");
+      setTimeout(() => {
+        navigate("/applicant/verify", { state: { email } });
+      }, 1500);
 
     } catch (err) {
       console.error("❌ Registration error:", err.message);
-      alert("Something went wrong. Please try again.");
+      setErrorMessage("Something went wrong. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -93,7 +104,9 @@ const handleRegister = async (e) => {
     <div className="min-h-screen bg-gray-100 flex items-center justify-center">
       <form onSubmit={handleRegister} className="w-full max-w-md p-8 space-y-4 rounded-2xl">
         <div className="flex justify-center mb-6">
-          <img src={Logo} alt="Roadwise" className="h-12" />
+          <div className="text-red-600 font-bold text-5xl italic">
+            Each-R
+          </div>
         </div>
 
         <h1 className="text-2xl font-bold text-center mb-2">
@@ -104,6 +117,18 @@ const handleRegister = async (e) => {
           your Roadwise Applicant Account.
         </p>
 
+        {errorMessage && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+            {errorMessage}
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+            {successMessage}
+          </div>
+        )}
+
         <input className="border p-3 rounded w-full" placeholder="Last Name *" 
         value ={lname}
         onChange={(e) => setLname(e.target.value)}/>
@@ -113,9 +138,22 @@ const handleRegister = async (e) => {
         <input className="border p-3 rounded w-full" placeholder="Middle Name"
         value={mname}
         onChange={(e) => setMname(e.target.value)} />
-        <input className="border p-3 rounded w-full" placeholder="Contact Number *"
+        <input className="border p-3 rounded w-full" placeholder="Contact Number * (09XXXXXXXXX)"
         value={contact}
-        onChange={(e) => setContact(e.target.value)} />
+        onChange={(e) => {
+          const value = e.target.value;
+          // Only allow digits
+          if (value === '' || /^\d+$/.test(value)) {
+            // Allow empty, single '0', or values starting with '09'
+            if (value === '' || value === '0' || value.startsWith('09')) {
+              // Limit to 11 digits
+              if (value.length <= 11) {
+                setContact(value);
+              }
+            }
+          }
+        }}
+        maxLength={11} />
         <input className="border p-3 rounded w-full" type="email" placeholder="Email *"
         value={email}
         onChange={(e) => setEmail(e.target.value)} />

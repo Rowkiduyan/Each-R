@@ -36,6 +36,8 @@ function ApplicantApplications() {
   const [showRetractDialog, setShowRetractDialog] = useState(false);
   const [applicationRetracted, setApplicationRetracted] = useState(false);
   const [retracting, setRetracting] = useState(false);
+  const [showRetractSuccess, setShowRetractSuccess] = useState(false);
+  const [retractError, setRetractError] = useState('');
 
   const interview = {
     date: "June 30, 2025",
@@ -112,13 +114,10 @@ function ApplicantApplications() {
 
   const handleRetractApplication = async () => {
     if (!applicationData?.id || retracting) return;
-    const confirmed = window.confirm('Please confirm that you want to retract this application.');
-    if (!confirmed) {
-      return;
-    }
 
     try {
       setRetracting(true);
+      setRetractError('');
       const { error } = await supabase
         .from('applications')
         .delete()
@@ -138,12 +137,12 @@ function ApplicantApplications() {
         Requirements: 'waiting',
         Agreements: 'waiting',
       });
-      alert('Your application has been successfully retracted.');
+      setShowRetractDialog(false);
+      setShowRetractSuccess(true);
     } catch (err) {
       console.error('Error retracting application:', err);
-      alert('Failed to retract application. Please try again.');
+      setRetractError('Failed to retract application. Please try again.');
     } finally {
-      setShowRetractDialog(false);
       setRetracting(false);
     }
   };
@@ -659,6 +658,13 @@ function ApplicantApplications() {
             <div className="p-4 text-sm text-gray-700">
               Are you sure you want to retract your application? This action cannot be undone and you will need to reapply if you change your mind.
             </div>
+            {retractError && (
+              <div className="px-4 pb-4">
+                <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded text-sm">
+                  {retractError}
+                </div>
+              </div>
+            )}
             <div className="p-4 border-t flex justify-end gap-2">
               <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowRetractDialog(false)} disabled={retracting}>
                 Cancel
@@ -671,6 +677,27 @@ function ApplicantApplications() {
               >
                 Retract Application
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Retract Success Message */}
+      {showRetractSuccess && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowRetractSuccess(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-green-600">
+                    <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">Your application has been successfully retracted.</div>
+              <div className="mt-4">
+                <button type="button" className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" onClick={() => setShowRetractSuccess(false)}>Close</button>
+              </div>
             </div>
           </div>
         </div>

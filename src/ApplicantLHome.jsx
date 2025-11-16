@@ -10,6 +10,11 @@
     const [activeTab, setActiveTab] = useState('Home');
     const [showModal, setShowModal] = useState(false);
     const [showSummary, setShowSummary] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
+    const [showSuccessPage, setShowSuccessPage] = useState(false);
+    const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     
 
 
@@ -163,10 +168,12 @@
   // Handle save
 const handleSave = async () => {
   setSaving(true);
+  setErrorMessage('');
+  setSuccessMessage('');
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      alert('User not found');
+      setErrorMessage('User not found');
       setSaving(false);
       return;
     }
@@ -187,7 +194,7 @@ const handleSave = async () => {
       return String(val ?? '').trim() === '';
     });
     if (missing) {
-      alert('Please fill out all fields before saving your profile.');
+      setErrorMessage('Please fill out all fields before saving your profile.');
       setSaving(false);
       return;
     }
@@ -211,7 +218,7 @@ const handleSave = async () => {
 
     if (error) {
       console.error('Error updating profile:', error);
-      alert('Error saving profile. Please try again.');
+      setErrorMessage('Error saving profile. Please try again.');
       setSaving(false);
       return;
     }
@@ -227,10 +234,11 @@ const handleSave = async () => {
     }
 
     setIsEditMode(false);
-    alert('Profile updated successfully!');
+    setSuccessMessage('Profile updated successfully!');
+    setTimeout(() => setSuccessMessage(''), 3000);
   } catch (err) {
     console.error('Error:', err);
-    alert('Error saving profile. Please try again.');
+    setErrorMessage('Error saving profile. Please try again.');
   } finally {
     setSaving(false);
   }
@@ -340,8 +348,9 @@ const formatDateForInput = (dateString) => {
     // submit -> show summary with what user typed
     const onSubmitApplication = (e) => {
       e.preventDefault();
+      setErrorMessage('');
       if (!selectedJob && !newJob) {
-        alert('Please choose a job first (click View on a job card).');
+        setErrorMessage('Please choose a job first (click View on a job card).');
         return;
       }
       setShowModal(false);
@@ -350,16 +359,18 @@ const formatDateForInput = (dateString) => {
 
     // final submit -> save to Supabase.applications
     const handleFinalSubmit = async () => {
-      if (!window.confirm('Are you sure you want to submit the application?')) return;
+      setErrorMessage('');
 
       const { data: { session }, error: sessErr } = await supabase.auth.getSession();
       if (sessErr) {
-        alert('Could not check session: ' + sessErr.message);
+        setErrorMessage('Could not check session: ' + sessErr.message);
         return;
       }
       if (!session) {
-        alert('Please log in again.');
-        navigate('/applicant/login', { replace: true, state: { redirectTo: '/applicantl/home' } });
+        setErrorMessage('Please log in again.');
+        setTimeout(() => {
+          navigate('/applicant/login', { replace: true, state: { redirectTo: '/applicantl/home' } });
+        }, 2000);
         return;
       }
 
@@ -381,7 +392,7 @@ const formatDateForInput = (dateString) => {
 
         if (uploadError) {
           console.error(uploadError);
-          alert('Failed to upload resume: ' + uploadError.message);
+          setErrorMessage('Failed to upload resume: ' + uploadError.message);
           return;
         }
 
@@ -415,7 +426,7 @@ const formatDateForInput = (dateString) => {
 
       if (error) {
         console.error(error);
-        alert('Failed to submit application: ' + error.message);
+        setErrorMessage('Failed to submit application: ' + error.message);
         return;
       }
 
@@ -423,11 +434,8 @@ const formatDateForInput = (dateString) => {
         setUserApplication(insertedData[0]);
       }
 
-      alert('Application submitted successfully!');
       setShowSummary(false);
-      // optionally:
-      // setActiveTab('Applications');
-      // navigate('/applicant/applications');
+      setShowSuccessPage(true);
     };
 
     const [authChecked, setAuthChecked] = useState(false);
@@ -571,10 +579,7 @@ const formatDateForInput = (dateString) => {
 
               <div className="flex items-center space-x-3">
                 <button
-                  onClick={async () => {
-                    await supabase.auth.signOut();
-                    navigate('/applicant/login', { replace: true });
-                  }}
+                  onClick={() => setShowLogoutConfirm(true)}
                   className="text-gray-600 hover:text-gray-900 font-medium"
                 >
                   Logout
@@ -819,6 +824,18 @@ const formatDateForInput = (dateString) => {
                     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                         <h2 className="text-2xl font-bold text-gray-800 mb-6">Profile Information</h2>
                         
+                        {errorMessage && (
+                          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                            {errorMessage}
+                          </div>
+                        )}
+
+                        {successMessage && (
+                          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                            {successMessage}
+                          </div>
+                        )}
+
                         {loading ? (
                             <div className="text-center py-8">Loading profile...</div>
                         ) : profileData ? (
@@ -1057,7 +1074,7 @@ const formatDateForInput = (dateString) => {
             {/* Submit Application Modal (now controlled inputs) */}
             {showModal && (
               <div
-                className="fixed inset-0 bg-opacity-50 flex items-center justify-center z-50"
+                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
                 onClick={() => setShowModal(false)}
               >
                 <div
@@ -1080,6 +1097,11 @@ const formatDateForInput = (dateString) => {
                     className="p-4 overflow-y-auto max-h-[80vh] space-y-4"
                     onSubmit={onSubmitApplication}
                   >
+                    {errorMessage && (
+                      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                        {errorMessage}
+                      </div>
+                    )}
                     {/* Name */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div>
@@ -1660,10 +1682,36 @@ const formatDateForInput = (dateString) => {
               </div>
             )}
 
+            {/* Success Page */}
+            {showSuccessPage && (
+              <div className="fixed inset-0 bg-white z-50 flex items-center justify-center">
+                <div className="text-center max-w-md mx-4">
+                  <div className="mb-4">
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-8 h-8 text-green-600">
+                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-800 mb-2">Application Submitted Successfully!</h2>
+                    <p className="text-gray-600 mb-6">Your application has been received. You can track its status in the Applications tab.</p>
+                    <button
+                      onClick={() => {
+                        setShowSuccessPage(false);
+                        setActiveTab('Home');
+                      }}
+                      className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                    >
+                      Return to Home
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Summary (now shows user input) */}
             {showSummary && (
               <div
-                className="fixed inset-0 bg-opacity-50 flex items-center justify-center z-50"
+                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
                 onClick={() => setShowSummary(false)}
               >
                 <div
@@ -1683,6 +1731,11 @@ const formatDateForInput = (dateString) => {
                   </div>
 
                   <div className="p-4 overflow-y-auto max-h-[80vh] space-y-6">
+                    {errorMessage && (
+                      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                        {errorMessage}
+                      </div>
+                    )}
                     {/* Personal */}
                     <div>
                       <h3 className="text-lg font-semibold text-gray-800 mb-2">
@@ -1875,13 +1928,92 @@ const formatDateForInput = (dateString) => {
                       </button>
                       <button
                         type="button"
-                        onClick={handleFinalSubmit}
+                        onClick={() => setShowConfirmDialog(true)}
                         className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
                       >
                         Submit
                       </button>
 
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Confirm Dialog */}
+            {showConfirmDialog && (
+              <div
+                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+                onClick={() => setShowConfirmDialog(false)}
+              >
+                <div
+                  className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="p-4 border-b">
+                    <h3 className="text-lg font-semibold text-gray-800">Confirm Submission</h3>
+                  </div>
+                  <div className="p-4 text-sm text-gray-700">
+                    Are you sure you want to submit your application? This action cannot be undone.
+                  </div>
+                  <div className="p-4 border-t flex justify-end gap-2">
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      onClick={() => setShowConfirmDialog(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                      onClick={async () => {
+                        setShowConfirmDialog(false);
+                        await handleFinalSubmit();
+                      }}
+                    >
+                      Confirm
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Logout Confirmation */}
+            {showLogoutConfirm && (
+              <div
+                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+                onClick={() => setShowLogoutConfirm(false)}
+              >
+                <div
+                  className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="p-4 border-b">
+                    <h3 className="text-lg font-semibold text-gray-800">Confirm Logout</h3>
+                  </div>
+                  <div className="p-4 text-sm text-gray-700">
+                    Are you sure you want to logout?
+                  </div>
+                  <div className="p-4 border-t flex justify-end gap-2">
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      onClick={() => setShowLogoutConfirm(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                      onClick={async () => {
+                        setShowLogoutConfirm(false);
+                        await supabase.auth.signOut();
+                        navigate('/applicant/login', { replace: true });
+                      }}
+                    >
+                      Logout
+                    </button>
                   </div>
                 </div>
               </div>

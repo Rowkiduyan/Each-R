@@ -6,6 +6,7 @@ function ApplicantGHome() {
   const navigate = useNavigate();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -28,11 +29,13 @@ function ApplicantGHome() {
   }, []);
 
   const handleApplyClick = (job) => {
-    alert('Please log in to apply for this position.');
-    navigate('/applicant/login', {
-      replace: false,
-      state: { redirectTo: '/applicantl/home', jobFromGuest: job },
-    });
+    setMessage('Please log in to apply for this position.');
+    setTimeout(() => {
+      navigate('/applicant/login', {
+        replace: false,
+        state: { redirectTo: '/applicantl/home', jobFromGuest: job },
+      });
+    }, 2000);
   };
 
   return (
@@ -78,6 +81,11 @@ function ApplicantGHome() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {message && (
+          <div className="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded mb-4">
+            {message}
+          </div>
+        )}
         {loading ? (
           <div className="text-gray-600">Loading job postings…</div>
         ) : jobs.length === 0 ? (
