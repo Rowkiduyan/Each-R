@@ -1,4 +1,4 @@
-// DriverAddRecord.jsx
+// src/DriverAddRecord.jsx
 import { useState } from "react";
 import { useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
@@ -10,6 +10,13 @@ function DriverAddRecord() {
   const location = useLocation();
   const navigate = useNavigate();
   const job = location.state?.job;
+
+  // small helper to validate if a value looks like a UUID (v4 style with dashes)
+  const isValidUuid = (val) =>
+    typeof val === "string" &&
+    /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+      val
+    );
 
   // applicants + active applicant
   const [applicants, setApplicants] = useState([
@@ -177,148 +184,139 @@ function DriverAddRecord() {
   const nextStep = () => setStep((s) => Math.min(s + 1, 5));
   const prevStep = () => setStep((s) => Math.max(s - 1, 1));
 
-  // // get agency profile id (same as before)
-  // async function getCurrentAgencyProfileId() {
-  //   try {
-  //     const { data: userData, error: userErr } = await supabase.auth.getUser();
-  //     if (userErr) console.error("auth.getUser error", userErr);
-  //     const userId = userData?.user?.id;
-  //     if (!userId) return null;
-  //     const { data: profile, error } = await supabase.from("profiles").select("id").eq("id", userId).single();
-  //     if (error) {
-  //       console.error("profiles lookup error", error);
-  //       return null;
-  //     }
-  //     return profile?.id ?? null;
-  //   } catch (err) {
-  //     console.error("getCurrentAgencyProfileId", err);
-  //     return null;
-  //   }
-  // }
-
   // Endorse handler (reads from formValues[activeApplicant])
-// inside DriverAddRecord.jsx - replace existing handleEndorse with this
-// improved handleEndorse — more verbose logging
-const handleEndorse = async () => {
-  const vals = formValues[activeApplicant] || makeEmptyValues();
-  const fname = vals.firstName || "";
-  const lname = vals.lastName || "";
-  const mname = vals.middleName || "";
-  const email = vals.email || "";
-  const contact = vals.contactNumber || "";
-  const position = vals.position || null;
-  const depot = vals.depot || null;
+  // improved handleEndorse — more verbose logging and UUID-safe
+  const handleEndorse = async () => {
+    const vals = formValues[activeApplicant] || makeEmptyValues();
+    const fname = vals.firstName || "";
+    const lname = vals.lastName || "";
+    const mname = vals.middleName || "";
+    const email = vals.email || "";
+    const contact = vals.contactNumber || "";
+    const position = vals.position || null;
+    const depot = vals.depot || null;
 
-  if (!fname || !lname || !email) {
-    alert("Please fill required fields before endorsing: First Name, Last Name, Email.");
-    return;
-  }
-  if (!confirm(`Endorse ${fname} ${lname} to HR?`)) return;
-
-  try {
-    // get current auth user (this id must satisfy applications.user_id FK)
-    const { data: authData, error: authErr } = await supabase.auth.getUser();
-    console.log("auth.getUser ->", { authData, authErr });
-    if (authErr || !authData?.user?.id) {
-      console.error("Couldn't get auth user id", authErr);
-      alert("Could not identify logged-in user. Are you signed in?");
+    if (!fname || !lname || !email) {
+      alert("Please fill required fields before endorsing: First Name, Last Name, Email.");
       return;
     }
-    const authUserId = authData.user.id;
+    if (!confirm(`Endorse ${fname} ${lname} to HR?`)) return;
 
-    // optional: fetch profile row to also store profile id if you need it
-    const { data: profileRow, error: profileErr } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("id", authUserId)
-      .maybeSingle();
-    console.log("profile lookup ->", { profileRow, profileErr });
-    const agencyProfileId = profileRow?.id ?? null;
-
-    const payload = {
-      applicant: vals,
-      workExperiences,
-      meta: {
-        source: "agency",
-        endorsed_by_profile_id: agencyProfileId,
-        endorsed_by_auth_user_id: authUserId,
-        endorsed_at: new Date().toISOString(),
-        job_id: job?.id || null,
-      },
-    };
-
-    // 1) insert into recruitment_endorsements
-    const { data: endorsement, error: errEndorse } = await supabase
-      .from("recruitment_endorsements")
-      .insert([
-        {
-          agency_profile_id: agencyProfileId,
-          fname,
-          lname,
-          mname: mname || null,
-          contact_number: contact || null,
-          email,
-          position: position || null,
-          department: vals.department || null,
-          depot: depot || null,
-          date_available: vals.dateAvailable || null,
-          payload,
-          status: "pending",
-        },
-      ])
-      .select()
-      .single();
-
-    console.log("recruitment_endorsements insert ->", { endorsement, errEndorse });
-    if (errEndorse) {
-      console.error("Endorse insert error", errEndorse);
-      alert("Failed to create endorsement. See console for details.");
-      return;
-    }
-
-    // 2) insert into applications — use authUserId for user_id (auth.users.id)
-    const appRow = {
-      user_id: authUserId,
-      job_id: job?.id || null,
-      payload,
-      status: "submitted",
-    };
-
-    const appInsertResp = await supabase
-      .from("applications")
-      .insert([appRow])
-      .select()
-      .single();
-
-    // appInsertResp contains { data, error } — log both
-    console.log("applications insert ->", appInsertResp);
-
-    if (appInsertResp.error) {
-      console.error("Applications insert failed:", appInsertResp.error);
-      // rollback endorsement (best-effort)
-      try {
-        const { error: delErr } = await supabase
-          .from("recruitment_endorsements")
-          .delete()
-          .eq("id", endorsement.id);
-        console.log("rollback delete endorsement ->", { delErr });
-      } catch (delErr) {
-        console.error("Rollback delete failed:", delErr);
+    try {
+      // get current auth user (this id must satisfy applications.user_id FK)
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      console.log("auth.getUser ->", { authData, authErr });
+      if (authErr || !authData?.user?.id) {
+        console.error("Couldn't get auth user id", authErr);
+        alert("Could not identify logged-in user. Are you signed in?");
+        return;
       }
-      alert("Failed to create application. Endorsement rolled back. See console.");
-      return;
+      const authUserId = authData.user.id;
+
+      // optional: fetch profile row to also store profile id if you need it
+      // try to read a profile where profile.user_id or profile.id equals authUserId depending on your schema
+      // here we attempt to read profiles.id = authUserId as you had before but we use maybeSingle to avoid exceptions
+      const { data: profileRow, error: profileErr } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", authUserId)
+        .maybeSingle();
+
+      console.log("profile lookup ->", { profileRow, profileErr });
+      const agencyProfileId = profileRow?.id ?? null;
+
+      // ensure job id is a UUID before sending to DB; if not valid, set to null
+      const jobIdToSend = isValidUuid(job?.id) ? job.id : null;
+      if (job?.id && !jobIdToSend) {
+        console.warn("job.id was present but not a valid UUID; sending null for job_id to avoid DB error", job);
+      }
+
+      const payload = {
+        applicant: vals,
+        workExperiences,
+        meta: {
+          source: "agency",
+          endorsed_by_profile_id: agencyProfileId,
+          endorsed_by_auth_user_id: authUserId,
+          endorsed_at: new Date().toISOString(),
+          job_id: jobIdToSend,
+        },
+      };
+
+      // 1) insert into recruitment_endorsements
+      const { data: endorsement, error: errEndorse } = await supabase
+        .from("recruitment_endorsements")
+        .insert([
+          {
+            agency_profile_id: agencyProfileId || null,
+            fname,
+            lname,
+            mname: mname || null,
+            contact_number: contact || null,
+            email,
+            position: position || null,
+            department: vals.department || null,
+            depot: depot || null,
+            date_available: vals.dateAvailable || null,
+            payload,
+            status: "pending",
+            job_id: jobIdToSend, // optional, helpful to store job link if it's a UUID
+          },
+        ])
+        .select()
+        .maybeSingle();
+
+      console.log("recruitment_endorsements insert ->", { endorsement, errEndorse });
+      if (errEndorse) {
+        console.error("Endorse insert error", errEndorse);
+        alert("Failed to create endorsement. See console for details.");
+        return;
+      }
+
+      // 2) insert into applications — use authUserId for user_id (auth.users.id)
+      const appRow = {
+        user_id: authUserId,
+        job_id: jobIdToSend,
+        payload,
+        status: "submitted",
+      };
+
+      const appInsertResp = await supabase
+        .from("applications")
+        .insert([appRow])
+        .select()
+        .maybeSingle();
+
+      console.log("applications insert ->", appInsertResp);
+
+      if (appInsertResp.error) {
+        console.error("Applications insert failed:", appInsertResp.error);
+        // rollback endorsement (best-effort)
+        try {
+          if (endorsement?.id) {
+            const { error: delErr } = await supabase
+              .from("recruitment_endorsements")
+              .delete()
+              .eq("id", endorsement.id);
+            console.log("rollback delete endorsement ->", { delErr });
+          } else {
+            console.warn("No endorsement id to rollback");
+          }
+        } catch (delErr) {
+          console.error("Rollback delete failed:", delErr);
+        }
+        alert("Failed to create application. Endorsement rolled back. See console.");
+        return;
+      }
+
+      // success
+      alert("Successfully endorsed. Saved to Recruitment and Applications.");
+      navigate("/recruitment");
+    } catch (err) {
+      console.error("unexpected endorse error", err);
+      alert("An unexpected error occurred. Check console.");
     }
-
-    // success
-    alert("Successfully endorsed. Saved to Recruitment and Applications.");
-    navigate("/recruitment");
-  } catch (err) {
-    console.error("unexpected endorse error", err);
-    alert("An unexpected error occurred. Check console.");
-  }
-};
-
-
+  };
 
   // current applicant values
   const fv = formValues[activeApplicant] || makeEmptyValues();
