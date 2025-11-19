@@ -1,8 +1,7 @@
 // src/DriverAddRecord.jsx
 import { useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
-import { useNavigate } from "react-router-dom";
 import Logo from "./Logo.png";
 
 function DriverAddRecord() {
@@ -11,53 +10,37 @@ function DriverAddRecord() {
   const navigate = useNavigate();
   const job = location.state?.job;
 
-  // small helper to validate if a value looks like a UUID (v4 style with dashes)
   const isValidUuid = (val) =>
     typeof val === "string" &&
     /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
       val
     );
 
-  // applicants + active applicant
-  const [applicants, setApplicants] = useState([
-    { id: 1, name: "Applicant 1" },
-    { id: 2, name: "Applicant 2" },
-  ]);
+  const [applicants, setApplicants] = useState([{ id: 1, name: "Applicant 1" }]);
   const [activeApplicant, setActiveApplicant] = useState(1);
 
-  // helper to create an empty values object for each applicant
   const makeEmptyValues = () => ({
-    // Step 1 - Employment & personal
     department: "",
     position: "",
     depot: "",
     dateAvailable: "",
     employed: "no",
-
     lastName: "",
     firstName: "",
     middleName: "",
     birthday: "",
     maritalStatus: "",
     sex: "",
-
-    // Address
     residenceNo: "",
     street: "",
     city: "",
     zip: "",
-
-    // Alternative Address
     residenceNoAlt: "",
     streetAlt: "",
     cityAlt: "",
     zipAlt: "",
-
-    // Contact
     contactNumber: "",
     email: "",
-
-    // Step 2 - education & skills
     education: "",
     secondarySchool: "",
     secondaryYear: "",
@@ -70,31 +53,19 @@ function DriverAddRecord() {
     specializedTraining: "",
     specializedYear: "",
     skills: "",
-
-    // Step 3 - license
     licenseExpiry: "",
     licenseClassification: "",
-    // restriction codes (array)
     restrictionCodes: [],
-
-    // Step 4 - driving history
     yearsDriving: "",
     truckKnowledge: "no",
     troubleshootingTasks: [],
-
-    // Medical / drug test
     takingMedications: false,
     medicationReason: "",
     tookMedicalTest: false,
     medicalTestDate: "",
-
-    // Vehicle types
     vehicleTypes: [],
-
-    // Step 5 - will still use the separate workExperiences state
   });
 
-  // formValues stored per applicant id
   const [formValues, setFormValues] = useState(() => {
     const init = {};
     applicants.forEach((a) => {
@@ -103,12 +74,10 @@ function DriverAddRecord() {
     return init;
   });
 
-  // work experiences kept as separate state (array of objects)
   const [workExperiences, setWorkExperiences] = useState([
     { date: "", company: "", role: "", notes: "", tasks: "", reason: "" },
   ]);
 
-  // helpers to manage applicants
   const addApplicant = () => {
     const newId = applicants.length + 1;
     setApplicants((prev) => [...prev, { id: newId, name: `Applicant ${newId}` }]);
@@ -125,12 +94,9 @@ function DriverAddRecord() {
       delete copy[id];
       return copy;
     });
-    if (activeApplicant === id) {
-      setActiveApplicant(filtered[0].id);
-    }
+    if (activeApplicant === id) setActiveApplicant(filtered[0].id);
   };
 
-  // work experience helpers
   const addWorkExperience = () =>
     setWorkExperiences((prev) => [...prev, { date: "", company: "", role: "", notes: "", tasks: "", reason: "" }]);
 
@@ -148,7 +114,6 @@ function DriverAddRecord() {
       return copy;
     });
 
-  // change handler for controlled inputs
   const handleChange = (appId, key, value) => {
     setFormValues((prev) => ({
       ...prev,
@@ -159,7 +124,6 @@ function DriverAddRecord() {
     }));
   };
 
-  // multi-checkbox helpers (for arrays in state)
   const toggleArrayValue = (appId, key, value) => {
     setFormValues((prev) => {
       const arr = new Set((prev[appId]?.[key] || []).slice());
@@ -172,7 +136,6 @@ function DriverAddRecord() {
     });
   };
 
-  // simple toggle for boolean flags
   const toggleFlag = (appId, key) => {
     setFormValues((prev) => ({
       ...prev,
@@ -180,148 +143,141 @@ function DriverAddRecord() {
     }));
   };
 
-  // pagination steps
   const nextStep = () => setStep((s) => Math.min(s + 1, 5));
   const prevStep = () => setStep((s) => Math.max(s - 1, 1));
 
-  // Endorse handler (reads from formValues[activeApplicant])
-  // improved handleEndorse — more verbose logging and UUID-safe
-  const handleEndorse = async () => {
-    const vals = formValues[activeApplicant] || makeEmptyValues();
-    const fname = vals.firstName || "";
-    const lname = vals.lastName || "";
-    const mname = vals.middleName || "";
-    const email = vals.email || "";
-    const contact = vals.contactNumber || "";
-    const position = vals.position || null;
-    const depot = vals.depot || null;
+  // --- Endorse implementation (no blocking auth alert) ---
+  // Endorse handler (DriverAddRecord.jsx)
+const handleEndorse = async () => {
+  const vals = formValues[activeApplicant] || makeEmptyValues();
+  const fname = vals.firstName?.trim() || "";
+  const lname = vals.lastName?.trim() || "";
+  const mname = vals.middleName?.trim() || "";
+  const email = (vals.email || "").trim().toLowerCase();
+  const contact = vals.contactNumber || "";
+  const position = vals.position || null;
+  const depot = vals.depot || null;
 
-    if (!fname || !lname || !email) {
-      alert("Please fill required fields before endorsing: First Name, Last Name, Email.");
-      return;
-    }
-    if (!confirm(`Endorse ${fname} ${lname} to HR?`)) return;
+  // required fields
+  if (!fname || !lname || !email) {
+    alert("Please fill required fields before endorsing: First Name, Last Name, Email.");
+    return;
+  }
+  if (!confirm(`Endorse ${fname} ${lname} to HR?`)) return;
 
+  try {
+    // get current auth user (best-effort). If not found, continue with null.
+    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    if (authErr) console.warn("auth.getUser error (continuing):", authErr);
+    const authUserId = authData?.user?.id ?? null;
+
+    // try to find a profiles row for the agency profile id (best-effort)
+    let agencyProfileId = null;
     try {
-      // get current auth user (this id must satisfy applications.user_id FK)
-      const { data: authData, error: authErr } = await supabase.auth.getUser();
-      console.log("auth.getUser ->", { authData, authErr });
-      if (authErr || !authData?.user?.id) {
-        console.error("Couldn't get auth user id", authErr);
-        alert("Could not identify logged-in user. Are you signed in?");
-        return;
-      }
-      const authUserId = authData.user.id;
-
-      // optional: fetch profile row to also store profile id if you need it
-      // try to read a profile where profile.user_id or profile.id equals authUserId depending on your schema
-      // here we attempt to read profiles.id = authUserId as you had before but we use maybeSingle to avoid exceptions
       const { data: profileRow, error: profileErr } = await supabase
         .from("profiles")
         .select("id")
         .eq("id", authUserId)
         .maybeSingle();
+      if (profileErr) console.warn("profiles lookup error (continuing):", profileErr);
+      agencyProfileId = profileRow?.id ?? null;
+    } catch (e) {
+      console.warn("profiles lookup unexpected error (continuing):", e);
+      agencyProfileId = null;
+    }
 
-      console.log("profile lookup ->", { profileRow, profileErr });
-      const agencyProfileId = profileRow?.id ?? null;
+    // ensure job id is a UUID before sending; otherwise set null
+    const jobIdToSend = isValidUuid(job?.id) ? job.id : null;
+    if (job?.id && !jobIdToSend) {
+      console.warn("job.id present but not a valid UUID; sending null for job_id to avoid DB error", job);
+    }
 
-      // ensure job id is a UUID before sending to DB; if not valid, set to null
-      const jobIdToSend = isValidUuid(job?.id) ? job.id : null;
-      if (job?.id && !jobIdToSend) {
-        console.warn("job.id was present but not a valid UUID; sending null for job_id to avoid DB error", job);
-      }
+    // prepare payload
+    const payload = {
+      applicant: vals,
+      workExperiences,
+      meta: {
+        source: "agency",
+        endorsed_by_profile_id: agencyProfileId,
+        endorsed_by_auth_user_id: authUserId,
+        endorsed_at: new Date().toISOString(),
+        job_id: jobIdToSend,
+      },
+    };
 
-      const payload = {
-        applicant: vals,
-        workExperiences,
-        meta: {
-          source: "agency",
-          endorsed_by_profile_id: agencyProfileId,
-          endorsed_by_auth_user_id: authUserId,
-          endorsed_at: new Date().toISOString(),
+    // ---------- PRE-CHECK: avoid duplicates ----------
+    // 1) check recruitment_endorsements for same job + email
+    const { data: existingEndorsements, error: errEnd } = await supabase
+      .from("recruitment_endorsements")
+      .select("id, status, created_at")
+      .eq("job_id", jobIdToSend)
+      .ilike("email", email)
+      .limit(1);
+
+    if (errEnd) {
+      console.warn("recruitment_endorsements pre-check warning:", errEnd);
+      // continue — pre-check failure shouldn't block the endorsement
+    } else if (existingEndorsements && existingEndorsements.length > 0) {
+      alert("This endorsement already exists (someone else or you already endorsed this applicant). Endorsement skipped.");
+      return;
+    }
+
+    // 2) check applications for same job + applicant email (the trigger will create applications)
+    const { data: existingApps, error: errAppCheck } = await supabase
+      .from("applications")
+      .select("id, created_at")
+      .eq("job_id", jobIdToSend)
+      .or(`payload->applicant->>email.eq.${email}, payload->form->applicant->>email.eq.${email}`)
+      .limit(1);
+
+    if (errAppCheck) {
+      console.warn("applications pre-check warning:", errAppCheck);
+      // continue anyway
+    } else if (existingApps && existingApps.length > 0) {
+      alert("This application already exists (someone else endorsed it). Endorsement skipped.");
+      return;
+    }
+
+    // ---------- INSERT: only into recruitment_endorsements ----------
+    const { error: errEndorseInsert } = await supabase
+      .from("recruitment_endorsements")
+      .insert([
+        {
+          agency_profile_id: agencyProfileId || null,
+          fname,
+          lname,
+          mname: mname || null,
+          contact_number: contact || null,
+          email,
+          position: position || null,
+          department: vals.department || null,
+          depot: depot || null,
+          date_available: vals.dateAvailable || null,
+          payload,
+          status: "pending",
           job_id: jobIdToSend,
         },
-      };
+      ]);
 
-      // 1) insert into recruitment_endorsements
-      const { data: endorsement, error: errEndorse } = await supabase
-        .from("recruitment_endorsements")
-        .insert([
-          {
-            agency_profile_id: agencyProfileId || null,
-            fname,
-            lname,
-            mname: mname || null,
-            contact_number: contact || null,
-            email,
-            position: position || null,
-            department: vals.department || null,
-            depot: depot || null,
-            date_available: vals.dateAvailable || null,
-            payload,
-            status: "pending",
-            job_id: jobIdToSend, // optional, helpful to store job link if it's a UUID
-          },
-        ])
-        .select()
-        .maybeSingle();
-
-      console.log("recruitment_endorsements insert ->", { endorsement, errEndorse });
-      if (errEndorse) {
-        console.error("Endorse insert error", errEndorse);
-        alert("Failed to create endorsement. See console for details.");
-        return;
-      }
-
-      // 2) insert into applications — use authUserId for user_id (auth.users.id)
-      const appRow = {
-        user_id: authUserId,
-        job_id: jobIdToSend,
-        payload,
-        status: "submitted",
-      };
-
-      const appInsertResp = await supabase
-        .from("applications")
-        .insert([appRow])
-        .select()
-        .maybeSingle();
-
-      console.log("applications insert ->", appInsertResp);
-
-      if (appInsertResp.error) {
-        console.error("Applications insert failed:", appInsertResp.error);
-        // rollback endorsement (best-effort)
-        try {
-          if (endorsement?.id) {
-            const { error: delErr } = await supabase
-              .from("recruitment_endorsements")
-              .delete()
-              .eq("id", endorsement.id);
-            console.log("rollback delete endorsement ->", { delErr });
-          } else {
-            console.warn("No endorsement id to rollback");
-          }
-        } catch (delErr) {
-          console.error("Rollback delete failed:", delErr);
-        }
-        alert("Failed to create application. Endorsement rolled back. See console.");
-        return;
-      }
-
-      // success
-      alert("Successfully endorsed. Saved to Recruitment and Applications.");
-      navigate("/recruitment");
-    } catch (err) {
-      console.error("unexpected endorse error", err);
-      alert("An unexpected error occurred. Check console.");
+    if (errEndorseInsert) {
+      console.error("Failed to create endorsement:", errEndorseInsert);
+      alert("Failed to create endorsement. See console for details.");
+      return;
     }
-  };
 
-  // current applicant values
+
+    // Success: the DB trigger (fn_create_application_from_endorsement) should create the applications row
+    alert("Successfully endorsed. ✅ ");
+    navigate("/recruitment"); // or wherever you want to go
+  } catch (err) {
+    console.error("unexpected endorse error:", err);
+    alert("An unexpected error occurred. Check console.");
+  }
+};
+
+
   const fv = formValues[activeApplicant] || makeEmptyValues();
 
-  // lists used in UI
   const restrictionCodesList = [
     "A - MOTORCYCLE",
     "1 - MOTORCYLES / MOTORIZED TRICYCLE",
@@ -356,7 +312,6 @@ function DriverAddRecord() {
 
   return (
     <div className="min-h-screen bg-neutral-100 p-6 space-y-6">
-      {/* Selected Job Post */}
       {job && (
         <div className="bg-white p-4 rounded shadow border border-gray-200">
           <div className="flex items-start justify-between">
@@ -376,7 +331,6 @@ function DriverAddRecord() {
         </div>
       )}
 
-      {/* Header */}
       <div className="flex justify-between items-center mb-4">
         <img src={Logo} alt="Roadwise Logo" className="w-20 h-auto" />
         <button className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700">+ Import File</button>
@@ -385,12 +339,10 @@ function DriverAddRecord() {
       <h1 className="text-4xl font-bold">Good afternoon, Agency!</h1>
       <p>Add a record below, to endorse an Employee to HR Roadwise. Check your email for any updates.</p>
 
-      {/* Tabs header */}
       <div className="flex justify-between items-center bg-red-600 text-white px-4 py-2 rounded-t">
         <span className="font-semibold">Add a Record</span>
       </div>
 
-      {/* Applicant Tabs */}
       <div className="flex items-center border border-t-0 border-gray-300 p-2 space-x-2">
         {applicants.map((applicant) => (
           <div key={applicant.id} className="relative inline-block">
@@ -403,7 +355,6 @@ function DriverAddRecord() {
         <button className="px-3 py-1 text-blue-500 underline" onClick={addApplicant}>+ Add Another Employee</button>
       </div>
 
-      {/* Step 1 */}
       {step === 1 && (
         <>
           <div className="bg-white p-4 rounded shadow space-y-4">
@@ -433,7 +384,6 @@ function DriverAddRecord() {
                 <option>Manila</option>
                 <option>Quezon City</option>
                 <option>Taguig</option>
-                {/* add other depots as needed */}
               </select>
 
               <input type="date" className="p-2 border rounded" value={fv.dateAvailable || ""} onChange={(e) => handleChange(activeApplicant, "dateAvailable", e.target.value)} />
@@ -450,7 +400,6 @@ function DriverAddRecord() {
             </div>
           </div>
 
-          {/* Personal Information */}
           <div className="bg-white p-4 rounded shadow space-y-4">
             <h2 className="text-lg font-semibold">Personal Information</h2>
             <div className="grid grid-cols-3 gap-4">
@@ -471,7 +420,6 @@ function DriverAddRecord() {
             </div>
           </div>
 
-          {/* Address */}
           <div className="bg-white p-4 rounded shadow space-y-4">
             <h2 className="text-lg font-semibold">Address</h2>
             <div className="grid grid-cols-3 gap-4">
@@ -482,7 +430,6 @@ function DriverAddRecord() {
             </div>
           </div>
 
-          {/* Alternative Address */}
           <div className="bg-white p-4 rounded shadow space-y-4">
             <h2 className="text-lg font-semibold">Alternative Address</h2>
             <div className="grid grid-cols-3 gap-4">
@@ -493,7 +440,6 @@ function DriverAddRecord() {
             </div>
           </div>
 
-          {/* Contact Info */}
           <div className="bg-white p-4 rounded shadow space-y-4">
             <h2 className="text-lg font-semibold">Contact Information</h2>
             <div className="grid grid-cols-2 gap-4">
@@ -504,7 +450,6 @@ function DriverAddRecord() {
         </>
       )}
 
-      {/* Step 2 */}
       {step === 2 && (
         <div className="space-y-6">
           <div className="bg-white p-4 rounded shadow space-y-4">
@@ -553,7 +498,6 @@ function DriverAddRecord() {
         </div>
       )}
 
-      {/* Step 3 */}
       {step === 3 && (
         <div className="space-y-6">
           <div className="bg-white p-4 rounded shadow space-y-4">
@@ -591,7 +535,6 @@ function DriverAddRecord() {
         </div>
       )}
 
-      {/* Step 4 */}
       {step === 4 && (
         <div className="space-y-6">
           <div className="bg-white p-4 rounded shadow space-y-4">
@@ -638,14 +581,12 @@ function DriverAddRecord() {
             </div>
           </div>
 
-          {/* Endorse button */}
           <div className="flex justify-end">
             <button onClick={handleEndorse} className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Endorse</button>
           </div>
         </div>
       )}
 
-      {/* Step 5 - Previous Work Experience */}
       {step === 5 && (
         <div className="space-y-6">
           <div className="bg-white p-4 rounded shadow space-y-4">
@@ -670,7 +611,6 @@ function DriverAddRecord() {
         </div>
       )}
 
-      {/* Navigation */}
       <div className="flex justify-between mt-4">
         <button onClick={prevStep} className="bg-gray-400 text-white font-bold py-2 px-6 rounded hover:bg-gray-500">Back</button>
         {step < 4 && <button onClick={nextStep} className="bg-red-600 text-white font-bold py-2 px-6 rounded hover:bg-red-700">Next</button>}

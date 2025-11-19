@@ -84,7 +84,7 @@ function ApplicantDetails() {
   // store resolved agency display name (e.g., "Acme Agency")
   const [agencyName, setAgencyName] = useState(null);
 
-  // 🔎 Small role-check for debugging (keeps as you had it)
+  // Small role-check for debugging (keeps as you had it)
   useEffect(() => {
     (async () => {
       try {
@@ -198,7 +198,6 @@ function ApplicantDetails() {
 
   // -------------------------
   // Effect B: Resolve endorsement/agency separately (depends on applicant's identifying fields)
-  // This effect will try email first; fallback to a best-effort name match.
   // -------------------------
   useEffect(() => {
     let cancelled = false;
@@ -283,8 +282,6 @@ function ApplicantDetails() {
           if (resolved) setAgencyName(resolved);
         } else {
           console.debug("[endorsement-resolve] no endorsement found for applicant");
-          // If payload explicitly carried agency_name earlier (rare), you could set it:
-          // if (applicant?.agency && form.agency_name) setAgencyName(form.agency_name)
         }
       } catch (err) {
         console.error("[endorsement-resolve] unexpected error:", err);
@@ -298,38 +295,99 @@ function ApplicantDetails() {
     };
   }, [applicant?.email, applicant?.name]);
 
+  // ---- Try multiple RPC parameter names / function names to be resilient ----
+  // Order matters: try the param names you already created on DB.
+  const rpcCandidates = [
+    { fn: "move_applicant_to_employee", param: "p_application_id" },
+    { fn: "move_applicant_to_employee", param: "p_app_id" },
+    { fn: "move_applicant_to_employee", param: "p_applicant_id" }, // some earlier variants
+    { fn: "hire_applicant", param: "p_application_id" },
+    { fn: "hire_applicant", param: "p_app_id" },
+    { fn: "hire_applicant_v2", param: "p_app_id" },
+  ];
+
+  // Return a best-effort attempt: which candidate worked and the rpc response.
+  async function tryRpcMoveToEmployee(appId) {
+    // attempt the candidates in sequence
+    for (const c of rpcCandidates) {
+      try {
+        const params = {};
+        params[c.param] = appId;
+        console.debug("[rpc-try] calling", c.fn, params);
+        const { data, error } = await supabase.rpc(c.fn, params);
+
+        if (error) {
+          // log and continue trying other candidates unless it's a non-existant function HTTP 404 style
+          console.warn("[rpc-try] rpc returned error for", c, error);
+          // sometimes PostgREST returns PGRST202 meaning function signature not found in schema cache
+          // keep trying next candidate
+          continue;
+        }
+
+        // data came back - return which candidate worked and the returned payload
+        return { ok: true, candidate: c, data };
+      } catch (err) {
+        console.warn("[rpc-try] unexpected exception calling", c, err);
+        // try next
+      }
+    }
+
+    return { ok: false, error: "no_candidate_matched" };
+  }
+
   // ---- Actions wired to Supabase ----
   const markAsHired = async () => {
     if (!window.confirm("Mark this applicant as Hired?")) return;
 
-    // IMPORTANT: the SQL function expects p_application_id
-    const { error: rpcErr } = await supabase.rpc("move_applicant_to_employee", {
-      p_application_id: id,
-    });
+    setLoading(true);
+    try {
+      // call the best RPC available
+      const rpcResult = await tryRpcMoveToEmployee(id);
 
-    if (rpcErr) {
-      console.error("RPC move_applicant_to_employee failed:", rpcErr);
-      alert("❌ " + rpcErr.message);
-      return;
+      if (!rpcResult.ok) {
+        // no candidate matched or all failed
+        console.error("RPC attempts failed:", rpcResult);
+        alert("❌ Could not find a suitable server function to mark applicant as hired. Check server functions or logs.");
+        setLoading(false);
+        return;
+      }
+
+      // If the RPC returned a JSON object (some implementations return jsonb with 'ok' key)
+      const rpcData = rpcResult.data;
+
+      // If RPC returned an error-like payload (eg. { ok: false, error: 'missing_email', message: '...' })
+      if (rpcData && typeof rpcData === "object" && (rpcData.ok === false || rpcData.error)) {
+        const msg = rpcData.message || JSON.stringify(rpcData);
+        console.error("RPC returned failure payload:", rpcResult.candidate, rpcData);
+        alert("❌ " + msg);
+        setLoading(false);
+        return;
+      }
+
+      // Success path - still update applications.status = 'hired' to keep canonical state
+      const { error: updErr } = await supabase
+        .from("applications")
+        .update({ status: "hired" })
+        .eq("id", id);
+
+      if (updErr) {
+        console.warn("Update application status failed (non-fatal):", updErr);
+      }
+
+      // reflect UI changes
+      alert("✅ Marked as employee!");
+      setAgreementsResult("hire");
+      setHired(true);
+      setIsRejected(false);
+      setShowAction(false);
+
+      navigate("/hr/employees", { replace: true });
+    } catch (err) {
+      console.error("markAsHired unexpected error:", err);
+      alert("Unexpected error while marking as hired. Check console.");
+    } finally {
+      setLoading(false);
     }
-
-    // (optional) reflect status in applications table
-    const { error: updErr } = await supabase
-      .from("applications")
-      .update({ status: "hired" })
-      .eq("id", id);
-
-    if (updErr) {
-      console.error("Update application status failed:", updErr);
-      // not fatal
-    }
-
-    alert("✅ Marked as employee!");
-    setAgreementsResult("hire");
-    setHired(true);
-    setIsRejected(false);
-    setShowAction(false);
-    navigate("/hr/employees", { replace: true });
   };
 
   const rejectApplicant = async () => {

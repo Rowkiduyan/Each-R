@@ -29,9 +29,73 @@ function Employees() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
 
+  // Helper: safely parse payload to object
+  const safePayload = (p) => {
+    if (!p) return {};
+    if (typeof p === "object") return p;
+    try {
+      return JSON.parse(p);
+    } catch {
+      return {};
+    }
+  };
+
+  // extract candidate email(s) from a payload object (many possible shapes)
+  const extractEmailsFromPayload = (payloadObj) => {
+    if (!payloadObj) return [];
+    const emails = new Set();
+    const pushIf = (v) => { if (v && typeof v === "string" && v.trim()) emails.add(v.trim()); };
+    pushIf(payloadObj.email);
+    // payload.form.email or payload.applicant.email
+    if (payloadObj.form && typeof payloadObj.form === "object") pushIf(payloadObj.form.email || payloadObj.form.contact);
+    if (payloadObj.applicant && typeof payloadObj.applicant === "object") pushIf(payloadObj.applicant.email || payloadObj.applicant.contactNumber || payloadObj.applicant.contact);
+    // sometimes the job meta contains contact email
+    if (payloadObj.meta && typeof payloadObj.meta === "object") pushIf(payloadObj.meta.email);
+    return Array.from(emails);
+  };
+
+  // extract position/depot from many possible payload locations
+  const extractPositionDepotFromPayload = (payloadObj, job_posts) => {
+    if (!payloadObj && !job_posts) return { position: null, depot: null };
+
+    // Try job_posts nested object first (most reliable)
+    if (job_posts && typeof job_posts === "object") {
+      const p = job_posts.title || job_posts.position || null;
+      const d = job_posts.depot || null;
+      if (p || d) return { position: p || null, depot: d || null };
+    }
+
+    // job object inside payload
+    if (payloadObj.job && typeof payloadObj.job === "object") {
+      const p = payloadObj.job.title || payloadObj.job.position || null;
+      const d = payloadObj.job.depot || null;
+      if (p || d) return { position: p || null, depot: d || null };
+    }
+
+    // form object inside payload
+    if (payloadObj.form && typeof payloadObj.form === "object") {
+      const p = payloadObj.form.position || payloadObj.form.appliedPosition || payloadObj.form.jobTitle || null;
+      const d = payloadObj.form.depot || payloadObj.form.city || null;
+      if (p || d) return { position: p || null, depot: d || null };
+    }
+
+    // applicant object inside payload
+    if (payloadObj.applicant && typeof payloadObj.applicant === "object") {
+      const p = payloadObj.applicant.position || payloadObj.applicant.job || null;
+      const d = payloadObj.applicant.depot || payloadObj.applicant.city || null;
+      if (p || d) return { position: p || null, depot: d || null };
+    }
+
+    // top-level fallback
+    const p = payloadObj.position || payloadObj.jobTitle || null;
+    const d = payloadObj.depot || payloadObj.city || null;
+    return { position: p || null, depot: d || null };
+  };
+
   // ---- Load employees (and subscribe for realtime) ----
   useEffect(() => {
     let channel;
+    let cancelled = false;
 
     const normalize = (row) => ({
       id: row.id, // uuid
@@ -40,13 +104,12 @@ function Employees() {
           .filter(Boolean)
           .join(" ")
           .replace(/\s+/g, " ")
-          .trim() || row.email,
-      position: row.position || "Employee",
-      depot: row.depot || "Main",
+          .trim() || row.email || "Unnamed",
+      position: row.position || null, // null means "try to fill"
+      depot: row.depot || null,
       email: row.email || "",
       role: row.role || "Employee",
       hired_at: row.hired_at,
-      // agency detection: explicit source field, explicit agency flag, or an agency_profile id
       agency:
         (row.source && String(row.source).toLowerCase() === "agency")
         || (row.role && String(row.role).toLowerCase() === "agency")
@@ -60,26 +123,149 @@ function Employees() {
     const load = async () => {
       setLoading(true);
       setLoadError("");
-      const { data, error } = await supabase
-        .from("employees")
-        .select(
-          "id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id"
-        )
-        .order("hired_at", { ascending: false });
+      try {
+        // 1) fetch employees rows
+        const { data: empRows, error: empErr } = await supabase
+          .from("employees")
+          .select(
+            "id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id"
+          )
+          .order("hired_at", { ascending: false });
 
-      if (error) {
-        console.error("❌ employees load error:", error);
-        setLoadError(error.message || "Failed to load employees");
+        if (empErr) throw empErr;
+
+        const normalized = (empRows || []).map(normalize);
+
+        // Build unique emails for those employees we want to fill
+        const emailsToFill = Array.from(new Set(
+          normalized.filter(e => (!e.position || !e.depot) && e.email).map(e => e.email)
+        ));
+
+        // If nothing to fill, set and return
+        if (emailsToFill.length === 0) {
+          if (!cancelled) setEmployees(normalized);
+          return;
+        }
+
+        // Prepare in-list for supabase "in" filters (double quoted)
+        const inList = `(${emailsToFill.map(em => `"${em.replace(/"/g, '\\"')}"`).join(",")})`;
+
+        // We will run multiple queries to catch different payload shapes:
+        // a) applications where payload->>email IN (...)
+        // b) applications where payload->'form'->>email IN (...)
+        // c) applications where payload->'applicant'->>email IN (...)
+        // d) recruitment_endorsements where email IN (...)
+        // We'll combine results by email, preferring hired status and job_posts info.
+        const appsByEmail = {};
+
+        // helper to process application row list
+        const processApps = (apps) => {
+          for (const a of apps || []) {
+            // parse payload into object
+            const payloadObj = safePayload(a.payload);
+            // get candidate emails
+            const _emails = extractEmailsFromPayload(payloadObj);
+            for (const em of _emails) {
+              if (!emailsToFill.includes(em)) continue;
+              if (!appsByEmail[em]) appsByEmail[em] = [];
+              appsByEmail[em].push({ row: a, payloadObj });
+            }
+          }
+        };
+
+        // Query 1: payload->>email
+        const { data: apps1, error: appsErr1 } = await supabase
+          .from("applications")
+          .select("id, payload, job_posts(id,title,depot), status, created_at")
+          .filter("payload->>email", "in", inList)
+          .order("created_at", { ascending: false })
+          .limit(500);
+        if (!appsErr1) processApps(apps1);
+
+        // Query 2: payload->'form'->>email
+        const { data: apps2, error: appsErr2 } = await supabase
+          .from("applications")
+          .select("id, payload, job_posts(id,title,depot), status, created_at")
+          .filter("payload->form->>email", "in", inList)
+          .order("created_at", { ascending: false })
+          .limit(500);
+        if (!appsErr2) processApps(apps2);
+
+        // Query 3: payload->'applicant'->>email
+        const { data: apps3, error: appsErr3 } = await supabase
+          .from("applications")
+          .select("id, payload, job_posts(id,title,depot), status, created_at")
+          .filter("payload->applicant->>email", "in", inList)
+          .order("created_at", { ascending: false })
+          .limit(500);
+        if (!appsErr3) processApps(apps3);
+
+        // Query 4: endorsements (useful when recruitment_endorsements created and job/depot stored there)
+        const { data: endorseRows, error: endorseErr } = await supabase
+          .from("recruitment_endorsements")
+          .select("id, email, fname, lname, position, depot, payload, status, created_at")
+          .filter("email", "in", inList)
+          .order("created_at", { ascending: false })
+          .limit(500);
+        if (!endorseErr && Array.isArray(endorseRows)) {
+          for (const r of endorseRows) {
+            const p = safePayload(r.payload);
+            const em = (r.email || (p?.applicant?.email) || (p?.form?.email) || "").toString().trim();
+            if (!em) continue;
+            if (!emailsToFill.includes(em)) continue;
+            if (!appsByEmail[em]) appsByEmail[em] = [];
+            // convert endorsement into app-like shape so extraction works similarly
+            appsByEmail[em].push({ row: { id: r.id, payload: r.payload, status: r.status, created_at: r.created_at, job_posts: null }, payloadObj: p, endorsement: r });
+          }
+        }
+
+        // For each email, pick the best candidate app/endorsement:
+        // prefer status === 'hired', else newest created_at
+        const bestByEmail = {};
+        for (const em of Object.keys(appsByEmail)) {
+          const list = appsByEmail[em];
+          if (!list || list.length === 0) continue;
+          // find any with status 'hired'
+          const hired = list.find(it => (it.row?.status || "").toLowerCase() === "hired");
+          if (hired) {
+            bestByEmail[em] = hired;
+            continue;
+          }
+          // else pick newest by created_at
+          list.sort((a, b) => new Date(b.row.created_at || 0) - new Date(a.row.created_at || 0));
+          bestByEmail[em] = list[0];
+        }
+
+        // merge into normalized employees
+        const merged = normalized.map((emp) => {
+          if ((!emp.position || !emp.depot) && emp.email) {
+            const match = bestByEmail[emp.email];
+            if (match) {
+              const job_posts = match.row?.job_posts || null;
+              const { position: derivedPos, depot: derivedDepot } = extractPositionDepotFromPayload(match.payloadObj, job_posts);
+              return {
+                ...emp,
+                position: emp.position || (derivedPos ? derivedPos : null),
+                depot: emp.depot || (derivedDepot ? derivedDepot : null),
+              };
+            }
+          }
+          return emp;
+        });
+
+        if (!cancelled) setEmployees(merged);
+      } catch (err) {
+        console.error("❌ employees load error:", err);
+        setLoadError(err.message || "Failed to load employees");
         setEmployees([]);
-      } else {
-        setEmployees((data || []).map(normalize));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     };
 
+    // initial load and subscription
     load();
 
-    // realtime subscription
     channel = supabase
       .channel("employees-rt")
       .on(
@@ -90,9 +276,10 @@ function Employees() {
       .subscribe();
 
     return () => {
+      cancelled = true;
       if (channel) supabase.removeChannel(channel);
     };
-  }, []);
+  }, []); // run once on mount
 
   // distinct positions from live data (stable list)
   const positions = useMemo(() => {
@@ -274,8 +461,12 @@ function Employees() {
                         </div>
                       </td>
 
-                      <td className="border px-4 py-2 text-gray-600">{emp.position}</td>
-                      <td className="border px-4 py-2 text-gray-600">{emp.depot}</td>
+                      <td className="border px-4 py-2 text-gray-600">
+                        {emp.position || "—"}
+                      </td>
+                      <td className="border px-4 py-2 text-gray-600">
+                        {emp.depot || "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

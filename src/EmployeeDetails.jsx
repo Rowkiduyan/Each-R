@@ -72,7 +72,7 @@ const [terminateRemarks, setTerminateRemarks] = useState("");
   return (
     <div className="max-w-7xl mx-auto p-6 relative">
       <button
-        onClick={() => navigate("/employees")}
+        onClick={() => navigate("/hr/employees")}
         className="px-4 py-2 bg-gray-200 rounded mb-4"
       >
         ← Back
