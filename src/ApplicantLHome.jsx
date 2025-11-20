@@ -63,6 +63,8 @@
     const [selectedJob, setSelectedJob] = useState(null);
     const [jobsLoading, setJobsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
+    const [depotFilter, setDepotFilter] = useState('all');
+    const [dateOrder, setDateOrder] = useState('desc');
 
     // --- MAIN FORM STATE (simple + flat so it’s easy to wire) ---
     const [form, setForm] = useState({
@@ -96,9 +98,7 @@
       edu2Year: '',
 
       // skills
-      skill1: '',
-      skill2: '',
-      skill3: '',
+      skills: '',
 
       // license
       licenseType: '',
@@ -398,6 +398,12 @@ const formatDateForInput = (dateString) => {
 
 
 
+    const parseSkills = (value = '') =>
+      value
+        .split(',')
+        .map((skill) => skill.trim())
+        .filter(Boolean);
+
     // helpers
     const handleInput = (e) => {
       const { name, value } = e.target;
@@ -540,7 +546,12 @@ const formatDateForInput = (dateString) => {
         setForm((prev) => ({ ...prev, resumePath: resumeStoragePath }));
       }
 
-      const formPayload = { ...form };
+      const skillsArray = parseSkills(form.skills);
+      const formPayload = {
+        ...form,
+        skills: skillsArray,
+        skills_text: form.skills,
+      };
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
       }
@@ -666,7 +677,33 @@ const formatDateForInput = (dateString) => {
       );
     }
 
-    
+    const depotOptions = Array.from(
+      new Set(jobs.map((job) => job.depot).filter(Boolean))
+    );
+
+    const normalizedSearch = searchTerm.trim().toLowerCase();
+
+    const getJobTimestamp = (job) => {
+      if (!job?.created_at) return 0;
+      const date = new Date(job.created_at);
+      return date instanceof Date && !isNaN(date) ? date.getTime() : 0;
+    };
+
+    const filteredJobs = [...jobs]
+      .filter((job) => {
+        if (!normalizedSearch) return true;
+        const titleMatch = job.title?.toLowerCase().includes(normalizedSearch);
+        const depotMatch = job.depot?.toLowerCase().includes(normalizedSearch);
+        return titleMatch || depotMatch;
+      })
+      .filter((job) =>
+        depotFilter === 'all' ? true : job.depot === depotFilter
+      )
+      .sort((a, b) => {
+        const timeA = getJobTimestamp(a);
+        const timeB = getJobTimestamp(b);
+        return dateOrder === 'desc' ? timeB - timeA : timeA - timeB;
+      });
 
 
     return (
@@ -732,16 +769,36 @@ const formatDateForInput = (dateString) => {
           </div>
         </div>
 
-        {/* Search Bar */}
-        {activeTab !== "Profile" && (
-      <div className="max-w-7xl mx-auto px-6 mt-4 flex justify-end">
-        <input
-          placeholder="Search"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-80 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
-        />
-      </div>
+        {/* Search & Filter Bar */}
+        {activeTab !== 'Profile' && (
+          <div className="max-w-7xl mx-auto px-6 mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
+            <input
+              placeholder="Search by title or depot"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full md:w-64 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
+            />
+            <select
+              value={depotFilter}
+              onChange={(e) => setDepotFilter(e.target.value)}
+              className="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
+            >
+              <option value="all">All Depots</option>
+              {depotOptions.map((depot) => (
+                <option key={depot} value={depot}>
+                  {depot}
+                </option>
+              ))}
+            </select>
+            <select
+              value={dateOrder}
+              onChange={(e) => setDateOrder(e.target.value)}
+              className="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
+            >
+              <option value="desc">Newest to Oldest</option>
+              <option value="asc">Oldest to Newest</option>
+            </select>
+          </div>
         )}
 
         <div className="flex flex-col items-center  min-h-screen">
@@ -753,9 +810,12 @@ const formatDateForInput = (dateString) => {
                   <div className="text-gray-600">Loading jobs…</div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {jobs.filter(job => 
-                      job.title.toLowerCase().includes(searchTerm.toLowerCase())
-                    ).map((job) => {
+                    {filteredJobs.length === 0 ? (
+                      <div className="col-span-full text-gray-600">
+                        No job postings match your filters.
+                      </div>
+                    ) : (
+                      filteredJobs.map((job) => {
                       const createdAt = job?.created_at ? new Date(job.created_at) : null;
                       const hasValidDate = createdAt instanceof Date && !isNaN(createdAt);
                       const postedLabel = hasValidDate
@@ -765,7 +825,7 @@ const formatDateForInput = (dateString) => {
                       const isCurrentApplication = appliedJobId === job.id;
                       const isApplyDisabled = hasExistingApplication && !isCurrentApplication;
                       const isButtonDisabled = isApplyDisabled || isCurrentApplication;
-                      const buttonLabel = isCurrentApplication ? 'Applied' : 'Apply';
+                      const buttonLabel = isCurrentApplication ? 'Applied' : 'View';
                       const buttonClasses = isButtonDisabled
                         ? 'w-full py-2 rounded-lg transition-colors mt-auto bg-gray-300 text-gray-600 cursor-not-allowed'
                         : 'w-full py-2 rounded-lg transition-colors mt-auto bg-red-600 text-white hover:bg-red-700';
@@ -804,7 +864,8 @@ const formatDateForInput = (dateString) => {
                         </div>
                       </div>
                     );
-                  })}
+                  })
+                    )}
 
                     {/* below are your static cards unchanged except the button handlers */}
                     <div className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
@@ -1707,32 +1768,15 @@ const formatDateForInput = (dateString) => {
                               Please list your skills
                             </span>
                           </label>
-                          <div className="flex gap-1">
-                            <input
-                              type="text"
-                              placeholder="Skill"
-                              name="skill1"
-                              value={form.skill1}
-                              onChange={handleInput}
-                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Skill"
-                              name="skill2"
-                              value={form.skill2}
-                              onChange={handleInput}
-                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Skill"
-                              name="skill3"
-                              value={form.skill3}
-                              onChange={handleInput}
-                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                            />
-                          </div>
+                          <input
+                            type="text"
+                            placeholder="e.g., Driving, Customer Service, Logistics"
+                            name="skills"
+                            value={form.skills}
+                            onChange={handleInput}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Separate skills with commas.</p>
                         </div>
 
                         {/* License */}
@@ -2073,8 +2117,7 @@ const formatDateForInput = (dateString) => {
                     <div>
                       <h3 className="text-lg font-semibold text-gray-800 mb-2">Skills</h3>
                       <div className="border border-gray-300 p-2">
-                        {[form.skill1, form.skill2, form.skill3].filter(Boolean).join(', ') ||
-                          '-'}
+                        {parseSkills(form.skills).join(', ') || '-'}
                       </div>
                     </div>
 
