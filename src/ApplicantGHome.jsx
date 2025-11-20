@@ -196,7 +196,7 @@ function ApplicantGHome() {
       </div>
       {showDetails && selectedJob && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-transparent bg-opacity-30 flex items-center justify-center z-50"
           onClick={() => setShowDetails(false)}
         >
           <div

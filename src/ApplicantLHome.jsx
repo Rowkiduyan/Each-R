@@ -44,6 +44,7 @@
     const [saving, setSaving] = useState(false);
     const [birthdayError, setBirthdayError] = useState('');
     const [formBirthdayError, setFormBirthdayError] = useState('');
+    const [startDateError, setStartDateError] = useState('');
     const [profileForm, setProfileForm] = useState({
         address: '',
         sex: '',
@@ -241,6 +242,26 @@
       return true;
     };
 
+    const validateStartDate = (date) => {
+      if (!date) {
+        setStartDateError('');
+        return true;
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selectedDate = new Date(date);
+      selectedDate.setHours(0, 0, 0, 0);
+
+      if (selectedDate <= today) {
+        setStartDateError('Available start date must be after today.');
+        return false;
+      }
+
+      setStartDateError('');
+      return true;
+    };
+
     // Handle form input change
     const handleFormChange = (field, value) => {
       const updatedForm = {
@@ -412,6 +433,9 @@ const formatDateForInput = (dateString) => {
       if (name === 'birthday') {
         validateFormBirthday(value);
       }
+      if (name === 'startDate') {
+        validateStartDate(value);
+      }
     };
 
     const handleCheckbox = (e) => {
@@ -495,6 +519,11 @@ const formatDateForInput = (dateString) => {
       // Validate birthday before proceeding
       if (form.birthday && !validateFormBirthday(form.birthday)) {
         setErrorMessage('Please fix the birthday field before submitting.');
+        return;
+      }
+
+      if (!validateStartDate(form.startDate)) {
+        setErrorMessage('Please fix the available start date before submitting.');
         return;
       }
       
