@@ -99,10 +99,11 @@
           }
 
           const { data, error } = await supabase
-            .from('applicants')
-            .select('*')
-            .eq('email', user.email)
-            .single();
+          .from('applicants')
+          .select('*')
+          .eq('email', user.email)
+          .maybeSingle();
+
 
           if (error) {
             console.error('Error fetching profile:', error);
@@ -227,7 +228,8 @@ const handleSave = async () => {
       .from('applicants')
       .select('*')
       .eq('email', user.email)
-      .single();
+      .maybeSingle();
+
 
     if (!fetchError && updatedData) {
       setProfileData(updatedData);
@@ -243,6 +245,8 @@ const handleSave = async () => {
     setSaving(false);
   }
 };
+
+
 
 // Handle cancel
 const handleCancel = () => {
@@ -526,6 +530,9 @@ const formatDateForInput = (dateString) => {
         </div>
       );
     }
+
+    
+
 
     return (
       <div className="min-h-screen bg-white">
