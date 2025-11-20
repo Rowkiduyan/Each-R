@@ -9,13 +9,33 @@
 
     const [activeTab, setActiveTab] = useState('Home');
     const [showModal, setShowModal] = useState(false);
+    const [showJobDetailsModal, setShowJobDetailsModal] = useState(false);
     const [showSummary, setShowSummary] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
     const [showSuccessPage, setShowSuccessPage] = useState(false);
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-    
+    const [applicationTab, setApplicationTab] = useState('personal');
+
+    const formTabs = [
+      { key: 'personal', label: 'Personal' },
+      { key: 'education', label: 'Education & Skills' },
+      { key: 'experience', label: 'Experience' },
+      { key: 'references', label: 'References' },
+    ];
+
+    const requiredFormFields = [
+      { key: 'firstName', label: 'first name', tab: 'personal' },
+      { key: 'lastName', label: 'last name', tab: 'personal' },
+      { key: 'street', label: 'street or village', tab: 'personal' },
+      { key: 'barangay', label: 'barangay', tab: 'personal' },
+      { key: 'city', label: 'city', tab: 'personal' },
+      { key: 'zip', label: 'zip code', tab: 'personal' },
+      { key: 'contact', label: 'contact number', tab: 'personal' },
+      { key: 'email', label: 'email', tab: 'personal' },
+      { key: 'birthday', label: 'birthday', tab: 'personal' },
+    ];
 
 
     const [isEditMode, setIsEditMode] = useState(false);
@@ -459,10 +479,32 @@ const formatDateForInput = (dateString) => {
       });
     };
 
+    const openJobDetails = (job) => {
+      setSelectedJob(job);
+      setShowJobDetailsModal(true);
+    };
+
+    const proceedToApplicationForm = () => {
+      setShowJobDetailsModal(false);
+      setApplicationTab('personal');
+      setShowModal(true);
+    };
+
     // submit -> show summary with what user typed
     const onSubmitApplication = (e) => {
       e.preventDefault();
       setErrorMessage('');
+      const missingRequired = requiredFormFields.find(({ key }) => {
+        const value = form[key];
+        return String(value ?? '').trim() === '';
+      });
+
+      if (missingRequired) {
+        setApplicationTab(missingRequired.tab);
+        setErrorMessage(`Please complete the ${missingRequired.label} field before proceeding.`);
+        return;
+      }
+
       if (!selectedJob && !newJob) {
         setErrorMessage('Please choose a job first (click View on a job card).');
         return;
@@ -783,8 +825,7 @@ const formatDateForInput = (dateString) => {
                             disabled={isButtonDisabled}
                             onClick={() => {
                               if (isButtonDisabled) return;
-                              setSelectedJob(job);
-                              setShowModal(true);
+                              openJobDetails(job);
                             }}
                           >
                             {buttonLabel}
@@ -826,14 +867,13 @@ const formatDateForInput = (dateString) => {
                         <button
                           className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto"
                           onClick={() => {
-                            setSelectedJob({
+                            openJobDetails({
                               id: 'static-driver',
                               title: 'Delivery Driver',
                               depot: 'Pasig Depot',
                               description: 'Static card',
                               responsibilities: []
                             });
-                            setShowModal(true);
                           }}
                         >
                           View
@@ -872,14 +912,13 @@ const formatDateForInput = (dateString) => {
                         <button
                           className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto"
                           onClick={() => {
-                            setSelectedJob({
+                            openJobDetails({
                               id: 'static-helper',
                               title: 'Delivery Helper',
                               depot: 'Butuan Depot',
                               description: 'Static card',
                               responsibilities: []
                             });
-                            setShowModal(true);
                           }}
                         >
                           View
@@ -917,14 +956,13 @@ const formatDateForInput = (dateString) => {
                         <button
                           className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto"
                           onClick={() => {
-                            setSelectedJob({
+                            openJobDetails({
                               id: 'static-hr',
                               title: 'HR Coordinator',
                               depot: 'Butuan Depot',
                               description: 'Static card',
                               responsibilities: []
                             });
-                            setShowModal(true);
                           }}
                         >
                           View
@@ -1204,6 +1242,68 @@ const formatDateForInput = (dateString) => {
                 </div>
             </section>
 
+            {showJobDetailsModal && selectedJob && (
+              <div
+                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+                onClick={() => setShowJobDetailsModal(false)}
+              >
+                <div
+                  className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] border-2 border-black overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="flex justify-between items-center p-4 border-b">
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-800">{selectedJob.title}</h2>
+                      <div className="text-sm text-gray-600 flex items-center gap-2">
+                        <span>{selectedJob.depot}</span>
+                        {selectedJob.urgent && (
+                          <span className="px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-semibold">Urgent</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setShowJobDetailsModal(false)}
+                      className="text-gray-500 hover:text-gray-700 text-2xl"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <div className="p-4 space-y-4 overflow-y-auto max-h-[70vh]">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-1">Description</h3>
+                      <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800 mb-1">Responsibilities & Other Details</h3>
+                      {selectedJob.responsibilities && selectedJob.responsibilities.length > 0 ? (
+                        <ul className="list-disc list-inside text-gray-700 space-y-1">
+                          {selectedJob.responsibilities.map((item, idx) => (
+                            <li key={idx}>{item}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-gray-500">No responsibilities listed.</p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-3 p-4 border-t">
+                    <button
+                      className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+                      onClick={() => setShowJobDetailsModal(false)}
+                    >
+                      Close
+                    </button>
+                    <button
+                      className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                      onClick={proceedToApplicationForm}
+                    >
+                      Proceed
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Submit Application Modal (now controlled inputs) */}
             {showModal && (
               <div
@@ -1227,581 +1327,608 @@ const formatDateForInput = (dateString) => {
                   </div>
 
                   <form
-                    className="p-4 overflow-y-auto max-h-[80vh] space-y-4"
+                    className="flex flex-col max-h-[80vh]"
                     onSubmit={onSubmitApplication}
                   >
                     {errorMessage && (
-                      <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                        {errorMessage}
+                      <div className="px-4 pt-4">
+                        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+                          {errorMessage}
+                        </div>
                       </div>
                     )}
-                    {/* Name */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          First Name *
-                        </label>
-                        <input
-                          type="text"
-                          name="firstName"
-                          value={form.firstName}
-                          onChange={handleInput}
-                          required
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Middle Name
-                        </label>
-                        <input
-                          type="text"
-                          name="middleName"
-                          value={form.middleName}
-                          onChange={handleInput}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Last Name *
-                        </label>
-                        <input
-                          type="text"
-                          name="lastName"
-                          value={form.lastName}
-                          onChange={handleInput}
-                          required
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                        />
+                    <div className="px-4 pt-4 border-b bg-gray-50">
+                      <div className="flex flex-wrap gap-2">
+                        {formTabs.map((tab) => (
+                          <button
+                            key={tab.key}
+                            type="button"
+                            onClick={() => setApplicationTab(tab.key)}
+                            className={`px-3 py-2 text-sm font-medium rounded-t border ${
+                              applicationTab === tab.key
+                                ? 'bg-red-600 text-white border-red-600'
+                                : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-100'
+                            }`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
-
-                    {/* Address */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Address:
-                      </label>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div>
-                          <label className="block text-xs text-gray-600 mb-1">
-                            Street/Village *
-                          </label>
-                          <input
-                            type="text"
-                            name="street"
-                            value={form.street}
-                            onChange={handleInput}
-                            required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-600 mb-1">
-                            Barangay *
-                          </label>
-                          <input
-                            type="text"
-                            name="barangay"
-                            value={form.barangay}
-                            onChange={handleInput}
-                            required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-600 mb-1">City *</label>
-                          <input
-                            type="text"
-                            name="city"
-                            value={form.city}
-                            onChange={handleInput}
-                            required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-gray-600 mb-1">Zip Code *</label>
-                          <input
-                            type="text"
-                            name="zip"
-                            value={form.zip}
-                            onChange={handleInput}
-                            required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Contact + Email */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Contact Number *
-                        </label>
-                        <input
-                          type="tel"
-                          name="contact"
-                          value={form.contact}
-                          onChange={handleInput}
-                          required
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Email *
-                        </label>
-                        <input
-                          type="email"
-                          name="email"
-                          value={form.email}
-                          onChange={handleInput}
-                          required
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Birthday + Marital */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Birthday *
-                        </label>
-                        <input
-                          type="date"
-                          name="birthday"
-                          value={form.birthday}
-                          onChange={handleInput}
-                          required
-                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 ${
-                            formBirthdayError ? 'border-red-500' : 'border-gray-300'
-                          }`}
-                        />
-                        {formBirthdayError && (
-                          <div className="mt-1 text-sm text-red-600">
-                            {formBirthdayError}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Marital Status
-                        </label>
-                        <select
-                          name="maritalStatus"
-                          value={form.maritalStatus}
-                          onChange={handleInput}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                        >
-                          <option value="">Select</option>
-                          <option value="single">Single</option>
-                          <option value="married">Married</option>
-                          <option value="widowed">Widowed</option>
-                          <option value="divorced">Divorced</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Sex */}
-                    <div className="flex items-center space-x-4">
-                      <label className="text-sm font-medium text-gray-700">Sex:</label>
-                      <label className="flex items-center">
-                        <input
-                          type="radio"
-                          name="sex"
-                          value="Male"
-                          checked={form.sex === 'Male'}
-                          onChange={handleInput}
-                          className="mr-1"
-                        />
-                        <span className="text-sm">Male</span>
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="radio"
-                          name="sex"
-                          value="Female"
-                          checked={form.sex === 'Female'}
-                          onChange={handleInput}
-                          className="mr-1"
-                        />
-                        <span className="text-sm">Female</span>
-                      </label>
-                    </div>
-
-                    {/* StartDate + HeardFrom */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Available Start Date:
-                        </label>
-                        <input
-                          type="date"
-                          name="startDate"
-                          value={form.startDate}
-                          onChange={handleInput}
-                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 ${startDateError ? 'border-red-500' : 'border-gray-300'}`}
-                        />
-                        {startDateError && (
-                          <div className="mt-1 text-sm text-red-600">
-                            {startDateError}
-                          </div>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          How did you learn about our company?
-                        </label>
-                        <select
-                          name="heardFrom"
-                          value={form.heardFrom}
-                          onChange={handleInput}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                        >
-                          <option value="">Select an answer</option>
-                          <option value="Job Portal">Job Portal</option>
-                          <option value="Referral">Referral</option>
-                          <option value="Social Media">Social Media</option>
-                          <option value="Advertisement">Advertisement</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Employed */}
-                    <div className="flex items-center space-x-4">
-                      <label className="text-sm font-medium text-gray-700">
-                        Currently Employed?
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="radio"
-                          name="employed"
-                          value="Yes"
-                          checked={form.employed === 'Yes'}
-                          onChange={handleInput}
-                          className="mr-1"
-                        />
-                        <span className="text-sm">Yes</span>
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="radio"
-                          name="employed"
-                          value="No"
-                          checked={form.employed === 'No'}
-                          onChange={handleInput}
-                          className="mr-1"
-                        />
-                        <span className="text-sm">No</span>
-                      </label>
-                    </div>
-
-                    {/* Resume */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Upload Resume:
-                      </label>
-                      <input
-                        type="file"
-                        accept=".pdf,.docx"
-                        onChange={handleResumeChange}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        PDF/DOCX file. Max 10MB
-                      </p>
-                    </div>
-
-                    {/* IDs */}
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Do you have the following? (Check all that apply):
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          name="hasSSS"
-                          checked={form.hasSSS}
-                          onChange={handleCheckbox}
-                          className="mr-2"
-                        />
-                        <span className="text-sm">SSS</span>
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          name="hasPhilHealth"
-                          checked={form.hasPhilHealth}
-                          onChange={handleCheckbox}
-                          className="mr-2"
-                        />
-                        <span className="text-sm">PhilHealth</span>
-                      </label>
-                      <label className="flex items-center">
-                        <input
-                          type="checkbox"
-                          name="hasTIN"
-                          checked={form.hasTIN}
-                          onChange={handleCheckbox}
-                          className="mr-2"
-                        />
-                        <span className="text-sm">TIN</span>
-                      </label>
-                    </div>
-
-                    {/* Education */}
-                    <div className="space-y-2">
-                      <label className="block text-sm font-medium text-gray-700">
-                        Educational Attainment:
-                      </label>
-
-                      {/* Row 1 */}
-                      <select
-                        name="edu1Level"
-                        value={form.edu1Level}
-                        onChange={handleInput}
-                        className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                      >
-                        <option>Elementary School</option>
-                        <option>High School Graduate</option>
-                        <option>Secondary School Graduate</option>
-                        <option>College Graduate</option>
-                      </select>
-                      <div className="flex gap-1">
-                        <input
-                          type="text"
-                          placeholder="Institution"
-                          name="edu1Institution"
-                          value={form.edu1Institution}
-                          onChange={handleInput}
-                          className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Year Finished (yyyy)"
-                          name="edu1Year"
-                          value={form.edu1Year}
-                          onChange={handleInput}
-                          className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* Row 2 */}
-                      <div className="flex gap-1 mb-2">
-                        <input
-                          type="text"
-                          placeholder="Institution"
-                          name="edu2Institution"
-                          value={form.edu2Institution}
-                          onChange={handleInput}
-                          className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Year Finished (yyyy)"
-                          name="edu2Year"
-                          value={form.edu2Year}
-                          onChange={handleInput}
-                          className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* Skills */}
-                      <label className="flex items-center">
-                        <span className="text-sm mt-4 font-medium">
-                          Please list your skills
-                        </span>
-                      </label>
-                      <div className="flex gap-1">
-                        <input
-                          type="text"
-                          placeholder="Skill"
-                          name="skill1"
-                          value={form.skill1}
-                          onChange={handleInput}
-                          className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Skill"
-                          name="skill2"
-                          value={form.skill2}
-                          onChange={handleInput}
-                          className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Skill"
-                          name="skill3"
-                          value={form.skill3}
-                          onChange={handleInput}
-                          className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* License */}
-                      <label className="flex items-center">
-                        <span className="text-sm mt-4 font-medium">License Information</span>
-                      </label>
-                      <div className="flex gap-1">
-                        <input
-                          type="text"
-                          placeholder="License Type (e.g., Code 3)"
-                          name="licenseType"
-                          value={form.licenseType}
-                          onChange={handleInput}
-                          className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                        />
-                        <input
-                          type="text"
-                          placeholder="License Expiry Date (yyyy-mm-dd)"
-                          name="licenseExpiry"
-                          value={form.licenseExpiry}
-                          onChange={handleInput}
-                          className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Work Experiences (controlled) */}
-                    <div className="mt-6 space-y-4">
-                      <h3 className="text-lg font-semibold text-gray-800">
-                        Previous Work Experiences
-                      </h3>
-                      {workExperiences.map((exp, index) => (
-                        <div
-                          key={index}
-                          className="border p-4 rounded-md space-y-3 bg-gray-50"
-                        >
-                          <h4 className="font-medium text-gray-700">
-                            Work Experience #{index + 1}
-                          </h4>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Company Name and Location
-                              </label>
-                              <input
-                                type="text"
-                                value={exp.company || ''}
-                                onChange={(e) =>
-                                  updateWork(index, 'company', e.target.value)
-                                }
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                              />
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Role/Title
-                              </label>
-                              <input
-                                type="text"
-                                value={exp.role || ''}
-                                onChange={(e) => updateWork(index, 'role', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                              />
-                            </div>
-                          </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                      <div className={`space-y-4 ${applicationTab === 'personal' ? 'block' : 'hidden'}`}>
+                        {/* Name */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Date Employed (period)
+                              First Name *
                             </label>
                             <input
                               type="text"
-                              placeholder="e.g., 2015-2020"
-                              value={exp.period || ''}
-                              onChange={(e) => updateWork(index, 'period', e.target.value)}
+                              name="firstName"
+                              value={form.firstName}
+                              onChange={handleInput}
+                              required
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                             />
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Reason for Leaving
+                              Middle Name
                             </label>
-                            <textarea
-                              value={exp.reason || ''}
-                              onChange={(e) =>
-                                updateWork(index, 'reason', e.target.value)
-                              }
-                              rows={2}
+                            <input
+                              type="text"
+                              name="middleName"
+                              value={form.middleName}
+                              onChange={handleInput}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Last Name *
+                            </label>
+                            <input
+                              type="text"
+                              name="lastName"
+                              value={form.lastName}
+                              onChange={handleInput}
+                              required
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                             />
                           </div>
                         </div>
-                      ))}
-                      <button
-                        type="button"
-                        onClick={() => setWorkExperiences([...workExperiences, {}])}
-                        className="text-red-600 hover:underline text-sm font-medium"
-                      >
-                        + add another work experience
-                      </button>
-                    </div>
 
-                    {/* Character References (controlled) */}
-                    <div className="mt-6 space-y-4">
-                      <div className="flex items-start space-x-2">
-                        <h3 className="text-lg font-semibold text-gray-800">
-                          Character Reference (required only for non-drivers)
-                        </h3>
-                      </div>
-                      <p className="text-sm text-gray-600">
-                        List at least three (3) characters (referrers only for non-delivery
-                        applicants):
-                      </p>
-                      <div className="space-y-3">
-                        {characterReferences.map((ref, index) => (
-                          <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Address */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Address:
+                          </label>
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Name
+                              <label className="block text-xs text-gray-600 mb-1">
+                                Street/Village *
                               </label>
                               <input
                                 type="text"
-                                value={ref.name || ''}
-                                onChange={(e) => updateRef(index, 'name', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                name="street"
+                                value={form.street}
+                                onChange={handleInput}
+                                required
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
                               />
                             </div>
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Contact Number/s
+                              <label className="block text-xs text-gray-600 mb-1">
+                                Barangay *
                               </label>
                               <input
                                 type="text"
-                                value={ref.contact || ''}
-                                onChange={(e) => updateRef(index, 'contact', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                name="barangay"
+                                value={form.barangay}
+                                onChange={handleInput}
+                                required
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
                               />
                             </div>
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Remarks
-                              </label>
-                              <textarea
-                                rows={2}
-                                value={ref.remarks || ''}
-                                onChange={(e) => updateRef(index, 'remarks', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                              <label className="block text-xs text-gray-600 mb-1">City *</label>
+                              <input
+                                type="text"
+                                name="city"
+                                value={form.city}
+                                onChange={handleInput}
+                                required
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-600 mb-1">Zip Code *</label>
+                              <input
+                                type="text"
+                                name="zip"
+                                value={form.zip}
+                                onChange={handleInput}
+                                required
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
                               />
                             </div>
                           </div>
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setCharacterReferences([...characterReferences, {}])}
-                        className="text-red-600 hover:underline text-sm font-medium"
-                      >
-                        + add another person
-                      </button>
-                    </div>
+                        </div>
 
-                    {/* Actions */}
-                    <div className="flex justify-between pt-4 border-t mt-6">
+                        {/* Contact + Email */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Contact Number *
+                            </label>
+                            <input
+                              type="tel"
+                              name="contact"
+                              value={form.contact}
+                              onChange={handleInput}
+                              required
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Email *
+                            </label>
+                            <input
+                              type="email"
+                              name="email"
+                              value={form.email}
+                              onChange={handleInput}
+                              required
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Birthday + Marital */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Birthday *
+                            </label>
+                            <input
+                              type="date"
+                              name="birthday"
+                              value={form.birthday}
+                              onChange={handleInput}
+                              required
+                              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                                formBirthdayError ? 'border-red-500' : 'border-gray-300'
+                              }`}
+                            />
+                            {formBirthdayError && (
+                              <div className="mt-1 text-sm text-red-600">
+                                {formBirthdayError}
+                              </div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Marital Status
+                            </label>
+                            <select
+                              name="maritalStatus"
+                              value={form.maritalStatus}
+                              onChange={handleInput}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                            >
+                              <option value="">Select</option>
+                              <option value="single">Single</option>
+                              <option value="married">Married</option>
+                              <option value="widowed">Widowed</option>
+                              <option value="divorced">Divorced</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Sex */}
+                        <div className="flex items-center space-x-4">
+                          <label className="text-sm font-medium text-gray-700">Sex:</label>
+                          <label className="flex items-center">
+                            <input
+                              type="radio"
+                              name="sex"
+                              value="Male"
+                              checked={form.sex === 'Male'}
+                              onChange={handleInput}
+                              className="mr-1"
+                            />
+                            <span className="text-sm">Male</span>
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="radio"
+                              name="sex"
+                              value="Female"
+                              checked={form.sex === 'Female'}
+                              onChange={handleInput}
+                              className="mr-1"
+                            />
+                            <span className="text-sm">Female</span>
+                          </label>
+                        </div>
+
+                        {/* StartDate + HeardFrom */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Available Start Date:
+                            </label>
+                            <input
+                              type="date"
+                              name="startDate"
+                              value={form.startDate}
+                              onChange={handleInput}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              How did you learn about our company?
+                            </label>
+                            <select
+                              name="heardFrom"
+                              value={form.heardFrom}
+                              onChange={handleInput}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                            >
+                              <option value="">Select an answer</option>
+                              <option value="Job Portal">Job Portal</option>
+                              <option value="Referral">Referral</option>
+                              <option value="Social Media">Social Media</option>
+                              <option value="Advertisement">Advertisement</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Employed */}
+                        <div className="flex items-center space-x-4">
+                          <label className="text-sm font-medium text-gray-700">
+                            Currently Employed?
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="radio"
+                              name="employed"
+                              value="Yes"
+                              checked={form.employed === 'Yes'}
+                              onChange={handleInput}
+                              className="mr-1"
+                            />
+                            <span className="text-sm">Yes</span>
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="radio"
+                              name="employed"
+                              value="No"
+                              checked={form.employed === 'No'}
+                              onChange={handleInput}
+                              className="mr-1"
+                            />
+                            <span className="text-sm">No</span>
+                          </label>
+                        </div>
+
+                        {/* Resume */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Upload Resume:
+                          </label>
+                          <input
+                            type="file"
+                            accept=".pdf,.docx"
+                            onChange={handleResumeChange}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            PDF/DOCX file. Max 10MB
+                          </p>
+                        </div>
+
+                        {/* IDs */}
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-700">
+                            Do you have the following? (Check all that apply):
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              name="hasSSS"
+                              checked={form.hasSSS}
+                              onChange={handleCheckbox}
+                              className="mr-2"
+                            />
+                            <span className="text-sm">SSS</span>
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              name="hasPhilHealth"
+                              checked={form.hasPhilHealth}
+                              onChange={handleCheckbox}
+                              className="mr-2"
+                            />
+                            <span className="text-sm">PhilHealth</span>
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
+                              name="hasTIN"
+                              checked={form.hasTIN}
+                              onChange={handleCheckbox}
+                              className="mr-2"
+                            />
+                            <span className="text-sm">TIN</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className={`space-y-4 ${applicationTab === 'education' ? 'block' : 'hidden'}`}>
+                        {/* Education */}
+                        <div className="space-y-2">
+                          <label className="block text-sm font-medium text-gray-700">
+                            Educational Attainment:
+                          </label>
+
+                          {/* Row 1 */}
+                          <select
+                            name="edu1Level"
+                            value={form.edu1Level}
+                            onChange={handleInput}
+                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                          >
+                            <option>Elementary School</option>
+                            <option>High School Graduate</option>
+                            <option>Secondary School Graduate</option>
+                            <option>College Graduate</option>
+                          </select>
+                          <div className="flex gap-1">
+                            <input
+                              type="text"
+                              placeholder="Institution"
+                              name="edu1Institution"
+                              value={form.edu1Institution}
+                              onChange={handleInput}
+                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Year Finished (yyyy)"
+                              name="edu1Year"
+                              value={form.edu1Year}
+                              onChange={handleInput}
+                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            />
+                          </div>
+
+                          {/* Row 2 */}
+                          <div className="flex gap-1 mb-2">
+                            <input
+                              type="text"
+                              placeholder="Institution"
+                              name="edu2Institution"
+                              value={form.edu2Institution}
+                              onChange={handleInput}
+                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Year Finished (yyyy)"
+                              name="edu2Year"
+                              value={form.edu2Year}
+                              onChange={handleInput}
+                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Skills */}
+                        <div>
+                          <label className="flex items-center">
+                            <span className="text-sm mt-4 font-medium">
+                              Please list your skills
+                            </span>
+                          </label>
+                          <div className="flex gap-1">
+                            <input
+                              type="text"
+                              placeholder="Skill"
+                              name="skill1"
+                              value={form.skill1}
+                              onChange={handleInput}
+                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Skill"
+                              name="skill2"
+                              value={form.skill2}
+                              onChange={handleInput}
+                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Skill"
+                              name="skill3"
+                              value={form.skill3}
+                              onChange={handleInput}
+                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* License */}
+                        <div>
+                          <label className="flex items-center">
+                            <span className="text-sm mt-4 font-medium">License Information</span>
+                          </label>
+                          <div className="flex gap-1">
+                            <input
+                              type="text"
+                              placeholder="License Type (e.g., Code 3)"
+                              name="licenseType"
+                              value={form.licenseType}
+                              onChange={handleInput}
+                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            />
+                            <input
+                              type="text"
+                              placeholder="License Expiry Date (yyyy-mm-dd)"
+                              name="licenseExpiry"
+                              value={form.licenseExpiry}
+                              onChange={handleInput}
+                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className={`space-y-4 ${applicationTab === 'experience' ? 'block' : 'hidden'}`}>
+                        {/* Work Experiences (controlled) */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold text-gray-800">
+                            Previous Work Experiences
+                          </h3>
+                          {workExperiences.map((exp, index) => (
+                            <div
+                              key={index}
+                              className="border p-4 rounded-md space-y-3 bg-gray-50"
+                            >
+                              <h4 className="font-medium text-gray-700">
+                                Work Experience #{index + 1}
+                              </h4>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Company Name and Location
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={exp.company || ''}
+                                    onChange={(e) =>
+                                      updateWork(index, 'company', e.target.value)
+                                    }
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Role/Title
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={exp.role || ''}
+                                    onChange={(e) => updateWork(index, 'role', e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                  />
+                                </div>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Date Employed (period)
+                                </label>
+                                <input
+                                  type="text"
+                                  placeholder="e.g., 2015-2020"
+                                  value={exp.period || ''}
+                                  onChange={(e) => updateWork(index, 'period', e.target.value)}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                  Reason for Leaving
+                                </label>
+                                <textarea
+                                  value={exp.reason || ''}
+                                  onChange={(e) =>
+                                    updateWork(index, 'reason', e.target.value)
+                                  }
+                                  rows={2}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                />
+                              </div>
+                            </div>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setWorkExperiences([...workExperiences, {}])}
+                            className="text-red-600 hover:underline text-sm font-medium"
+                          >
+                            + add another work experience
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className={`space-y-4 ${applicationTab === 'references' ? 'block' : 'hidden'}`}>
+                        {/* Character References (controlled) */}
+                        <div className="space-y-4">
+                          <div className="flex items-start space-x-2">
+                            <h3 className="text-lg font-semibold text-gray-800">
+                              Character Reference (required only for non-drivers)
+                            </h3>
+                          </div>
+                          <p className="text-sm text-gray-600">
+                            List at least three (3) characters (referrers only for non-delivery
+                            applicants):
+                          </p>
+                          <div className="space-y-3">
+                            {characterReferences.map((ref, index) => (
+                              <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Name
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={ref.name || ''}
+                                    onChange={(e) => updateRef(index, 'name', e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Contact Number/s
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={ref.contact || ''}
+                                    onChange={(e) => updateRef(index, 'contact', e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Remarks
+                                  </label>
+                                  <textarea
+                                    rows={2}
+                                    value={ref.remarks || ''}
+                                    onChange={(e) => updateRef(index, 'remarks', e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setCharacterReferences([...characterReferences, {}])}
+                            className="text-red-600 hover:underline text-sm font-medium"
+                          >
+                            + add another person
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-between px-4 py-3 border-t">
                       <button
                         type="button"
                         onClick={() => setShowModal(false)}
@@ -1816,8 +1943,7 @@ const formatDateForInput = (dateString) => {
                         Proceed
                       </button>
                     </div>
-
-                    <p className="text-xs text-gray-600 mt-4 p-2 bg-gray-50 rounded">
+                    <p className="text-xs text-gray-600 px-4 pb-4">
                       By submitting an application for this position, you consent to
                       Roadwise collecting and storing your personal information as part of
                       the recruitment process.
@@ -2065,6 +2191,7 @@ const formatDateForInput = (dateString) => {
                         type="button"
                         onClick={() => {
                           setShowSummary(false);
+                          setApplicationTab('personal');
                           setShowModal(true);
                         }}
                         className="px-6 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"

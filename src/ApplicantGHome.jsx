@@ -8,6 +8,8 @@ function ApplicantGHome() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [showDetails, setShowDetails] = useState(false);
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -30,7 +32,16 @@ function ApplicantGHome() {
   }, []);
 
   const handleApplyClick = (job) => {
+    setSelectedJob(job);
+    setShowDetails(true);
+  };
+
+  const proceedToApply = () => {
+    if (!selectedJob) return;
+    setShowDetails(false);
     setMessage('Please log in to apply for this position.');
+    const job = selectedJob;
+    setSelectedJob(null);
     setTimeout(() => {
       navigate('/applicant/login', {
         replace: false,
@@ -132,6 +143,56 @@ function ApplicantGHome() {
           </div>
         )}
       </div>
+      {showDetails && selectedJob && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+          onClick={() => setShowDetails(false)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-lg w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-2xl font-bold text-gray-800">{selectedJob.title}</h2>
+                <button className="text-gray-500 text-2xl leading-none" onClick={() => setShowDetails(false)}>
+                  &times;
+                </button>
+              </div>
+              <div className="text-sm text-gray-600 flex items-center gap-2">
+                <span className="font-semibold">{selectedJob.depot}</span>
+                {selectedJob.urgent && (
+                  <span className="px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-semibold">Urgent</span>
+                )}
+              </div>
+              <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Responsibilities & Other Details</h3>
+                {selectedJob.responsibilities && selectedJob.responsibilities.length > 0 ? (
+                  <ul className="list-disc list-inside text-gray-700 space-y-1">
+                    {selectedJob.responsibilities.map((item, idx) => (
+                      <li key={idx}>{item}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-gray-500">No additional details provided.</p>
+                )}
+              </div>
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <button
+                  className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+                  onClick={() => setShowDetails(false)}
+                >
+                  Close
+                </button>
+                <button className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" onClick={proceedToApply}>
+                  Proceed
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
