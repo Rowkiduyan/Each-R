@@ -68,15 +68,13 @@ function EmployeeLogin() {
     localStorage.setItem("loggedInHR", JSON.stringify(userDataToSave));
 
     // Step 8: Redirect based on role
-    if (profile.role === "HR") {
+    const normalizedRole = profile.role?.toLowerCase();
+
+    if (normalizedRole === "hr") {
       navigate("/hr/home");
-    } else if (profile.role === "employee") {
+    } else if (normalizedRole === "employee") {
       navigate("/employee/home");
-    } else if (profile.role === "applicant") {
-      navigate("/applicant/home");
-    } else if (profile.role === "agency") {
-  navigate("/agency/home");
-    }else {
+    } else {
       setError("Unknown role.");
     }
   };
