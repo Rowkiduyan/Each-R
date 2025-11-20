@@ -26,6 +26,7 @@ import HrCreateJob from "./HrCreateJob";
 import VerifyEmail from "./VerifyEmail";
 import RequireRole from "./RequireRole";
 import HRLayout from "./layouts/HRLayout";
+import TermsAndPrivacy from "./TermsAndPrivacy";
 
 
 
@@ -37,6 +38,7 @@ function App() {
       <Route path="/applicant/register" element={<ApplicantRegister />} />
       <Route path="/applicant/verify" element={<VerifyEmail />} />
       <Route path="/applicant/login" element={<ApplicantLogin />} />
+      <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
 
       {/* HR protected routes */}
       <Route

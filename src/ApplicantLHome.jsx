@@ -22,6 +22,8 @@
     const [profileData, setProfileData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [birthdayError, setBirthdayError] = useState('');
+    const [formBirthdayError, setFormBirthdayError] = useState('');
     const [profileForm, setProfileForm] = useState({
         address: '',
         sex: '',
@@ -40,6 +42,7 @@
     const [jobs, setJobs] = useState([]);
     const [selectedJob, setSelectedJob] = useState(null);
     const [jobsLoading, setJobsLoading] = useState(true);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // --- MAIN FORM STATE (simple + flat so it’s easy to wire) ---
     const [form, setForm] = useState({
@@ -148,6 +151,76 @@
       return age.toString();
     };
 
+    // Validate birthday
+    const validateBirthday = (birthday) => {
+      if (!birthday) {
+        setBirthdayError('');
+        return true;
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const birthDate = new Date(birthday);
+      birthDate.setHours(0, 0, 0, 0);
+
+      // Check if birthday is in the future
+      if (birthDate > today) {
+        setBirthdayError('Birthday cannot be in the future');
+        return false;
+      }
+
+      // Calculate age in years
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+
+      // Check if age is too young (less than 15 year old)
+      if (age < 15) {
+        setBirthdayError('Invalid birthday. Age must be at least 15 year old.');
+        return false;
+      }
+
+      setBirthdayError('');
+      return true;
+    };
+
+    // Validate form birthday (for application modal)
+    const validateFormBirthday = (birthday) => {
+      if (!birthday) {
+        setFormBirthdayError('');
+        return true;
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const birthDate = new Date(birthday);
+      birthDate.setHours(0, 0, 0, 0);
+
+      // Check if birthday is in the future
+      if (birthDate > today) {
+        setFormBirthdayError('Birthday cannot be in the future');
+        return false;
+      }
+
+      // Calculate age in years
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+
+      // Check if age is too young (less than 15 year old)
+      if (age < 15) {
+        setFormBirthdayError('Invalid birthday. Age must be at least 15 year old.');
+        return false;
+      }
+
+      setFormBirthdayError('');
+      return true;
+    };
+
     // Handle form input change
     const handleFormChange = (field, value) => {
       const updatedForm = {
@@ -156,10 +229,11 @@
       };
 
       if (field === 'birthday') {
-    updatedForm.age = calculateAge(value);
-    }
+        validateBirthday(value);
+        updatedForm.age = calculateAge(value);
+      }
 
-    setProfileForm(updatedForm);
+      setProfileForm(updatedForm);
   };
 
     const handleEdit = () => {
@@ -175,6 +249,13 @@ const handleSave = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       setErrorMessage('User not found');
+      setSaving(false);
+      return;
+    }
+
+    // Validate birthday before saving
+    if (profileForm.birthday && !validateBirthday(profileForm.birthday)) {
+      setErrorMessage('Please fix the birthday field before saving.');
       setSaving(false);
       return;
     }
@@ -265,6 +346,7 @@ const handleCancel = () => {
       character_references: profileData.character_references || []
     });
   }
+  setBirthdayError('');
   setIsEditMode(false);
 };
 
@@ -300,6 +382,10 @@ const formatDateForInput = (dateString) => {
     const handleInput = (e) => {
       const { name, value } = e.target;
       setForm((f) => ({ ...f, [name]: value }));
+      
+      if (name === 'birthday') {
+        validateFormBirthday(value);
+      }
     };
 
     const handleCheckbox = (e) => {
@@ -357,6 +443,13 @@ const formatDateForInput = (dateString) => {
         setErrorMessage('Please choose a job first (click View on a job card).');
         return;
       }
+      
+      // Validate birthday before proceeding
+      if (form.birthday && !validateFormBirthday(form.birthday)) {
+        setErrorMessage('Please fix the birthday field before submitting.');
+        return;
+      }
+      
       setShowModal(false);
       setShowSummary(true);
     };
@@ -602,6 +695,8 @@ const formatDateForInput = (dateString) => {
       <div className="max-w-7xl mx-auto px-6 mt-4 flex justify-end">
         <input
           placeholder="Search"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
           className="w-80 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
         />
       </div>
@@ -616,7 +711,15 @@ const formatDateForInput = (dateString) => {
                   <div className="text-gray-600">Loading jobs…</div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {jobs.map((job) => {
+                    {jobs.filter(job => 
+                      job.title.toLowerCase().includes(searchTerm.toLowerCase())
+                    ).map((job) => {
+                      const createdAt = job?.created_at ? new Date(job.created_at) : null;
+                      const hasValidDate = createdAt instanceof Date && !isNaN(createdAt);
+                      const postedLabel = hasValidDate
+                        ? createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                        : 'Not available';
+
                       const isCurrentApplication = appliedJobId === job.id;
                       const isApplyDisabled = hasExistingApplication && !isCurrentApplication;
                       const isButtonDisabled = isApplyDisabled || isCurrentApplication;
@@ -626,40 +729,25 @@ const formatDateForInput = (dateString) => {
                         : 'w-full py-2 rounded-lg transition-colors mt-auto bg-red-600 text-white hover:bg-red-700';
 
                       return (
-                      <div key={job.id} className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
+                      <div key={job.id} className="bg-white rounded-lg shadow-md p-6 flex flex-col relative overflow-hidden">
                         {job.urgent && (
                           <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1 transform">
                             URGENT HIRING!
                           </div>
                         )}
-                        <div className="mt-6 flex flex-col flex-grow">
+                        <div className="mt-4 flex flex-col flex-grow">
                           <h3 className="text-xl font-bold text-gray-800 mb-2">
                             {job.title}
                           </h3>
-                          <div className="flex justify-between items-center mb-3">
-                            <span className="text-gray-700">{job.depot}</span>
-                            <span className="text-sm text-gray-500">
-                              Posted {new Date(job.created_at).toLocaleString()}
+                          <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
+                            <span>{job.depot}</span>
+                            <span>
+                              Posted {postedLabel}
                             </span>
                           </div>
                           <p className="text-gray-700 mb-4">
                             {job.description}
                           </p>
-                          {Array.isArray(job.responsibilities) &&
-                            job.responsibilities.length > 0 && (
-                              <div className="mb-4">
-                                <h4 className="font-semibold text-gray-800 mb-2">
-                                  Main Responsibilities
-                                </h4>
-                                <ul className="text-sm text-gray-700 space-y-1">
-                                  {job.responsibilities
-                                    .filter(Boolean)
-                                    .map((r, i) => (
-                                      <li key={i}>• {r}</li>
-                                    ))}
-                                </ul>
-                              </div>
-                            )}
                           <button
                             type="button"
                             className={buttonClasses}
@@ -893,12 +981,21 @@ const formatDateForInput = (dateString) => {
                                         <div>
                                             <span className="font-bold">Birthday:</span>{' '}
                                             {isEditMode ? (
-                                                <input
-                                                    type="date"
-                                                    value={formatDateForInput(profileForm.birthday)}
-                                                    onChange={(e) => handleFormChange('birthday', e.target.value)}
-                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                />
+                                                <div>
+                                                    <input
+                                                        type="date"
+                                                        value={formatDateForInput(profileForm.birthday)}
+                                                        onChange={(e) => handleFormChange('birthday', e.target.value)}
+                                                        className={`ml-2 px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                                                            birthdayError ? 'border-red-500' : 'border-gray-300'
+                                                        }`}
+                                                    />
+                                                    {birthdayError && (
+                                                        <div className="ml-2 mt-1 text-sm text-red-600">
+                                                            {birthdayError}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             ) : (
                                                 profileForm.birthday ? formatDate(profileForm.birthday) : 'Not provided'
                                             )}
@@ -1250,8 +1347,15 @@ const formatDateForInput = (dateString) => {
                           value={form.birthday}
                           onChange={handleInput}
                           required
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                            formBirthdayError ? 'border-red-500' : 'border-gray-300'
+                          }`}
                         />
+                        {formBirthdayError && (
+                          <div className="mt-1 text-sm text-red-600">
+                            {formBirthdayError}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
