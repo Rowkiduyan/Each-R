@@ -10,10 +10,13 @@ function HrCreateJob() {
     posted: "Just now",
     description: "",
     responsibilities: [""],
+    others: [""],
     urgent: true,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState("");
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
@@ -23,6 +26,13 @@ function HrCreateJob() {
     setForm(prev => ({ ...prev, responsibilities: prev.responsibilities.map((r, idx) => (idx === i ? v : r)) }));
   const removeResp = (i) =>
     setForm(prev => ({ ...prev, responsibilities: prev.responsibilities.filter((_, idx) => idx !== i) }));
+
+  const addOther = () =>
+    setForm(prev => ({ ...prev, others: [...prev.others, ""] }));
+  const setOther = (i, v) =>
+    setForm(prev => ({ ...prev, others: prev.others.map((r, idx) => (idx === i ? v : r)) }));
+  const removeOther = (i) =>
+    setForm(prev => ({ ...prev, others: prev.others.filter((_, idx) => idx !== i) }));
 
   // safe create + debug function
   // call: await createJobPost({ title, depot, description, responsibilities, urgent })
@@ -70,20 +80,34 @@ function HrCreateJob() {
 
   const handlePost = async () => {
     setError(null);
+    setSuccess("");
     setSaving(true);
+    const combinedResponsibilities = [
+      ...form.responsibilities,
+      ...form.others,
+    ];
     try {
       // attempt to create a job post (this will throw if validations fail)
       await createJobPost({
         title: form.title,
         depot: form.depot,
         description: form.description || null,
-        responsibilities: form.responsibilities,
+        responsibilities: combinedResponsibilities,
         urgent: form.urgent,
         is_active: true,
       });
 
-      // if successful, go to HR home (or show a message)
-      navigate("/hr/home");
+      setSuccess("Job post created successfully.");
+      setForm({
+        title: "",
+        depot: "",
+        posted: "Just now",
+        description: "",
+        responsibilities: [""],
+        others: [""],
+        urgent: true,
+      });
+      setShowConfirm(false);
     } catch (err) {
       // show user-friendly message, but console contains full details
       const msg = err?.message || "Failed to create job post. Check console for details.";
@@ -105,6 +129,11 @@ function HrCreateJob() {
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded">
               {error}
+            </div>
+          )}
+          {success && (
+            <div className="bg-green-50 border border-green-200 text-green-700 px-3 py-2 rounded">
+              {success}
             </div>
           )}
 
@@ -171,10 +200,32 @@ function HrCreateJob() {
             </div>
           </div>
 
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium">Other Notes</label>
+              <button onClick={addOther} className="text-sm text-blue-600 hover:underline">+ Add Other</button>
+            </div>
+            <div className="space-y-2">
+              {form.others.map((r, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <input
+                    className="flex-1 border rounded px-3 py-2"
+                    value={r}
+                    onChange={(e) => setOther(i, e.target.value)}
+                    placeholder="e.g., Must be willing to travel"
+                  />
+                  {form.others.length > 1 && (
+                    <button onClick={() => removeOther(i)} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded">Remove</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="flex justify-end gap-3 pt-4 border-t">
             <button onClick={() => navigate("/hr/home")} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
             <button
-              onClick={handlePost}
+              onClick={() => setShowConfirm(true)}
               className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
               disabled={saving}
             >
@@ -183,6 +234,29 @@ function HrCreateJob() {
           </div>
         </div>
       </div>
+      {showConfirm && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-800">Post Job?</h2>
+            <p className="text-sm text-gray-600">Please confirm you want to publish this job posting.</p>
+            <div className="flex justify-end gap-3">
+              <button
+                className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
+                onClick={() => setShowConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
+                onClick={handlePost}
+                disabled={saving}
+              >
+                {saving ? "Posting..." : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
