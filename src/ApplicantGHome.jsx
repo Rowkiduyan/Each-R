@@ -7,6 +7,7 @@ function ApplicantGHome() {
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     const fetchJobs = async () => {
@@ -60,6 +61,8 @@ function ApplicantGHome() {
                 <input
                   type="text"
                   placeholder="Search"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-96 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
                   aria-label="Search job postings"
                 />
@@ -92,32 +95,31 @@ function ApplicantGHome() {
           <div className="text-gray-600">No active job postings at the moment.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {jobs.map((job) => (
-              <div key={job.id} className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
+            {jobs.filter(job => 
+              job.title.toLowerCase().includes(searchTerm.toLowerCase())
+            ).map((job) => {
+              const createdAt = job?.created_at ? new Date(job.created_at) : null;
+              const hasValidDate = createdAt instanceof Date && !isNaN(createdAt);
+              const postedLabel = hasValidDate
+                ? createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : 'Not available';
+
+              return (
+              <div key={job.id} className="bg-white rounded-lg shadow-md p-6 flex flex-col relative overflow-hidden">
                 {job.urgent && (
                   <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1">
                     URGENT HIRING!
                   </div>
                 )}
-                <div className="mt-6 flex flex-col flex-grow">
+                <div className="mt-4 flex flex-col flex-grow">
                   <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
-                  <div className="flex justify-between items-center mb-3">
-                    <span className="text-gray-700">{job.depot}</span>
-                    <span className="text-sm text-gray-500">
-                      Posted {new Date(job.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
+                    <span>{job.depot}</span>
+                    <span>
+                      Posted {postedLabel}
                     </span>
                   </div>
                   <p className="text-gray-700 mb-4 line-clamp-3">{job.description}</p>
-                  {Array.isArray(job.responsibilities) && job.responsibilities.length > 0 && (
-                    <div className="mb-4">
-                      <h4 className="font-semibold text-gray-800 mb-2">Main Responsibilities</h4>
-                      <ul className="text-sm text-gray-700 space-y-1">
-                        {job.responsibilities.filter(Boolean).map((item, index) => (
-                          <li key={index}>• {item}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
                   <button
                     className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto"
                     onClick={() => handleApplyClick(job)}
@@ -126,7 +128,7 @@ function ApplicantGHome() {
                   </button>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
         )}
       </div>

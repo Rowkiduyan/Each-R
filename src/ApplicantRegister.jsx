@@ -166,7 +166,10 @@ const handleRegister = async (e) => {
 
         <p className="text-xs text-gray-500 text-center">
           By proceeding, you consent to Roadwise collecting and storing your personal
-          information as part of the recruitment process.
+          information as part of the recruitment process.{' '}
+          <Link to="/terms-and-privacy" className="text-red-600 hover:underline">
+            Terms and Privacy
+          </Link>
         </p>
 
         <button
