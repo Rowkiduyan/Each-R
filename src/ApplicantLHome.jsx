@@ -24,6 +24,7 @@
     const [saving, setSaving] = useState(false);
     const [birthdayError, setBirthdayError] = useState('');
     const [formBirthdayError, setFormBirthdayError] = useState('');
+    const [startDateError, setStartDateError] = useState('');
     const [profileForm, setProfileForm] = useState({
         address: '',
         sex: '',
@@ -220,6 +221,26 @@
       return true;
     };
 
+    const validateStartDate = (date) => {
+      if (!date) {
+        setStartDateError('');
+        return true;
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const selectedDate = new Date(date);
+      selectedDate.setHours(0, 0, 0, 0);
+
+      if (selectedDate <= today) {
+        setStartDateError('Available start date must be after today.');
+        return false;
+      }
+
+      setStartDateError('');
+      return true;
+    };
+
     // Handle form input change
     const handleFormChange = (field, value) => {
       const updatedForm = {
@@ -382,6 +403,9 @@ const formatDateForInput = (dateString) => {
       if (name === 'birthday') {
         validateFormBirthday(value);
       }
+      if (name === 'startDate') {
+        validateStartDate(value);
+      }
     };
 
     const handleCheckbox = (e) => {
@@ -443,6 +467,11 @@ const formatDateForInput = (dateString) => {
       // Validate birthday before proceeding
       if (form.birthday && !validateFormBirthday(form.birthday)) {
         setErrorMessage('Please fix the birthday field before submitting.');
+        return;
+      }
+
+      if (!validateStartDate(form.startDate)) {
+        setErrorMessage('Please fix the available start date before submitting.');
         return;
       }
       
@@ -1407,8 +1436,13 @@ const formatDateForInput = (dateString) => {
                           name="startDate"
                           value={form.startDate}
                           onChange={handleInput}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 ${startDateError ? 'border-red-500' : 'border-gray-300'}`}
                         />
+                        {startDateError && (
+                          <div className="mt-1 text-sm text-red-600">
+                            {startDateError}
+                          </div>
+                        )}
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
