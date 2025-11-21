@@ -3,6 +3,36 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 
+/**
+ * scheduleInterviewClient
+ * Helper that invokes your Supabase Edge Function (name: "dynamic-task").
+ * It returns { ok: true, data } or { ok: false, error }.
+ */
+async function scheduleInterviewClient(applicationId, interview) {
+  try {
+    const functionName = "dynamic-task"; // must match your Edge Function name exactly
+    const res = await supabase.functions.invoke(functionName, {
+      body: JSON.stringify({ applicationId, interview }),
+    });
+
+    // SDK may return a Response (fetch) or a plain object with .error or .data
+    if (res instanceof Response) {
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(JSON.stringify(json || { status: res.status }));
+      }
+      return { ok: true, data: json };
+    } else if (res?.error) {
+      throw res.error;
+    } else {
+      return { ok: true, data: res };
+    }
+  } catch (err) {
+    console.error("scheduleInterviewClient error:", err);
+    return { ok: false, error: err };
+  }
+}
+
 function ApplicantDetails() {
   const { id } = useParams(); // application.id
   const navigate = useNavigate();
@@ -14,6 +44,7 @@ function ApplicantDetails() {
   const [showRejectionForm, setShowRejectionForm] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [scheduling, setScheduling] = useState(false);
 
   const [interviewDetails, setInterviewDetails] = useState({
     date: "",
@@ -121,6 +152,10 @@ function ApplicantDetails() {
             created_at,
             status,
             payload,
+            interview_date,
+            interview_time,
+            interview_location,
+            interviewer,
             job_posts:job_posts ( id, title, depot )
           `
           )
@@ -183,6 +218,15 @@ function ApplicantDetails() {
 
         if (!cancelled) {
           setApplicant(appObj);
+          // Load existing interview details if available
+          if (data.interview_date || data.interview_time || data.interview_location) {
+            setInterviewDetails({
+              date: data.interview_date || "",
+              time: data.interview_time || "",
+              location: data.interview_location || "",
+              interviewer: data.interviewer || "",
+            });
+          }
         }
       } catch (err) {
         console.error("Unexpected load application error:", err);
@@ -827,15 +871,6 @@ function ApplicantDetails() {
                     </button>
                     <button
                       onClick={() => {
-                        setIsRejected(false);
-                        setShowAction(false);
-                      }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                    >
-                      Approve
-                    </button>
-                    <button
-                      onClick={() => {
                         setShowRejectionForm(true);
                         setShowAction(false);
                       }}
@@ -852,57 +887,103 @@ function ApplicantDetails() {
 
         {/* Interview form */}
         {showInterviewForm && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black/40">
-            <div className="bg-white p-6 rounded-xl shadow-lg w-96">
-              <h3 className="text-lg font-bold mb-4 text-gray-800">Add Interview Details</h3>
+          <div className="fixed inset-0 flex items-center justify-center bg-black/40" onClick={() => setShowInterviewForm(false)}>
+            <div className="bg-white p-6 rounded-xl shadow-lg w-96" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-lg font-semibold mb-3">Schedule Interview — {applicant.name}</h3>
               <form
                 className="flex flex-col gap-3"
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  setShowInterviewForm(false);
-                  setShowSummary(true);
+                  if (!interviewDetails.date || !interviewDetails.time || !interviewDetails.location) {
+                    alert("Please fill date, time and location.");
+                    return;
+                  }
+
+                  setScheduling(true);
+                  try {
+                    const r = await scheduleInterviewClient(id, interviewDetails);
+                    if (!r.ok) {
+                      console.error("Edge function error:", r.error);
+                      alert("Failed to schedule interview. Check console and function logs.");
+                      return;
+                    }
+                    setShowInterviewForm(false);
+                    alert("Interview scheduled and (if email exists) the applicant was notified.");
+                    // Reload the page data to show updated interview info
+                    window.location.reload();
+                  } catch (err) {
+                    console.error("scheduleInterview unexpected error:", err);
+                    alert("Unexpected error scheduling interview. See console.");
+                  } finally {
+                    setScheduling(false);
+                  }
                 }}
               >
-                <input
-                  type="date"
-                  className="border p-2 rounded"
-                  value={interviewDetails.date}
-                  onChange={(e) =>
-                    setInterviewDetails({ ...interviewDetails, date: e.target.value })
-                  }
-                />
-                <input
-                  type="time"
-                  className="border p-2 rounded"
-                  value={interviewDetails.time}
-                  onChange={(e) =>
-                    setInterviewDetails({ ...interviewDetails, time: e.target.value })
-                  }
-                />
-                <input
-                  type="text"
-                  placeholder="Location"
-                  className="border p-2 rounded"
-                  value={interviewDetails.location}
-                  onChange={(e) =>
-                    setInterviewDetails({ ...interviewDetails, location: e.target.value })
-                  }
-                />
-                <input
-                  type="text"
-                  placeholder="Interviewer"
-                  className="border p-2 rounded"
-                  value={interviewDetails.interviewer}
-                  onChange={(e) =>
-                    setInterviewDetails({ ...interviewDetails, interviewer: e.target.value })
-                  }
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Confirm
-                </button>
+                <div>
+                  <label className="text-sm">Date</label>
+                  <input
+                    type="date"
+                    className="w-full border p-2 rounded"
+                    value={interviewDetails.date}
+                    onChange={(e) =>
+                      setInterviewDetails({ ...interviewDetails, date: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-sm">Time</label>
+                  <input
+                    type="time"
+                    className="w-full border p-2 rounded"
+                    value={interviewDetails.time}
+                    onChange={(e) =>
+                      setInterviewDetails({ ...interviewDetails, time: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-sm">Location</label>
+                  <input
+                    type="text"
+                    placeholder="Location"
+                    className="w-full border p-2 rounded"
+                    value={interviewDetails.location}
+                    onChange={(e) =>
+                      setInterviewDetails({ ...interviewDetails, location: e.target.value })
+                    }
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="text-sm">Interviewer</label>
+                  <input
+                    type="text"
+                    placeholder="Interviewer"
+                    className="w-full border p-2 rounded"
+                    value={interviewDetails.interviewer}
+                    onChange={(e) =>
+                      setInterviewDetails({ ...interviewDetails, interviewer: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowInterviewForm(false)}
+                    className="px-4 py-2 bg-gray-200 rounded"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={scheduling}
+                    className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {scheduling ? "Scheduling..." : "Schedule & Email"}
+                  </button>
+                </div>
               </form>
             </div>
           </div>
