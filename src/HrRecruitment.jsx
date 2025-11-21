@@ -5,13 +5,11 @@ import { supabase } from "./supabaseClient";
 
 /**
  * markAsEmployeeRpc
- * Calls a Postgres RPC (hire_applicant) which should create an employee record
+ * Calls a Postgres RPC (move_applicant_to_employee) which should create an employee record
  * from the application id. It must also either DELETE the application row or
  * set applications.status = 'hired' (recommended) so other clients won't show it.
- * 
+ *
  */
-
-
 async function markAsEmployeeRpc(applicationId) {
   try {
     const { data, error } = await supabase.rpc("move_applicant_to_employee", {
@@ -28,7 +26,35 @@ async function markAsEmployeeRpc(applicationId) {
   }
 }
 
+/**
+ * scheduleInterviewClient
+ * Helper that invokes your Supabase Edge Function (name: "schedule-interview").
+ * It returns { ok: true, data } or { ok: false, error }.
+ */
+async function scheduleInterviewClient(applicationId, interview) {
+  try {
+    const functionName = "dynamic-task"; // must match your Edge Function name exactly
+    const res = await supabase.functions.invoke(functionName, {
+      body: JSON.stringify({ applicationId, interview }),
+    });
 
+    // SDK may return a Response (fetch) or a plain object with .error or .data
+    if (res instanceof Response) {
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(JSON.stringify(json || { status: res.status }));
+      }
+      return { ok: true, data: json };
+    } else if (res?.error) {
+      throw res.error;
+    } else {
+      return { ok: true, data: res };
+    }
+  } catch (err) {
+    console.error("scheduleInterviewClient error:", err);
+    return { ok: false, error: err };
+  }
+}
 
 function HrRecruitment() {
   const navigate = useNavigate();
@@ -40,12 +66,6 @@ function HrRecruitment() {
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionType, setActionType] = useState(null);
   const [showRejectedModal, setShowRejectedModal] = useState(false);
-  const [interviewDetails, setInterviewDetails] = useState({
-    date: "",
-    time: "",
-    location: "",
-    interviewer: "",
-  });
   const [rejectionRemarks, setRejectionRemarks] = useState("");
   const [rejectedApplicants, setRejectedApplicants] = useState([
     {
@@ -74,10 +94,37 @@ function HrRecruitment() {
     },
   ]);
 
+  // ---- Interview modal state + scheduling
+  const [showInterviewModal, setShowInterviewModal] = useState(false);
+  const [selectedApplicationForInterview, setSelectedApplicationForInterview] = useState(null);
+  const [interviewForm, setInterviewForm] = useState({
+    date: "",
+    time: "",
+    location: "",
+    interviewer: "",
+  });
+  const [scheduling, setScheduling] = useState(false);
+
   // ---- Data from Supabase
   const [applicants, setApplicants] = useState([]);
   const [loading, setLoading] = useState(true);
   const itemsPerPage = 10;
+
+  // expose a global opener so other pages/components can open the action modal for an applicant
+  useEffect(() => {
+    window.openHrActionModal = (applicant) => {
+      setSelectedApplicationForInterview(applicant);
+      setShowActionModal(true);
+    };
+    return () => {
+      try {
+        delete window.openHrActionModal;
+      } catch (err) {
+        // log any cleanup issues
+        console.warn("cleanup openHrActionModal delete error", err);
+      }
+    };
+  }, []);
 
   // Helper: detect agency-sourced row
   const isAgency = (row) => {
@@ -99,90 +146,98 @@ function HrRecruitment() {
 
   // Normalize and load applications from Supabase
   const loadApplications = async () => {
-  setLoading(true);
-  try {
-    const { data, error } = await supabase
-      .from("applications")
-      .select(`
-        id,
-        user_id,
-        job_id,
-        status,
-        created_at,
-        payload,
-        job_posts:job_posts ( id, title, depot )
-      `)
-      .neq("status", "hired")
-      .order("created_at", { ascending: false });
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from("applications")
+        .select(`
+          id,
+          user_id,
+          job_id,
+          status,
+          created_at,
+          payload,
+          interview_date,
+          interview_time,
+          interview_location,
+          interviewer,
+          job_posts:job_posts ( id, title, depot )
+        `)
+        .neq("status", "hired")
+        .order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("fetch applications error:", error);
+      if (error) {
+        console.error("fetch applications error:", error);
+        setApplicants([]);
+        setLoading(false);
+        return;
+      }
+
+      const mapped = (data || []).map((row) => {
+        // normalize payload (jsonb or string)
+        let payloadObj = row.payload;
+        if (typeof payloadObj === "string") {
+          try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+        }
+
+        // applicant might live in payload.form, payload.applicant, or payload root
+        const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
+        // name fallbacks
+        const first = source.firstName || source.fname || source.first_name || "";
+        const middle = source.middleName || source.mname || source.middle_name ? ` ${source.middleName || source.mname || source.middle_name}` : "";
+        const last = source.lastName || source.lname || source.last_name ? ` ${source.lastName || source.lname || source.last_name}` : "";
+        const fullName = `${first}${middle}${last}`.trim() || source.fullName || source.name || "Unnamed Applicant";
+
+        const position = row.job_posts?.title ?? source.position ?? "—";
+        const depot = row.job_posts?.depot ?? source.depot ?? "—";
+
+        const rawStatus = row.status || payloadObj.status || source.status || null;
+        const statusNormalized = rawStatus ? String(rawStatus).toLowerCase() : "submitted";
+
+        return {
+          id: row.id,
+          user_id: row.user_id,
+          job_id: row.job_id,
+          status: statusNormalized,
+          name: fullName,
+          position,
+          depot,
+          dateApplied: new Date(row.created_at).toLocaleDateString("en-US", {
+            month: "short", day: "2-digit", year: "numeric",
+          }),
+          email: source.email || source.contact || "",
+          phone: source.contact || source.phone || "",
+          raw: row,
+          // surface interview fields if present (helpful in table later)
+          interview_date: row.interview_date || row.payload?.interview?.date || null,
+          interview_time: row.interview_time || row.payload?.interview?.time || null,
+          interview_location: row.interview_location || row.payload?.interview?.location || null,
+          interviewer: row.interviewer || row.payload?.interview?.interviewer || null,
+        };
+      });
+
+      // dedupe by user_id + job_id; keep newest (by created_at)
+      const uniqueByUserJob = {};
+      mapped.forEach((r) => {
+        const key = `${r.user_id || "nouser"}:${r.job_id || "nojob"}`;
+        if (!uniqueByUserJob[key]) {
+          uniqueByUserJob[key] = r;
+        } else {
+          const existingDate = new Date(uniqueByUserJob[key].raw.created_at).getTime();
+          const thisDate = new Date(r.raw.created_at).getTime();
+          if (thisDate > existingDate) uniqueByUserJob[key] = r;
+        }
+      });
+
+      const deduped = Object.values(uniqueByUserJob);
+      setApplicants(deduped);
+    } catch (err) {
+      console.error("loadApplications unexpected error:", err);
       setApplicants([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const mapped = (data || []).map((row) => {
-      // normalize payload (jsonb or string)
-      let payloadObj = row.payload;
-      if (typeof payloadObj === "string") {
-        try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
-      }
-
-      // applicant might live in payload.form, payload.applicant, or payload root
-      const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
-      // name fallbacks
-      const first = source.firstName || source.fname || source.first_name || "";
-      const middle = source.middleName || source.mname || source.middle_name ? ` ${source.middleName || source.mname || source.middle_name}` : "";
-      const last = source.lastName || source.lname || source.last_name ? ` ${source.lastName || source.lname || source.last_name}` : "";
-      const fullName = `${first}${middle}${last}`.trim() || source.fullName || source.name || "Unnamed Applicant";
-
-      const position = row.job_posts?.title ?? source.position ?? "—";
-      const depot = row.job_posts?.depot ?? source.depot ?? "—";
-
-      const rawStatus = row.status || payloadObj.status || source.status || null;
-      const statusNormalized = rawStatus ? String(rawStatus).toLowerCase() : "submitted";
-
-      return {
-        id: row.id,
-        user_id: row.user_id,
-        job_id: row.job_id,
-        status: statusNormalized,
-        name: fullName,
-        position,
-        depot,
-        dateApplied: new Date(row.created_at).toLocaleDateString("en-US", {
-          month: "short", day: "2-digit", year: "numeric",
-        }),
-        email: source.email || source.contact || "",
-        phone: source.contact || source.phone || "",
-        raw: row,
-      };
-    });
-
-    // dedupe by user_id + job_id; keep newest (by created_at)
-    const uniqueByUserJob = {};
-    mapped.forEach((r) => {
-      const key = `${r.user_id || "nouser"}:${r.job_id || "nojob"}`;
-      if (!uniqueByUserJob[key]) {
-        uniqueByUserJob[key] = r;
-      } else {
-        const existingDate = new Date(uniqueByUserJob[key].raw.created_at).getTime();
-        const thisDate = new Date(r.raw.created_at).getTime();
-        if (thisDate > existingDate) uniqueByUserJob[key] = r;
-      }
-    });
-
-    const deduped = Object.values(uniqueByUserJob);
-    setApplicants(deduped);
-  } catch (err) {
-    console.error("loadApplications unexpected error:", err);
-    setApplicants([]);
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   // ---- useEffect: initial load + realtime subscription for INSERT/UPDATE/DELETE
   useEffect(() => {
@@ -298,6 +353,68 @@ function HrRecruitment() {
     alert("✅ Applicant moved to Employees! If you have an employees view it should appear there.");
   };
 
+  // ---- OPEN interview modal
+  const openInterviewModal = (application) => {
+    setSelectedApplicationForInterview(application);
+    setInterviewForm({
+      date: application?.interview_date || "",
+      time: application?.interview_time || "",
+      location: application?.interview_location || "",
+      interviewer: application?.interviewer || "",
+    });
+    setShowInterviewModal(true);
+  };
+
+  // ---- SCHEDULE interview (calls scheduleInterviewClient)
+  const scheduleInterview = async () => {
+    if (!selectedApplicationForInterview) return;
+    if (!interviewForm.date || !interviewForm.time || !interviewForm.location) {
+      alert("Please fill date, time and location.");
+      return;
+    }
+
+    setScheduling(true);
+    try {
+      const r = await scheduleInterviewClient(selectedApplicationForInterview.id, interviewForm);
+      if (!r.ok) {
+        console.error("Edge function error:", r.error);
+        alert("Failed to schedule interview. Check console and function logs.");
+        return;
+      }
+      // success -> reload applications so updated interview fields show
+      await loadApplications();
+      setShowInterviewModal(false);
+      alert("Interview scheduled and (if email exists) the applicant was notified.");
+    } catch (err) {
+      console.error("scheduleInterview unexpected error:", err);
+      alert("Unexpected error scheduling interview. See console.");
+    } finally {
+      setScheduling(false);
+    }
+  };
+
+  // ---- REJECT action: update DB row status -> 'rejected' and optionally save remarks
+  const rejectApplication = async (applicationId, name) => {
+    if (!applicationId) return;
+    const reason = prompt(`Reject ${name}? Optional: add reason (cancel leaves blank).`);
+    if (reason === null) return; // cancel
+    try {
+      const updates = { status: "rejected" };
+      if (reason && reason.trim()) updates.rejection_remarks = reason.trim();
+      const { error } = await supabase.from("applications").update(updates).eq("id", applicationId);
+      if (error) {
+        console.error("reject update error:", error);
+        alert("Failed to reject application. See console.");
+        return;
+      }
+      await loadApplications();
+      alert("Application rejected.");
+    } catch (err) {
+      console.error("reject error:", err);
+      alert("Unexpected error rejecting application. See console.");
+    }
+  };
+
   return (
     <>
       {/* Main Content */}
@@ -320,8 +437,7 @@ function HrRecruitment() {
                     activeSubTab === tab.label
                       ? "border-b-2 border-blue-600 text-blue-600"
                       : "text-gray-600 hover:text-blue-600"
-                  }`}
-                >
+                  }`}>
                   {tab.label} <span className="text-sm text-gray-500">({tab.count})</span>
                 </button>
               ))}
@@ -356,20 +472,23 @@ function HrRecruitment() {
                           <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
                           <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
                           <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
+                          <th className="px-4 py-2 text-left font-semibold border-b">Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {paginatedApplicants.map((a) => (
                           <tr
                             key={a.id}
-                            className="hover:bg-gray-50 transition-colors cursor-pointer"
-                            onClick={() =>
-                              navigate(`/hr/recruitment/applicant/${a.id}`, {
-                                state: { applicant: a },
-                              })
-                            }
+                            className="hover:bg-gray-50 transition-colors"
                           >
-                            <td className="px-4 py-2 border-b whitespace-nowrap">
+                            <td
+                              className="px-4 py-2 border-b whitespace-nowrap cursor-pointer"
+                              onClick={() =>
+                                navigate(`/hr/recruitment/applicant/${a.id}`, {
+                                  state: { applicant: a },
+                                })
+                              }
+                            >
                               <div className="flex items-center justify-between">
                                 <span className="cursor-pointer hover:text-blue-600 transition-colors">{a.name}</span>
                                 {isAgency(a) && (
@@ -382,6 +501,28 @@ function HrRecruitment() {
                             <td className="px-4 py-2 border-b">{a.position}</td>
                             <td className="px-4 py-2 border-b">{a.depot}</td>
                             <td className="px-4 py-2 border-b">{a.dateApplied}</td>
+
+                            <td className="px-4 py-2 border-b text-right space-x-2">
+                              <button
+                                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openInterviewModal(a);
+                                }}
+                              >
+                                Set Interview
+                              </button>
+
+                              <button
+                                className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  rejectApplication(a.id, a.name);
+                                }}
+                              >
+                                Reject
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -674,66 +815,20 @@ function HrRecruitment() {
                     Reject
                   </button>
                   <button
-                    onClick={() => setActionType("interview")}
+                    onClick={() => {
+                      // close action modal and open the dedicated interview modal,
+                      // reusing the exact interviewForm + scheduleInterview flow
+                      setActionType(null);
+                      setShowActionModal(false);
+                      if (!selectedApplicationForInterview) {
+                        alert("No applicant selected to schedule an interview for.");
+                        return;
+                      }
+                      openInterviewModal(selectedApplicationForInterview);
+                    }}
                     className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                   >
                     Set Interview
-                  </button>
-                </div>
-              </>
-            )}
-
-            {actionType === "interview" && (
-              <>
-                <h3 className="text-lg font-bold mb-4">Add Interview Details</h3>
-                <div className="space-y-3">
-                  <input
-                    type="date"
-                    className="w-full border rounded px-3 py-2"
-                    value={interviewDetails.date}
-                    onChange={(e) => setInterviewDetails({ ...interviewDetails, date: e.target.value })}
-                  />
-                  <input
-                    type="time"
-                    className="w-full border rounded px-3 py-2"
-                    value={interviewDetails.time}
-                    onChange={(e) => setInterviewDetails({ ...interviewDetails, time: e.target.value })}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Location"
-                    className="w-full border rounded px-3 py-2"
-                    value={interviewDetails.location}
-                    onChange={(e) => setInterviewDetails({ ...interviewDetails, location: e.target.value })}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Interviewer Name"
-                    className="w-full border rounded px-3 py-2"
-                    value={interviewDetails.interviewer}
-                    onChange={(e) => setInterviewDetails({ ...interviewDetails, interviewer: e.target.value })}
-                  />
-                </div>
-                <div className="flex justify-end gap-2 mt-4">
-                  <button
-                    onClick={() => {
-                      setActionType(null);
-                      setShowActionModal(false);
-                      setInterviewDetails({ date: "", time: "", location: "", interviewer: "" });
-                    }}
-                    className="px-4 py-2 bg-gray-200 rounded"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowActionModal(false);
-                      setActionType(null);
-                      alert("Interview scheduled (local UI only).");
-                    }}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    Confirm
                   </button>
                 </div>
               </>
@@ -764,11 +859,16 @@ function HrRecruitment() {
                     Cancel
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
+                      // If you want this to update DB instead of local only, call rejectApplication here.
+                      // For now this follows existing behavior (local push).
                       const rejectedApplicant = {
                         id: Date.now(),
-                        name: "Unknown Applicant",
+                        name: selectedApplicationForInterview?.name || "Unknown Applicant",
                         remarks: rejectionRemarks,
+                        position: selectedApplicationForInterview?.position,
+                        depot: selectedApplicationForInterview?.depot,
+                        dateApplied: selectedApplicationForInterview?.dateApplied,
                       };
                       setRejectedApplicants((prev) => [...prev, rejectedApplicant]);
                       setShowActionModal(false);
@@ -812,6 +912,61 @@ function HrRecruitment() {
             <div className="flex justify-end mt-4">
               <button onClick={() => setShowRejectedModal(false)} className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Interview Modal */}
+      {showInterviewModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => setShowInterviewModal(false)}>
+          <div className="bg-white rounded-lg p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-3">Schedule Interview — {selectedApplicationForInterview?.name}</h3>
+
+            <div className="space-y-2">
+              <div>
+                <label className="text-sm">Date</label>
+                <input
+                  type="date"
+                  value={interviewForm.date}
+                  onChange={(e) => setInterviewForm((f) => ({ ...f, date: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded"
+                />
+              </div>
+              <div>
+                <label className="text-sm">Time</label>
+                <input
+                  type="time"
+                  value={interviewForm.time}
+                  onChange={(e) => setInterviewForm((f) => ({ ...f, time: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded"
+                />
+              </div>
+              <div>
+                <label className="text-sm">Location</label>
+                <input
+                  type="text"
+                  value={interviewForm.location}
+                  onChange={(e) => setInterviewForm((f) => ({ ...f, location: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded"
+                />
+              </div>
+              <div>
+                <label className="text-sm">Interviewer</label>
+                <input
+                  type="text"
+                  value={interviewForm.interviewer}
+                  onChange={(e) => setInterviewForm((f) => ({ ...f, interviewer: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={() => setShowInterviewModal(false)} className="px-4 py-2 bg-gray-200 rounded">Cancel</button>
+              <button onClick={scheduleInterview} disabled={scheduling} className="px-4 py-2 bg-red-600 text-white rounded">
+                {scheduling ? "Scheduling..." : "Schedule & Email"}
               </button>
             </div>
           </div>
