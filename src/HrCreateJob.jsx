@@ -12,6 +12,7 @@ function HrCreateJob() {
     responsibilities: [""],
     others: [""],
     urgent: true,
+    jobType: "delivery_crew", // "delivery_crew" or "office_employee"
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -35,8 +36,8 @@ function HrCreateJob() {
     setForm(prev => ({ ...prev, others: prev.others.filter((_, idx) => idx !== i) }));
 
   // safe create + debug function
-  // call: await createJobPost({ title, depot, description, responsibilities, urgent })
-  const createJobPost = async ({ title, depot, description = null, responsibilities = [], urgent = false, is_active = true }) => {
+  // call: await createJobPost({ title, depot, description, responsibilities, urgent, job_type })
+  const createJobPost = async ({ title, depot, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew" }) => {
     // client-side validation (title & depot are NOT NULL in your DB)
     if (!title || String(title).trim() === "") {
       throw new Error("Job title is required.");
@@ -55,6 +56,7 @@ function HrCreateJob() {
         : [],
       urgent: Boolean(urgent),
       is_active: Boolean(is_active),
+      job_type: String(job_type).trim(), // Add job_type to payload
     };
 
     // VERY IMPORTANT: log the payload so you can see what is being sent
@@ -95,6 +97,7 @@ function HrCreateJob() {
         responsibilities: combinedResponsibilities,
         urgent: form.urgent,
         is_active: true,
+        job_type: form.jobType, // Add job_type to the payload
       });
 
       setSuccess("Job post created successfully.");
@@ -106,6 +109,7 @@ function HrCreateJob() {
         responsibilities: [""],
         others: [""],
         urgent: true,
+        jobType: "delivery_crew",
       });
       setShowConfirm(false);
     } catch (err) {
@@ -137,13 +141,46 @@ function HrCreateJob() {
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium">Mark as Urgent</label>
-            <input
-              type="checkbox"
-              checked={form.urgent}
-              onChange={(e) => setField("urgent", e.target.checked)}
-            />
+          <div className="space-y-4">
+            {/* Job Type Toggle */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Job Type</label>
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setField("jobType", "delivery_crew")}
+                  className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
+                    form.jobType === "delivery_crew"
+                      ? "border-red-600 bg-red-50 text-red-700 font-semibold"
+                      : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
+                  }`}
+                >
+                  <div className="text-lg mb-1">🚚</div>
+                  <div className="text-sm font-medium">Drivers/Delivery Crew</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setField("jobType", "office_employee")}
+                  className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
+                    form.jobType === "office_employee"
+                      ? "border-red-600 bg-red-50 text-red-700 font-semibold"
+                      : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
+                  }`}
+                >
+                  <div className="text-lg mb-1">💼</div>
+                  <div className="text-sm font-medium">Office Employee</div>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium">Mark as Urgent</label>
+              <input
+                type="checkbox"
+                checked={form.urgent}
+                onChange={(e) => setField("urgent", e.target.checked)}
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

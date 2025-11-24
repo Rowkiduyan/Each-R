@@ -74,9 +74,10 @@ function EmployeeLogin() {
       navigate("/hr/home");
     } else if (normalizedRole === "employee") {
       navigate("/employee/home");
-    } else if (normalizedRole === "agency") {
+    }else if (normalizedRole === "agency") {
       navigate("/agency/home");
-    } else {
+    }
+    else {
       setError("Unknown role.");
     }
   };

@@ -40,11 +40,12 @@ function ApplicantApplications() {
   const [retractError, setRetractError] = useState('');
 
   const interview = {
-    date: "June 30, 2025",
-    time: "8:00 AM",
-    location: "HR Office, Roadwise Pasig Depot",
-    interviewer: "Raezelle Ferrer",
-  };
+  date: applicationData?.interview_date || applicationData?.payload?.interview?.date || applicationData?.payload?.form?.interview_date || null,
+  time: applicationData?.interview_time || applicationData?.payload?.interview?.time || applicationData?.payload?.form?.interview_time || null,
+  location: applicationData?.interview_location || applicationData?.payload?.interview?.location || applicationData?.payload?.form?.interview_location || null,
+  interviewer: applicationData?.interviewer || applicationData?.payload?.interview?.interviewer || applicationData?.payload?.form?.interviewer || "",
+};
+
 
   const resumeName = applicationData?.payload?.form?.resumeName;
   const resumePath = applicationData?.payload?.form?.resumePath || resumeName;
