@@ -3,11 +3,13 @@ import Calendar from "react-calendar";
 import "react-calendar/dist/Calendar.css";
 import { Link, NavLink, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { PieChart, Pie, Cell, Tooltip } from "recharts";
 
 function HrHome() {
   const [date, setDate] = useState(new Date());
   const [hrUser, setHrUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showAllDepots, setShowAllDepots] = useState(false);
   // const [jwtRoles, setJwtRoles] = useState(null); // <- shows what Supabase sees in your JWT
   const navigate = useNavigate();
   const location = useLocation();
@@ -145,6 +147,27 @@ useEffect(() => {
 
   
 
+  // Depot list for compliance monitoring
+  const depots = [
+    "Pasig","Cagayan","Butuan","Davao","Cebu","Laguna","Iloilo",
+    "Bacolod","Zamboanga","Manila","Quezon City","Taguig",
+    "Baguio","General Santos","Palawan","Olongapo","Tacloban",
+    "Roxas","Legazpi","Cauayan","Cavite","Batangas","Ormoc","Koronadal",
+    "Calbayog","Catbalogan","Tuguegarao","Baler","Iligan","Koronadal City"
+  ];
+  const COLORS = ["#4ade80", "#f87171"];
+
+  // fake depot compliance
+  const depotCompliance = depots.map((d, i) => ({
+    name: d,
+    compliance: 70 + (i % 10),
+    nonCompliance: 30 - (i % 10),
+  }));
+
+  const displayedDepots = showAllDepots
+    ? depotCompliance
+    : depotCompliance.slice(0, 5);
+
   return (
     <>
       <div className="max-w-7xl mx-auto px-4 mb-4">
@@ -154,6 +177,54 @@ useEffect(() => {
         >
           + Create Job Post
         </Link>
+      </div>
+
+      {/* Depot Compliance Monitoring */}
+      <div className="max-w-7xl mx-auto px-4 mb-8">
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <h2 className="text-xl font-bold mb-4 text-gray-700">
+            Depot Compliance Monitoring
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+            {displayedDepots.map((depot) => {
+              const data = [
+                { name: "Compliance", value: depot.compliance },
+                { name: "Non-Compliance", value: depot.nonCompliance },
+              ];
+              return (
+                <div
+                  key={depot.name}
+                  className="relative bg-white p-4 rounded-2xl shadow-md flex flex-col items-center hover:shadow-xl transition-transform cursor-pointer"
+                >
+                  <PieChart width={180} height={180}>
+                    <Pie data={data} cx="50%" cy="50%" outerRadius={70} dataKey="value">
+                      {data.map((entry, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-sm font-semibold">{depot.name}</span>
+                    <span className="font-bold text-black">
+                      {depot.compliance}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {depotCompliance.length > 5 && (
+            <div className="flex justify-end mt-2">
+              <button
+                onClick={() => setShowAllDepots((v) => !v)}
+                className="text-gray-700 text-xl font-bold"
+              >
+                {showAllDepots ? "▲" : "▼"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row gap-6">
