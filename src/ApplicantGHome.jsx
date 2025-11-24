@@ -14,8 +14,6 @@ function ApplicantGHome() {
   const [locationInput, setLocationInput] = useState('');
   const [selectedJob, setSelectedJob] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
-  const [depotFilter, setDepotFilter] = useState('all');
-  const [dateOrder, setDateOrder] = useState('desc');
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
 
   useEffect(() => {
@@ -57,33 +55,6 @@ function ApplicantGHome() {
     }, 2000);
   };
 
-  const depotOptions = Array.from(
-    new Set(jobs.map((job) => job.depot).filter(Boolean))
-  );
-
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-
-  const getJobTimestamp = (job) => {
-    if (!job?.created_at) return 0;
-    const date = new Date(job.created_at);
-    return date instanceof Date && !isNaN(date) ? date.getTime() : 0;
-  };
-
-  const filteredJobs = [...jobs]
-    .filter((job) => {
-      if (!normalizedSearch) return true;
-      const titleMatch = job.title?.toLowerCase().includes(normalizedSearch);
-      const depotMatch = job.depot?.toLowerCase().includes(normalizedSearch);
-      return titleMatch || depotMatch;
-    })
-    .filter((job) =>
-      depotFilter === 'all' ? true : job.depot === depotFilter
-    )
-    .sort((a, b) => {
-      const timeA = getJobTimestamp(a);
-      const timeB = getJobTimestamp(b);
-      return dateOrder === 'desc' ? timeB - timeA : timeA - timeB;
-    });
   const filteredJobs = jobs.filter((job) => {
     const keywordMatch = searchTerm
       ? job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -217,51 +188,6 @@ function ApplicantGHome() {
                   </button>
                 </div>
               </div>
-            </div>
-
-            <div className="flex-1 text-center">
-              <h1 className="text-3xl font-bold text-gray-800">Job Vacancy Postings</h1>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3 justify-end">
-              <input
-                type="text"
-                placeholder="Search by title or depot"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full md:w-64 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
-                aria-label="Search job postings"
-              />
-              <select
-                value={depotFilter}
-                onChange={(e) => setDepotFilter(e.target.value)}
-                className="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
-                aria-label="Filter by depot"
-              >
-                <option value="all">All Depots</option>
-                {depotOptions.map((depot) => (
-                  <option key={depot} value={depot}>
-                    {depot}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={dateOrder}
-                onChange={(e) => setDateOrder(e.target.value)}
-                className="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
-                aria-label="Sort by date"
-              >
-                <option value="desc">Newest to Oldest</option>
-                <option value="asc">Oldest to Newest</option>
-              </select>
-
-              <Link
-                to="/applicant/login"
-                className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-              >
-                Login
-              </Link>
-            </div>
             </form>
           </div>
         </div>
@@ -281,9 +207,6 @@ function ApplicantGHome() {
           <div className="text-gray-600">No job postings match your search.</div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredJobs.length === 0 ? (
-              <div className="col-span-full text-gray-600">
-                No job postings match your filters.
             {filteredJobs.map((job) => {
               const createdAt = job?.created_at ? new Date(job.created_at) : null;
               const hasValidDate = createdAt instanceof Date && !isNaN(createdAt);
@@ -315,41 +238,7 @@ function ApplicantGHome() {
                   </button>
                 </div>
               </div>
-            ) : (
-              filteredJobs.map((job) => {
-                const createdAt = job?.created_at ? new Date(job.created_at) : null;
-                const hasValidDate = createdAt instanceof Date && !isNaN(createdAt);
-                const postedLabel = hasValidDate
-                  ? createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                  : 'Not available';
-
-                return (
-                  <div key={job.id} className="bg-white rounded-lg shadow-md p-6 flex flex-col relative overflow-hidden">
-                    {job.urgent && (
-                      <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1">
-                        URGENT HIRING!
-                      </div>
-                    )}
-                    <div className="mt-4 flex flex-col flex-grow">
-                      <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
-                      <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
-                        <span>{job.depot}</span>
-                        <span>
-                          Posted {postedLabel}
-                        </span>
-                      </div>
-                      <p className="text-gray-700 mb-4 line-clamp-3">{job.description}</p>
-                      <button
-                        className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto"
-                        onClick={() => handleApplyClick(job)}
-                      >
-                        Apply
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+            )})}
           </div>
         )}
       </div>
