@@ -1990,7 +1990,9 @@ const formatDateForInput = (dateString) => {
                     <p className="text-xs text-gray-600 px-4 pb-4">
                       By submitting an application for this position, you consent to
                       Roadwise collecting and storing your personal information as part of
-                      the recruitment process.
+                      the recruitment process. <Link to="/terms-and-privacy" className="text-red-600 hover:underline">
+            Terms and Privacy
+          </Link>
                     </p>
                   </form>
                 </div>
