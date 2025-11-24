@@ -33,59 +33,105 @@ function VerifyEmail() {
         return;
       }
 
-      // 2️⃣ Create a Supabase Auth user
-     const { data:authData, error: authError } = await supabase.auth.signUp({
+      // 2️⃣ Check if user already exists in Supabase Auth
+      let authUserId;
+
+      // First, try to sign up
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: pendingUser.email,
         password: pendingUser.password,
       });
 
-      if (authError) {
-        console.error("Auth signup error:", authError);
-        setErrorMessage("Error creating user in Supabase Auth: " + authError.message);
-        setIsVerifying(false);
-        return;
+      if (signUpError) {
+        // If user already exists, try to sign in instead
+        if (signUpError.message.includes("already registered") || signUpError.message.includes("User already registered")) {
+          console.log("User already exists in Auth, attempting to sign in...");
+          
+          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+            email: pendingUser.email,
+            password: pendingUser.password,
+          });
+
+          if (signInError) {
+            console.error("Auth signin error:", signInError);
+            setErrorMessage("Error signing in: " + signInError.message);
+            setIsVerifying(false);
+            return;
+          }
+
+          authUserId = signInData.user.id;
+        } else {
+          console.error("Auth signup error:", signUpError);
+          setErrorMessage("Error creating user in Supabase Auth: " + signUpError.message);
+          setIsVerifying(false);
+          return;
+        }
+      } else {
+        // Sign up was successful
+        authUserId = signUpData.user.id;
       }
 
-      const authUserId = authData.user.id;
+      // 3️⃣ Check if profile already exists, if not create it
+      const { data: existingProfile } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("id", authUserId)
+        .single();
 
-       const { error: profileError } = await supabase.from("profiles").insert([
-      {
-        id: authData.user.id, // use the same UUID as Auth user
-        first_name: pendingUser.fname,
-        last_name: pendingUser.lname,
-        email: pendingUser.email,
-        role: "Applicant",
-      },
-    ]);
+      if (!existingProfile) {
+        const { error: profileError } = await supabase.from("profiles").insert([
+          {
+            id: authUserId, // use the same UUID as Auth user
+            first_name: pendingUser.fname,
+            last_name: pendingUser.lname,
+            email: pendingUser.email,
+            role: "Applicant",
+          },
+        ]);
 
-    if (profileError) {
-      console.error("Error creating profile row:", profileError);
-      setErrorMessage("Error creating profile. Please contact support.");
-      setIsVerifying(false);
-      return;
-    }
-
-      // 3️⃣ Move user from pending_applicants to applicants table
-      const { error: insertError } = await supabase.from("applicants").insert([
-        {
-          id: authUserId,
-          fname: pendingUser.fname,
-          lname: pendingUser.lname,
-          mname: pendingUser.mname,
-          contact_number: pendingUser.contact_number,
-          email: pendingUser.email,
-          role: "Applicant",
-        },
-      ]);
-
-      if (insertError) {
-        console.error(insertError);
-        setErrorMessage("Error moving user to applicants table.");
-        setIsVerifying(false);
-        return;
+        if (profileError) {
+          console.error("Error creating profile row:", profileError);
+          // If it's a duplicate key error, the profile already exists, continue
+          if (profileError.code !== "23505" && !profileError.message?.includes("duplicate key")) {
+            setErrorMessage("Error creating profile. Please contact support.");
+            setIsVerifying(false);
+            return;
+          }
+        }
       }
 
-      // 4️⃣ Remove user from pending_applicants
+      // 4️⃣ Check if applicant already exists, if not create it
+      const { data: existingApplicant } = await supabase
+        .from("applicants")
+        .select("id")
+        .eq("id", authUserId)
+        .single();
+
+      if (!existingApplicant) {
+        const { error: insertError } = await supabase.from("applicants").insert([
+          {
+            id: authUserId,
+            fname: pendingUser.fname,
+            lname: pendingUser.lname,
+            mname: pendingUser.mname,
+            contact_number: pendingUser.contact_number,
+            email: pendingUser.email,
+            role: "Applicant",
+          },
+        ]);
+
+        if (insertError) {
+          console.error(insertError);
+          // If it's a duplicate key error, the applicant already exists, continue
+          if (insertError.code !== "23505" && !insertError.message?.includes("duplicate key")) {
+            setErrorMessage("Error moving user to applicants table.");
+            setIsVerifying(false);
+            return;
+          }
+        }
+      }
+
+      // 5️⃣ Remove user from pending_applicants
       const { error: deleteError } = await supabase
         .from("pending_applicants")
         .delete()
