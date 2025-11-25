@@ -698,8 +698,6 @@ const formatDateForInput = (dateString) => {
         skills: skillsArray,
         skills_text: form.skills,
       };
-      formPayload.marital_status =
-        formPayload.maritalStatus || formPayload.marital_status || '';
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
       }
@@ -1749,16 +1747,16 @@ const formatDateForInput = (dateString) => {
                               Marital Status
                             </label>
                             <select
-                              name="maritalStatus"
-                              value={form.maritalStatus}
+                              name="marital_status"
+                              value={form.marital_status}
                               onChange={handleInput}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                             >
                               <option value="">Select</option>
-                              <option value="single">Single</option>
-                              <option value="married">Married</option>
-                              <option value="widowed">Widowed</option>
-                              <option value="divorced">Divorced</option>
+                              <option value="Single">Single</option>
+                              <option value="Married">Married</option>
+                              <option value="Widowed">Widowed</option>
+                              <option value="Divorced">Divorced</option>
                             </select>
                           </div>
                         </div>
@@ -2260,7 +2258,7 @@ const formatDateForInput = (dateString) => {
                         </div>
                         <div className="grid grid-cols-2 p-2">
                           <div>Marital Status</div>
-                          <div>{form.maritalStatus || '-'}</div>
+                          <div>{form.marital_status || '-'}</div>
                         </div>
                         <div className="grid grid-cols-2 bg-gray-100 p-2">
                           <div>Sex</div>
