@@ -698,6 +698,8 @@ const formatDateForInput = (dateString) => {
         skills: skillsArray,
         skills_text: form.skills,
       };
+      // Remove duplicate maritalStatus field if it exists, keep only marital_status
+      delete formPayload.maritalStatus;
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
       }
