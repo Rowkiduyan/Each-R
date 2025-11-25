@@ -83,7 +83,7 @@
       contact: '',
       email: '',
       birthday: '',
-      marital_status: '',
+      maritalStatus: '',
       sex: '',
       startDate: '',
       heardFrom: '',
@@ -184,7 +184,7 @@ useEffect(() => {
         barangay: profileForm.barangay || '',
         city: profileForm.city || '',
         zip: profileForm.zip || '',
-        marital_status: profileForm.marital_status || '',
+        maritalStatus: profileForm.marital_status ? profileForm.marital_status.toLowerCase() : '',
       }));
     }, [
       profileForm.street,
@@ -533,7 +533,7 @@ const formatDateForInput = (dateString) => {
         contact: profile.contact_number || '',
         email: profile.email || '',
         birthday: profile.birthday || '',
-        marital_status: profile.marital_status || '',
+        maritalStatus: profile.marital_status ? profile.marital_status.toLowerCase() : '',
         sex: profile.sex || '',
         skills: skillsValue,
         edu1Level: profile.educational_attainment || prev.edu1Level,
@@ -698,8 +698,6 @@ const formatDateForInput = (dateString) => {
         skills: skillsArray,
         skills_text: form.skills,
       };
-      formPayload.marital_status =
-        formPayload.maritalStatus || formPayload.marital_status || '';
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
       }
