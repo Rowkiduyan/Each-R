@@ -85,7 +85,9 @@ function EmployeeLogin() {
   return (
     <div className="flex justify-center items-center min-h-screen bg-neutral-100">
       <div className="flex flex-col items-center justify-center bg-neutral-200 relative -mt-[100px] p-10 rounded-lg shadow-md max-w-sm w-full">
-        <img src={Logo} alt="Roadwise Logo" className="w-30 h-20 mb-4" />
+        <div className="text-red-600 font-bold text-3xl italic mb-4">
+          Each-R
+        </div>
         <h2 className="text-black text-xl font-semibold mb-4">
           Employee Log In
         </h2>

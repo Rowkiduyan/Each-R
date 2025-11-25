@@ -9,6 +9,7 @@ function ApplicantApplications() {
   const [loading, setLoading] = useState(true);
   const [applicationData, setApplicationData] = useState(null);
   const [jobData, setJobData] = useState(null);
+  const [profileData, setProfileData] = useState(null);
   // status: done -> green, pending -> yellow, waiting -> orange
   const [stepStatus, setStepStatus] = useState({
     Application: "done",
@@ -53,6 +54,21 @@ function ApplicantApplications() {
     ? supabase.storage.from('resume').getPublicUrl(resumePath)?.data?.publicUrl || null
     : null;
 
+  const parseAddressParts = (record = {}) => {
+    const address = record.address || '';
+    const parts = address
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    return {
+      street: record.street || parts[0] || '',
+      barangay: record.barangay || parts[1] || '',
+      city: record.city || parts[2] || '',
+      zip: record.zip || parts[3] || '',
+    };
+  };
+
   // Fetch application data
   useEffect(() => {
     const fetchApplication = async () => {
@@ -70,7 +86,7 @@ function ApplicantApplications() {
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(1)
-          .single();
+          .maybeSingle();
 
         if (appError) {
           console.error('Error fetching application:', appError);
@@ -87,12 +103,23 @@ function ApplicantApplications() {
               .from('job_posts')
               .select('title, depot')
               .eq('id', application.job_id)
-              .single();
+              .maybeSingle();
 
             if (!jobError && job) {
               setJobData(job);
             }
           }
+        }
+
+        const { data: profile, error: profileError } = await supabase
+          .from('applicants')
+          .select('*')
+          .eq('email', user.email)
+          .maybeSingle();
+
+        if (!profileError && profile) {
+          const addressParts = parseAddressParts(profile);
+          setProfileData({ ...profile, ...addressParts });
         }
 
         setLoading(false);
@@ -284,12 +311,22 @@ function ApplicantApplications() {
                     <div><span className="font-semibold">Sex:</span> {applicationData.payload?.form?.sex || 'N/A'}</div>
                     <div>
                       <span className="font-semibold">Address:</span>{' '}
-                      {[
-                        applicationData.payload?.form?.street,
-                        applicationData.payload?.form?.barangay,
-                        applicationData.payload?.form?.city,
-                        applicationData.payload?.form?.zip
-                      ].filter(Boolean).join(', ') || 'N/A'}
+                      {(() => {
+                        const addressParts = profileData
+                          ? [
+                              profileData.street,
+                              profileData.barangay,
+                              profileData.city,
+                              profileData.zip,
+                            ]
+                          : [
+                              applicationData.payload?.form?.street,
+                              applicationData.payload?.form?.barangay,
+                              applicationData.payload?.form?.city,
+                              applicationData.payload?.form?.zip,
+                            ];
+                        return addressParts.filter(Boolean).join(', ') || 'N/A';
+                      })()}
                     </div>
                     <div>
                       <span className="font-semibold">Birthday:</span>{' '}
@@ -302,7 +339,12 @@ function ApplicantApplications() {
                         Math.floor((new Date() - new Date(applicationData.payload.form.birthday)) / (365.25 * 24 * 60 * 60 * 1000)) : 'N/A'}
                     </div>
                     <div><span className="font-semibold">Email:</span> {applicationData.payload?.form?.email || 'N/A'}</div>
-                    <div><span className="font-semibold">Marital Status:</span> {applicationData.payload?.form?.maritalStatus || 'N/A'}</div>
+                    <div>
+                      <span className="font-semibold">Marital Status:</span>{' '}
+                      {profileData?.marital_Status ||
+                        applicationData.payload?.form?.marital_status ||
+                        'N/A'}
+                    </div>
                   </div>
                 </div>
               </section>

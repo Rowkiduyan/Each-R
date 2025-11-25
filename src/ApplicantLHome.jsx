@@ -47,6 +47,10 @@
     const [startDateError, setStartDateError] = useState('');
     const [profileForm, setProfileForm] = useState({
         address: '',
+        street: '',
+        barangay: '',
+        city: '',
+        zip: '',
         sex: '',
         birthday: '',
         age: '',
@@ -64,8 +68,8 @@
     const [selectedJob, setSelectedJob] = useState(null);
     const [jobsLoading, setJobsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-    const [depotFilter, setDepotFilter] = useState('all');
-    const [dateOrder, setDateOrder] = useState('desc');
+  const [depotFilter, setDepotFilter] = useState('all');
+  const [dateOrder, setDateOrder] = useState('desc');
 
     // --- MAIN FORM STATE (simple + flat so it’s easy to wire) ---
     const [form, setForm] = useState({
@@ -79,7 +83,7 @@
       contact: '',
       email: '',
       birthday: '',
-      maritalStatus: '',
+      marital_status: '',
       sex: '',
       startDate: '',
       heardFrom: '',
@@ -136,18 +140,26 @@
           }
 
           if (data) {
-            setProfileData(data);
+            const addressParts = parseAddressParts(data);
+            const mergedProfile = { ...data, ...addressParts };
+
+            setProfileData(mergedProfile);
             setProfileForm({
-              address: data.address || '',
-              sex: data.sex || '',
-              birthday: data.birthday || '',
-              age: data.age || '',
-              marital_status: data.marital_status || '',
-              educational_attainment: data.educational_attainment || '',
-              institution_name: data.institution_name || '',
-              year_graduated: data.year_graduated || '',
-              skills: data.skills || '',
+              address: mergedProfile.address || '',
+              street: mergedProfile.street || '',
+              barangay: mergedProfile.barangay || '',
+              city: mergedProfile.city || '',
+              zip: mergedProfile.zip || '',
+              sex: mergedProfile.sex || '',
+              birthday: mergedProfile.birthday || '',
+              age: mergedProfile.age || '',
+              marital_status: mergedProfile.marital_status || '',
+              educational_attainment: mergedProfile.educational_attainment || '',
+              institution_name: mergedProfile.institution_name || '',
+              year_graduated: mergedProfile.year_graduated || '',
+              skills: mergedProfile.skills || '',
             });
+            prefillApplicationForm(mergedProfile);
           }
         } catch (err) {
           console.error('Error:', err);
@@ -158,6 +170,29 @@
 
       fetchProfileData();
     }, []);
+
+useEffect(() => {
+  if (profileData) {
+    prefillApplicationForm(profileData);
+  }
+}, [profileData]);
+
+    useEffect(() => {
+      setForm((prev) => ({
+        ...prev,
+        street: profileForm.street || '',
+        barangay: profileForm.barangay || '',
+        city: profileForm.city || '',
+        zip: profileForm.zip || '',
+        marital_status: profileForm.marital_status || '',
+      }));
+    }, [
+      profileForm.street,
+      profileForm.barangay,
+      profileForm.city,
+      profileForm.zip,
+      profileForm.marital_status,
+    ]);
 
     // Calculate age from birthday
     const calculateAge = (birthday) => {
@@ -302,7 +337,10 @@ const handleSave = async () => {
     }
 
     const requiredFields = [
-      'address',
+      'street',
+      'barangay',
+      'city',
+      'zip',
       'sex',
       'birthday',
       'age',
@@ -322,10 +360,24 @@ const handleSave = async () => {
       return;
     }
 
+    const combinedAddress = [
+      profileForm.street,
+      profileForm.barangay,
+      profileForm.city,
+      profileForm.zip,
+    ]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(', ');
+
     const { error } = await supabase
       .from('applicants')
       .update({
-        address: profileForm.address,
+        address: combinedAddress,
+        street: profileForm.street,
+        barangay: profileForm.barangay,
+        city: profileForm.city,
+        zip: profileForm.zip,
         sex: profileForm.sex,
         birthday: profileForm.birthday,
         age: profileForm.age,
@@ -354,7 +406,26 @@ const handleSave = async () => {
 
 
     if (!fetchError && updatedData) {
-      setProfileData(updatedData);
+      const merged = { ...updatedData, ...parseAddressParts(updatedData) };
+      setProfileData(merged);
+      setProfileForm({
+        address: merged.address || '',
+        street: merged.street || '',
+        barangay: merged.barangay || '',
+        city: merged.city || '',
+        zip: merged.zip || '',
+        sex: merged.sex || '',
+        birthday: merged.birthday || '',
+        age: merged.age || '',
+        marital_status: merged.marital_status || '',
+        educational_attainment: merged.educational_attainment || '',
+        institution_name: merged.institution_name || '',
+        year_graduated: merged.year_graduated || '',
+        skills: merged.skills || '',
+        work_experiences: merged.work_experiences || [],
+        character_references: merged.character_references || []
+      });
+      prefillApplicationForm(merged);
     }
 
     setIsEditMode(false);
@@ -375,6 +446,10 @@ const handleCancel = () => {
   if (profileData) {
     setProfileForm({
       address: profileData.address || '',
+      street: profileData.street || '',
+      barangay: profileData.barangay || '',
+      city: profileData.city || '',
+      zip: profileData.zip || '',
       sex: profileData.sex || '',
       birthday: profileData.birthday || '',
       age: profileData.age || '',
@@ -424,6 +499,48 @@ const formatDateForInput = (dateString) => {
         .split(',')
         .map((skill) => skill.trim())
         .filter(Boolean);
+    const parseAddressParts = (record = {}) => {
+      const address = record.address || '';
+      const parts = address
+        .split(',')
+        .map((part) => part.trim())
+        .filter(Boolean);
+
+      return {
+        street: record.street || parts[0] || '',
+        barangay: record.barangay || parts[1] || '',
+        city: record.city || parts[2] || '',
+        zip: record.zip || parts[3] || '',
+      };
+    };
+
+    const prefillApplicationForm = (profile) => {
+      if (!profile) return;
+      const skillsValue = Array.isArray(profile.skills)
+        ? profile.skills.join(', ')
+        : profile.skills || '';
+      const { street, barangay, city, zip } = parseAddressParts(profile);
+
+      setForm((prev) => ({
+        ...prev,
+        firstName: profile.fname || '',
+        middleName: profile.mname || '',
+        lastName: profile.lname || '',
+        street: street || '',
+        barangay: barangay || '',
+        city: city || '',
+        zip: zip || '',
+        contact: profile.contact_number || '',
+        email: profile.email || '',
+        birthday: profile.birthday || '',
+        marital_status: profile.marital_status || '',
+        sex: profile.sex || '',
+        skills: skillsValue,
+        edu1Level: profile.educational_attainment || prev.edu1Level,
+        edu1Institution: profile.institution_name || '',
+        edu1Year: profile.year_graduated || '',
+      }));
+    };
 
     // helpers
     const handleInput = (e) => {
@@ -581,6 +698,8 @@ const formatDateForInput = (dateString) => {
         skills: skillsArray,
         skills_text: form.skills,
       };
+      formPayload.marital_status =
+        formPayload.maritalStatus || formPayload.marital_status || '';
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
       }
@@ -661,7 +780,7 @@ const formatDateForInput = (dateString) => {
         setJobsLoading(true);
         const { data, error } = await supabase
           .from('job_posts')
-          .select('id, title, depot, description, responsibilities, urgent, created_at')
+          .select('id, title, depot, description, responsibilities, urgent, created_at, job_type')
           .order('created_at', { ascending: false });
 
         if (error) {
@@ -717,6 +836,10 @@ const formatDateForInput = (dateString) => {
       const date = new Date(job.created_at);
       return date instanceof Date && !isNaN(date) ? date.getTime() : 0;
     };
+
+    const currentJobType =
+      (selectedJob || newJob)?.job_type?.toLowerCase() || null;
+    const showLicenseSection = currentJobType !== 'office_employee';
 
     const filteredJobs = [...jobs]
       .filter((job) => {
@@ -801,10 +924,10 @@ const formatDateForInput = (dateString) => {
         {/* Search & Filter Bar */}
         {activeTab !== 'Profile' && (
           <div className="max-w-7xl mx-auto px-6 mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
-            <input
+        <input
               placeholder="Search by title or depot"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full md:w-64 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
             />
             <select
@@ -827,7 +950,7 @@ const formatDateForInput = (dateString) => {
               <option value="desc">Newest to Oldest</option>
               <option value="asc">Oldest to Newest</option>
             </select>
-          </div>
+      </div>
         )}
 
         <div className="flex flex-col items-center  min-h-screen">
@@ -1069,18 +1192,70 @@ const formatDateForInput = (dateString) => {
                                         <div>
                                             <span className="font-bold">Full Name:</span> {getFullName()}
                                         </div>
-                                        <div>
-                                            <span className="font-bold">Address:</span>{' '}
+                                        <div className="space-y-2">
+                                            <span className="font-bold">Address:</span>
+                                            <div className="grid grid-cols-1 gap-2">
+                                                <label className="text-sm text-gray-600">
+                                                    Street / Village
                                             {isEditMode ? (
                                                 <input
                                                     type="text"
-                                                    value={profileForm.address}
-                                                    onChange={(e) => handleFormChange('address', e.target.value)}
-                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 w-80"
+                                                            value={profileForm.street}
+                                                            onChange={(e) => handleFormChange('street', e.target.value)}
+                                                            className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
                                                 />
                                             ) : (
-                                                profileForm.address || 'Not provided'
-                                            )}
+                                                        <span className="block text-gray-800">
+                                                            {profileForm.street || 'Not provided'}
+                                                        </span>
+                                                    )}
+                                                </label>
+                                                <label className="text-sm text-gray-600">
+                                                    Barangay
+                                                    {isEditMode ? (
+                                                        <input
+                                                            type="text"
+                                                            value={profileForm.barangay}
+                                                            onChange={(e) => handleFormChange('barangay', e.target.value)}
+                                                            className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                        />
+                                                    ) : (
+                                                        <span className="block text-gray-800">
+                                                            {profileForm.barangay || 'Not provided'}
+                                                        </span>
+                                                    )}
+                                                </label>
+                                                <label className="text-sm text-gray-600">
+                                                    City
+                                                    {isEditMode ? (
+                                                        <input
+                                                            type="text"
+                                                            value={profileForm.city}
+                                                            onChange={(e) => handleFormChange('city', e.target.value)}
+                                                            className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                        />
+                                                    ) : (
+                                                        <span className="block text-gray-800">
+                                                            {profileForm.city || 'Not provided'}
+                                                        </span>
+                                                    )}
+                                                </label>
+                                                <label className="text-sm text-gray-600">
+                                                    ZIP Code
+                                                    {isEditMode ? (
+                                                        <input
+                                                            type="text"
+                                                            value={profileForm.zip}
+                                                            onChange={(e) => handleFormChange('zip', e.target.value)}
+                                                            className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                        />
+                                                    ) : (
+                                                        <span className="block text-gray-800">
+                                                            {profileForm.zip || 'Not provided'}
+                                                        </span>
+                                                    )}
+                                                </label>
+                                            </div>
                                         </div>
                                         <div>
                                             <span className="font-bold">Contact Number:</span> {profileData.contact_number || 'Not provided'}
@@ -1797,18 +1972,19 @@ const formatDateForInput = (dateString) => {
                               Please list your skills
                             </span>
                           </label>
-                          <input
-                            type="text"
+                            <input
+                              type="text"
                             placeholder="e.g., Driving, Customer Service, Logistics"
                             name="skills"
                             value={form.skills}
-                            onChange={handleInput}
+                              onChange={handleInput}
                             className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
                           />
                           <p className="text-xs text-gray-500 mt-1">Separate skills with commas.</p>
                         </div>
 
                         {/* License */}
+                        {showLicenseSection && (
                         <div>
                           <label className="flex items-center">
                             <span className="text-sm mt-4 font-medium">License Information</span>
@@ -1832,6 +2008,7 @@ const formatDateForInput = (dateString) => {
                             />
                           </div>
                         </div>
+                        )}
                       </div>
 
                       <div className={`space-y-4 ${applicationTab === 'experience' ? 'block' : 'hidden'}`}>
