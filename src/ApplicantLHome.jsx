@@ -83,7 +83,7 @@
       contact: '',
       email: '',
       birthday: '',
-      marital_status: '',
+      maritalStatus: '',
       sex: '',
       startDate: '',
       heardFrom: '',
@@ -184,7 +184,7 @@ useEffect(() => {
         barangay: profileForm.barangay || '',
         city: profileForm.city || '',
         zip: profileForm.zip || '',
-        marital_status: profileForm.marital_status || '',
+        maritalStatus: profileForm.marital_status ? profileForm.marital_status.toLowerCase() : '',
       }));
     }, [
       profileForm.street,
@@ -533,7 +533,7 @@ const formatDateForInput = (dateString) => {
         contact: profile.contact_number || '',
         email: profile.email || '',
         birthday: profile.birthday || '',
-        marital_status: profile.marital_status || '',
+        maritalStatus: profile.marital_status ? profile.marital_status.toLowerCase() : '',
         sex: profile.sex || '',
         skills: skillsValue,
         edu1Level: profile.educational_attainment || prev.edu1Level,
@@ -698,8 +698,6 @@ const formatDateForInput = (dateString) => {
         skills: skillsArray,
         skills_text: form.skills,
       };
-      // Remove duplicate maritalStatus field if it exists, keep only marital_status
-      delete formPayload.maritalStatus;
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
       }
@@ -1749,16 +1747,16 @@ const formatDateForInput = (dateString) => {
                               Marital Status
                             </label>
                             <select
-                              name="marital_status"
-                              value={form.marital_status}
+                              name="maritalStatus"
+                              value={form.maritalStatus}
                               onChange={handleInput}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                             >
                               <option value="">Select</option>
-                              <option value="Single">Single</option>
-                              <option value="Married">Married</option>
-                              <option value="Widowed">Widowed</option>
-                              <option value="Divorced">Divorced</option>
+                              <option value="single">Single</option>
+                              <option value="married">Married</option>
+                              <option value="widowed">Widowed</option>
+                              <option value="divorced">Divorced</option>
                             </select>
                           </div>
                         </div>
@@ -2260,7 +2258,7 @@ const formatDateForInput = (dateString) => {
                         </div>
                         <div className="grid grid-cols-2 p-2">
                           <div>Marital Status</div>
-                          <div>{form.marital_status || '-'}</div>
+                          <div>{form.maritalStatus || '-'}</div>
                         </div>
                         <div className="grid grid-cols-2 bg-gray-100 p-2">
                           <div>Sex</div>
