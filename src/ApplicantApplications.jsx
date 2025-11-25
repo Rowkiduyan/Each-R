@@ -341,7 +341,7 @@ function ApplicantApplications() {
                     <div><span className="font-semibold">Email:</span> {applicationData.payload?.form?.email || 'N/A'}</div>
                     <div>
                       <span className="font-semibold">Marital Status:</span>{' '}
-                      {profileData?.marital_Status ||
+                      {profileData?.marital_status ||
                         applicationData.payload?.form?.marital_status ||
                         'N/A'}
                     </div>
