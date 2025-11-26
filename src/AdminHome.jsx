@@ -1,497 +1,194 @@
-import { Link } from 'react-router-dom';
-import { useState } from 'react';
-import Logo from './Logo.png';
-
+import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 
 function AdminHome() {
-    const [activeTab, setActiveTab] = useState("Home");
-    const tabs = ["Home", "Manage Accounts", "Create Account", "Enable/Disable Accounts"];
-    const [showModal, setShowModal] = useState(false);
-    const [selectedEmployee, setSelectedEmployee] = useState(null);
-    const [credentials, setCredentials] = useState({
-        email: "",
-        password: "",
-        newPassword: "",
-        confirmPassword: ""
-    });
-    
+  const [stats, setStats] = useState({
+    totalEmployees: 0,
+    activeAccounts: 0,
+    disabledAccounts: 0,
+    adminUsers: 0
+  });
+  const [loading, setLoading] = useState(true);
+  const [employees, setEmployees] = useState([]);
+
+  useEffect(() => {
+    fetchStatistics();
+    fetchEmployees();
+  }, []);
+
+  const fetchStatistics = async () => {
+    try {
+      setLoading(true);
+
+      // Get role counts (admin and HR from profiles)
+      const { data: roleCounts, error: roleError } = await supabase
+        .rpc('get_role_counts');
+      
+      if (roleError) throw roleError;
+
+      // Get total employees from employees table
+      const { count: employeeCount, error: empError } = await supabase
+        .from('employees')
+        .select('*', { count: 'exact', head: true });
+      
+      if (empError) throw empError;
+
+      console.log('Role counts data:', roleCounts);
+      console.log('Employee count:', employeeCount);
+      
+      const adminCount = roleCounts?.[0]?.admin_count || 0;
+      const hrCount = roleCounts?.[0]?.hr_count || 0;
+      const employeesFromTable = employeeCount || 0;
+      
+      // Total employees = employees table + HR from profiles (HR are also employees)
+      const totalEmployees = employeesFromTable + hrCount;
+      
+      // Active accounts = employees + HR (since they have active accounts)
+      const activeAccounts = totalEmployees;
+
+      setStats({
+        totalEmployees,
+        activeAccounts, 
+        disabledAccounts: 0, // Set to 0 for now since we don't have disabled account info
+        adminUsers: adminCount
+      });
+
+    } catch (error) {
+      console.error('Error fetching statistics:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchEmployees = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('employees')
+        .select('id, fname, lname, position')
+        .limit(10); // Limit to 10 records for display
+
+      if (error) throw error;
+
+      setEmployees(data || []);
+    } catch (error) {
+      console.error('Error fetching employees:', error);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-white">
-          <div className="bg-white shadow-sm fixed top-0 left-0 right-0 z-50">
-            <div className="max-w-7xl mx-auto px-6 py-4">
-              <div className="flex items-center justify-between">
-                
-                <div className="flex items-center">
-                  <div className="flex items-center">
-                    <div className="text-white font-bold text-xl px-3 py-2 rounded mr-2">
-                      <div className="flex-shrink-0 text-red-600 font-bold text-3xl italic">
-                  Each-R
+    <div className="py-6">
+        {/* Welcome Header */}
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-800">Welcome Admin!</h1>
+          <p className="text-gray-600 mt-2">Manage your system overview and statistics</p>
+        </div>
+
+        {/* Statistics Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {/* Total Employees Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-blue-100 text-blue-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-4.5a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
               </div>
-                    </div>
-                  </div>
-                </div>
-    
-        
-                <div className="flex-1 text-center">
-                  <h1 className="text-3xl font-bold text-gray-800">Welcome Admin!</h1>
-                </div>
-    
-    
-                <div className="flex items-end space-x-5">
-    
-                  <Link to ="/employee/login"
-                    className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">
-                    Logout
-                  </Link>
-                </div>
-    
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Total Employees</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? "..." : stats.totalEmployees}
+                </p>
               </div>
             </div>
           </div>
-          <div className="flex justify-around mt-4 pt-20">
-            <ul className="list-none flex space-x-6 mt-2">
-                {tabs.map((tab) => (
-                  <li key={tab}>
-                      <button type='button' onClick={() => setActiveTab(tab)}
-                      className={`appearance-none border-0 font-semibold text-white px-5 rounded-sm tracking-wider transition-colors
-                        ${activeTab === tab
-                          ? "bg-red-600"              
-                          : "bg-red-500 hover:bg-red-600"}`}
-                          >
-                          {tab}
-                      </button>
-                  </li>
-                ))}
-            </ul>
-    
-            
+
+          {/* Active Accounts Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="flex items-center">
-                    <input 
-                      type="text" 
-                      placeholder="Search an Employee" 
-                      className="w-70 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-          </div>          
-          
-          {(activeTab === "Home" || activeTab === "Manage Accounts") && (
-            <div className="max-w-7xl mx-auto px-6 py-8">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col h-115">
-              <div className="overflow-auto flex-1">
-                <table className="w-full">
-                    <thead>
-                      <tr className="bg-gray-100">
-                        <th className="px-6 py-4 text-left font-semibold text-gray-800">Employee ID</th>
-                        <th className="px-6 py-4 text-left font-semibold text-gray-800">Name</th>
-                        <th className="px-6 py-4 text-left font-semibold text-gray-800">Position</th>
-                        {activeTab === "Manage Accounts" && (
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Action</th>
-                        )}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-gray-700">00785</td>
-                        <td className="px-6 py-4 text-gray-700">Dela Cruz, Juan</td>
-                        <td className="px-6 py-4 text-gray-700">Truck Driver</td>
-                        {activeTab === "Manage Accounts" && (
-                          <td className="px-6 py-4">
-                            <button 
-                              onClick={() => {
-                                setSelectedEmployee({id: "00785", name: "Dela Cruz, Juan", position: "Truck Driver"});
-                                setShowModal(true);
-                              }}
-                              className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Manage
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-gray-700">00784</td>
-                        <td className="px-6 py-4 text-gray-700">Torres, Juan Miguel</td>
-                        <td className="px-6 py-4 text-gray-700">Delivery Helper</td>
-                        {activeTab === "Manage Accounts" && (
-                          <td className="px-6 py-4">
-                            <button 
-                              onClick={() => {
-                                setSelectedEmployee({id: "00785", name: "Dela Cruz, Juan", position: "Truck Driver"});
-                                setShowModal(true);
-                              }}
-                              className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Manage
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-gray-700">00783</td>
-                        <td className="px-6 py-4 text-gray-700">Rivera, Paolo Andres</td>
-                        <td className="px-6 py-4 text-gray-700">Truck Driver</td>
-                        {activeTab === "Manage Accounts" && (
-                          <td className="px-6 py-4">
-                            <button 
-                              onClick={() => {
-                                setSelectedEmployee({id: "00785", name: "Dela Cruz, Juan", position: "Truck Driver"});
-                                setShowModal(true);
-                              }}
-                              className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Manage
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-gray-700">00782</td>
-                        <td className="px-6 py-4 text-gray-700">Reyes, Christian</td>
-                        <td className="px-6 py-4 text-gray-700">HR Coordinator</td>
-                        {activeTab === "Manage Accounts" && (
-                          <td className="px-6 py-4">
-                            <button 
-                              onClick={() => {
-                                setSelectedEmployee({id: "00785", name: "Dela Cruz, Juan", position: "Truck Driver"});
-                                setShowModal(true);
-                              }}
-                              className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Manage
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-gray-700">00781</td>
-                        <td className="px-6 py-4 text-gray-700">Santos, Nathaniel</td>
-                        <td className="px-6 py-4 text-gray-700">Delivery Helper</td>
-                        {activeTab === "Manage Accounts" && (
-                          <td className="px-6 py-4">
-                            <button 
-                              onClick={() => {
-                                setSelectedEmployee({id: "00785", name: "Dela Cruz, Juan", position: "Truck Driver"});
-                                setShowModal(true);
-                              }}
-                              className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Manage
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-gray-700">00780</td>
-                        <td className="px-6 py-4 text-gray-700">Navarro, Elijah</td>
-                        <td className="px-6 py-4 text-gray-700">Truck Driver</td>
-                        {activeTab === "Manage Accounts" && (
-                          <td className="px-6 py-4">
-                            <button 
-                              onClick={() => {
-                                setSelectedEmployee({id: "00785", name: "Dela Cruz, Juan", position: "Truck Driver"});
-                                setShowModal(true);
-                              }}
-                              className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Manage
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-gray-700">00779</td>
-                        <td className="px-6 py-4 text-gray-700">Ramos, Gabriel</td>
-                        <td className="px-6 py-4 text-gray-700">Security Personnel</td>
-                        {activeTab === "Manage Accounts" && (
-                          <td className="px-6 py-4">
-                            <button 
-                              onClick={() => {
-                                setSelectedEmployee({id: "00785", name: "Dela Cruz, Juan", position: "Truck Driver"});
-                                setShowModal(true);
-                              }}
-                              className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Manage
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-6 py-4 text-gray-700">00779</td>
-                        <td className="px-6 py-4 text-gray-700">Drilon, Alexis</td>
-                        <td className="px-6 py-4 text-gray-700">Security Personnel</td>
-                        {activeTab === "Manage Accounts" && (
-                          <td className="px-6 py-4">
-                            <button 
-                              onClick={() => {
-                                setSelectedEmployee({id: "00785", name: "Dela Cruz, Juan", position: "Truck Driver"});
-                                setShowModal(true);
-                              }}
-                              className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Manage
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    </tbody>
-                  </table>
+              <div className="p-3 rounded-full bg-green-100 text-green-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </div>
-            </div>
-            </div>
-          )}
-          
-          {activeTab === "Create Account" && (
-            <div className="max-w-7xl mx-auto px-6 py-8">
-              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <h2 className="text-2xl font-bold text-gray-800 mb-6">Create Account</h2>
-                <form className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Employee ID</label>
-                    <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Name</label>
-                    <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Position</label>
-                    <input type="text" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                    <input type="email" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-                    <input type="password" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500" />
-                  </div>
-                  <div className="flex justify-end">
-                    <button type="submit" className="px-6 py-2 bg-red-500 text-white rounded hover:bg-red-600">
-                      Create Account
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-          
-          {activeTab === "Enable/Disable Accounts" && (
-            <div className="max-w-7xl mx-auto px-6 py-8">
-              <div className="grid grid-cols-3 gap-6">
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col h-115">
-                  <div className="p-4 border-b border-gray-200">
-                    <input 
-                      type="text" 
-                      placeholder="Search active employees..." 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-                  <div className="overflow-auto flex-1">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Employee ID</th>
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Name</th>
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Position</th>
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        <tr className="hover:bg-gray-50">
-                          <td className="px-6 py-4 text-gray-700">00785</td>
-                          <td className="px-6 py-4 text-gray-700">Dela Cruz, Juan</td>
-                          <td className="px-6 py-4 text-gray-700">Truck Driver</td>
-                          <td className="px-6 py-4">
-                            <button className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Disable
-                            </button>
-                          </td>
-                        </tr>
-                        <tr className="hover:bg-gray-50">
-                          <td className="px-6 py-4 text-gray-700">00784</td>
-                          <td className="px-6 py-4 text-gray-700">Torres, Juan Miguel</td>
-                          <td className="px-6 py-4 text-gray-700">Delivery Helper</td>
-                          <td className="px-6 py-4">
-                            <button className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Disable
-                            </button>
-                          </td>
-                        </tr>
-                        <tr className="hover:bg-gray-50">
-                          <td className="px-6 py-4 text-gray-700">00783</td>
-                          <td className="px-6 py-4 text-gray-700">Rivera, Paolo Andres</td>
-                          <td className="px-6 py-4 text-gray-700">Truck Driver</td>
-                          <td className="px-6 py-4">
-                            <button className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Disable
-                            </button>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col h-115">
-                  <div className="p-4 border-b border-gray-200">
-                    <input 
-                      type="text" 
-                      placeholder="Search disabled employees..." 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-                  <div className="overflow-auto flex-1">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Employee ID</th>
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Name</th>
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Position</th>
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        <tr className="hover:bg-gray-50">
-                          <td className="px-6 py-4 text-gray-700">00777</td>
-                          <td className="px-6 py-4 text-gray-700">Garcia, Maria</td>
-                          <td className="px-6 py-4 text-gray-700">Office Clerk</td>
-                          <td className="px-6 py-4">
-                            <button className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">
-                              Enable
-                            </button>
-                          </td>
-                        </tr>
-                        <tr className="hover:bg-gray-50">
-                          <td className="px-6 py-4 text-gray-700">00776</td>
-                          <td className="px-6 py-4 text-gray-700">Lopez, Carlos</td>
-                          <td className="px-6 py-4 text-gray-700">Maintenance</td>
-                          <td className="px-6 py-4">
-                            <button className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm">
-                              Enable
-                            </button>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden flex flex-col h-115">
-                  <div className="p-4 border-b border-gray-200">
-                    <input 
-                      type="text" 
-                      placeholder="Search accounts to disable..." 
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-                  <div className="overflow-auto flex-1">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-gray-100">
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Employee ID</th>
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Name</th>
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Position</th>
-                          <th className="px-6 py-4 text-left font-semibold text-gray-800">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        <tr className="hover:bg-gray-50">
-                          <td className="px-6 py-4 text-gray-700">00778</td>
-                          <td className="px-6 py-4 text-gray-700">Smith, John</td>
-                          <td className="px-6 py-4 text-gray-700">Office Assistant</td>
-                          <td className="px-6 py-4">
-                            <button className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Disable
-                            </button>
-                          </td>
-                        </tr>
-                        <tr className="hover:bg-gray-50">
-                          <td className="px-6 py-4 text-gray-700">00779</td>
-                          <td className="px-6 py-4 text-gray-700">Johnson, Sarah</td>
-                          <td className="px-6 py-4 text-gray-700">Data Entry</td>
-                          <td className="px-6 py-4">
-                            <button className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                              Disable
-                            </button>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          
-          {showModal && (
-            <div className="fixed inset-0 bg-opacity-50 flex items-center justify-center z-50 border-black-300">
-              <div className="bg-white rounded-lg p-6 w-96 border-2 border-gray-300">
-                <h3 className="text-lg font-semibold mb-4">Manage Login Credentials</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  Employee: {selectedEmployee?.name} ({selectedEmployee?.id})
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Active Accounts</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? "..." : stats.activeAccounts}
                 </p>
-                
-                <form className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <input
-                      type="email"
-                      value={credentials.email}
-                      onChange={(e) => setCredentials({...credentials, email: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
-                    <input
-                      type="password"
-                      value={credentials.password}
-                      onChange={(e) => setCredentials({...credentials, password: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-                    <input
-                      type="password"
-                      value={credentials.newPassword}
-                      onChange={(e) => setCredentials({...credentials, newPassword: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-                    <input
-                      type="password"
-                      value={credentials.confirmPassword}
-                      onChange={(e) => setCredentials({...credentials, confirmPassword: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-red-500"
-                    />
-                  </div>
-                  
-                  <div className="flex justify-end space-x-3 mt-6">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowModal(false);
-                        setCredentials({email: "", password: "", newPassword: "", confirmPassword: ""});
-                      }}
-                      className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
-                    >
-                      Update Credentials
-                    </button>
-                  </div>
-                </form>
               </div>
             </div>
-          )}
-          
+          </div>
+
+          {/* Disabled Accounts Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-red-100 text-red-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Disabled Accounts</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? "..." : stats.disabledAccounts}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Admin Users Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-purple-100 text-purple-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Admin Users</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? "..." : stats.adminUsers}
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
+        
+        {/* Employee Overview Table */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-6 border-b border-gray-200">
+            <h3 className="text-lg font-semibold text-gray-800">Employee Overview</h3>
+            <p className="text-sm text-gray-600 mt-1">Recent employee records</p>
+          </div>
+          <div className="overflow-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-6 py-4 text-left font-semibold text-gray-800">Employee ID</th>
+                  <th className="px-6 py-4 text-left font-semibold text-gray-800">Name</th>
+                  <th className="px-6 py-4 text-left font-semibold text-gray-800">Position</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {employees.map((employee, index) => (
+                  <tr key={employee.id || index} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 text-gray-700">{employee.id}</td>
+                    <td className="px-6 py-4 text-gray-700">{employee.fname} {employee.lname}</td>
+                    <td className="px-6 py-4 text-gray-700">{employee.position}</td>
+                  </tr>
+                ))}
+                {employees.length === 0 && !loading && (
+                  <tr>
+                    <td colSpan="3" className="px-6 py-4 text-center text-gray-500">
+                      No employees found
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+        </div>
+      </div>
+    </div>
   );
-    
-}
-export default AdminHome;
+}export default AdminHome;
 
