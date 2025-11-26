@@ -32,6 +32,20 @@ function ApplicantApplications() {
     tin: false,
   });
 
+  // Requirements: Document files and date validities
+  const [documentFiles, setDocumentFiles] = useState({});
+  const [documentDateValidities, setDocumentDateValidities] = useState({});
+  const [uploadingDocuments, setUploadingDocuments] = useState({});
+  const [submittingRequirements, setSubmittingRequirements] = useState(false);
+
+  // Emergency contact information
+  const [emergencyContact, setEmergencyContact] = useState({
+    name: "",
+    contactNumber: "",
+    address: "",
+    relation: "",
+  });
+
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [showRetractDialog, setShowRetractDialog] = useState(false);
@@ -71,6 +85,9 @@ function ApplicantApplications() {
 
   // Fetch application data
   useEffect(() => {
+    let channel;
+    let userId = null;
+
     const fetchApplication = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -78,6 +95,7 @@ function ApplicantApplications() {
           setLoading(false);
           return;
         }
+        userId = user.id;
 
         // Fetch application for current user
         const { data: application, error: appError } = await supabase
@@ -95,7 +113,116 @@ function ApplicantApplications() {
         }
 
         if (application) {
-          setApplicationData(application);
+          // Parse payload if it's a string
+          let payloadObj = application.payload;
+          if (typeof payloadObj === 'string') {
+            try {
+              payloadObj = JSON.parse(payloadObj);
+            } catch {
+              payloadObj = {};
+            }
+          }
+
+          // Load requirements data if exists - check both requirements column and payload
+          let requirements = null;
+          
+          // First try requirements column
+          if (application.requirements) {
+            if (typeof application.requirements === 'string') {
+              try {
+                requirements = JSON.parse(application.requirements);
+              } catch {
+                requirements = null;
+              }
+            } else {
+              requirements = application.requirements;
+            }
+          }
+          
+          // Fallback to payload if requirements column is empty
+          if (!requirements && payloadObj?.requirements) {
+            requirements = payloadObj.requirements;
+            if (typeof requirements === 'string') {
+              try {
+                requirements = JSON.parse(requirements);
+              } catch {
+                requirements = {};
+              }
+            }
+          }
+          
+          if (!requirements) {
+            requirements = {};
+          }
+
+          // Update application data with parsed requirements
+          setApplicationData({
+            ...application,
+            requirements: requirements,
+            payload: payloadObj
+          });
+
+          // Check if interview is confirmed (check both column and payload)
+          let isConfirmed = false;
+          if (application.interview_confirmed || application.interview_confirmed_at) {
+            isConfirmed = true;
+          } else {
+            if (payloadObj?.interview_confirmed || payloadObj?.interview_confirmed_at) {
+              isConfirmed = true;
+            }
+          }
+          
+          if (isConfirmed) {
+            setStepStatus((s) => ({ ...s, Assessment: "done" }));
+          }
+
+          if (requirements.id_numbers) {
+            const idNums = requirements.id_numbers;
+            setIdFields({
+              sss: idNums.sss?.value || "",
+              philhealth: idNums.philhealth?.value || "",
+              pagibig: idNums.pagibig?.value || "",
+              tin: idNums.tin?.value || "",
+            });
+            setIdLocked({
+              sss: !!idNums.sss?.value,
+              philhealth: !!idNums.philhealth?.value,
+              pagibig: !!idNums.pagibig?.value,
+              tin: !!idNums.tin?.value,
+            });
+          }
+
+          if (requirements.emergency_contact) {
+            setEmergencyContact({
+              name: requirements.emergency_contact.name || "",
+              contactNumber: requirements.emergency_contact.contact_number || requirements.emergency_contact.contactNumber || "",
+              address: requirements.emergency_contact.address || "",
+              relation: requirements.emergency_contact.relation || "",
+            });
+          }
+
+          // Load document date validities and log documents for debugging
+          if (requirements.documents && Array.isArray(requirements.documents)) {
+            console.log('Loaded requirements documents:', requirements.documents);
+            console.log('Total documents loaded:', requirements.documents.length);
+            requirements.documents.forEach((doc, idx) => {
+              console.log(`Document ${idx}:`, doc.key, doc.name, doc.file_path);
+            });
+            const dateValidities = {};
+            requirements.documents.forEach(doc => {
+              if (doc.date_validity && doc.key) {
+                dateValidities[doc.key] = doc.date_validity;
+              }
+            });
+            setDocumentDateValidities(dateValidities);
+          } else {
+            console.log('No documents found in requirements:', requirements);
+            console.log('Requirements object:', JSON.stringify(requirements, null, 2));
+          }
+
+          if (requirements.submitted) {
+            setStepStatus((s) => ({ ...s, Requirements: "done" }));
+          }
 
           // Fetch job data if job_id exists
           if (application.job_id) {
@@ -130,6 +257,34 @@ function ApplicantApplications() {
     };
 
     fetchApplication();
+
+    // Set up realtime subscription to refresh when application is updated
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        channel = supabase
+          .channel(`application-updates-${user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: 'UPDATE',
+              schema: 'public',
+              table: 'applications',
+              filter: `user_id=eq.${user.id}`
+            },
+            () => {
+              fetchApplication();
+            }
+          )
+          .subscribe();
+      }
+    })();
+
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, []);
 
 //   const getStepClasses = (step) => {
@@ -412,13 +567,66 @@ function ApplicantApplications() {
               {stepStatus.Assessment === "done" && (
                 <div className="mt-4">
                   <div className="text-sm font-semibold text-gray-800 mb-2">In-Person Assessments</div>
-                  <div className="bg-gray-50 border rounded-md p-3">
+                  <div className="bg-gray-50 border rounded-md p-3 space-y-2">
+                    {/* Interview Details File */}
+                    {(() => {
+                      const interviewFile = applicationData?.interview_details_file || applicationData?.payload?.interview_details_file;
+                      if (interviewFile) {
+                        const fileUrl = supabase.storage.from('application-files').getPublicUrl(interviewFile)?.data?.publicUrl;
+                        const fileName = interviewFile.split('/').pop() || 'Interview Details';
+                        return (
                     <div className="flex items-center gap-2">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
                         <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
                       </svg>
-                      <a href="#" className="text-blue-600 hover:underline text-sm">delacruztestdrive(passed).pdf</a>
+                            <a 
+                              href={fileUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline text-sm"
+                            >
+                              {fileName}
+                            </a>
                     </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                    
+                    {/* Assessment Results File */}
+                    {(() => {
+                      const assessmentFile = applicationData?.assessment_results_file || applicationData?.payload?.assessment_results_file;
+                      if (assessmentFile) {
+                        const fileUrl = supabase.storage.from('application-files').getPublicUrl(assessmentFile)?.data?.publicUrl;
+                        const fileName = assessmentFile.split('/').pop() || 'Assessment Results';
+                        return (
+                          <div className="flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
+                              <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                            </svg>
+                            <a 
+                              href={fileUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline text-sm"
+                            >
+                              {fileName}
+                            </a>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
+                    
+                    {/* Show message if no files uploaded yet */}
+                    {!applicationData?.interview_details_file && 
+                     !applicationData?.assessment_results_file &&
+                     !applicationData?.payload?.interview_details_file &&
+                     !applicationData?.payload?.assessment_results_file && (
+                      <div className="text-sm text-gray-500 italic">
+                        No assessment files uploaded yet. Please wait for HR to upload your assessment results.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -457,9 +665,23 @@ function ApplicantApplications() {
               </div>
 
             {/* ID numbers row with lock/unlock */}
+            {(() => {
+              let requirements = applicationData?.requirements;
+              if (typeof requirements === 'string') {
+                try { requirements = JSON.parse(requirements); } catch { requirements = {}; }
+              }
+              const idNumbers = requirements?.id_numbers || {};
+
+              return (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-              {[{key: 'sss', label: 'SSS No.'}, {key: 'philhealth', label: 'Philhealth No.'}, {key: 'pagibig', label: 'Pag-IBIG No.'}, {key: 'tin', label: 'TIN No.'}].map((item) => (
-                <div key={item.key} className="flex items-center gap-2">
+                  {[{key: 'sss', label: 'SSS No.'}, {key: 'philhealth', label: 'Philhealth No.'}, {key: 'pagibig', label: 'Pag-IBIG No.'}, {key: 'tin', label: 'TIN No.'}].map((item) => {
+                    const idData = idNumbers[item.key];
+                    const idStatus = idData?.status || "Submitted";
+                    const idRemarks = idData?.remarks || "";
+
+                    return (
+                      <div key={item.key} className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
                   <input
                     type="text"
                     placeholder={item.label}
@@ -488,8 +710,28 @@ function ApplicantApplications() {
                     </button>
                   )}
                 </div>
-              ))}
+                        {idData && (
+                          <div className="flex flex-col gap-1">
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              idStatus === "Validated" 
+                                ? "bg-green-100 text-green-800" 
+                                : idStatus === "Re-submit"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-orange-100 text-orange-800"
+                            }`}>
+                              {idStatus}
+                            </span>
+                            {idRemarks && (
+                              <div className="text-xs text-gray-600 italic">HR Remarks: {idRemarks}</div>
+                            )}
             </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* Documents table-like list */}
             <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
@@ -499,17 +741,61 @@ function ApplicantApplications() {
               <div className="col-span-3">Remarks</div>
             </div>
 
-            {[
-              {name: 'PSA Birth Certificate *'},
-              {name: "Photocopy of Driver's License (Front and Back) *"},
-              {name: 'Photocopy of SSS ID'},
-              {name: 'Photocopy of TIN ID'},
-              {name: 'Photocopy of Philhealth MDR'},
-              {name: 'Photocopy of HDMF or Proof of HDMF No. (Pag-IBIG)'},
-              {name: 'Medical Examination Results *', hasDate: true, dateLabel: 'Date Validity *'},
-              {name: 'NBI Clearance', hasDate: true, dateLabel: 'Date Validity *'},
-              {name: 'Police Clearance', hasDate: true, dateLabel: 'Date Validity *'},
-            ].map((doc, idx) => (
+            {(() => {
+              // Get requirements data - ensure it's properly loaded
+              let requirements = applicationData?.requirements;
+              
+              // If requirements is not set, try to get it from payload
+              if (!requirements && applicationData?.payload) {
+                let payload = applicationData.payload;
+                if (typeof payload === 'string') {
+                  try {
+                    payload = JSON.parse(payload);
+                  } catch {
+                    payload = {};
+                  }
+                }
+                requirements = payload?.requirements;
+              }
+              
+              // Parse if string
+              if (typeof requirements === 'string') {
+                try { 
+                  requirements = JSON.parse(requirements); 
+                } catch { 
+                  requirements = {}; 
+                }
+              }
+              
+              if (!requirements) {
+                requirements = {};
+              }
+              
+              const submittedDocuments = requirements?.documents || [];
+              console.log('Rendering documents - submittedDocuments:', submittedDocuments);
+              console.log('Rendering documents - requirements:', requirements);
+              console.log('Rendering documents - applicationData:', applicationData);
+              console.log('Rendering documents - applicationData.requirements:', applicationData?.requirements);
+
+              return [
+                {name: 'PSA Birth Certificate *', key: 'psa_birth_certificate'},
+                {name: "Photocopy of Driver's License (Front and Back) *", key: 'drivers_license'},
+                {name: 'Photocopy of SSS ID', key: 'sss_id'},
+                {name: 'Photocopy of TIN ID', key: 'tin_id'},
+                {name: 'Photocopy of Philhealth MDR', key: 'philhealth_mdr'},
+                {name: 'Photocopy of HDMF or Proof of HDMF No. (Pag-IBIG)', key: 'pagibig'},
+                {name: 'Medical Examination Results *', hasDate: true, dateLabel: 'Date Validity *', key: 'medical_exam'},
+                {name: 'NBI Clearance', hasDate: true, dateLabel: 'Date Validity *', key: 'nbi_clearance'},
+                {name: 'Police Clearance', hasDate: true, dateLabel: 'Date Validity *', key: 'police_clearance'},
+              ].map((doc, idx) => {
+                const docKey = doc.key || `doc_${idx}`;
+                const file = documentFiles[docKey];
+                // Get date validity from state or existing file
+                const existingFile = submittedDocuments.find(d => d.key === docKey || d.name === doc.name);
+                const dateValidity = documentDateValidities[docKey] || existingFile?.date_validity || "";
+                const isUploading = uploadingDocuments[docKey];
+
+              return (
               <div key={idx} className="border-b">
                 <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
                   <div className="col-span-12 md:col-span-6 text-sm text-gray-800">
@@ -517,55 +803,373 @@ function ApplicantApplications() {
                     {doc.hasDate && (
                       <div className="mt-2">
                         <label className="text-xs text-gray-600 mr-2">{doc.dateLabel}</label>
-                        <input type="date" className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                          <input 
+                            type="date" 
+                            value={dateValidity}
+                            onChange={(e) => setDocumentDateValidities(prev => ({ ...prev, [docKey]: e.target.value }))}
+                            className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
+                          />
                       </div>
                     )}
                   </div>
                   <div className="col-span-12 md:col-span-3">
                     <div className="flex items-center gap-2">
+                        {existingFile?.file_path ? (
+                          <div className="flex items-center gap-2">
+                            <a 
+                              href={supabase.storage.from('application-files').getPublicUrl(existingFile.file_path)?.data?.publicUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline text-xs"
+                            >
+                              {existingFile.file_path.split('/').pop()}
+                            </a>
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 text-red-600 hover:text-red-800"
+                              onClick={() => {
+                                // Allow re-upload by clearing existing file reference
+                                setDocumentFiles(prev => {
+                                  const newFiles = { ...prev };
+                                  delete newFiles[docKey];
+                                  return newFiles;
+                                });
+                              }}
+                            >
+                              Change
+                            </button>
+                          </div>
+                        ) : file ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-blue-600 text-xs">{file.name}</span>
+                            <button
+                              type="button"
+                              className="text-xs px-2 py-1 text-red-600 hover:text-red-800"
+                              onClick={() => {
+                                setDocumentFiles(prev => {
+                                  const newFiles = { ...prev };
+                                  delete newFiles[docKey];
+                                  return newFiles;
+                                });
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ) : (
                       <label className="inline-flex items-center gap-2 px-2 py-1 border border-gray-300 rounded bg-white text-xs cursor-pointer hover:bg-gray-50">
-                        <input type="file" accept=".pdf,.docx" className="hidden" onChange={(e) => {
+                            <input 
+                              type="file" 
+                              accept=".pdf,.docx" 
+                              className="hidden" 
+                              onChange={(e) => {
                           if (e.target.files && e.target.files[0]) {
-                            const fileName = e.target.files[0].name;
-                            e.target.nextElementSibling.textContent = fileName;
+                                  setDocumentFiles(prev => ({ ...prev, [docKey]: e.target.files[0] }));
                           }
-                        }} />
+                              }} 
+                            />
                         <span>Choose File</span>
                         <span className="text-gray-500">No file chosen</span>
                       </label>
+                        )}
                     </div>
                     <div className="text-[10px] text-gray-500 mt-1">PDF, DOCX | Max file size 10 mb</div>
                   </div>
                   <div className="col-span-12 md:col-span-3">
+                      {existingFile?.file_path ? (
+                        <div className="flex flex-col gap-1">
+                          <span className={`inline-block text-xs px-3 py-1 rounded ${
+                            existingFile.status === "Validated" 
+                              ? "bg-green-100 text-green-800 border border-green-300" 
+                              : existingFile.status === "Re-submit"
+                              ? "bg-red-100 text-red-800 border border-red-300"
+                              : "bg-orange-100 text-orange-800 border border-orange-300"
+                          }`}>
+                            {existingFile.status || "Submitted"}
+                          </span>
+                          {existingFile.remarks && (
+                            <div className="text-xs text-gray-600 italic mt-1">HR Remarks: {existingFile.remarks}</div>
+                          )}
+                        </div>
+                      ) : file ? (
+                        <span className="inline-block text-xs px-3 py-1 rounded bg-blue-100 text-blue-800">Ready to upload</span>
+                      ) : (
                     <span className="inline-block text-xs px-3 py-1 rounded bg-red-700 text-white">No File</span>
+                      )}
                   </div>
                 </div>
               </div>
-            ))}
+              );
+              });
+            })()}
 
             {/* Emergency contact */}
             <div className="mt-4">
               <div className="text-sm font-semibold text-gray-800 mb-2">Emergency Contact Information</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
-                <input type="text" placeholder="Contact Person's Name *" className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
-                <input type="text" placeholder="Contact Person's Contact Number *" className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                <input 
+                  type="text" 
+                  placeholder="Contact Person's Name *" 
+                  value={emergencyContact.name}
+                  onChange={(e) => setEmergencyContact(prev => ({ ...prev, name: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
+                />
+                <input 
+                  type="text" 
+                  placeholder="Contact Person's Contact Number *" 
+                  value={emergencyContact.contactNumber}
+                  onChange={(e) => setEmergencyContact(prev => ({ ...prev, contactNumber: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
+                />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
-                <input type="text" placeholder="Contact Person's Address *" className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
-                <input type="text" placeholder="Relation *" className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" />
+                <input 
+                  type="text" 
+                  placeholder="Contact Person's Address *" 
+                  value={emergencyContact.address}
+                  onChange={(e) => setEmergencyContact(prev => ({ ...prev, address: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
+                />
+                <input 
+                  type="text" 
+                  placeholder="Relation *" 
+                  value={emergencyContact.relation}
+                  onChange={(e) => setEmergencyContact(prev => ({ ...prev, relation: e.target.value }))}
+                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
+                />
               </div>
               <div className="text-xs text-gray-600 italic mt-2">Important Reminder: Please wait for your requirements to be validated by your HR Department. Once validated, you may now proceed onsite to further process your employment.</div>
               <div className="flex justify-end mt-4">
                 <button 
                   type="button" 
-                  className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                  onClick={() => {
+                  className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed"
+                  disabled={submittingRequirements}
+                  onClick={async () => {
+                    if (!applicationData?.id) {
+                      alert("No application found. Please refresh the page.");
+                      return;
+                    }
+
+                    // Validate required fields
+                    if (!emergencyContact.name || !emergencyContact.contactNumber || !emergencyContact.address || !emergencyContact.relation) {
+                      alert("Please fill in all emergency contact fields.");
+                      return;
+                    }
+
+                    setSubmittingRequirements(true);
+                    try {
+                      const { data: { user } } = await supabase.auth.getUser();
+                      if (!user) {
+                        alert("Please log in again.");
+                        return;
+                      }
+
+                      // Upload all document files
+                      const documents = [];
+                      const docList = [
+                        {name: 'PSA Birth Certificate *', key: 'psa_birth_certificate'},
+                        {name: "Photocopy of Driver's License (Front and Back) *", key: 'drivers_license'},
+                        {name: 'Photocopy of SSS ID', key: 'sss_id'},
+                        {name: 'Photocopy of TIN ID', key: 'tin_id'},
+                        {name: 'Photocopy of Philhealth MDR', key: 'philhealth_mdr'},
+                        {name: 'Photocopy of HDMF or Proof of HDMF No. (Pag-IBIG)', key: 'pagibig'},
+                        {name: 'Medical Examination Results *', hasDate: true, key: 'medical_exam'},
+                        {name: 'NBI Clearance', hasDate: true, key: 'nbi_clearance'},
+                        {name: 'Police Clearance', hasDate: true, key: 'police_clearance'},
+                      ];
+
+                      for (const doc of docList) {
+                        const docKey = doc.key;
+                        const file = documentFiles[docKey];
+                        const dateValidity = documentDateValidities[docKey] || null;
+
+                        // Check if file already exists in requirements
+                        let existingDoc = null;
+                        if (applicationData?.requirements) {
+                          let requirements = applicationData.requirements;
+                          if (typeof requirements === 'string') {
+                            try { requirements = JSON.parse(requirements); } catch { requirements = {}; }
+                          }
+                          existingDoc = requirements.documents?.find(d => d.key === docKey || d.name === doc.name);
+                        }
+
+                        if (file) {
+                          // Upload new file
+                          setUploadingDocuments(prev => ({ ...prev, [docKey]: true }));
+                          const sanitizedFileName = file.name.replace(/\s+/g, '_');
+                          const filePath = `requirements/${applicationData.id}/${docKey}/${Date.now()}-${sanitizedFileName}`;
+
+                          const { data: uploadData, error: uploadError } = await supabase.storage
+                            .from('application-files')
+                            .upload(filePath, file, { upsert: true });
+
+                          if (uploadError) {
+                            throw new Error(`Failed to upload ${doc.name}: ${uploadError.message}`);
+                          }
+
+                          documents.push({
+                            key: docKey,
+                            name: doc.name,
+                            file_path: uploadData.path,
+                            date_validity: dateValidity,
+                            status: "Submitted",
+                            remarks: "",
+                            submitted_at: new Date().toISOString(),
+                          });
+                        } else if (existingDoc) {
+                          // Keep existing document data, but update date validity if changed
+                          documents.push({
+                            ...existingDoc,
+                            date_validity: dateValidity || existingDoc.date_validity,
+                          });
+                        } else {
+                          // No file uploaded for this document
+                          documents.push({
+                            key: docKey,
+                            name: doc.name,
+                            file_path: null,
+                            date_validity: dateValidity,
+                            status: "No File",
+                            remarks: "",
+                            submitted_at: new Date().toISOString(),
+                          });
+                        }
+                        setUploadingDocuments(prev => ({ ...prev, [docKey]: false }));
+                      }
+
+                      // Prepare requirements data
+                      const requirementsData = {
+                        id_numbers: {
+                          sss: { value: idFields.sss, status: "Submitted" },
+                          philhealth: { value: idFields.philhealth, status: "Submitted" },
+                          pagibig: { value: idFields.pagibig, status: "Submitted" },
+                          tin: { value: idFields.tin, status: "Submitted" },
+                        },
+                        documents: documents,
+                        emergency_contact: {
+                          name: emergencyContact.name,
+                          contact_number: emergencyContact.contactNumber,
+                          address: emergencyContact.address,
+                          relation: emergencyContact.relation,
+                        },
+                        submitted_at: new Date().toISOString(),
+                        submitted: true,
+                      };
+
+                      // Try to update requirements column, fallback to payload
+                      let updateSuccess = false;
+                      const { error: updateError } = await supabase
+                        .from('applications')
+                        .update({ requirements: requirementsData })
+                        .eq('id', applicationData.id);
+
+                      if (updateError && updateError.code === 'PGRST204') {
+                        // Column doesn't exist, store in payload
+                        console.log('Requirements column not found, saving to payload');
+                        let currentPayload = applicationData.payload;
+                        if (typeof currentPayload === 'string') {
+                          try {
+                            currentPayload = JSON.parse(currentPayload);
+                          } catch {
+                            currentPayload = {};
+                          }
+                        }
+                        
+                        const updatedPayload = {
+                          ...currentPayload,
+                          requirements: requirementsData
+                        };
+                        
+                        const { error: payloadError } = await supabase
+                          .from('applications')
+                          .update({ payload: updatedPayload })
+                          .eq('id', applicationData.id);
+                        
+                        if (payloadError) {
+                          throw payloadError;
+                        }
+                        updateSuccess = true;
+                      } else if (updateError) {
+                        throw updateError;
+                      } else {
+                        updateSuccess = true;
+                      }
+
+                      // Reload application data to ensure we have the latest
+                      if (updateSuccess) {
+                        const { data: updatedApp, error: reloadError } = await supabase
+                          .from('applications')
+                          .select('*')
+                          .eq('id', applicationData.id)
+                          .single();
+                        
+                        if (!reloadError && updatedApp) {
+                          // Parse payload and requirements properly
+                          let payloadObj = updatedApp.payload;
+                          if (typeof payloadObj === 'string') {
+                            try {
+                              payloadObj = JSON.parse(payloadObj);
+                            } catch {
+                              payloadObj = {};
+                            }
+                          }
+
+                          // Get requirements from column or payload
+                          let loadedRequirements = null;
+                          if (updatedApp.requirements) {
+                            if (typeof updatedApp.requirements === 'string') {
+                              try {
+                                loadedRequirements = JSON.parse(updatedApp.requirements);
+                              } catch {
+                                loadedRequirements = null;
+                              }
+                            } else {
+                              loadedRequirements = updatedApp.requirements;
+                            }
+                          }
+                          
+                          if (!loadedRequirements && payloadObj?.requirements) {
+                            loadedRequirements = payloadObj.requirements;
+                            if (typeof loadedRequirements === 'string') {
+                              try {
+                                loadedRequirements = JSON.parse(loadedRequirements);
+                              } catch {
+                                loadedRequirements = {};
+                              }
+                            }
+                          }
+                          
+                          if (!loadedRequirements) {
+                            loadedRequirements = requirementsData; // Use what we just saved
+                          }
+
+                          setApplicationData({
+                            ...updatedApp,
+                            requirements: loadedRequirements,
+                            payload: payloadObj
+                          });
+                        } else {
+                          // Update local state as fallback
+                          setApplicationData(prev => ({
+                            ...prev,
+                            requirements: requirementsData,
+                            payload: prev.payload ? (typeof prev.payload === 'string' ? JSON.parse(prev.payload) : prev.payload) : {}
+                          }));
+                        }
+                      }
+
                     setStepStatus(prev => ({ ...prev, Requirements: "done", Agreements: "pending" }));
                     setActiveStep("Agreements");
                     alert("Requirements submitted successfully! You can now proceed to Agreements.");
+                    } catch (err) {
+                      console.error('Error submitting requirements:', err);
+                      alert(`Failed to submit requirements: ${err.message || 'Unknown error'}`);
+                    } finally {
+                      setSubmittingRequirements(false);
+                    }
                   }}
                 >
-                  Submit
+                  {submittingRequirements ? "Submitting..." : "Submit"}
                 </button>
               </div>
             </div>
@@ -622,8 +1226,34 @@ function ApplicantApplications() {
               <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
                 <div className="col-span-12 md:col-span-6 text-sm text-gray-800">Employee Appointment Letter</div>
                 <div className="col-span-12 md:col-span-3 text-sm">
-                  <a href="#" className="text-blue-600 hover:underline">applicantfile.pdf</a>
-                  <span className="ml-2 text-xs text-gray-500">10/09/2025</span>
+                  {(() => {
+                    const appointmentLetter = applicationData?.appointment_letter_file || applicationData?.payload?.appointment_letter_file;
+                    if (appointmentLetter) {
+                      const fileUrl = supabase.storage.from('application-files').getPublicUrl(appointmentLetter)?.data?.publicUrl;
+                      const fileName = appointmentLetter.split('/').pop() || 'Appointment Letter';
+                      const uploadDate = applicationData.updated_at || applicationData.created_at;
+                      return (
+                        <>
+                          <a 
+                            href={fileUrl} 
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {fileName}
+                          </a>
+                          {uploadDate && (
+                            <span className="ml-2 text-xs text-gray-500">
+                              {new Date(uploadDate).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })}
+                            </span>
+                          )}
+                        </>
+                      );
+                    }
+                    return (
+                      <span className="text-gray-400 italic">No appointment letter uploaded yet</span>
+                    );
+                  })()}
                 </div>
                 <div className="col-span-12 md:col-span-3" />
               </div>
@@ -652,10 +1282,85 @@ function ApplicantApplications() {
               <button
                 type="button"
                 className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-                onClick={() => {
+                onClick={async () => {
+                  if (!applicationData?.id) {
+                    console.error('No application ID found');
+                    return;
+                  }
+
+                  try {
+                    const confirmedAt = new Date().toISOString();
+                    
+                    // Try to update the dedicated columns first (if they exist)
+                    const { error: updateError } = await supabase
+                      .from('applications')
+                      .update({
+                        interview_confirmed: true,
+                        interview_confirmed_at: confirmedAt
+                      })
+                      .eq('id', applicationData.id);
+
+                    // If columns don't exist, fall back to storing in payload
+                    if (updateError && updateError.code === 'PGRST204') {
+                      console.warn('Interview confirmation columns not found, storing in payload instead');
+                      
+                      // Get current payload
+                      let currentPayload = applicationData.payload;
+                      if (typeof currentPayload === 'string') {
+                        try {
+                          currentPayload = JSON.parse(currentPayload);
+                        } catch {
+                          currentPayload = {};
+                        }
+                      }
+                      
+                      // Update payload with confirmation
+                      const updatedPayload = {
+                        ...currentPayload,
+                        interview_confirmed: true,
+                        interview_confirmed_at: confirmedAt
+                      };
+                      
+                      const { error: payloadError } = await supabase
+                        .from('applications')
+                        .update({ payload: updatedPayload })
+                        .eq('id', applicationData.id);
+                      
+                      if (payloadError) {
+                        console.error('Error updating payload:', payloadError);
+                        alert('Failed to confirm interview. Please try again.');
+                        return;
+                      }
+                      
+                      // Update local state with payload method
+                      setApplicationData((prev) => ({
+                        ...prev,
+                        payload: updatedPayload,
+                        interview_confirmed: true,
+                        interview_confirmed_at: confirmedAt
+                      }));
+                    } else if (updateError) {
+                      // Some other error occurred
+                      console.error('Error confirming interview:', updateError);
+                      alert('Failed to confirm interview. Please try again.');
+                      return;
+                    } else {
+                      // Success with column update
+                      setApplicationData((prev) => ({
+                        ...prev,
+                        interview_confirmed: true,
+                        interview_confirmed_at: confirmedAt
+                      }));
+                    }
+
+                    // Update UI state
                   setShowConfirmDialog(false);
                   setStepStatus((s) => ({ ...s, Assessment: "done", Requirements: s.Requirements }));
                   setShowSuccessDialog(true);
+                  } catch (err) {
+                    console.error('Error confirming interview:', err);
+                    alert('Failed to confirm interview. Please try again.');
+                  }
                 }}
               >
                 Confirm
