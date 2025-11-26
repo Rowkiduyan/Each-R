@@ -23,6 +23,10 @@ import EmProfile from "./EmProfile";
 import ApplicantApplications from "./ApplicantApplications";
 import EmployeeSeparation from "./EmployeeSeparation";
 import AgencyHome from "./AgencyHome";
+import AgencyEndorsements from "./AgencyEndorsements";
+import AgencyTrainings from "./AgencyTrainings";
+import AgencyEval from "./AgencyEval";
+import AgencySeparation from "./AgencySeparation";
 import HrCreateJob from "./HrCreateJob";
 import VerifyEmail from "./VerifyEmail";
 import RequireRole from "./RequireRole";
@@ -128,6 +132,10 @@ function App() {
       <Route path="/applicantl/home" element={<ApplicantLHome />} />
       <Route path="/applicant/applications" element={<ApplicantApplications />} />
       <Route path="/agency/home" element={<AgencyHome />} />
+      <Route path="/agency/endorsements" element={<AgencyEndorsements />} />
+      <Route path="/agency/trainings" element={<AgencyTrainings />} />
+      <Route path="/agency/evaluation" element={<AgencyEval />} />
+      <Route path="/agency/separation" element={<AgencySeparation />} />
 
       {/* Default */}
       <Route path="/not-authorized" element={<div>Not authorized</div>} />
