@@ -10,6 +10,7 @@ import EmployeeDetails from "./EmployeeDetails";
 import EmployeeLogin from "./EmployeeLogin";
 import EmHome from "./EmHome";
 import AdminHome from "./AdminHome";
+import ManageAccounts from "./ManageAccounts";
 import HrTrainings from "./HrTrainings";
 import EmployeeTrainings from "./EmployeeTrainings";
 import HrRecruitment from "./HrRecruitment";
@@ -26,6 +27,7 @@ import HrCreateJob from "./HrCreateJob";
 import VerifyEmail from "./VerifyEmail";
 import RequireRole from "./RequireRole";
 import HRLayout from "./layouts/HRLayout";
+import AdminLayout from "./layouts/AdminLayout";
 import TermsAndPrivacy from "./TermsAndPrivacy";
 
 
@@ -108,14 +110,24 @@ function App() {
         }
       />
 
-      {/* Public routes (no protection) */}
+      {/* Admin protected routes */}
+      <Route
+        path="/admin"
+        element={
+          <RequireRole role="Admin">
+            <AdminLayout />
+          </RequireRole>
+        }
+        >
+        <Route path="home" element={<AdminHome />} />
+        <Route path="accounts" element={<ManageAccounts />} />
+      </Route>      {/* Public routes (no protection) */}
       <Route path="/employee/login" element={<EmployeeLogin />} />
       <Route path="/driver/add/record" element={<DriverAddRecord />} />
       <Route path="/applicantg/home" element={<ApplicantGHome />} />
       <Route path="/applicantl/home" element={<ApplicantLHome />} />
       <Route path="/applicant/applications" element={<ApplicantApplications />} />
       <Route path="/agency/home" element={<AgencyHome />} />
-      <Route path="/admin/home" element={<AdminHome />} />
 
       {/* Default */}
       <Route path="/not-authorized" element={<div>Not authorized</div>} />
