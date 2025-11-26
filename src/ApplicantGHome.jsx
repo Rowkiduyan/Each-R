@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import Roadwise from './Roadwise.png';
+import LogoCropped from './layouts/photos/logo(cropped).png';
 
 function ApplicantGHome() {
   const navigate = useNavigate();
@@ -144,9 +145,11 @@ function ApplicantGHome() {
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <div className="flex-shrink-0 text-red-600 font-bold text-3xl italic">
-                Each-R
-              </div>
+              <img
+                src={LogoCropped}
+                alt="Each-R Logo"
+                className="h-10 w-auto object-contain"
+              />
             </div>
 
             <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
@@ -165,10 +168,10 @@ function ApplicantGHome() {
             </nav>
 
             <Link
-              to="/applicant/register"
+              to="/applicant/login"
               className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
             >
-              Sign In
+              Login
             </Link>
           </div>
         </div>
