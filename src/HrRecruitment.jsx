@@ -34,6 +34,42 @@ async function scheduleInterviewClient(applicationId, interview) {
 }
 
 /**
+ * createEmployeeAuthAccount
+ * Helper that invokes a Supabase Edge Function to create/update employee auth account using Admin API.
+ * This handles both new users and existing users (by resetting their password).
+ * It returns { ok: true, data } or { ok: false, error }.
+ */
+async function createEmployeeAuthAccount(employeeData) {
+  try {
+    const functionName = "create-employee-auth"; // Edge Function name
+    const res = await supabase.functions.invoke(functionName, {
+      body: JSON.stringify({
+        email: employeeData.employeeEmail,
+        password: employeeData.employeePassword,
+        firstName: employeeData.firstName,
+        lastName: employeeData.lastName,
+      }),
+    });
+
+    // SDK may return a Response (fetch) or a plain object with .error or .data
+    if (res instanceof Response) {
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(JSON.stringify(json || { status: res.status }));
+      }
+      return { ok: true, data: json };
+    } else if (res?.error) {
+      throw res.error;
+    } else {
+      return { ok: true, data: res };
+    }
+  } catch (err) {
+    console.error("createEmployeeAuthAccount error:", err);
+    return { ok: false, error: err };
+  }
+}
+
+/**
  * sendEmployeeAccountEmail
  * Helper that invokes a Supabase Edge Function to send employee account credentials via email.
  * It returns { ok: true, data } or { ok: false, error }.
@@ -98,7 +134,7 @@ function generateEmployeePassword(firstName, lastName, birthday) {
       birthdayPart = `${year}${month}${day}`;
     } else {
       // Try to extract YYYYMMDD from string
-      const match = birthday.match(/(\d{4})[-\/]?(\d{2})[-\/]?(\d{2})/);
+      const match = birthday.match(/(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
       if (match) {
         birthdayPart = `${match[1]}${match[2]}${match[3]}`;
       }
@@ -606,11 +642,6 @@ function HrRecruitment() {
       setShowErrorAlert(true);
       return;
     }
-    
-    // Find the applicant data to get the job title/position
-    const applicant = applicants.find(a => a.id === applicationId) || selectedApplicant;
-    const position = applicant?.position || null;
-    
     // Show confirm dialog
     setConfirmMessage(`Mark ${applicantName} as Employee? This will create an employee record, create an employee account, and send credentials via email.`);
     setConfirmCallback(async () => {
@@ -692,46 +723,23 @@ function HrRecruitment() {
           }
         }
 
-        // Create Supabase Auth account for the employee
+        // Create/update Supabase Auth account for the employee using Edge Function (handles existing users)
         let authUserId = null;
         try {
-          const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-            email: employeeEmail,
-            password: employeePassword,
-            options: {
-              emailRedirectTo: undefined, // Don't require email confirmation
-              data: {
-                first_name: firstName,
-                last_name: lastName,
-                role: 'Employee'
-              }
-            }
+          const authResult = await createEmployeeAuthAccount({
+            employeeEmail: employeeEmail,
+            employeePassword: employeePassword,
+            firstName: firstName,
+            lastName: lastName,
           });
 
-          if (signUpError) {
-            // If user already exists, try to get the existing user
-            if (signUpError.message.includes("already registered") || signUpError.message.includes("User already registered")) {
-              console.log("Employee auth account already exists, fetching user...");
-              // Try to sign in to get the user ID
-              const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-                email: employeeEmail,
-                password: employeePassword,
-              });
-              
-              if (signInError) {
-                // If sign in fails, the password might be different, but we can still proceed
-                // We'll need to use admin API or handle this differently
-                console.warn("Could not sign in existing user, but continuing...");
-              } else {
-                authUserId = signInData.user.id;
-                // Sign out immediately after getting the ID
-                await supabase.auth.signOut();
-              }
-            } else {
-              throw signUpError;
-            }
+          if (!authResult.ok) {
+            console.error("Failed to create/update auth account:", authResult.error);
+            // Continue anyway - the employee record was created, we'll just skip the auth account
+            console.warn("Proceeding without auth account creation");
           } else {
-            authUserId = signUpData.user?.id;
+            authUserId = authResult.data?.userId;
+            console.log("Auth account created/updated successfully:", authResult.data?.message);
           }
         } catch (authErr) {
           console.error("Error creating auth account:", authErr);
@@ -778,6 +786,31 @@ function HrRecruitment() {
           } catch (profileErr) {
             console.error("Error managing profile:", profileErr);
           }
+        }
+
+        // Ensure there's a matching row in employees table (for HR/Agency modules)
+        try {
+          const { error: empUpsertErr } = await supabase
+            .from("employees")
+            .upsert(
+              {
+                email: employeeEmail,
+                fname: firstName,
+                lname: lastName,
+                mname: middleName || null,
+                position: position || null,
+                role: "Employee",
+                hired_at: new Date().toISOString(),
+                source: "recruitment",
+              },
+              { onConflict: "email" }
+            );
+
+          if (empUpsertErr) {
+            console.error("Error upserting employees row:", empUpsertErr);
+          }
+        } catch (empErr) {
+          console.error("Unexpected error upserting employees row:", empErr);
         }
 
         // Send email with credentials
