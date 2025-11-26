@@ -274,6 +274,7 @@ function HrRecruitment() {
       });
 
       const deduped = Object.values(uniqueByUserJob);
+      
       setApplicants(deduped);
     } catch (err) {
       console.error("loadApplications unexpected error:", err);
@@ -383,12 +384,16 @@ function HrRecruitment() {
   ];
 
   // Return a best-effort attempt: which candidate worked and the rpc response.
-  async function tryRpcMoveToEmployee(appId) {
+  async function tryRpcMoveToEmployee(appId, position = null) {
     // attempt the candidates in sequence
     for (const c of rpcCandidates) {
       try {
         const params = {};
         params[c.param] = appId;
+        // Add position if provided and function supports it
+        if (position && (c.fn.includes("move_applicant_to_employee") || c.fn.includes("hire_applicant"))) {
+          params.p_position = position;
+        }
         console.debug("[rpc-try] calling", c.fn, params);
         const { data, error } = await supabase.rpc(c.fn, params);
 
@@ -419,13 +424,17 @@ function HrRecruitment() {
       return;
     }
     
+    // Find the applicant data to get the job title/position
+    const applicant = applicants.find(a => a.id === applicationId) || selectedApplicant;
+    const position = applicant?.position || null;
+    
     // Show confirm dialog
     setConfirmMessage(`Mark ${applicantName} as Employee? This will create an employee record and remove the applicant.`);
     setConfirmCallback(async () => {
       setShowConfirmDialog(false);
       try {
-        // call the best RPC available
-        const rpcResult = await tryRpcMoveToEmployee(applicationId);
+        // call the best RPC available with position info
+        const rpcResult = await tryRpcMoveToEmployee(applicationId, position);
 
         if (!rpcResult.ok) {
           // no candidate matched or all failed
@@ -620,21 +629,19 @@ function HrRecruitment() {
           {activeSubTab === "Applications" && !selectedApplicant && (
             <div className="grid grid-cols-3 gap-6">
               <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">Applicants</h3>
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="border px-3 py-1 rounded shadow-sm"
-                  />
-                </div>
-
-                {loading ? (
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold text-gray-800">Applicants</h3>
+                <input
+                  type="text"
+                  placeholder="Search..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="border px-3 py-1 rounded shadow-sm"
+                />
+              </div>                {loading ? (
                   <div className="p-6 text-gray-600">Loading applications…</div>
                 ) : (
                   <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
