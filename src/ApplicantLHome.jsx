@@ -1,6 +1,8 @@
   import { Link, useNavigate, useLocation } from 'react-router-dom';
-  import { useState, useEffect } from 'react';
+  import { useState, useEffect, useRef } from 'react';
   import { supabase } from './supabaseClient';
+  import LogoCropped from './layouts/photos/logo(cropped).png';
+  import Roadwise from './Roadwise.png';
 
   function ApplicantLHome() {
     const navigate = useNavigate();
@@ -9,7 +11,6 @@
 
     const [activeTab, setActiveTab] = useState('Home');
     const [showModal, setShowModal] = useState(false);
-    const [showJobDetailsModal, setShowJobDetailsModal] = useState(false);
     const [showSummary, setShowSummary] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
@@ -17,6 +18,8 @@
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [applicationTab, setApplicationTab] = useState('personal');
+    const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+    const profileDropdownRef = useRef(null);
 
     const formTabs = [
       { key: 'personal', label: 'Personal' },
@@ -66,10 +69,13 @@
     // NEW: jobs from DB + selected job
     const [jobs, setJobs] = useState([]);
     const [selectedJob, setSelectedJob] = useState(null);
+    const [showDetails, setShowDetails] = useState(false);
     const [jobsLoading, setJobsLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
-  const [depotFilter, setDepotFilter] = useState('all');
-  const [dateOrder, setDateOrder] = useState('desc');
+    const [locationFilter, setLocationFilter] = useState('');
+    const [searchInput, setSearchInput] = useState('');
+    const [locationInput, setLocationInput] = useState('');
+    const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
 
     // --- MAIN FORM STATE (simple + flat so it’s easy to wire) ---
     const [form, setForm] = useState({
@@ -84,6 +90,7 @@
       email: '',
       birthday: '',
       marital_status: '',
+      maritalStatus: '',
       sex: '',
       startDate: '',
       heardFrom: '',
@@ -176,6 +183,23 @@ useEffect(() => {
     prefillApplicationForm(profileData);
   }
 }, [profileData]);
+
+    // Close profile dropdown when clicking outside
+    useEffect(() => {
+      const handleClickOutside = (event) => {
+        if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target)) {
+          setShowProfileDropdown(false);
+        }
+      };
+
+      if (showProfileDropdown) {
+        document.addEventListener("mousedown", handleClickOutside);
+      }
+
+      return () => {
+        document.removeEventListener("mousedown", handleClickOutside);
+      };
+    }, [showProfileDropdown]);
 
     useEffect(() => {
       setForm((prev) => ({
@@ -533,7 +557,7 @@ const formatDateForInput = (dateString) => {
         contact: profile.contact_number || '',
         email: profile.email || '',
         birthday: profile.birthday || '',
-        marital_status: profile.marital_status || '',
+        maritalStatus: profile.marital_status ? profile.marital_status.toLowerCase() : '',
         sex: profile.sex || '',
         skills: skillsValue,
         edu1Level: profile.educational_attainment || prev.edu1Level,
@@ -602,13 +626,44 @@ const formatDateForInput = (dateString) => {
       });
     };
 
-    const openJobDetails = (job) => {
+    const handleCardSelect = (job) => {
       setSelectedJob(job);
-      setShowJobDetailsModal(true);
+      setShowDetails(true);
+    };
+
+    const handleViewAll = () => {
+      setShowDetails(false);
+      setSelectedJob(null);
+    };
+
+    const handleSearchSubmit = (e) => {
+      e.preventDefault();
+      setSearchTerm(searchInput.trim());
+      setLocationFilter(locationInput.trim());
+    };
+
+    const locationSuggestions = Array.from(
+      new Set(
+        jobs
+          .map((job) => job.depot)
+          .filter((loc) => typeof loc === 'string' && loc.trim().length > 0)
+      )
+    );
+
+    const filteredLocationSuggestions = locationSuggestions.filter((loc) =>
+      loc.toLowerCase().includes(locationInput.toLowerCase())
+    );
+
+    const formatPostedLabel = (job) => {
+      const createdAt = job?.created_at ? new Date(job.created_at) : null;
+      const hasValidDate = createdAt instanceof Date && !isNaN(createdAt);
+      return hasValidDate
+        ? createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : 'Not available';
     };
 
     const proceedToApplicationForm = () => {
-      setShowJobDetailsModal(false);
+      setShowDetails(false);
       setApplicationTab('personal');
       setShowModal(true);
     };
@@ -698,8 +753,6 @@ const formatDateForInput = (dateString) => {
         skills: skillsArray,
         skills_text: form.skills,
       };
-      formPayload.marital_status =
-        formPayload.maritalStatus || formPayload.marital_status || '';
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
       }
@@ -825,132 +878,248 @@ const formatDateForInput = (dateString) => {
       );
     }
 
-    const depotOptions = Array.from(
-      new Set(jobs.map((job) => job.depot).filter(Boolean))
-    );
-
-    const normalizedSearch = searchTerm.trim().toLowerCase();
-
-    const getJobTimestamp = (job) => {
-      if (!job?.created_at) return 0;
-      const date = new Date(job.created_at);
-      return date instanceof Date && !isNaN(date) ? date.getTime() : 0;
-    };
-
     const currentJobType =
       (selectedJob || newJob)?.job_type?.toLowerCase() || null;
     const showLicenseSection = currentJobType !== 'office_employee';
 
-    const filteredJobs = [...jobs]
-      .filter((job) => {
-        if (!normalizedSearch) return true;
-        const titleMatch = job.title?.toLowerCase().includes(normalizedSearch);
-        const depotMatch = job.depot?.toLowerCase().includes(normalizedSearch);
-        return titleMatch || depotMatch;
-      })
-      .filter((job) =>
-        depotFilter === 'all' ? true : job.depot === depotFilter
-      )
-      .sort((a, b) => {
-        const timeA = getJobTimestamp(a);
-        const timeB = getJobTimestamp(b);
-        return dateOrder === 'desc' ? timeB - timeA : timeA - timeB;
-      });
+    const filteredJobs = jobs.filter((job) => {
+      const keywordMatch = searchTerm
+        ? job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          job.description?.toLowerCase().includes(searchTerm.toLowerCase())
+        : true;
+      const locationMatch = locationFilter
+        ? (job.depot || '').toLowerCase().includes(locationFilter.toLowerCase())
+        : true;
+      return keywordMatch && locationMatch;
+    });
 
+
+    // Build job card elements for the split-view
+    const jobCardElements = filteredJobs.map((job) => {
+      const createdAt = job?.created_at ? new Date(job.created_at) : null;
+      const hasValidDate = createdAt instanceof Date && !isNaN(createdAt);
+      const postedLabel = hasValidDate
+        ? createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : 'Not available';
+      const isSelected = selectedJob?.id === job.id;
+      const isCurrentApplication = appliedJobId === job.id;
+
+      return (
+        <div
+          key={job.id}
+          className={`bg-white rounded-lg shadow-md p-6 flex flex-col relative overflow-hidden cursor-pointer transition-colors ${
+            isSelected ? 'border-2 border-red-600' : 'border border-transparent'
+          } hover:bg-gray-100`}
+          onClick={() => !isCurrentApplication && handleCardSelect(job)}
+        >
+          {job.urgent && (
+            <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1">
+              URGENT HIRING!
+            </div>
+          )}
+          <div className="mt-4 flex flex-col flex-grow">
+            <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
+            <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
+              <span>{job.depot}</span>
+              <span>Posted {postedLabel}</span>
+            </div>
+            <p className="text-gray-700 line-clamp-3">{job.description}</p>
+            {isCurrentApplication && (
+              <div className="mt-2 px-3 py-1 bg-green-100 text-green-700 text-sm font-medium rounded-full text-center">
+                Applied
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    });
 
     return (
       <div className="min-h-screen bg-white">
+        <style>{`
+          .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+          }
+          .no-scrollbar::-webkit-scrollbar {
+            display: none;
+          }
+        `}</style>
         {/* Header */}
-        <div className="bg-white shadow-sm border-b">
+        <div className="bg-white shadow-sm">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center">
-                <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">
-                  Each-R
+                <img
+                  src={LogoCropped}
+                  alt="Each-R Logo"
+                  className="h-10 w-auto object-contain"
+                />
+              </div>
+
+              <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
+                <button
+                  onClick={() => setActiveTab('Home')}
+                  className={`pb-1 ${
+                    activeTab === 'Home'
+                      ? 'text-red-600 border-b-2 border-red-600'
+                      : 'hover:text-gray-900 transition-colors'
+                  }`}
+                >
+                  Home
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('Applications');
+                    navigate('/applicant/applications');
+                  }}
+                  className={`pb-1 ${
+                    activeTab === 'Applications'
+                      ? 'text-red-600 border-b-2 border-red-600'
+                      : 'hover:text-gray-900 transition-colors'
+                  }`}
+                >
+                  Applications
+                </button>
+              </nav>
+
+              <div className="flex items-center space-x-4">
+                {/* Notification Bell */}
+                <div className="relative">
+                  <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300 cursor-pointer">
+                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                    </svg>
+                  </div>
+                </div>
+                
+                {/* User Profile with Dropdown */}
+                <div className="relative" ref={profileDropdownRef}>
+                  <div 
+                    onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                    className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-semibold cursor-pointer hover:bg-gray-300"
+                  >
+                    {profileData?.fname && profileData?.lname 
+                      ? `${profileData.fname[0]}${profileData.lname[0]}`.toUpperCase()
+                      : profileData?.email?.[0]?.toUpperCase() || "U"}
+                  </div>
+                  {/* Dropdown arrow */}
+                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full border-2 border-white flex items-center justify-center pointer-events-none">
+                    <svg className="w-2 h-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                  
+                  {/* Dropdown Menu */}
+                  {showProfileDropdown && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-50">
+                      <div className="py-1">
+                        <div className="px-4 py-2 text-sm text-gray-700 border-b">
+                          {profileData?.fname && profileData?.lname 
+                            ? `${profileData.fname} ${profileData.lname}`
+                            : profileData?.email || "User"}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setShowProfileDropdown(false);
+                            setActiveTab('Profile');
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          View Profile
+                        </button>
+                        <button
+                          onClick={() => {
+                            setShowProfileDropdown(false);
+                            setShowLogoutConfirm(true);
+                          }}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        >
+                          Logout
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-
-              <div className="flex-1 flex justify-center">
-                <nav className="flex space-x-8">
-                  <button
-                    onClick={() => setActiveTab('Home')}
-                    className={`pb-2 font-medium ${
-                      activeTab === 'Home'
-                        ? 'text-red-600 border-b-2 border-red-600'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Home
-                  </button>
-                  <button
-                    onClick={() => {
-                      setActiveTab('Applications');
-                      navigate('/applicant/applications');
-                    }}
-                    className={`pb-2 font-medium ${
-                      activeTab === 'Applications'
-                        ? 'text-red-600 border-b-2 border-red-600'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Applications
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('Profile')}
-                    className={`pb-2 font-medium ${
-                      activeTab === 'Profile'
-                        ? 'text-red-600 border-b-2 border-red-600'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Profile
-                  </button>
-                </nav>
-              </div>
-
-              <div className="flex items-center space-x-3">
-                <button
-                  onClick={() => setShowLogoutConfirm(true)}
-                  className="text-gray-600 hover:text-gray-900 font-medium"
-                >
-                  Logout
-                </button>
-              </div>
-
             </div>
           </div>
         </div>
 
-        {/* Search & Filter Bar */}
-        {activeTab !== 'Profile' && (
-          <div className="max-w-7xl mx-auto px-6 mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-end">
-        <input
-              placeholder="Search by title or depot"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full md:w-64 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500"
-            />
-            <select
-              value={depotFilter}
-              onChange={(e) => setDepotFilter(e.target.value)}
-              className="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
-            >
-              <option value="all">All Depots</option>
-              {depotOptions.map((depot) => (
-                <option key={depot} value={depot}>
-                  {depot}
-                </option>
-              ))}
-            </select>
-            <select
-              value={dateOrder}
-              onChange={(e) => setDateOrder(e.target.value)}
-              className="w-full md:w-48 px-3 py-2 border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-red-500"
-            >
-              <option value="desc">Newest to Oldest</option>
-              <option value="asc">Oldest to Newest</option>
-            </select>
-      </div>
+        {/* Search Bar with Photo Banner */}
+        {activeTab === 'Home' && (
+          <div className="max-w-7xl mx-auto px-6">
+            <div className="relative overflow-hidden">
+              <img
+                src={Roadwise}
+                alt="Delivery trucks on the road"
+                className="w-full h-[200px] object-cover"
+              />
+              <div className="absolute inset-0 bg-black/30" />
+              <div className="absolute inset-0 flex items-center justify-center px-4">
+                <form className="w-full max-w-4xl" onSubmit={handleSearchSubmit}>
+                  <div className="flex flex-col gap-3">
+                    <div className="flex items-stretch bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+                      <div className="flex-1 flex items-center px-5 py-4">
+                        <input
+                          type="text"
+                          value={searchInput}
+                          onChange={(e) => setSearchInput(e.target.value)}
+                          className="w-full bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none"
+                          placeholder=" Job title, keywords, or company"
+                        />
+                      </div>
+                      <div className="w-px bg-gray-200" />
+                      <div className="flex-1 flex items-center px-6 py-3 relative">
+                        <input
+                          type="text"
+                          value={locationInput}
+                          onChange={(e) => setLocationInput(e.target.value)}
+                          onFocus={() => setShowLocationSuggestions(true)}
+                          onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 100)}
+                          className="w-full bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none"
+                          placeholder="Location"
+                        />
+                        {showLocationSuggestions && filteredLocationSuggestions.length > 0 && (
+                          <ul className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto z-10">
+                            {filteredLocationSuggestions.map((loc) => (
+                              <li
+                                key={loc}
+                                className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
+                                onMouseDown={() => {
+                                  setLocationInput(loc);
+                                  setShowLocationSuggestions(false);
+                                }}
+                              >
+                                {loc}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                      <div className="flex items-center pr-4">
+                        <button
+                          type="submit"
+                          className="bg-red-600 text-white px-5 py-2 text-base font-semibold rounded-xl hover:bg-red-700 transition-colors"
+                          aria-label="Find jobs"
+                        >
+                          Find Jobs
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex justify-end pr-4">
+                      <button
+                        type="button"
+                        className="text-white text-sm font-medium hover:underline"
+                      >
+                        More options
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
         )}
 
         <div className="flex flex-col items-center  min-h-screen">
@@ -960,202 +1129,81 @@ const formatDateForInput = (dateString) => {
                 {/* Jobs from DB */}
                 {jobsLoading ? (
                   <div className="text-gray-600">Loading jobs…</div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredJobs.length === 0 ? (
-                      <div className="col-span-full text-gray-600">
-                        No job postings match your filters.
+                ) : jobs.length === 0 ? (
+                  <div className="text-gray-600">No active job postings at the moment.</div>
+                ) : filteredJobs.length === 0 ? (
+                  <div className="text-gray-600">No job postings match your search.</div>
+                ) : showDetails && selectedJob ? (
+                  <div className="space-y-4">
+                    <button
+                      type="button"
+                      onClick={handleViewAll}
+                      className="flex items-center text-blue-600 hover:text-blue-700 font-medium gap-2"
+                    >
+                      ← View all Job posts
+                    </button>
+                    <div className="flex flex-col lg:flex-row gap-6">
+                      <div className="lg:w-1/3 max-h-[70vh] overflow-y-auto no-scrollbar pr-2">
+                        <div className="space-y-4">{jobCardElements}</div>
                       </div>
-                    ) : (
-                      filteredJobs.map((job) => {
-                      const createdAt = job?.created_at ? new Date(job.created_at) : null;
-                      const hasValidDate = createdAt instanceof Date && !isNaN(createdAt);
-                      const postedLabel = hasValidDate
-                        ? createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                        : 'Not available';
-
-                      const isCurrentApplication = appliedJobId === job.id;
-                      const isApplyDisabled = hasExistingApplication && !isCurrentApplication;
-                      const isButtonDisabled = isApplyDisabled || isCurrentApplication;
-                      const buttonLabel = isCurrentApplication ? 'Applied' : 'View';
-                      const buttonClasses = isButtonDisabled
-                        ? 'w-full py-2 rounded-lg transition-colors mt-auto bg-gray-300 text-gray-600 cursor-not-allowed'
-                        : 'w-full py-2 rounded-lg transition-colors mt-auto bg-red-600 text-white hover:bg-red-700';
-
-                      return (
-                      <div key={job.id} className="bg-white rounded-lg shadow-md p-6 flex flex-col relative overflow-hidden">
-                        {job.urgent && (
-                          <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1 transform">
-                            URGENT HIRING!
+                      <div className="lg:w-2/3 flex flex-col gap-4">
+                        <div className="bg-white rounded-lg shadow-md p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                          <div className="space-y-3">
+                            {selectedJob.urgent && (
+                              <div className="inline-block px-4 py-1 rounded bg-red-100 text-red-700 text-2xl font-semibold">
+                                Urgent Hiring
+                              </div>
+                            )}
+                            <div className="flex items-start justify-between gap-4">
+                              <h2 className="text-2xl font-bold text-gray-800">{selectedJob.title}</h2>
+                              {appliedJobId === selectedJob.id ? (
+                                <span className="px-10 py-2 rounded bg-green-100 text-green-700 font-medium">
+                                  Already Applied
+                                </span>
+                              ) : hasExistingApplication ? (
+                                <span className="px-10 py-2 rounded bg-gray-300 text-gray-600 cursor-not-allowed">
+                                  Apply (Disabled)
+                                </span>
+                              ) : (
+                                <button
+                                  className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                                  onClick={proceedToApplicationForm}
+                                >
+                                  Apply
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-sm text-gray-600 flex flex-col gap-1">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center w-5 h-5 text-red-600">
+                                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z" />
+                                  </svg>
+                                </span>
+                                <span className="font-semibold">{selectedJob.depot}</span>
+                              </div>
+                              <span className="text-xs text-gray-500">Posted {formatPostedLabel(selectedJob)}</span>
+                            </div>
                           </div>
-                        )}
-                        <div className="mt-4 flex flex-col flex-grow">
-                          <h3 className="text-xl font-bold text-gray-800 mb-2">
-                            {job.title}
-                          </h3>
-                          <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
-                            <span>{job.depot}</span>
-                            <span>
-                              Posted {postedLabel}
-                            </span>
+                          <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 mb-2">Responsibilities & Other Details</h3>
+                            {selectedJob.responsibilities && selectedJob.responsibilities.length > 0 ? (
+                              <ul className="list-disc list-inside text-gray-700 space-y-1">
+                                {selectedJob.responsibilities.map((item, idx) => (
+                                  <li key={idx}>{item}</li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-sm text-gray-500">No additional details provided.</p>
+                            )}
                           </div>
-                          <p className="text-gray-700 mb-4">
-                            {job.description}
-                          </p>
-                          <button
-                            type="button"
-                            className={buttonClasses}
-                            disabled={isButtonDisabled}
-                            onClick={() => {
-                              if (isButtonDisabled) return;
-                              openJobDetails(job);
-                            }}
-                          >
-                            {buttonLabel}
-                          </button>
                         </div>
-                      </div>
-                    );
-                  })
-                    )}
-
-                    {/* below are your static cards unchanged except the button handlers */}
-                    <div className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
-                      <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1 transform">
-                        URGENT HIRING!
-                      </div>
-                      <div className="mt-6 flex flex-col flex-grow">
-                        <h3 className="text-xl font-bold text-gray-800 mb-2">
-                          Delivery Driver
-                        </h3>
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="text-gray-700">Pasig Depot</span>
-                          <span className="text-sm text-gray-500">Posted 10hrs ago</span>
-                        </div>
-                        <p className="text-gray-700 mb-4">
-                          We are seeking a reliable and safety-conscious Truck Driver to
-                          transport goods efficiently and on schedule to various
-                          destinations.
-                        </p>
-                        <div className="mb-4">
-                          <h4 className="font-semibold text-gray-800 mb-2">
-                            Main Responsibilities
-                          </h4>
-                          <ul className="text-sm text-gray-700 space-y-1">
-                            <li>• Safely operate company-based trucks</li>
-                            <li>• Conduct pre-trip and post-trip inspections of vehicle systems and equipment</li>
-                            <li>• Load and unload cargo</li>
-                            <li>• Ensure accurate documentation</li>
-                          </ul>
-                        </div>
-                        <button
-                          className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto"
-                          onClick={() => {
-                            openJobDetails({
-                              id: 'static-driver',
-                              title: 'Delivery Driver',
-                              depot: 'Pasig Depot',
-                              description: 'Static card',
-                              responsibilities: []
-                            });
-                          }}
-                        >
-                          View
-                        </button>
                       </div>
                     </div>
-
-                    <div className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
-                      <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1 transform">
-                        URGENT HIRING!
-                      </div>
-                      <div className="mt-6 flex flex-col flex-grow">
-                        <h3 className="text-xl font-bold text-gray-800 mb-2">
-                          Delivery Helper
-                        </h3>
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="text-gray-700">Butuan Depot</span>
-                          <span className="text-sm text-gray-500">Posted 1 day ago</span>
-                        </div>
-                        <p className="text-gray-700 mb-4">
-                          We are seeking a reliable and safety-conscious Truck Driver to
-                          transport goods efficiently and on schedule to various
-                          destinations.
-                        </p>
-                        <div className="mb-4 flex-grow">
-                          <h4 className="font-semibold text-gray-800 mb-2">
-                            Main Responsibilities
-                          </h4>
-                          <ul className="text-sm text-gray-700 space-y-1">
-                            <li>• Safely operate company-based trucks</li>
-                            <li>• Conduct pre-trip and post-trip inspections of vehicle systems and equipment</li>
-                            <li>• Load and unload cargo</li>
-                            <li>• Ensure accurate documentation</li>
-                          </ul>
-                        </div>
-                        <button
-                          className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto"
-                          onClick={() => {
-                            openJobDetails({
-                              id: 'static-helper',
-                              title: 'Delivery Helper',
-                              depot: 'Butuan Depot',
-                              description: 'Static card',
-                              responsibilities: []
-                            });
-                          }}
-                        >
-                          View
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
-                      <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1 transform">
-                        URGENT HIRING!
-                      </div>
-                      <div className="mt-6 flex flex-col flex-grow">
-                        <h3 className="text-xl font-bold text-gray-800 mb-2">HR Coordinator</h3>
-                        <div className="flex justify-between items-center mb-3">
-                          <span className="text-gray-700">Butuan Depot</span>
-                          <span className="text-sm text-gray-500">Posted 1 day ago</span>
-                        </div>
-                        <p className="text-gray-700 mb-4">
-                          We are looking for a detail-oriented and proactive HR Coordinator
-                          to support daily human resources operations.
-                        </p>
-                        <div className="mb-4 flex-grow flex-grow">
-                          <h4 className="font-semibold text-gray-800 mb-2">
-                            Main Responsibilities
-                          </h4>
-                          <ul className="text-sm text-gray-700 space-y-1">
-                            <li>• Assist with recruitment activities</li>
-                            <li>• Coordinate onboarding and offboarding processes</li>
-                            <li>• Maintain and update employee records</li>
-                            <li>• Respond to employee inquiries</li>
-                            <li>• Prepare HR-related reports</li>
-                            <li>• Support the HR team</li>
-                          </ul>
-                        </div>
-                        <button
-                          className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors mt-auto"
-                          onClick={() => {
-                            openJobDetails({
-                              id: 'static-hr',
-                              title: 'HR Coordinator',
-                              depot: 'Butuan Depot',
-                              description: 'Static card',
-                              responsibilities: []
-                            });
-                          }}
-                        >
-                          View
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* ... your other static cards remain unchanged ... */}
                   </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{jobCardElements}</div>
                 )}
               </div>
             </section>
@@ -1477,68 +1525,6 @@ const formatDateForInput = (dateString) => {
                     </div>
                 </div>
             </section>
-
-            {showJobDetailsModal && selectedJob && (
-              <div
-                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
-                onClick={() => setShowJobDetailsModal(false)}
-              >
-                <div
-                  className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] border-2 border-black overflow-hidden"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="flex justify-between items-center p-4 border-b">
-                    <div>
-                      <h2 className="text-xl font-bold text-gray-800">{selectedJob.title}</h2>
-                      <div className="text-sm text-gray-600 flex items-center gap-2">
-                        <span>{selectedJob.depot}</span>
-                        {selectedJob.urgent && (
-                          <span className="px-2 py-1 rounded bg-red-100 text-red-700 text-xs font-semibold">Urgent</span>
-                        )}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setShowJobDetailsModal(false)}
-                      className="text-gray-500 hover:text-gray-700 text-2xl"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                  <div className="p-4 space-y-4 overflow-y-auto max-h-[70vh]">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-1">Description</h3>
-                      <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-1">Responsibilities & Other Details</h3>
-                      {selectedJob.responsibilities && selectedJob.responsibilities.length > 0 ? (
-                        <ul className="list-disc list-inside text-gray-700 space-y-1">
-                          {selectedJob.responsibilities.map((item, idx) => (
-                            <li key={idx}>{item}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-gray-500">No responsibilities listed.</p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex justify-end gap-3 p-4 border-t">
-                    <button
-                      className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
-                      onClick={() => setShowJobDetailsModal(false)}
-                    >
-                      Close
-                    </button>
-                    <button
-                      className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-                      onClick={proceedToApplicationForm}
-                    >
-                      Proceed
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {/* Submit Application Modal (now controlled inputs) */}
             {showModal && (

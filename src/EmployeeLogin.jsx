@@ -140,6 +140,8 @@ function EmployeeLogin() {
       navigate("/employee/home");
     } else if (roleForRedirect === "agency") {
       navigate("/agency/home");
+    } else if (roleForRedirect === "admin") {
+      navigate("/admin/home");
     }
     else {
       console.error("❌ Unknown role:", profile.role);
@@ -148,8 +150,16 @@ function EmployeeLogin() {
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-neutral-100">
-      <div className="flex flex-col items-center justify-center bg-neutral-200 relative -mt-[100px] p-10 rounded-lg shadow-md max-w-sm w-full">
+    <div className="flex flex-col items-center min-h-screen bg-neutral-100">
+      <div className="flex justify-end gap-2 w-full bg-neutral-100 p-5">
+        <button
+          onClick={() => navigate("/applicant/login")}
+          className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
+          Applicant Login
+        </button>
+      </div>
+
+      <div className="flex flex-col items-center justify-center bg-neutral-200 p-10 rounded-lg shadow-md max-w-sm w-full mt-10">
         <div className="text-red-600 font-bold text-3xl italic mb-4">
           Each-R
         </div>

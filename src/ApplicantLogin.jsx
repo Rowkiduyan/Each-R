@@ -61,6 +61,11 @@ function ApplicantLogin() {
     <div className="flex flex-col items-center min-h-screen bg-neutral-100">
       <div className="flex justify-end gap-2 w-full bg-neutral-100 p-5">
         <button
+          onClick={() => navigate("/employee/login")}
+          className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
+          Employee Login
+        </button>
+        <button
           onClick={() => setShowGuestModal(true)}
           className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
           View Jobs as Guest
