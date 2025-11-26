@@ -616,7 +616,6 @@ function HrRecruitment() {
     setConfirmCallback(async () => {
       setShowConfirmDialog(false);
       try {
-<<<<<<< HEAD
         // First, get the application data to extract applicant information
         const { data: applicationData, error: appError } = await supabase
           .from("applications")
