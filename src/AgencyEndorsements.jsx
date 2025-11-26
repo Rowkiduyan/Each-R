@@ -1,14 +1,26 @@
 // src/AgencyEndorsements.jsx
 import React, { useState, useEffect, useRef } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
 
 function AgencyEndorsements() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const profileDropdownRef = useRef(null);
+  
+  // Check if navigated from Separation page to submit resignation
+  const [showSeparationPrompt, setShowSeparationPrompt] = useState(false);
+  
+  useEffect(() => {
+    if (location.state?.openSeparationTab) {
+      setShowSeparationPrompt(true);
+      // Clear the state to prevent showing prompt on refresh
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
 
   // endorsed/hired state
   const [endorsedEmployees, setEndorsedEmployees] = useState([]);
@@ -26,17 +38,39 @@ function AgencyEndorsements() {
   const [endorsementsPage, setEndorsementsPage] = useState(1);
   const [endorsementsPerPage, setEndorsementsPerPage] = useState(10);
   const [endorsementsSearch, setEndorsementsSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [employeeDetailTab, setEmployeeDetailTab] = useState('profiling');
+
+  // Mock document requests from HR
+  // Status: pending (awaiting upload), submitted (uploaded, waiting HR review), resubmit (HR rejected, needs re-upload), approved (HR approved)
+  const [documentRequests] = useState([
+    { id: 1, employeeId: 1, employeeName: 'Juan Dela Cruz', document: 'NBI Clearance', requestedDate: '2024-11-20', deadline: '2024-12-05', status: 'pending', priority: 'high', remarks: null },
+    { id: 2, employeeId: 2, employeeName: 'Maria Santos', document: 'Medical Certificate', requestedDate: '2024-11-22', deadline: '2024-12-10', status: 'submitted', priority: 'medium', remarks: null, submittedDate: '2024-11-24' },
+    { id: 3, employeeId: 1, employeeName: 'Juan Dela Cruz', document: 'Police Clearance', requestedDate: '2024-11-18', deadline: '2024-12-01', status: 'resubmit', priority: 'high', remarks: 'Document is blurry and unreadable. Please upload a clearer copy or scan.' },
+    { id: 4, employeeId: 3, employeeName: 'Pedro Garcia', document: 'Barangay Clearance', requestedDate: '2024-11-15', deadline: '2024-11-30', status: 'resubmit', priority: 'high', remarks: 'Document has expired. Please submit a clearance issued within the last 6 months.' },
+    { id: 5, employeeId: 4, employeeName: 'Ana Reyes', document: 'Birth Certificate (PSA)', requestedDate: '2024-11-10', deadline: '2024-11-25', status: 'approved', priority: 'low', remarks: null, submittedDate: '2024-11-12', approvedDate: '2024-11-15' },
+    { id: 6, employeeId: 2, employeeName: 'Maria Santos', document: 'NBI Clearance', requestedDate: '2024-11-20', deadline: '2024-12-08', status: 'pending', priority: 'medium', remarks: null },
+    { id: 7, employeeId: 5, employeeName: 'Carlos Mendoza', document: 'SSS E1 Form', requestedDate: '2024-11-23', deadline: '2024-12-15', status: 'submitted', priority: 'low', remarks: null, submittedDate: '2024-11-25' },
+  ]);
+  const [showDocumentRequests, setShowDocumentRequests] = useState(false);
 
   // Calculate items per page based on available screen height
   useEffect(() => {
     const calculateItemsPerPage = () => {
       // Approximate row height (including padding and borders)
       const rowHeight = 45;
-      // Header height + title + pagination + padding (~180px for header, ~80px for title, ~60px for pagination, ~40px padding)
-      const reservedHeight = 360;
+      // Reserved heights:
+      // - Header: ~70px
+      // - Page title + subtitle: ~70px  
+      // - Stats cards: ~110px (with margins)
+      // - Table card header: ~55px
+      // - Table header row: ~40px
+      // - Pagination: ~55px
+      // - Various padding/margins: ~50px
+      const reservedHeight = 450;
       const availableHeight = window.innerHeight - reservedHeight;
-      const calculatedItems = Math.max(5, Math.floor(availableHeight / rowHeight));
+      // Subtract 1 to ensure last row doesn't get cut off
+      const calculatedItems = Math.max(3, Math.floor(availableHeight / rowHeight) - 1);
       setEndorsementsPerPage(calculatedItems);
     };
 
@@ -114,8 +148,11 @@ function AgencyEndorsements() {
 
           const displayName = [first, middle, last].filter(Boolean).join(" ").trim() || (app?.fullName || app?.name) || "Unnamed";
 
-          // If endorsed_employee_id exists, treat endorsement as hired in UI
-          const status = r.endorsed_employee_id ? "hired" : (r.status || "pending");
+          // Normalize status: if hired or deployed or has endorsed_employee_id, treat as "deployed"
+          let status = r.status || "pending";
+          if (r.endorsed_employee_id || status === "hired" || status === "deployed") {
+            status = "deployed";
+          }
 
           return {
             id: r.id,
@@ -207,7 +244,7 @@ function AgencyEndorsements() {
       )
       .subscribe();
 
-    // subscribe to employees changes - when employees change, update hires + endorsed (so status flips to hired)
+    // subscribe to employees changes - when employees change, update hires + endorsed (so status flips to deployed)
     const employeesChannel = supabase
       .channel("employees-rt")
       .on(
@@ -233,8 +270,43 @@ function AgencyEndorsements() {
     catch { return String(d); }
   };
 
+  // Get initials from name
+  const getInitials = (name) => {
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
+
+  // Generate consistent color based on name
+  const getAvatarColor = (name) => {
+    const colors = [
+      'from-red-500 to-red-600',
+      'from-blue-500 to-blue-600',
+      'from-green-500 to-green-600',
+      'from-purple-500 to-purple-600',
+      'from-orange-500 to-orange-600',
+      'from-pink-500 to-pink-600',
+      'from-teal-500 to-teal-600',
+      'from-indigo-500 to-indigo-600',
+    ];
+    const index = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+    return colors[index];
+  };
+
+  // Calculate stats
+  const pendingDocRequests = documentRequests.filter(d => d.status === 'pending').length;
+  const resubmitDocRequests = documentRequests.filter(d => d.status === 'resubmit').length;
+  const submittedDocRequests = documentRequests.filter(d => d.status === 'submitted').length;
+  const approvedDocRequests = documentRequests.filter(d => d.status === 'approved').length;
+  const actionRequiredDocs = pendingDocRequests + resubmitDocRequests;
+  const stats = {
+    totalDeployed: endorsedEmployees.filter(e => e.status === 'deployed').length,
+    pendingEndorsements: endorsedEmployees.filter(e => e.status === 'pending').length,
+    totalEndorsements: endorsedEmployees.length,
+    pendingDocuments: actionRequiredDocs,
+    resubmitDocuments: resubmitDocRequests,
+  };
+
   return (
-    <div className="min-h-screen bg-white h-screen overflow-hidden">
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       <style>{`
         .no-scrollbar {
           -ms-overflow-style: none;
@@ -292,7 +364,7 @@ function AgencyEndorsements() {
               >
                 Endorsements
               </button>
-              <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Seminars</Link>
+              <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
               <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
               <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>
             </nav>
@@ -349,35 +421,158 @@ function AgencyEndorsements() {
       </div>
 
       {/* Content */}
-      <div className="flex flex-col items-center h-full">
-        <div className="max-w-7xl mx-auto px-6 py-8 w-full h-full">
-          {/* Endorsements */}
-          <section className="p-4 overflow-hidden" style={{ height: 'calc(100vh - 120px)' }}>
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 flex flex-col h-full overflow-hidden">
-              {/* Header with title and search */}
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-gray-800">Endorsed Employees</h2>
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={endorsementsSearch}
-                      onChange={(e) => {
-                        setEndorsementsSearch(e.target.value);
-                        setEndorsementsPage(1); // Reset to page 1 when searching
-                      }}
-                      placeholder="Search..."
-                      className="w-64 px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <button className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                    </svg>
-                  </button>
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="max-w-7xl mx-auto px-6 py-4 w-full flex flex-col flex-1 overflow-hidden">
+          {/* Page Header */}
+          <div className="mb-4">
+            <h1 className="text-2xl font-bold text-gray-800">Endorsements</h1>
+            <p className="text-gray-500 mt-1">Track and manage all your endorsed employees at Roadwise</p>
+          </div>
+
+          {/* Stats Cards - Hidden when employee is selected */}
+          {!selectedEmployee && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4 flex-shrink-0">
+            {/* Total Deployed */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500 font-medium">Total Deployed</p>
+                  <p className="text-2xl font-bold text-gray-800 mt-1">{stats.totalDeployed}</p>
+                </div>
+                <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
                 </div>
               </div>
+              <p className="text-xs text-green-600 mt-2 font-medium">Deployed employees</p>
+            </div>
 
+            {/* Pending Endorsements */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500 font-medium">Pending Endorsements</p>
+                  <p className="text-2xl font-bold text-gray-800 mt-1">{stats.pendingEndorsements}</p>
+                </div>
+                <div className="w-10 h-10 bg-yellow-50 rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+              <p className="text-xs text-yellow-600 mt-2 font-medium">Awaiting review</p>
+            </div>
+
+            {/* Total Endorsements */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-500 font-medium">Total Endorsements</p>
+                  <p className="text-2xl font-bold text-gray-800 mt-1">{stats.totalEndorsements}</p>
+                </div>
+                <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                  </svg>
+                </div>
+              </div>
+              <p className="text-xs text-blue-600 mt-2 font-medium">All time</p>
+            </div>
+          </div>
+          )}
+
+          {/* Endorsements Table Card */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 overflow-hidden min-h-0">
+            {/* Search and Filters */}
+            <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
+              <div className="flex flex-col sm:flex-row gap-3">
+                {/* Search */}
+                <div className="relative flex-1">
+                  <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    placeholder="Search by employee name, ID, position, or depot..."
+                    value={endorsementsSearch}
+                    onChange={(e) => {
+                      setEndorsementsSearch(e.target.value);
+                      setEndorsementsPage(1); // Reset to page 1 when searching
+                    }}
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                  />
+                </div>
+
+                {/* Status Filter */}
+                <select
+                  value={statusFilter}
+                  onChange={(e) => { setStatusFilter(e.target.value); setEndorsementsPage(1); }}
+                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
+                >
+                  <option value="all">All Status</option>
+                  <option value="deployed">Deployed</option>
+                  <option value="pending">Pending</option>
+                </select>
+
+                {/* Document Requests Button */}
+                <button 
+                  onClick={() => setShowDocumentRequests(true)}
+                  className={`px-4 py-2.5 border rounded-lg text-sm font-medium flex items-center gap-2 ${
+                    stats.pendingDocuments > 0 
+                      ? stats.resubmitDocuments > 0
+                        ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100'
+                        : 'border-orange-300 bg-orange-50 text-orange-700 hover:bg-orange-100' 
+                      : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Doc Requests
+                  {stats.pendingDocuments > 0 && (
+                    <span className={`px-1.5 py-0.5 text-xs rounded-full ${stats.resubmitDocuments > 0 ? 'bg-red-500 text-white' : 'bg-orange-500 text-white'}`}>
+                      {stats.pendingDocuments}
+                    </span>
+                  )}
+                </button>
+
+                {/* Export Button */}
+                <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export
+                </button>
+              </div>
+            </div>
+
+            {/* Separation Prompt Banner */}
+            {showSeparationPrompt && (
+              <div className="mx-4 mt-4 p-4 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-lg flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">Submit Resignation Request</p>
+                    <p className="text-sm text-gray-600">Select a <strong>deployed employee</strong> from the list below to submit a resignation request.</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowSeparationPrompt(false)}
+                  className="p-1.5 hover:bg-red-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            )}
+
+            <div className="flex-1 flex flex-col overflow-hidden p-4 min-h-0">
               {endorsedLoading ? (
                 <div className="p-6 text-gray-600">Loading endorsements…</div>
               ) : endorsedError ? (
@@ -385,8 +580,12 @@ function AgencyEndorsements() {
               ) : endorsedEmployees.length === 0 ? (
                 <div className="p-6 text-gray-600">No endorsements yet.</div>
               ) : (() => {
-                // Filter employees based on search
+                // Filter employees based on search and status filter
                 const filteredEmployees = endorsedEmployees.filter((emp) => {
+                  // Status filter
+                  if (statusFilter !== 'all' && emp.status !== statusFilter) return false;
+                  
+                  // Search filter
                   if (!endorsementsSearch.trim()) return true;
                   const searchLower = endorsementsSearch.toLowerCase();
                   return (
@@ -404,53 +603,69 @@ function AgencyEndorsements() {
 
                 return (
                 <>
-                  <div className="flex flex-col lg:flex-row gap-6 flex-1 overflow-hidden">
+                  <div className="flex flex-col lg:flex-row gap-4 flex-1 overflow-hidden min-h-0">
                     {/* Table on the left */}
                     <div className={`${selectedEmployee ? 'lg:w-[30%]' : 'w-full'} overflow-x-auto overflow-y-auto no-scrollbar`}>
                       {filteredEmployees.length === 0 ? (
                         <div className="p-6 text-gray-600">No endorsements match your search.</div>
                       ) : (
-                      <table className="w-full border border-gray-200 text-sm">
-                        <thead className="bg-gray-100 sticky top-0">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
                           <tr>
-                            {!selectedEmployee && <th className="border px-3 py-2 text-left">ID</th>}
-                            <th className="border px-3 py-2 text-left">Name</th>
+                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
                             {!selectedEmployee && (
                               <>
-                                <th className="border px-3 py-2 text-left">Position</th>
-                                <th className="border px-3 py-2 text-left">Depot</th>
-                                <th className="border px-3 py-2 text-left">Status</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                               </>
                             )}
                           </tr>
                         </thead>
-                        <tbody>
+                        <tbody className="divide-y divide-gray-100">
                           {paginatedEmployees.map((emp) => {
-                              // Find hired date from hiredEmployees if this endorsement was hired
-                              const hiredEmployee = emp.endorsed_employee_id 
+                              // Find deployed date from hiredEmployees if this endorsement was deployed
+                              const deployedEmployee = emp.endorsed_employee_id 
                                 ? hiredEmployees.find(h => h.id === emp.endorsed_employee_id)
                                 : null;
-                              const hiredDate = hiredEmployee?.hired_at ? formatDate(hiredEmployee.hired_at) : null;
+                              const deployedDate = deployedEmployee?.hired_at ? formatDate(deployedEmployee.hired_at) : null;
                               const isSelected = selectedEmployee?.id === emp.id;
                               
                               return (
                                 <tr 
                                   key={emp.id} 
-                                  className={`hover:bg-gray-50 cursor-pointer ${isSelected ? 'bg-blue-50 border-l-4 border-l-blue-600' : ''}`} 
-                                  onClick={() => setSelectedEmployee(emp)}
+                                  className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${isSelected ? 'bg-red-50/50' : ''}`} 
+                                  onClick={() => {
+                                    setSelectedEmployee(emp);
+                                    // If coming from Separation page, auto-open the separation tab
+                                    if (showSeparationPrompt && emp.status === 'deployed') {
+                                      setEmployeeDetailTab('separation');
+                                      setShowSeparationPrompt(false);
+                                    }
+                                  }}
                                 >
-                                  {!selectedEmployee && <td className="border px-3 py-2 text-gray-500">{emp.id}</td>}
-                                  <td className="border px-3 py-2 text-gray-800">{emp.name}</td>
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(emp.name)} flex items-center justify-center text-white text-sm font-medium shadow-sm`}>
+                                        {getInitials(emp.name)}
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-800">{emp.name}</p>
+                                        <p className="text-xs text-gray-500">#{emp.id}</p>
+                                      </div>
+                                    </div>
+                                  </td>
                                   {!selectedEmployee && (
                                     <>
-                                      <td className="border px-3 py-2">{emp.position}</td>
-                                      <td className="border px-3 py-2">{emp.depot}</td>
-                                      <td className="border px-3 py-2">
-                                        <span className={emp.status === "hired" ? "text-green-600" : "text-yellow-600"}>
+                                      <td className="px-6 py-4">
+                                        <p className="text-sm text-gray-800">{emp.position}</p>
+                                        <p className="text-xs text-gray-500">{emp.depot}</p>
+                                      </td>
+                                      <td className="px-6 py-4">
+                                        <span className={`text-sm font-semibold ${emp.status === "deployed" ? "text-green-600" : "text-yellow-600"}`}>
                                           {emp.status.toUpperCase()}
                                         </span>
-                                        {emp.status === "hired" && (
-                                          <div className="text-xs text-gray-400 mt-0.5">{hiredDate || "date unavailable"}</div>
+                                        {emp.status === "deployed" && (
+                                          <p className="text-xs text-gray-400 mt-0.5">{deployedDate || "date unavailable"}</p>
                                         )}
                                       </td>
                                     </>
@@ -471,10 +686,10 @@ function AgencyEndorsements() {
                       const workExperiences = payload.workExperiences || [];
                       const characterReferences = payload.characterReferences || [];
                       const job = payload.job || {};
-                      const isHired = selectedEmployee.status === "hired";
+                      const isDeployed = selectedEmployee.status === "deployed";
 
                       // Different tabs based on status
-                      const hiredTabs = [
+                      const deployedTabs = [
                         { key: 'profiling', label: 'Profiling' },
                         { key: 'documents', label: 'Documents' },
                         { key: 'onboarding', label: 'Onboarding' },
@@ -488,9 +703,9 @@ function AgencyEndorsements() {
                         { key: 'agreements', label: 'Agreements' },
                       ];
 
-                      const detailTabs = isHired ? hiredTabs : pendingTabs;
+                      const detailTabs = isDeployed ? deployedTabs : pendingTabs;
 
-                      // Reset tab if switching between hired/pending and tab doesn't exist
+                      // Reset tab if switching between deployed/pending and tab doesn't exist
                       const validTabKeys = detailTabs.map(t => t.key);
                       const currentTab = validTabKeys.includes(employeeDetailTab) ? employeeDetailTab : detailTabs[0].key;
 
@@ -515,13 +730,13 @@ function AgencyEndorsements() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <h4 className="font-semibold text-gray-800">{selectedEmployee.name}</h4>
-                                {isHired && (
-                                  <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">HIRED</span>
+                                {isDeployed && (
+                                  <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">DEPLOYED</span>
                                 )}
                               </div>
                               <p className="text-xs text-gray-500">#{selectedEmployee.id}</p>
                               <p className="text-sm text-gray-600">{selectedEmployee.position} | {selectedEmployee.depot}</p>
-                              {!isHired && <p className="text-xs text-blue-600 hover:underline cursor-pointer mt-1">Retract Endorsement</p>}
+                              {!isDeployed && <p className="text-xs text-blue-600 hover:underline cursor-pointer mt-1">Retract Endorsement</p>}
                             </div>
                           </div>
                         </div>
@@ -785,8 +1000,116 @@ function AgencyEndorsements() {
 
                               {/* HR Requested Documents Section */}
                               <div className="border-t border-gray-300 pt-4 mt-6">
-                                <h5 className="font-semibold text-gray-800 mb-3">HR Requested Documents</h5>
-                                <p className="text-sm text-gray-500 italic">No additional documents have been requested by HR yet.</p>
+                                <div className="flex items-center justify-between mb-4">
+                                  <h5 className="font-semibold text-gray-800">HR Requested Documents</h5>
+                                  {documentRequests.filter(d => d.employeeId === selectedEmployee.id).length > 0 && (
+                                    <span className="text-xs text-gray-500">
+                                      {documentRequests.filter(d => d.employeeId === selectedEmployee.id && (d.status === 'pending' || d.status === 'resubmit')).length} action required
+                                    </span>
+                                  )}
+                                </div>
+                                
+                                {documentRequests.filter(d => d.employeeId === selectedEmployee.id).length === 0 ? (
+                                  <p className="text-sm text-gray-500 italic">No additional documents have been requested by HR yet.</p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {documentRequests
+                                      .filter(d => d.employeeId === selectedEmployee.id)
+                                      .sort((a, b) => {
+                                        const statusOrder = { resubmit: 0, pending: 1, submitted: 2, approved: 3 };
+                                        return statusOrder[a.status] - statusOrder[b.status];
+                                      })
+                                      .map((request) => (
+                                      <div 
+                                        key={request.id} 
+                                        className={`border rounded-lg p-4 ${
+                                          request.status === 'resubmit' 
+                                            ? 'bg-red-50 border-red-200' 
+                                            : request.status === 'pending'
+                                            ? 'bg-orange-50 border-orange-200'
+                                            : request.status === 'submitted'
+                                            ? 'bg-blue-50 border-blue-200'
+                                            : 'bg-green-50 border-green-200'
+                                        }`}
+                                      >
+                                        <div className="flex items-start justify-between gap-4">
+                                          <div className="flex-1">
+                                            <div className="flex items-center gap-2 mb-1">
+                                              <span className="text-sm font-semibold text-gray-800">{request.document}</span>
+                                              {request.status === 'resubmit' && (
+                                                <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">RE-SUBMIT REQUIRED</span>
+                                              )}
+                                              {request.status === 'pending' && (
+                                                <span className="px-2 py-0.5 text-xs font-medium bg-orange-100 text-orange-700 rounded-full">PENDING UPLOAD</span>
+                                              )}
+                                              {request.status === 'submitted' && (
+                                                <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">UNDER REVIEW</span>
+                                              )}
+                                              {request.status === 'approved' && (
+                                                <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">APPROVED</span>
+                                              )}
+                                            </div>
+                                            
+                                            {/* HR Remarks for Re-submit */}
+                                            {request.status === 'resubmit' && request.remarks && (
+                                              <div className="mt-2 p-2.5 bg-red-100 border border-red-200 rounded-lg">
+                                                <p className="text-xs font-medium text-red-700 mb-1 flex items-center gap-1">
+                                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                  </svg>
+                                                  HR Remarks:
+                                                </p>
+                                                <p className="text-xs text-red-700">{request.remarks}</p>
+                                              </div>
+                                            )}
+                                            
+                                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                                              <span>Requested: {formatDate(request.requestedDate)}</span>
+                                              <span>Deadline: {formatDate(request.deadline)}</span>
+                                              {request.submittedDate && <span>Submitted: {formatDate(request.submittedDate)}</span>}
+                                              {request.approvedDate && <span>Approved: {formatDate(request.approvedDate)}</span>}
+                                            </div>
+                                          </div>
+                                          
+                                          {/* Upload/Status Actions */}
+                                          <div className="flex-shrink-0">
+                                            {(request.status === 'pending' || request.status === 'resubmit') && (
+                                              <label className="cursor-pointer">
+                                                <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
+                                                <span className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                                                  request.status === 'resubmit'
+                                                    ? 'bg-red-600 text-white hover:bg-red-700'
+                                                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                                                }`}>
+                                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                  </svg>
+                                                  {request.status === 'resubmit' ? 'Re-upload' : 'Upload'}
+                                                </span>
+                                              </label>
+                                            )}
+                                            {request.status === 'submitted' && (
+                                              <div className="flex items-center gap-2 text-blue-600">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <span className="text-sm font-medium">Awaiting Review</span>
+                                              </div>
+                                            )}
+                                            {request.status === 'approved' && (
+                                              <div className="flex items-center gap-2 text-green-600">
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <span className="text-sm font-medium">Complete</span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
 
                               <div className="flex justify-end mt-6">
@@ -894,12 +1217,7 @@ function AgencyEndorsements() {
                           {/* EVALUATION TAB */}
                           {currentTab === 'evaluation' && (
                             <div className="space-y-6">
-                              <div className="flex items-center justify-between mb-4">
-                                <h5 className="font-semibold text-gray-800">Evaluation Records</h5>
-                                <button className="px-3 py-1 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">
-                                  + Add Evaluation
-                                </button>
-                              </div>
+                              <h5 className="font-semibold text-gray-800 mb-4">Evaluation Records</h5>
 
                               <div className="border border-gray-200 rounded-lg overflow-hidden">
                                 <table className="w-full text-sm">
@@ -1148,7 +1466,7 @@ function AgencyEndorsements() {
                               </div>
 
                               <div className="text-xs text-gray-500 italic mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-                                <strong>Note:</strong> Once the employee is hired, the appointment letter will be uploaded here by HR. The employee will receive their employee account credentials via email.
+                                <strong>Note:</strong> Once the employee is deployed, the appointment letter will be uploaded here by HR. The employee will receive their employee account credentials via email.
                               </div>
                             </div>
                           )}
@@ -1160,7 +1478,7 @@ function AgencyEndorsements() {
                   </div>
 
                   {/* Pagination */}
-                  <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                  <div className="flex items-center justify-between pt-3 border-t border-gray-200 flex-shrink-0">
                     <button
                       onClick={() => setEndorsementsPage(p => Math.max(1, p - 1))}
                       disabled={endorsementsPage === 1}
@@ -1191,40 +1509,312 @@ function AgencyEndorsements() {
                 );
               })()}
             </div>
-          </section>
+          </div>
         </div>
       </div>
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
         <div
-          className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
           onClick={() => setShowLogoutConfirm(false)}
         >
           <div
-            className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border"
+            className="bg-white rounded-xl max-w-md w-full mx-4 overflow-hidden shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-4 border-b">
+            <div className="p-5 border-b border-gray-100">
               <h3 className="text-lg font-semibold text-gray-800">Confirm Logout</h3>
             </div>
-            <div className="p-4 text-sm text-gray-700">
-              Are you sure you want to logout?
+            <div className="p-5 text-sm text-gray-600">
+              Are you sure you want to logout from your account?
             </div>
-            <div className="p-4 border-t flex justify-end gap-2">
+            <div className="p-5 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium"
                 onClick={() => setShowLogoutConfirm(false)}
               >
                 Cancel
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium"
                 onClick={handleLogout}
               >
                 Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document Requests Modal */}
+      {showDocumentRequests && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
+          onClick={() => setShowDocumentRequests(false)}
+        >
+          <div
+            className="bg-white rounded-xl max-w-3xl w-full mx-4 overflow-hidden shadow-xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-orange-50 to-white">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">HR Document Requests</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Documents requested by HR for your endorsed employees</p>
+              </div>
+              <button 
+                onClick={() => setShowDocumentRequests(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Stats Summary */}
+            <div className="p-4 bg-gray-50 border-b border-gray-100 grid grid-cols-4 gap-3">
+              <div className="bg-white rounded-lg p-3 border border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-red-50 rounded-lg flex items-center justify-center">
+                    <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-gray-800">{resubmitDocRequests}</p>
+                    <p className="text-xs text-gray-500">Re-submit</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-orange-50 rounded-lg flex items-center justify-center">
+                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-gray-800">{pendingDocRequests}</p>
+                    <p className="text-xs text-gray-500">Pending</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center">
+                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-gray-800">{submittedDocRequests}</p>
+                    <p className="text-xs text-gray-500">Submitted</p>
+                  </div>
+                </div>
+              </div>
+              <div className="bg-white rounded-lg p-3 border border-gray-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 bg-green-50 rounded-lg flex items-center justify-center">
+                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-lg font-bold text-gray-800">{approvedDocRequests}</p>
+                    <p className="text-xs text-gray-500">Approved</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Document Requests List */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {/* Action Required Section */}
+              {(resubmitDocRequests > 0 || pendingDocRequests > 0) && (
+                <div className="mb-4">
+                  <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                    Action Required ({actionRequiredDocs})
+                  </p>
+                  <div className="space-y-3">
+                    {documentRequests
+                      .filter(d => d.status === 'resubmit' || d.status === 'pending')
+                      .sort((a, b) => {
+                        // Sort: resubmit first, then by priority
+                        if (a.status === 'resubmit' && b.status !== 'resubmit') return -1;
+                        if (b.status === 'resubmit' && a.status !== 'resubmit') return 1;
+                        const priorityOrder = { high: 0, medium: 1, low: 2 };
+                        return priorityOrder[a.priority] - priorityOrder[b.priority];
+                      })
+                      .map((request) => (
+                      <div 
+                        key={request.id} 
+                        className={`rounded-lg border p-4 ${
+                          request.status === 'resubmit' 
+                            ? 'bg-red-50 border-red-200' 
+                            : 'bg-white border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className={`text-sm font-semibold ${request.status === 'resubmit' ? 'text-red-800' : 'text-gray-800'}`}>
+                                {request.document}
+                              </span>
+                              {request.status === 'resubmit' && (
+                                <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">RE-SUBMIT</span>
+                              )}
+                              {request.status === 'pending' && (
+                                <span className="px-2 py-0.5 text-xs font-medium bg-orange-100 text-orange-700 rounded-full">PENDING</span>
+                              )}
+                            </div>
+                            <p className="text-sm text-gray-600">
+                              For: <span className="font-medium">{request.employeeName}</span>
+                            </p>
+                            
+                            {/* HR Remarks for Re-submit */}
+                            {request.status === 'resubmit' && request.remarks && (
+                              <div className="mt-2 p-2.5 bg-red-100/50 border border-red-200 rounded-lg">
+                                <p className="text-xs font-medium text-red-700 mb-1 flex items-center gap-1">
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                  </svg>
+                                  HR Remarks:
+                                </p>
+                                <p className="text-xs text-red-700">{request.remarks}</p>
+                              </div>
+                            )}
+                            
+                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                Requested: {formatDate(request.requestedDate)}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                Deadline: {formatDate(request.deadline)}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              // Find the employee and navigate to their documents tab
+                              const employee = endorsedEmployees.find(e => e.id === request.employeeId);
+                              if (employee) {
+                                setSelectedEmployee(employee);
+                                setEmployeeDetailTab('documents');
+                              }
+                              setShowDocumentRequests(false);
+                            }}
+                            className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              request.status === 'resubmit'
+                                ? 'bg-red-600 text-white hover:bg-red-700'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Go to Documents
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* No Action Required Message */}
+              {actionRequiredDocs === 0 && (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <svg className="w-8 h-8 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-gray-600 font-medium">All caught up!</p>
+                  <p className="text-sm text-gray-500 mt-1">No pending document requests at the moment</p>
+                </div>
+              )}
+
+              {/* Awaiting HR Review Section */}
+              {submittedDocRequests > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                    Awaiting HR Review ({submittedDocRequests})
+                  </p>
+                  <div className="space-y-2">
+                    {documentRequests.filter(d => d.status === 'submitted').map((request) => (
+                      <div key={request.id} className="flex items-center justify-between p-3 bg-blue-50/50 rounded-lg border border-blue-100">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                            <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{request.document}</p>
+                            <p className="text-xs text-gray-500">{request.employeeName} · Submitted {formatDate(request.submittedDate)}</p>
+                          </div>
+                        </div>
+                        <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">Under Review</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Approved Documents Section */}
+              {approvedDocRequests > 0 && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    Approved ({approvedDocRequests})
+                  </p>
+                  <div className="space-y-2">
+                    {documentRequests.filter(d => d.status === 'approved').map((request) => (
+                      <div key={request.id} className="flex items-center justify-between p-3 bg-green-50/50 rounded-lg border border-green-100">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium text-gray-800">{request.document}</p>
+                            <p className="text-xs text-gray-500">{request.employeeName} · Approved {formatDate(request.approvedDate)}</p>
+                          </div>
+                        </div>
+                        <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">Approved</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+              <p className="text-xs text-gray-500">
+                <svg className="w-4 h-4 inline mr-1 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Click "Go to Documents" to upload the requested document
+              </p>
+              <button
+                onClick={() => setShowDocumentRequests(false)}
+                className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 text-sm font-medium"
+              >
+                Close
               </button>
             </div>
           </div>

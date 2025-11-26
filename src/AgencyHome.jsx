@@ -287,7 +287,7 @@ function AgencyHome() {
               >
                 Endorsements
               </Link>
-              <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Seminars</Link>
+              <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
               <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
               <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>
             </nav>
