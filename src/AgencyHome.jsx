@@ -1,44 +1,98 @@
 // src/AgencyHome.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import LogoCropped from './layouts/photos/logo(cropped).png';
+import Roadwise from './Roadwise.png';
 
 function AgencyHome() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("Job Postings");
-  const [showEmployeesDropdown, setShowEmployeesDropdown] = useState(false);
+  const [activeTab] = useState("Job Postings");
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const profileDropdownRef = useRef(null);
+  
+  // Search state
+  const [searchTerm, setSearchTerm] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [locationInput, setLocationInput] = useState('');
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  
+  // Split view state
+  const [showDetails, setShowDetails] = useState(false);
 
   // job posts state
   const [jobCards, setJobCards] = useState([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [jobsError, setJobsError] = useState(null);
 
-  // endorsed/hired state
-  const [endorsedEmployees, setEndorsedEmployees] = useState([]);
-  const [endorsedLoading, setEndorsedLoading] = useState(true);
-  const [endorsedError, setEndorsedError] = useState(null);
-
+  // hired state (for hired employee details modal)
   const [hiredEmployees, setHiredEmployees] = useState([]);
   const [hiredLoading, setHiredLoading] = useState(true);
   const [hiredError, setHiredError] = useState(null);
 
   // UI helpers for details
-  const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [selectedHiredEmployee, setSelectedHiredEmployee] = useState(null);
   const [showEmployeeDetails, setShowEmployeeDetails] = useState(false);
   const [showJobModal, setShowJobModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (showEmployeesDropdown && !event.target.closest('.employees-dropdown-root')) {
-        setShowEmployeesDropdown(false);
+      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target)) {
+        setShowProfileDropdown(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showEmployeesDropdown]);
+  }, [showProfileDropdown]);
+
+  // Search functions
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    setSearchTerm(searchInput.trim());
+    setLocationFilter(locationInput.trim());
+  };
+
+  const locationSuggestions = Array.from(
+    new Set(
+      jobCards
+        .map((job) => job.depot)
+        .filter((loc) => typeof loc === 'string' && loc.trim().length > 0)
+    )
+  );
+
+  const filteredLocationSuggestions = locationSuggestions.filter((loc) =>
+    loc.toLowerCase().includes(locationInput.toLowerCase())
+  );
+
+  const filteredJobs = jobCards.filter((job) => {
+    const keywordMatch = searchTerm
+      ? job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        job.description?.toLowerCase().includes(searchTerm.toLowerCase())
+      : true;
+    const locationMatch = locationFilter
+      ? (job.depot || '').toLowerCase().includes(locationFilter.toLowerCase())
+      : true;
+    return keywordMatch && locationMatch;
+  });
+
+  const handleCardSelect = (job) => {
+    setSelectedJob(job);
+    setShowDetails(true);
+  };
+
+  const handleViewAll = () => {
+    setShowDetails(false);
+    setSelectedJob(null);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/employee/login");
+  };
 
   // ---------- Load job posts ----------
   const loadJobPosts = async () => {
@@ -88,89 +142,6 @@ function AgencyHome() {
     }
   };
 
-  // ---------- Load endorsed employees (recruitment_endorsements) ----------
-  const loadEndorsed = async () => {
-    setEndorsedLoading(true);
-    setEndorsedError(null);
-    try {
-      const { data, error } = await supabase
-        .from("recruitment_endorsements")
-        .select(
-          `id,
-           agency_profile_id,
-           fname,
-           lname,
-           mname,
-           contact_number,
-           email,
-           position,
-           depot,
-           status,
-           payload,
-           endorsed_employee_id,
-           job_id,
-           created_at`
-        )
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error("Failed loading endorsements:", error);
-        setEndorsedError(error.message || String(error));
-        setEndorsedEmployees([]);
-      } else {
-        const normalized = (data || []).map((r) => {
-          // payload may be jsonb or string
-          let payload = r.payload;
-          // if (typeof payload === "string") {
-          //   try { payload = JSON.parse(payload); } catch () { payload = null; }
-          // }
-
-          const app = payload?.applicant || payload?.form || payload || null;
-
-          const first = r.fname || app?.firstName || app?.fname || app?.first_name || null;
-          const last = r.lname || app?.lastName || app?.lname || app?.last_name || null;
-          const middle = r.mname || app?.middleName || app?.mname || null;
-          const email = r.email || app?.email || app?.contact || null;
-          const contact = r.contact_number || app?.contact || app?.phone || null;
-          const pos = r.position || app?.position || null;
-          const depot = r.depot || app?.depot || null;
-
-          const displayName = [first, middle, last].filter(Boolean).join(" ").trim() || (app?.fullName || app?.name) || "Unnamed";
-
-          // If endorsed_employee_id exists, treat endorsement as hired in UI
-          const status = r.endorsed_employee_id ? "hired" : (r.status || "pending");
-
-          return {
-            id: r.id,
-            name: displayName,
-            first,
-            middle,
-            last,
-            email,
-            contact,
-            position: pos || "—",
-            depot: depot || "—",
-            status,
-            agency_profile_id: r.agency_profile_id || null,
-            payload, // keep raw payload for debug/detail view only
-            endorsed_employee_id: r.endorsed_employee_id || null,
-            job_id: r.job_id || null,
-            created_at: r.created_at || null,
-            raw: r,
-          };
-        });
-
-        setEndorsedEmployees(normalized);
-      }
-    } catch (err) {
-      console.error("Unexpected endorsed load error:", err);
-      setEndorsedError(String(err));
-      setEndorsedEmployees([]);
-    } finally {
-      setEndorsedLoading(false);
-    }
-  };
-
   // ---------- Load hired employees (employees table) ----------
   const loadHired = async () => {
     setHiredLoading(true);
@@ -216,22 +187,9 @@ function AgencyHome() {
   // initial loads + realtime subscriptions
   useEffect(() => {
     loadJobPosts();
-    loadEndorsed();
     loadHired();
 
-    // subscribe to recruitment_endorsements changes
-    const endorsementsChannel = supabase
-      .channel("recruitment-endorsements-rt")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "recruitment_endorsements" },
-        () => {
-          loadEndorsed();
-        }
-      )
-      .subscribe();
-
-    // subscribe to employees changes - when employees change, update hires + endorsed (so status flips to hired)
+    // subscribe to employees changes
     const employeesChannel = supabase
       .channel("employees-rt")
       .on(
@@ -239,7 +197,6 @@ function AgencyHome() {
         { event: "*", schema: "public", table: "employees" },
         () => {
           loadHired();
-          loadEndorsed(); // refresh endorsement statuses (endorsed_employee_id may have been set)
         }
       )
       .subscribe();
@@ -254,7 +211,6 @@ function AgencyHome() {
       .subscribe();
 
     return () => {
-      if (endorsementsChannel) supabase.removeChannel(endorsementsChannel);
       if (employeesChannel) supabase.removeChannel(employeesChannel);
       if (jobsChannel) supabase.removeChannel(jobsChannel);
     };
@@ -262,7 +218,7 @@ function AgencyHome() {
   }, []);
 
   const handleEndorseNavigate = (job) => {
-    navigate("/driver/add/record", { state: { job } });
+    navigate("/agency/endorse", { state: { job } });
   };
 
   const formatDate = (d) => {
@@ -272,201 +228,356 @@ function AgencyHome() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <style>{`
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        
+        /* Modern sleek scrollbar */
+        ::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: #d1d5db;
+          border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: #9ca3af;
+        }
+        
+        /* Firefox */
+        * {
+          scrollbar-width: thin;
+          scrollbar-color: #d1d5db transparent;
+        }
+      `}</style>
+      
+      {/* Header (hidden because AgencyLayout provides the main header) */}
+      <div className="bg-white shadow-sm sticky top-0 z-50 hidden">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
-              <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">Each-R</div>
+              <img
+                src={LogoCropped}
+                alt="Each-R Logo"
+                className="h-10 w-auto object-contain"
+              />
             </div>
 
-            <div className="flex-1 flex justify-center">
-              <nav className="flex space-x-8">
-                <button
-                  onClick={() => setActiveTab("Job Postings")}
-                  className={`pb-2 font-medium ${activeTab === "Job Postings" ? "text-red-600 border-b-2 border-red-600" : "text-gray-600 hover:text-gray-900"}`}
-                >
-                  Job Postings
-                </button>
+            <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
+              <button
+                type="button"
+                onClick={() => navigate("/agency/home")}
+                className="pb-1 text-red-600 border-b-2 border-red-600"
+              >
+                Home
+              </button>
 
-                <div className="relative employees-dropdown-root">
-                  <button
-                    onClick={() => setShowEmployeesDropdown(v => !v)}
-                    className={`pb-2 font-medium flex items-center ${activeTab === "Endorsed" || activeTab === "Hired" ? "text-red-600 border-b-2 border-red-600" : "text-gray-600 hover:text-gray-900"}`}
-                  >
-                    Employees
-                    <svg className="ml-1 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/endorsements")}
+                className="pb-1 hover:text-gray-900 transition-colors"
+              >
+                Endorsements
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/requirements")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Requirements
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/trainings")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Trainings/Orientation
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/evaluation")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Evaluation
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/separation")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Separation
+              </button>
+            </nav>
 
-                  {showEmployeesDropdown && (
-                    <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-md shadow-lg border z-50">
-                      <button onClick={() => { setActiveTab("Endorsed"); setShowEmployeesDropdown(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Endorsed Employees</button>
-                      <button onClick={() => { setActiveTab("Hired"); setShowEmployeesDropdown(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Employees Hired</button>
-                    </div>
-                  )}
+            <div className="flex items-center space-x-4">
+              {/* Notification Bell */}
+              <div className="relative">
+                <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300 cursor-pointer">
+                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                  </svg>
                 </div>
-
-                <Link to="/agency/recruitment" className="text-gray-600 hover:text-gray-900 pb-2 font-medium">Recruitment</Link>
-                <Link to="/agency/trainings" className="text-gray-600 hover:text-gray-900 pb-2 font-medium">Trainings/Seminars</Link>
-                <Link to="/agency/evaluation" className="text-gray-600 hover:text-gray-900 pb-2 font-medium">Evaluation</Link>
-                <Link to="/agency/separation" className="text-gray-600 hover:text-gray-900 pb-2 font-medium">Separation</Link>
-                <Link to="/agency/notifications" className="text-gray-600 hover:text-gray-900 pb-2 font-medium flex items-center">
-                  Notifications
-                  <span className="ml-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">3</span>
-                </Link>
-              </nav>
-            </div>
-
-            <div className="flex items-center space-x-3">
-              <span className="text-gray-600 font-medium">Agency User</span>
-              <Link to="/employee/login" className="text-gray-600 hover:text-gray-900 font-medium">Logout</Link>
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+              </div>
+              
+              {/* User Profile with Dropdown */}
+              <div className="relative" ref={profileDropdownRef}>
+                <div 
+                  onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                  className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-semibold cursor-pointer hover:bg-gray-300"
+                >
+                  AU
+                </div>
+                {/* Dropdown arrow */}
+                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full border-2 border-white flex items-center justify-center pointer-events-none">
+                  <svg className="w-2 h-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+                
+                {/* Dropdown Menu */}
+                {showProfileDropdown && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-50">
+                    <div className="py-1">
+                      <div className="px-4 py-2 text-sm text-gray-700 border-b">
+                        Agency User
+                      </div>
+                      <button
+                        onClick={() => {
+                          setShowProfileDropdown(false);
+                          setShowLogoutConfirm(true);
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                      >
+                        Logout
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Search Bar */}
-      <div className="max-w-7xl mx-auto px-6 mt-4 flex justify-end">
-        <input placeholder="Search" className="w-80 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-1 focus:ring-red-500" />
-      </div>
+      {/* Search Bar with Photo Banner - Only show on Job Postings tab */}
+      {activeTab === "Job Postings" && (
+        <div className="w-full">
+          <div className="relative">
+            <img
+              src={Roadwise}
+              alt="Delivery trucks on the road"
+              className="w-full h-[200px] object-cover"
+            />
+            <div className="absolute inset-0 bg-black/30" />
+            <div className="absolute inset-0 flex items-center justify-center px-4">
+              <form className="w-full max-w-4xl" onSubmit={handleSearchSubmit}>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-stretch bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
+                    <div className="flex-1 flex items-center px-5 py-4">
+                      <input
+                        type="text"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        className="w-full bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none"
+                        placeholder=" Job title, keywords, or company"
+                      />
+                    </div>
+                    <div className="w-px bg-gray-200" />
+                    <div className="flex-1 flex items-center px-6 py-3 relative">
+                      <input
+                        type="text"
+                        value={locationInput}
+                        onChange={(e) => setLocationInput(e.target.value)}
+                        onFocus={() => setShowLocationSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowLocationSuggestions(false), 100)}
+                        className="w-full bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none"
+                        placeholder="Location"
+                      />
+                      {showLocationSuggestions && filteredLocationSuggestions.length > 0 && (
+                        <ul className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto z-10">
+                          {filteredLocationSuggestions.map((loc) => (
+                            <li
+                              key={loc}
+                              className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
+                              onMouseDown={() => {
+                                setLocationInput(loc);
+                                setShowLocationSuggestions(false);
+                              }}
+                            >
+                              {loc}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="flex items-center pr-4">
+                      <button
+                        type="submit"
+                        className="bg-red-600 text-white px-5 py-2 text-base font-semibold rounded-xl hover:bg-red-700 transition-colors"
+                        aria-label="Find jobs"
+                      >
+                        Find Jobs
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex justify-end pr-4">
+                    <button
+                      type="button"
+                      className="text-white text-sm font-medium hover:underline"
+                    >
+                      More options
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
-        {/* Job Postings */}
-        <section className={activeTab === "Job Postings" ? "" : "hidden"}>
-          {jobsLoading ? (
-            <div className="p-8 text-center text-gray-600">Loading job postings…</div>
-          ) : jobsError ? (
-            <div className="p-8 text-center text-red-600">Error loading job posts: {jobsError}</div>
-          ) : jobCards.length === 0 ? (
-            <div className="p-8 text-center text-gray-600">No job postings available.</div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {jobCards.map((job) => (
-                <div key={job.id} className="bg-white rounded-lg shadow-md p-6 relative overflow-hidden flex flex-col">
-                  <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1 transform">URGENT HIRING!</div>
-                  <div className="mt-6 flex flex-col flex-grow">
-                    <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
-                    <div className="flex justify-between items-center mb-3">
-                      <span className="text-gray-700">{job.depot}</span>
-                      <span className="text-sm text-gray-500">Posted {job.posted}</span>
+      <div className="flex flex-col items-center flex-1">
+        <div className="max-w-7xl mx-auto px-6 py-8 w-full">
+          {/* Job Postings */}
+          <section className={`p-4 ${activeTab === "Job Postings" ? "" : "hidden"}`}>
+            <div className="max-w-7xl mx-auto px-6 py-8">
+              {jobsLoading ? (
+                <div className="text-gray-600">Loading job postings…</div>
+              ) : jobsError ? (
+                <div className="text-red-600">Error loading job posts: {jobsError}</div>
+              ) : jobCards.length === 0 ? (
+                <div className="text-gray-600">No job postings available.</div>
+              ) : filteredJobs.length === 0 ? (
+                <div className="text-gray-600">No job postings match your search.</div>
+              ) : showDetails && selectedJob ? (
+                <div className="space-y-4">
+                  <button
+                    type="button"
+                    onClick={handleViewAll}
+                    className="flex items-center text-blue-600 hover:text-blue-700 font-medium gap-2"
+                  >
+                    ← View all Job posts
+                  </button>
+                  <div className="flex flex-col lg:flex-row gap-6">
+                    <div className="lg:w-1/3 max-h-[70vh] overflow-y-auto no-scrollbar pr-2">
+                      <div className="space-y-4">
+                        {filteredJobs.map((job) => {
+                          const isSelected = selectedJob?.id === job.id;
+                          return (
+                            <div
+                              key={job.id}
+                              className={`bg-white rounded-lg shadow-md p-6 flex flex-col relative overflow-hidden cursor-pointer transition-colors ${
+                                isSelected ? 'border-2 border-red-600' : 'border border-transparent'
+                              } hover:bg-gray-100`}
+                              onClick={() => handleCardSelect(job)}
+                            >
+                              {job.urgent !== false && (
+                                <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1">
+                                  URGENT HIRING!
+                                </div>
+                              )}
+                              <div className="mt-4 flex flex-col flex-grow">
+                                <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
+                                <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
+                                  <span>{job.depot}</span>
+                                  <span>Posted {job.posted}</span>
+                                </div>
+                                <p className="text-gray-700 line-clamp-3">{job.description}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <p className="text-gray-700 mb-4">{job.description}</p>
-
-                    <div className="mb-4">
-                      <h4 className="font-semibold text-gray-800 mb-2">Main Responsibilities</h4>
-                      <ul className="text-sm text-gray-700 space-y-1">
-                        {job.responsibilities && job.responsibilities.length > 0 ? (
-                          job.responsibilities.map((resp, idx) => <li key={idx}>• {resp}</li>)
-                        ) : (
-                          <li className="text-gray-500">No responsibilities listed.</li>
-                        )}
-                      </ul>
-                    </div>
-
-                    <div className="mt-auto grid grid-cols-2 gap-2">
-                      <button className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors" onClick={() => { setSelectedJob(job); setShowJobModal(true); }}>View</button>
-                      <button className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors" onClick={() => handleEndorseNavigate(job)}>Endorse</button>
+                    <div className="lg:w-2/3 flex flex-col gap-4">
+                      <div className="bg-white rounded-lg shadow-md p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                        <div className="space-y-3">
+                          {selectedJob.urgent !== false && (
+                            <div className="inline-block px-4 py-1 rounded bg-red-100 text-red-700 text-2xl font-semibold">
+                              Urgent Hiring
+                            </div>
+                          )}
+                          <div className="flex items-start justify-between gap-4">
+                            <h2 className="text-2xl font-bold text-gray-800">{selectedJob.title}</h2>
+                            <button
+                              className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+                              onClick={() => handleEndorseNavigate(selectedJob)}
+                            >
+                              Endorse
+                            </button>
+                          </div>
+                          <div className="text-sm text-gray-600 flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center justify-center w-5 h-5 text-red-600">
+                                <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+                                  <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z" />
+                                </svg>
+                              </span>
+                              <span className="font-semibold">{selectedJob.depot}</span>
+                            </div>
+                            <span className="text-xs text-gray-500">Posted {selectedJob.posted}</span>
+                          </div>
+                        </div>
+                        <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-800 mb-2">Responsibilities & Other Details</h3>
+                          {selectedJob.responsibilities && selectedJob.responsibilities.length > 0 ? (
+                            <ul className="list-disc list-inside text-gray-700 space-y-1">
+                              {selectedJob.responsibilities.map((item, idx) => (
+                                <li key={idx}>{item}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-gray-500">No additional details provided.</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
-              ))}
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredJobs.map((job) => (
+                    <div
+                      key={job.id}
+                      className="bg-white rounded-lg shadow-md p-6 flex flex-col relative overflow-hidden cursor-pointer transition-colors hover:bg-gray-100 border border-transparent"
+                      onClick={() => handleCardSelect(job)}
+                    >
+                      {job.urgent !== false && (
+                        <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1">
+                          URGENT HIRING!
+                        </div>
+                      )}
+                      <div className="mt-4 flex flex-col flex-grow">
+                        <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
+                        <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
+                          <span>{job.depot}</span>
+                          <span>Posted {job.posted}</span>
+                        </div>
+                        <p className="text-gray-700 line-clamp-3">{job.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </section>
-
-        {/* Endorsed Employees */}
-        <section className={activeTab === "Endorsed" ? "" : "hidden"}>
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-lg font-bold mb-4">Endorsed Employees</h2>
-
-            {endorsedLoading ? (
-              <div className="p-6 text-gray-600">Loading endorsed employees…</div>
-            ) : endorsedError ? (
-              <div className="p-4 bg-red-50 text-red-700 rounded">{endorsedError}</div>
-            ) : endorsedEmployees.length === 0 ? (
-              <div className="p-6 text-gray-600">No endorsed employees yet.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border border-gray-200 text-sm">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="border px-3 py-2 text-left">ID</th>
-                      <th className="border px-3 py-2 text-left">Name</th>
-                      <th className="border px-3 py-2 text-left">Position</th>
-                      <th className="border px-3 py-2 text-left">Depot</th>
-                      <th className="border px-3 py-2 text-left">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {endorsedEmployees.map((emp) => (
-                      <tr key={emp.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => setSelectedEmployee(emp)}>
-                        <td className="border px-3 py-2 text-gray-500">{emp.id}</td>
-                        <td className="border px-3 py-2 font-medium text-blue-600 underline">{emp.name}</td>
-                        <td className="border px-3 py-2">{emp.position}</td>
-                        <td className="border px-3 py-2">{emp.depot}</td>
-                        <td className="border px-3 py-2">
-                          <span className={`px-2 py-1 rounded text-xs ${emp.status === "hired" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
-                            {emp.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* selected endorsed employee view */}
-            {selectedEmployee && (
-              <div className="mt-6 border-t pt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-md font-semibold">Endorsement Detail</h3>
-                  <button onClick={() => setSelectedEmployee(null)} className="text-sm px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Back</button>
-                </div>
-
-                <div className="bg-white border border-gray-300 rounded-lg p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 rounded flex items-center justify-center">
-                        <span className="text-blue-600 font-semibold text-sm">{selectedEmployee.name.split(' ').map(n => n[0]).join('')}</span>
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-gray-800">{selectedEmployee.name}</h4>
-                        <p className="text-sm text-gray-600">Position: {selectedEmployee.position}</p>
-                        <p className="text-sm text-gray-600">Depot: {selectedEmployee.depot}</p>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-sm text-gray-500">#{selectedEmployee.id}</p>
-                      <p className="text-sm text-gray-500">Endorsed: {formatDate(selectedEmployee.created_at)}</p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h5 className="font-semibold text-gray-800 mb-2">Contact</h5>
-                    <p className="text-sm">Email: {selectedEmployee.email || "—"}</p>
-                    <p className="text-sm">Phone: {selectedEmployee.contact || "—"}</p>
-                  </div>
-
-                  <div className="mt-4">
-                    <h5 className="font-semibold text-gray-800 mb-2">Raw Payload (debug)</h5>
-                    <pre className="text-xs bg-gray-50 p-2 rounded max-h-44 overflow-auto text-gray-700">{JSON.stringify(selectedEmployee.payload || selectedEmployee.raw, null, 2)}</pre>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </section>
+          </section>
 
         {/* Employees Hired */}
-        <section className={activeTab === "Hired" ? "" : "hidden"}>
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-lg font-bold mb-4">Employees Hired</h2>
+        <section className={`p-4 ${activeTab === "Hired" ? "" : "hidden"}`}>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-6">Employees Hired</h2>
 
             {hiredLoading ? (
               <div className="p-6 text-gray-600">Loading hired employees…</div>
@@ -502,6 +613,7 @@ function AgencyHome() {
             )}
           </div>
         </section>
+        </div>
       </div>
 
       {/* Job Detail Modal */}
@@ -535,8 +647,10 @@ function AgencyHome() {
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t">
-                <button onClick={() => setShowJobModal(false)} className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">Close</button>
-                <button onClick={() => { setShowJobModal(false); navigate("/driver/add/record", { state: { job: selectedJob } }); }} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Endorse Employee</button>
+                <button onClick={() => setShowJobModal(false)} className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors">Close</button>
+                <button onClick={() => { setShowJobModal(false); navigate("/agency/endorse", { state: { job: selectedJob } }); }} className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors">
+                  Endorse Employee
+                </button>
               </div>
             </div>
           </div>
@@ -574,8 +688,70 @@ function AgencyHome() {
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 py-4 mt-auto">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
+            <div className="flex items-center gap-1 hover:text-gray-700 cursor-pointer">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Philippines</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+              </svg>
+            </div>
+            
+            <div className="flex items-center gap-6">
+              <a href="#" className="hover:text-gray-700 hover:underline">Terms & conditions</a>
+              <a href="#" className="hover:text-gray-700 hover:underline">Security</a>
+              <a href="#" className="hover:text-gray-700 hover:underline">Privacy</a>
+              <span className="text-gray-400">Copyright © 2025, Roadwise</span>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div
+          className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <div
+            className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-800">Confirm Logout</h3>
+            </div>
+            <div className="p-4 text-sm text-gray-700">
+              Are you sure you want to logout?
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                onClick={() => setShowLogoutConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                onClick={handleLogout}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 export default AgencyHome;
+

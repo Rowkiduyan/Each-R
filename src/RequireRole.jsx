@@ -9,10 +9,16 @@ export default function RequireRole({ role, children }) {
 
   console.log("🔍 Checking role:", userRole, "vs required:", role);
 
+  // Normalize both roles to lowercase for case-insensitive comparison
+  const normalizedUserRole = userRole?.toLowerCase();
+  const normalizedRequiredRole = role?.toLowerCase();
+
   // if user doesn't match the required role, redirect
-  if (userRole !== role) {
+  if (normalizedUserRole !== normalizedRequiredRole) {
+    console.warn("❌ Role mismatch:", normalizedUserRole, "!=", normalizedRequiredRole);
     return <Navigate to="/not-authorized" replace />;
   }
 
+  console.log("✅ Role check passed!");
   return children;
 }

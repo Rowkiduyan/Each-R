@@ -1,5 +1,5 @@
 // src/HrRecruitment.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 
@@ -10,7 +10,7 @@ import { supabase } from "./supabaseClient";
  */
 async function scheduleInterviewClient(applicationId, interview) {
   try {
-    const functionName = "dynamic-task"; // must match your Edge Function name exactly
+    const functionName = "schedule-interview-with-notification"; // Updated to use notification-enabled function
     const res = await supabase.functions.invoke(functionName, {
       body: JSON.stringify({ applicationId, interview }),
     });
@@ -31,6 +31,123 @@ async function scheduleInterviewClient(applicationId, interview) {
     console.error("scheduleInterviewClient error:", err);
     return { ok: false, error: err };
   }
+}
+
+/**
+ * createEmployeeAuthAccount
+ * Helper that invokes a Supabase Edge Function to create/update employee auth account using Admin API.
+ * This handles both new users and existing users (by resetting their password).
+ * It returns { ok: true, data } or { ok: false, error }.
+ */
+async function createEmployeeAuthAccount(employeeData) {
+  try {
+    const functionName = "create-employee-auth"; // Edge Function name
+    const res = await supabase.functions.invoke(functionName, {
+      body: JSON.stringify({
+        email: employeeData.employeeEmail,
+        password: employeeData.employeePassword,
+        firstName: employeeData.firstName,
+        lastName: employeeData.lastName,
+      }),
+    });
+
+    // SDK may return a Response (fetch) or a plain object with .error or .data
+    if (res instanceof Response) {
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(JSON.stringify(json || { status: res.status }));
+      }
+      return { ok: true, data: json };
+    } else if (res?.error) {
+      throw res.error;
+    } else {
+      return { ok: true, data: res };
+    }
+  } catch (err) {
+    console.error("createEmployeeAuthAccount error:", err);
+    return { ok: false, error: err };
+  }
+}
+
+/**
+ * sendEmployeeAccountEmail
+ * Helper that invokes a Supabase Edge Function to send employee account credentials via email.
+ * It returns { ok: true, data } or { ok: false, error }.
+ */
+async function sendEmployeeAccountEmail(employeeData) {
+  try {
+    const functionName = "send-employee-credentials"; // Edge Function name
+    const res = await supabase.functions.invoke(functionName, {
+      body: JSON.stringify(employeeData),
+    });
+
+    // SDK may return a Response (fetch) or a plain object with .error or .data
+    if (res instanceof Response) {
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(JSON.stringify(json || { status: res.status }));
+      }
+      return { ok: true, data: json };
+    } else if (res?.error) {
+      throw res.error;
+    } else {
+      return { ok: true, data: res };
+    }
+  } catch (err) {
+    console.error("sendEmployeeAccountEmail error:", err);
+    return { ok: false, error: err };
+  }
+}
+
+/**
+ * Generate employee email from name
+ * Format: first initial + last name + @roadwise.com
+ * Example: "Lorenz Vincel A. Adalem" -> "ladalem@roadwise.com"
+ */
+function generateEmployeeEmail(firstName, lastName) {
+  if (!firstName || !lastName) {
+    return null;
+  }
+  const firstInitial = firstName.charAt(0).toLowerCase();
+  const lastPart = lastName.toLowerCase().replace(/\s+/g, '');
+  return `${firstInitial}${lastPart}@roadwise.com`;
+}
+
+/**
+ * Generate employee password
+ * Format: FirstInitial + LastName + Birthday (YYYYMMDD) + !
+ * Example: "LAdalem19900101!"
+ * If birthday is not available, use a default format
+ */
+function generateEmployeePassword(firstName, lastName, birthday) {
+  const firstInitial = firstName ? firstName.charAt(0).toUpperCase() : 'E';
+  const lastPart = lastName ? lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase() : 'Employee';
+  
+  let birthdayPart = '';
+  if (birthday) {
+    // Try to parse birthday in various formats
+    const date = new Date(birthday);
+    if (!isNaN(date.getTime())) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      birthdayPart = `${year}${month}${day}`;
+    } else {
+      // Try to extract YYYYMMDD from string
+      const match = birthday.match(/(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
+      if (match) {
+        birthdayPart = `${match[1]}${match[2]}${match[3]}`;
+      }
+    }
+  }
+  
+  // If no valid birthday, use a default (current year + 0101)
+  if (!birthdayPart) {
+    const currentYear = new Date().getFullYear();
+    birthdayPart = `${currentYear}0101`;
+  }
+  
+  return `${firstInitial}${lastPart}${birthdayPart}!`;
 }
 
 function HrRecruitment() {
@@ -55,15 +172,30 @@ function HrRecruitment() {
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmCallback, setConfirmCallback] = useState(null);
   
+  // Filters for unified applications table
+  const [positionFilter, setPositionFilter] = useState("All");
+  const [depotFilter, setDepotFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [sortOrder, setSortOrder] = useState("asc");
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const filterMenuRef = useRef(null);
+  
   // Selected applicant detail view state
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [activeDetailTab, setActiveDetailTab] = useState("Application");
   const [interviewFile, setInterviewFile] = useState(null);
+  const [interviewFileName, setInterviewFileName] = useState("");
   const [assessmentFile, setAssessmentFile] = useState(null);
+  const [assessmentFileName, setAssessmentFileName] = useState("");
   const [agreementFile, setAgreementFile] = useState(null);
+  const [agreementFileName, setAgreementFileName] = useState("");
+  const [uploadingInterviewFile, setUploadingInterviewFile] = useState(false);
+  const [uploadingAssessmentFile, setUploadingAssessmentFile] = useState(false);
+  const [uploadingAgreementFile, setUploadingAgreementFile] = useState(false);
   
   // Requirements state
   const [documentStatus, setDocumentStatus] = useState({});
+  const [documentRemarks, setDocumentRemarks] = useState({});
   const [idFields, setIdFields] = useState({
     sss: "",
     philhealth: "",
@@ -82,6 +214,23 @@ function HrRecruitment() {
     pagibig: "Submitted",
     tin: "Submitted",
   });
+  const [idRemarks, setIdRemarks] = useState({
+    sss: "",
+    philhealth: "",
+    pagibig: "",
+    tin: "",
+  });
+
+  // Close filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
+        setShowFilterMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Load rejected applicants when modal opens
   useEffect(() => {
@@ -155,6 +304,68 @@ function HrRecruitment() {
   const itemsPerPage = 10;
 
   // expose a global opener so other pages/components can open the action modal for an applicant
+  // Load requirements data when Requirements tab is active and applicant is selected
+  useEffect(() => {
+    if (activeDetailTab === "Requirements" && selectedApplicant) {
+      let requirements = selectedApplicant.requirements;
+      if (typeof requirements === 'string') {
+        try { requirements = JSON.parse(requirements); } catch { requirements = {}; }
+      }
+      
+      if (requirements && Object.keys(requirements).length > 0) {
+        // Initialize state from requirements data
+        if (requirements.id_numbers) {
+          const idNums = requirements.id_numbers;
+          Object.keys(idNums).forEach(key => {
+            setIdFields(prev => {
+              if (prev[key] !== idNums[key]?.value) {
+                return { ...prev, [key]: idNums[key]?.value || "" };
+              }
+              return prev;
+            });
+            setIdStatus(prev => {
+              if (prev[key] !== idNums[key]?.status) {
+                return { ...prev, [key]: idNums[key]?.status || "Submitted" };
+              }
+              return prev;
+            });
+            setIdRemarks(prev => {
+              if (prev[key] !== idNums[key]?.remarks) {
+                return { ...prev, [key]: idNums[key]?.remarks || "" };
+              }
+              return prev;
+            });
+            setIdLocked(prev => {
+              const shouldLock = !!idNums[key]?.value;
+              if (prev[key] !== shouldLock) {
+                return { ...prev, [key]: shouldLock };
+              }
+              return prev;
+            });
+          });
+        }
+
+        if (requirements.documents) {
+          requirements.documents.forEach((doc, idx) => {
+            const docKey = doc.key || `doc_${idx}`;
+            setDocumentStatus(prev => {
+              if (prev[docKey] !== doc.status) {
+                return { ...prev, [docKey]: doc.status || "Submitted" };
+              }
+              return prev;
+            });
+            setDocumentRemarks(prev => {
+              if (prev[docKey] !== doc.remarks) {
+                return { ...prev, [docKey]: doc.remarks || "" };
+              }
+              return prev;
+            });
+          });
+        }
+      }
+    }
+  }, [activeDetailTab, selectedApplicant]);
+
   useEffect(() => {
     window.openHrActionModal = (applicant) => {
       setSelectedApplicationForInterview(applicant);
@@ -192,7 +403,8 @@ function HrRecruitment() {
   const loadApplications = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // Try to select with new columns first, fallback to basic columns if they don't exist
+      let query = supabase
         .from("applications")
         .select(`
           id,
@@ -205,17 +417,36 @@ function HrRecruitment() {
           interview_time,
           interview_location,
           interviewer,
+          interview_confirmed,
+          interview_confirmed_at,
+          interview_details_file,
+          assessment_results_file,
+          appointment_letter_file,
           job_posts:job_posts ( id, title, depot )
         `)
         .neq("status", "hired")
         .order("created_at", { ascending: false });
 
+      const { data, error } = await query;
+
       if (error) {
         console.error("fetch applications error:", error);
+        console.error("Error details:", JSON.stringify(error, null, 2));
+        setErrorMessage(`Failed to load applications: ${error.message || 'Unknown error'}`);
+        setShowErrorAlert(true);
         setApplicants([]);
         setLoading(false);
         return;
       }
+
+      if (!data) {
+        console.warn("No data returned from applications query");
+        setApplicants([]);
+        setLoading(false);
+        return;
+      }
+
+      console.log(`Loaded ${data.length} applications from database`);
 
       const mapped = (data || []).map((row) => {
         // normalize payload (jsonb or string)
@@ -257,25 +488,20 @@ function HrRecruitment() {
           interview_time: row.interview_time || row.payload?.interview?.time || null,
           interview_location: row.interview_location || row.payload?.interview?.location || null,
           interviewer: row.interviewer || row.payload?.interview?.interviewer || null,
+          // New fields - check both column and payload as fallback
+          interview_confirmed: row.interview_confirmed ?? payloadObj.interview_confirmed ?? false,
+          interview_confirmed_at: row.interview_confirmed_at ?? payloadObj.interview_confirmed_at ?? null,
+          interview_details_file: row.interview_details_file ?? payloadObj.interview_details_file ?? null,
+          assessment_results_file: row.assessment_results_file ?? payloadObj.assessment_results_file ?? null,
+          // Load requirements data from payload (column may not exist yet)
+          requirements: payloadObj.requirements ?? null,
         };
       });
 
-      // dedupe by user_id + job_id; keep newest (by created_at)
-      const uniqueByUserJob = {};
-      mapped.forEach((r) => {
-        const key = `${r.user_id || "nouser"}:${r.job_id || "nojob"}`;
-        if (!uniqueByUserJob[key]) {
-          uniqueByUserJob[key] = r;
-        } else {
-          const existingDate = new Date(uniqueByUserJob[key].raw.created_at).getTime();
-          const thisDate = new Date(r.raw.created_at).getTime();
-          if (thisDate > existingDate) uniqueByUserJob[key] = r;
-        }
-      });
-
-      const deduped = Object.values(uniqueByUserJob);
-      
-      setApplicants(deduped);
+      // Previously we tried to de‑duplicate by user_id + job_id, but this could
+      // incorrectly hide distinct applicants that happen to share those fields.
+      // Use the raw mapped list instead so every application row is visible.
+      setApplicants(mapped);
     } catch (err) {
       console.error("loadApplications unexpected error:", err);
       setApplicants([]);
@@ -423,17 +649,82 @@ function HrRecruitment() {
       setShowErrorAlert(true);
       return;
     }
-    
-    // Find the applicant data to get the job title/position
-    const applicant = applicants.find(a => a.id === applicationId) || selectedApplicant;
-    const position = applicant?.position || null;
-    
-    // Show confirm dialog
-    setConfirmMessage(`Mark ${applicantName} as Employee? This will create an employee record and remove the applicant.`);
+    // Show confirm dialog (generic wording that works for agency and direct hires)
+    setConfirmMessage(
+      `Mark ${applicantName} as Employee? This will create or update their employee record and mark the application as hired.`
+    );
     setConfirmCallback(async () => {
       setShowConfirmDialog(false);
       try {
-        // call the best RPC available with position info
+        // First, get the application data to extract applicant information
+        const { data: applicationData, error: appError } = await supabase
+          .from("applications")
+          .select("*")
+          .eq("id", applicationId)
+          .single();
+
+        if (appError || !applicationData) {
+          setErrorMessage("Failed to load application data.");
+          setShowErrorAlert(true);
+          return;
+        }
+
+        // Extract applicant information from payload
+        let payloadObj = applicationData.payload;
+        if (typeof payloadObj === 'string') {
+          try {
+            payloadObj = JSON.parse(payloadObj);
+          } catch {
+            payloadObj = {};
+          }
+        }
+
+        const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
+        const firstName = source.firstName || source.fname || source.first_name || "";
+        const lastName = source.lastName || source.lname || source.last_name || "";
+        const middleName = source.middleName || source.mname || source.middle_name || "";
+        const applicantEmail = source.email || source.contact || "";
+        const birthday = source.birthday || source.birth_date || source.dateOfBirth || null;
+
+        if (!firstName || !lastName) {
+          setErrorMessage("Cannot mark as employee: missing name information.");
+          setShowErrorAlert(true);
+          return;
+        }
+
+        // Detect if this applicant is agency/endorsed
+        const meta = payloadObj.meta || {};
+        const isAgencyApplicant =
+          applicationData.endorsed === true ||
+          meta.source === "agency" ||
+          meta.source === "Agency" ||
+          !!meta.endorsed_by_profile_id ||
+          !!meta.endorsed_by_auth_user_id ||
+          source.agency === true;
+
+        // Decide which email to store on the employee record:
+        // - For agency/endorsed: use their original applicant email (no corporate account)
+        // - For direct hires: generate a corporate employee email
+        let employeeEmail;
+        let employeePassword = null;
+
+        if (isAgencyApplicant) {
+          employeeEmail = applicantEmail || generateEmployeeEmail(firstName, lastName);
+        } else {
+          employeeEmail = generateEmployeeEmail(firstName, lastName);
+          employeePassword = generateEmployeePassword(firstName, lastName, birthday);
+        }
+
+        if (!employeeEmail) {
+          setErrorMessage("Failed to determine employee email.");
+          setShowErrorAlert(true);
+          return;
+        }
+
+        // Get position from application data
+        const position = applicationData.job_posts?.title || source.position || selectedApplicant?.position || null;
+        
+        // call the best RPC available to create employee record (with position if available)
         const rpcResult = await tryRpcMoveToEmployee(applicationId, position);
 
         if (!rpcResult.ok) {
@@ -448,15 +739,156 @@ function HrRecruitment() {
         const rpcData = rpcResult.data;
         if (rpcData && typeof rpcData === "object" && (rpcData.ok === false || rpcData.error)) {
           const msg = rpcData.message || JSON.stringify(rpcData);
-          // Ignore duplicate email errors - the employee is already in the database
-          if (msg.includes('duplicate key') && msg.includes('email')) {
-            console.log("Employee already exists (duplicate email), continuing...");
+
+          // Non‑fatal cases where we still want to continue and fall back to JS logic
+          const isDuplicateEmail =
+            msg.includes("duplicate key") && msg.includes("email");
+
+          // Old RPCs may reference the dropped recruitment_endorsements table.
+          // If that's the only problem, ignore it and let the JS upsert to employees handle it.
+          const isMissingRecruitmentEndorsements =
+            msg.toLowerCase().includes("recruitment_endorsements") ||
+            msg.includes("42P01");
+
+          if (isDuplicateEmail || isMissingRecruitmentEndorsements) {
+            console.warn(
+              "RPC reported non‑fatal issue, continuing with JS flow:",
+              rpcResult.candidate,
+              msg
+            );
             // Continue with success flow
           } else {
             console.error("RPC returned failure payload:", rpcResult.candidate, rpcData);
             setErrorMessage(msg);
             setShowErrorAlert(true);
             return;
+          }
+        }
+
+        // For direct hires, create/update Supabase Auth account so they can log in.
+        // For agency/endorsed hires, skip auth account creation (they won't log in).
+        let authUserId = null;
+        if (!isAgencyApplicant && employeePassword) {
+          try {
+            const authResult = await createEmployeeAuthAccount({
+              employeeEmail: employeeEmail,
+              employeePassword: employeePassword,
+              firstName: firstName,
+              lastName: lastName,
+            });
+
+            if (!authResult.ok) {
+              console.error("Failed to create/update auth account:", authResult.error);
+              // Continue anyway - the employee record was created, we'll just skip the auth account
+              console.warn("Proceeding without auth account creation");
+            } else {
+              authUserId = authResult.data?.userId;
+              console.log("Auth account created/updated successfully:", authResult.data?.message);
+            }
+          } catch (authErr) {
+            console.error("Error creating auth account:", authErr);
+            // Continue anyway - the employee record was created, we'll just skip the auth account
+            console.warn("Proceeding without auth account creation");
+          }
+        }
+
+        // Create or update profile with Employee role (only for direct hires with auth account)
+        if (authUserId) {
+          try {
+            // Check if profile exists
+            const { data: existingProfile } = await supabase
+              .from("profiles")
+              .select("id")
+              .eq("id", authUserId)
+              .single();
+
+            if (!existingProfile) {
+              // Create new profile
+              const { error: profileError } = await supabase.from("profiles").insert([
+                {
+                  id: authUserId,
+                  first_name: firstName,
+                  last_name: lastName,
+                  email: employeeEmail,
+                  role: "Employee",
+                },
+              ]);
+
+              if (profileError && profileError.code !== "23505") {
+                console.error("Error creating profile:", profileError);
+              }
+            } else {
+              // Update existing profile to Employee role
+              const { error: updateError } = await supabase
+                .from("profiles")
+                .update({ role: "Employee" })
+                .eq("id", authUserId);
+
+              if (updateError) {
+                console.error("Error updating profile role:", updateError);
+              }
+            }
+          } catch (profileErr) {
+            console.error("Error managing profile:", profileErr);
+          }
+        }
+
+        // Ensure there's a matching row in employees table (for HR/Agency modules)
+        try {
+          // Set source based on whether applicant is from agency or direct
+          const employeeSource = isAgencyApplicant ? "recruitment" : "internal";
+          
+          const { error: empUpsertErr } = await supabase
+            .from("employees")
+            .upsert(
+              {
+                email: employeeEmail,
+                fname: firstName,
+                lname: lastName,
+                mname: middleName || null,
+                position: position || null,
+                role: "Employee",
+                hired_at: new Date().toISOString(),
+                source: employeeSource,
+                // For agency applicants, preserve agency metadata
+                ...(isAgencyApplicant && {
+                  is_agency: true,
+                  agency_profile_id: meta.endorsed_by_profile_id || null,
+                  endorsed_by_agency_id: meta.endorsed_by_profile_id || null,
+                  endorsed_at: meta.endorsed_at || new Date().toISOString(),
+                }),
+              },
+              // De‑duplicate by email so we only keep one employee row per email
+              { onConflict: "email" }
+            );
+
+          if (empUpsertErr) {
+            console.error("Error upserting employees row:", empUpsertErr);
+          }
+        } catch (empErr) {
+          console.error("Unexpected error upserting employees row:", empErr);
+        }
+
+        // Send email with credentials
+        // Send email with credentials only for direct hires who got an account
+        if (!isAgencyApplicant && employeePassword) {
+          try {
+            const emailResult = await sendEmployeeAccountEmail({
+              toEmail: applicantEmail, // Send to the email they used for application
+              employeeEmail: employeeEmail,
+              employeePassword: employeePassword,
+              firstName: firstName,
+              lastName: lastName,
+              fullName: `${firstName}${middleName ? ` ${middleName}` : ''} ${lastName}`.trim(),
+            });
+
+            if (!emailResult.ok) {
+              console.warn("Failed to send email, but employee account was created:", emailResult.error);
+              // Don't fail the whole process if email fails
+            }
+          } catch (emailErr) {
+            console.error("Error sending email:", emailErr);
+            // Don't fail the whole process if email fails
           }
         }
 
@@ -477,7 +909,11 @@ function HrRecruitment() {
         await loadApplications();
 
         // Show success message
-        setSuccessMessage(`${applicantName} marked as employee`);
+        if (isAgencyApplicant) {
+          setSuccessMessage(`${applicantName} marked as employee (agency/endorsed).`);
+        } else {
+          setSuccessMessage(`${applicantName} marked as employee. Account credentials sent to ${applicantEmail}`);
+        }
         setShowSuccessAlert(true);
         
         // Clear selected applicant if it was the one we just hired
@@ -541,8 +977,19 @@ function HrRecruitment() {
       return;
     }
 
+    // Validate that the interview is scheduled for the future
+    const interviewDateTime = new Date(`${interviewForm.date}T${interviewForm.time}`);
+    const now = new Date();
+    
+    if (interviewDateTime <= now) {
+      setErrorMessage("Interview must be scheduled for a future date and time.");
+      setShowErrorAlert(true);
+      return;
+    }
+
     setScheduling(true);
     try {
+      // Use the deployed Edge Function for interview scheduling and notifications
       const r = await scheduleInterviewClient(selectedApplicationForInterview.id, interviewForm);
       if (!r.ok) {
         console.error("Edge function error:", r.error);
@@ -551,13 +998,15 @@ function HrRecruitment() {
         setScheduling(false);
         return;
       }
+      
       // success -> reload applications so updated interview fields show
       await loadApplications();
       setShowInterviewModal(false);
       
       // Format interview summary
       const interviewSummary = `${selectedApplicationForInterview.name} - ${interviewForm.date} at ${interviewForm.time}, ${interviewForm.location}`;
-      setSuccessMessage(`Interview Scheduled: ${interviewSummary}`);
+      const isReschedule = r.data?.isReschedule;
+      setSuccessMessage(`Interview ${isReschedule ? 'Rescheduled' : 'Scheduled'}: ${interviewSummary}. Applicant has been notified.`);
       setShowSuccessAlert(true);
     } catch (err) {
       console.error("scheduleInterview unexpected error:", err);
@@ -565,6 +1014,126 @@ function HrRecruitment() {
       setShowErrorAlert(true);
     } finally {
       setScheduling(false);
+    }
+  };
+
+  // ---- Save ID number validation
+  const saveIdNumberValidation = async (idKey, status, remarks = "") => {
+    if (!selectedApplicant?.id) return;
+    
+    try {
+      let requirements = selectedApplicant.requirements;
+      if (typeof requirements === 'string') {
+        try { requirements = JSON.parse(requirements); } catch { requirements = {}; }
+      }
+
+      if (!requirements.id_numbers) {
+        requirements.id_numbers = {};
+      }
+
+      requirements.id_numbers[idKey] = {
+        ...requirements.id_numbers[idKey],
+        status: status,
+        remarks: remarks,
+        validated_at: status === "Validated" ? new Date().toISOString() : null,
+      };
+
+      // Try to update requirements column, fallback to payload
+      const { error: updateError } = await supabase
+        .from('applications')
+        .update({ requirements: requirements })
+        .eq('id', selectedApplicant.id);
+
+      if (updateError && updateError.code === 'PGRST204') {
+        // Column doesn't exist, store in payload
+        let currentPayload = selectedApplicant.raw?.payload || {};
+        if (typeof currentPayload === 'string') {
+          try { currentPayload = JSON.parse(currentPayload); } catch { currentPayload = {}; }
+        }
+        
+        const updatedPayload = {
+          ...currentPayload,
+          requirements: requirements
+        };
+        
+        const { error: payloadError } = await supabase
+          .from('applications')
+          .update({ payload: updatedPayload })
+          .eq('id', selectedApplicant.id);
+        
+        if (payloadError) throw payloadError;
+      } else if (updateError) {
+        throw updateError;
+      }
+
+      // Reload applications to reflect changes
+      await loadApplications();
+    } catch (err) {
+      console.error('Error saving ID number validation:', err);
+      setErrorMessage("Failed to save validation. Please try again.");
+      setShowErrorAlert(true);
+    }
+  };
+
+  // ---- Save document validation
+  const saveDocumentValidation = async (docKey, status, remarks = "") => {
+    if (!selectedApplicant?.id) return;
+    
+    try {
+      let requirements = selectedApplicant.requirements;
+      if (typeof requirements === 'string') {
+        try { requirements = JSON.parse(requirements); } catch { requirements = {}; }
+      }
+
+      if (!requirements.documents) {
+        requirements.documents = [];
+      }
+
+      // Find and update the document
+      const docIndex = requirements.documents.findIndex(d => d.key === docKey);
+      if (docIndex >= 0) {
+        requirements.documents[docIndex] = {
+          ...requirements.documents[docIndex],
+          status: status,
+          remarks: remarks,
+          validated_at: status === "Validated" ? new Date().toISOString() : null,
+        };
+      }
+
+      // Try to update requirements column, fallback to payload
+      const { error: updateError } = await supabase
+        .from('applications')
+        .update({ requirements: requirements })
+        .eq('id', selectedApplicant.id);
+
+      if (updateError && updateError.code === 'PGRST204') {
+        // Column doesn't exist, store in payload
+        let currentPayload = selectedApplicant.raw?.payload || {};
+        if (typeof currentPayload === 'string') {
+          try { currentPayload = JSON.parse(currentPayload); } catch { currentPayload = {}; }
+        }
+        
+        const updatedPayload = {
+          ...currentPayload,
+          requirements: requirements
+        };
+        
+        const { error: payloadError } = await supabase
+          .from('applications')
+          .update({ payload: updatedPayload })
+          .eq('id', selectedApplicant.id);
+        
+        if (payloadError) throw payloadError;
+      } else if (updateError) {
+        throw updateError;
+      }
+
+      // Reload applications to reflect changes
+      await loadApplications();
+    } catch (err) {
+      console.error('Error saving document validation:', err);
+      setErrorMessage("Failed to save validation. Please try again.");
+      setShowErrorAlert(true);
     }
   };
 
@@ -595,260 +1164,573 @@ function HrRecruitment() {
     }
   };
 
+  // Helper: Get initials from name
+  const getInitials = (name) => {
+    if (!name) return "??";
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
+
+  // Helper: Get avatar color based on name
+  const getAvatarColor = (name) => {
+    const colors = [
+      'from-red-500 to-red-600',
+      'from-blue-500 to-blue-600',
+      'from-green-500 to-green-600',
+      'from-purple-500 to-purple-600',
+      'from-orange-500 to-orange-600',
+      'from-pink-500 to-pink-600',
+      'from-teal-500 to-teal-600',
+      'from-indigo-500 to-indigo-600',
+    ];
+    const index = (name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+    return colors[index];
+  };
+
+  // Helper: Get application status display info
+  const getApplicationStatus = (applicant) => {
+    const status = applicant.status?.toLowerCase() || 'submitted';
+    
+    // Check interview status
+    const hasInterview = applicant.interview_date;
+    const interviewConfirmed = applicant.interview_confirmed === 'Confirmed';
+    
+    // Determine status based on workflow
+    if (status === 'hired') {
+      return { label: 'HIRED', color: 'text-green-600', bg: 'bg-green-50' };
+    }
+    if (status === 'rejected') {
+      return { label: 'REJECTED', color: 'text-red-600', bg: 'bg-red-50' };
+    }
+    if (['agreement', 'agreements', 'final_agreement'].includes(status)) {
+      return { label: 'AGREEMENT', color: 'text-purple-600', bg: 'bg-purple-50' };
+    }
+    if (['requirements', 'docs_needed', 'awaiting_documents'].includes(status)) {
+      return { label: 'REQUIREMENTS', color: 'text-orange-600', bg: 'bg-orange-50' };
+    }
+    if (hasInterview && interviewConfirmed) {
+      return { label: 'INTERVIEW CONFIRMED', color: 'text-blue-600', bg: 'bg-blue-50' };
+    }
+    if (hasInterview) {
+      return { label: 'INTERVIEW SET', color: 'text-cyan-600', bg: 'bg-cyan-50' };
+    }
+    if (['screening', 'interview', 'scheduled', 'onsite'].includes(status)) {
+      return { label: 'IN REVIEW', color: 'text-yellow-600', bg: 'bg-yellow-50' };
+    }
+    return { label: 'SUBMITTED', color: 'text-gray-600', bg: 'bg-gray-50' };
+  };
+
+  // Combined list of all applicants for the unified table
+  const allApplicants = applicants.filter(a => a.status !== 'hired' && a.status !== 'rejected');
+
+  // Distinct positions/depots for filters
+  const positions = useMemo(() => {
+    const s = new Set(allApplicants.map((a) => a.position).filter(Boolean));
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [allApplicants]);
+
+  const depots = useMemo(() => {
+    const s = new Set(allApplicants.map((a) => a.depot).filter(Boolean));
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [allApplicants]);
+  
+  const statusOptions = ["All", "SUBMITTED", "IN REVIEW", "INTERVIEW SET", "INTERVIEW CONFIRMED", "REQUIREMENTS", "AGREEMENT", "HIRED", "REJECTED"];
+
+  // Filtered + sorted applicants based on search and filters
+  const filteredAllApplicants = useMemo(() => {
+    let list = allApplicants;
+
+    const term = searchTerm.toLowerCase();
+    if (term) {
+      list = list.filter((a) =>
+        a.name.toLowerCase().includes(term) ||
+        (a.position || "").toLowerCase().includes(term) ||
+        (a.depot || "").toLowerCase().includes(term) ||
+        (a.status || "").toLowerCase().includes(term)
+      );
+    }
+
+    if (positionFilter !== "All") {
+      list = list.filter((a) => a.position === positionFilter);
+    }
+
+    if (depotFilter !== "All") {
+      list = list.filter((a) => a.depot === depotFilter);
+    }
+
+    if (statusFilter !== "All") {
+      list = list.filter((a) => getApplicationStatus(a).label === statusFilter);
+    }
+
+    // Sort by name
+    list = [...list].sort((a, b) =>
+      sortOrder === "asc"
+        ? a.name.localeCompare(b.name)
+        : b.name.localeCompare(a.name)
+    );
+
+    return list;
+  }, [allApplicants, searchTerm, positionFilter, depotFilter, statusFilter, sortOrder]);
+
+  // Pagination for unified table
+  const allApplicantsTotalPages = Math.ceil(filteredAllApplicants.length / itemsPerPage) || 1;
+  const paginatedAllApplicants = filteredAllApplicants.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   return (
     <>
       {/* Main Content */}
-      <div className="flex justify-center items-start min-h-screen bg-gray-100 p-4">
-        <div className="w-full max-w-7xl bg-white rounded-2xl shadow-lg p-6">
-          {/* Sub Tabs */}
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          {/* Page Title (always visible, even when viewing details) */}
+          <div className="mb-4">
+            <h1 className="text-2xl font-bold text-gray-800">Recruitment</h1>
+            <p className="text-gray-500 mt-1">
+              Track applications, schedule interviews, and move candidates through the hiring steps.
+            </p>
+          </div>
+
+          {/* Stats + Top Tabs (hidden when viewing applicant details) */}
           {!selectedApplicant && (
-            <div className="flex gap-6 border-b mb-6 justify-center">
-              {[
-                { label: "Applications", count: applicationsBucket.length, show: true },
-                { label: "Interview", count: interviewBucket.length, show: true },
-                { label: "Requirements", count: filteredRequirements.length, show: true },
-                { label: "Agreements", count: agreementsBucket.length, show: true },
-              ]
-                .filter((t) => t.show)
-                .map((tab) => (
-                  <button
-                    key={tab.label}
-                    onClick={() => setActiveSubTab(tab.label)}
-                    className={`px-6 py-3 font-medium ${
-                      activeSubTab === tab.label
-                        ? "border-b-2 border-blue-600 text-blue-600"
-                        : "text-gray-600 hover:text-blue-600"
-                    }`}>
-                    {tab.label} <span className="text-sm text-gray-500">({tab.count})</span>
-                  </button>
-                ))}
-            </div>
+            <>
+              {/* Stats cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">Total Applications</p>
+                      <p className="text-2xl font-bold text-gray-800 mt-1">{applicants.length}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-2 font-medium">All active applications</p>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">For Screening</p>
+                      <p className="text-2xl font-bold text-gray-800 mt-1">{applicationsBucket.length}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-yellow-50 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-xs text-yellow-600 mt-2 font-medium">New / pending review</p>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">With Interview</p>
+                      <p className="text-2xl font-bold text-gray-800 mt-1">{interviewBucket.length}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-xs text-green-600 mt-2 font-medium">Scheduled / ongoing interviews</p>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">In Requirements / Agreements</p>
+                      <p className="text-2xl font-bold text-gray-800 mt-1">{requirementsBucket.length + agreementsBucket.length}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-xs text-purple-600 mt-2 font-medium">Finalizing files & offers</p>
+                </div>
+              </div>
+
+              {/* Top Navigation Tabs */}
+              <div className="flex border-b border-gray-200 mb-4">
+                <button
+                  className="px-4 pb-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600"
+                  type="button"
+                >
+                  Applications <span className="text-gray-400">({allApplicants.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/applicantg/home")}
+                  className="px-4 pb-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
+                >
+                  View Job Posts
+                </button>
+              </div>
+            </>
           )}
 
-          {/* Applications Tab */}
-          {activeSubTab === "Applications" && !selectedApplicant && (
-            <div className="grid grid-cols-3 gap-6">
-              <div className="col-span-2">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-gray-800">Applicants</h3>
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="border px-3 py-1 rounded shadow-sm"
-                />
-              </div>                {loading ? (
-                  <div className="p-6 text-gray-600">Loading applications…</div>
-                ) : (
-                  <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
-                    <table className="min-w-full border-collapse">
-                      <thead className="bg-gray-100 text-gray-700">
+          {/* Applications Table Card */}
+          <div className="bg-white rounded-b-xl shadow-sm border border-gray-100 flex flex-col">
+            {/* Search and Filters Bar (always visible) */}
+            <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {/* Search */}
+                  <div className="relative flex-1">
+                    <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search by name, position, depot, or status..."
+                      value={searchTerm}
+                      onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                    />
+                  </div>
+
+                  {/* Position Filter */}
+                  <select
+                    value={positionFilter}
+                    onChange={(e) => {
+                      setPositionFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white min-w-[160px]"
+                  >
+                    <option value="All">All Positions</option>
+                    {positions.filter(p => p !== "All").map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+
+                  {/* Depot Filter */}
+                  <select
+                    value={depotFilter}
+                    onChange={(e) => {
+                      setDepotFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white min-w-[140px]"
+                  >
+                    <option value="All">All Depots</option>
+                    {depots.filter(d => d !== "All").map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+
+                  {/* More Filters Button */}
+                  <div className="relative" ref={filterMenuRef}>
+                    <button
+                      onClick={() => setShowFilterMenu(!showFilterMenu)}
+                      className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                      </svg>
+                      Filters
+                    </button>
+                    {showFilterMenu && (
+                      <div className="absolute right-0 mt-2 w-64 bg-white border rounded-lg shadow-lg z-10 p-4">
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Sort by Name</label>
+                            <button
+                              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                              className="w-full px-3 py-2 bg-gray-100 rounded-lg text-left hover:bg-gray-200 text-sm"
+                            >
+                              {sortOrder === "asc" ? "A → Z" : "Z → A"}
+                            </button>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                            <select
+                              value={statusFilter}
+                              onChange={(e) => {
+                                setStatusFilter(e.target.value);
+                                setCurrentPage(1);
+                              }}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                            >
+                              {statusOptions.map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Export Button */}
+                  <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Export
+                  </button>
+                </div>
+              </div>
+
+              {/* Table only when no applicant detail is open */}
+              {!selectedApplicant && (
+                <div className="overflow-x-auto">
+                  {loading ? (
+                    <div className="p-8 text-center text-gray-500">Loading applications…</div>
+                  ) : filteredAllApplicants.length === 0 ? (
+                    <div className="p-8 text-center text-gray-500">No applications found.</div>
+                  ) : (
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
-                          <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
-                          <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
-                          <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
-                          <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Applicant</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date Applied</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {paginatedApplicants.map((a) => (
-                          <tr
-                            key={a.id}
-                            className="hover:bg-gray-50 transition-colors cursor-pointer"
-                            onClick={() => {
-                              setSelectedApplicant(a);
-                              setActiveDetailTab("Application");
-                            }}
-                          >
-                            <td className="px-4 py-2 border-b whitespace-nowrap">
-                              <div className="flex items-center justify-between">
-                                <span className="hover:text-blue-600 transition-colors">{a.name}</span>
-                                {isAgency(a) && (
-                                  <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
-                                    🚩 Agency
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-4 py-2 border-b">{a.position}</td>
-                            <td className="px-4 py-2 border-b">{a.depot}</td>
-                            <td className="px-4 py-2 border-b">{a.dateApplied}</td>
-                          </tr>
-                        ))}
+                      <tbody className="divide-y divide-gray-100">
+                        {paginatedAllApplicants.map((a) => {
+                          const statusInfo = getApplicationStatus(a);
+                          return (
+                            <tr
+                              key={a.id}
+                              className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                              onClick={() => {
+                                setSelectedApplicant(a);
+                                setActiveDetailTab("Application");
+                                setInterviewFile(null);
+                                setInterviewFileName(a.interview_details_file ? a.interview_details_file.split('/').pop() : "");
+                                setAssessmentFile(null);
+                                setAssessmentFileName(a.assessment_results_file ? a.assessment_results_file.split('/').pop() : "");
+                                setAgreementFile(null);
+                                setAgreementFileName(a.appointment_letter_file ? a.appointment_letter_file.split('/').pop() : "");
+                              }}
+                            >
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(a.name)} flex items-center justify-center text-white text-sm font-medium shadow-sm ${isAgency(a) ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+                                    {getInitials(a.name)}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm font-medium text-gray-800">{a.name}</p>
+                                      {isAgency(a) && (
+                                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">AGENCY</span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-gray-500">{a.email || `#${a.id.slice(0, 8)}`}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="text-sm text-gray-800">{a.position || "—"}</p>
+                                <p className="text-xs text-gray-500">{a.depot || "—"}</p>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`text-xs font-semibold ${statusInfo.color}`}>
+                                  {statusInfo.label}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="text-sm text-gray-600">{a.dateApplied}</p>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
 
-                {/* Pagination */}
-                {!loading && (
-                  <div className="flex justify-between items-center mt-4">
-                    <button
-                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                      disabled={currentPage === 1}
-                      className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-                    >
-                      Prev
-                    </button>
-                    <span className="text-gray-600">Page {currentPage} of {totalPages}</span>
-                    <button
-                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                      disabled={currentPage === totalPages}
-                      className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Right Side */}
-              <div className="col-span-1 flex flex-col gap-4 justify-start">
-                <button
-                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
-                  onClick={() => navigate("/applicantg/home")}
-                >
-                  View Job Postings
-                </button>
-                <button
-                  onClick={() => setShowRejectedModal(true)}
-                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
-                >
-                  View Rejected Applicants
-                </button>
-              </div>
             </div>
-          )}
 
           {/* Applicant Detail View - Shows for all tabs when applicant is selected */}
           {selectedApplicant && (
-            <div className="grid grid-cols-12 gap-4">
-              {/* Left Sidebar - Applicants List */}
-              <div className="col-span-3 bg-gray-50 border rounded-lg p-4 max-h-[85vh] overflow-y-auto">
-                <h3 className="font-bold text-gray-800 mb-3 text-sm">Applicants</h3>
-                <div className="space-y-2">
-                  {applicationsBucket.map((a) => (
-                    <div
-                      key={a.id}
-                      onClick={() => {
-                        setSelectedApplicant(a);
-                        setActiveDetailTab("Application");
-                      }}
-                      className={`p-2 rounded cursor-pointer transition-colors text-xs ${
-                        selectedApplicant.id === a.id
-                          ? "bg-blue-100 border-2 border-blue-500"
-                          : "bg-white border border-gray-200 hover:bg-gray-100"
-                      }`}
-                    >
-                      <div className="font-semibold text-gray-800 truncate">{a.name}</div>
-                      <div className="text-gray-500 truncate">{a.position}</div>
-                      <div className="text-gray-400">{a.dateApplied}</div>
-                      {isAgency(a) && (
-                        <span className="inline-block mt-1 px-1 py-0.5 text-xs bg-blue-100 text-blue-600 rounded border border-blue-200">
-                          🚩 Agency
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            <div className="grid grid-cols-12 gap-6 mt-4">
+              {/* Left Sidebar - Applicants List (table style copied from Employees left list) */}
+              <div className="col-span-2 lg:col-span-3 max-h-[85vh] overflow-y-auto overflow-x-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        Applicant
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {allApplicants.map((a) => {
+                      const isSelected = selectedApplicant.id === a.id;
+                      return (
+                        <tr
+                          key={a.id}
+                          className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${
+                            isSelected ? "bg-red-50/50" : ""
+                          }`}
+                          onClick={() => {
+                            setSelectedApplicant(a);
+                            setActiveDetailTab("Application");
+                            // Reset file states when switching applicants
+                            setInterviewFile(null);
+                            setInterviewFileName(
+                              a.interview_details_file ? a.interview_details_file.split("/").pop() : ""
+                            );
+                            setAssessmentFile(null);
+                            setAssessmentFileName(
+                              a.assessment_results_file ? a.assessment_results_file.split("/").pop() : ""
+                            );
+                            setAgreementFile(null);
+                            setAgreementFileName(
+                              a.appointment_letter_file ? a.appointment_letter_file.split("/").pop() : ""
+                            );
+                          }}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(
+                                  a.name
+                                )} flex items-center justify-center text-white text-sm font-medium shadow-sm`}
+                              >
+                                {getInitials(a.name)}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium text-gray-800 truncate">{a.name}</p>
+                                  {isAgency(a) && (
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">
+                                      AGENCY
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-gray-500 truncate">{a.position || "—"}</p>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               {/* Right Side - Detail View */}
-              <div className="col-span-9">
-                <div className="mb-4">
-                  <button
-                    onClick={() => setSelectedApplicant(null)}
-                    className="mb-4 flex items-center text-blue-600 hover:text-blue-800"
-                  >
-                    ← Back to Applicants
-                  </button>
-                </div>
+              <div className="col-span-10 lg:col-span-9 overflow-y-auto flex flex-col">
+                {/* Applicant header card - styled like Employees.jsx with close button */}
+                {selectedApplicant && (
+                  <div className="bg-white border border-gray-300 rounded-t-lg p-4 relative">
+                    <button
+                      onClick={() => setSelectedApplicant(null)}
+                      className="absolute top-2 right-2 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
 
-              {/* Steps header */}
-              <div className="flex items-center gap-3 mb-6 overflow-x-auto">
-                {["Application", "Assessment", "Requirements", "Agreements"].map((step) => {
-                  const isActive = activeDetailTab === step;
-                  let bgColor = 'bg-gray-200 text-gray-800 hover:bg-gray-300';
-                  
-                  if (isActive) {
-                    bgColor = 'bg-red-600 text-white';
-                  }
-                  
-                  return (
+                    <div className="flex items-center gap-3 pr-10">
+                      <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${getAvatarColor(selectedApplicant.name)} flex items-center justify-center text-white text-lg font-semibold shadow-md`}>
+                        {getInitials(selectedApplicant.name)}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-semibold text-gray-800 text-lg">{selectedApplicant.name}</h4>
+                          {isAgency(selectedApplicant) && (
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">AGENCY</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500">#{selectedApplicant.id.slice(0, 8)}</p>
+                        <p className="text-sm text-gray-600">
+                          {selectedApplicant.position || "—"} | {selectedApplicant.depot || "—"}
+                        </p>
+                      </div>
+                      <div className="text-right space-y-1">
+                        {(() => {
+                          const statusInfo = getApplicationStatus(selectedApplicant);
+                          return (
+                            <span className={`inline-block text-xs font-semibold ${statusInfo.color}`}>
+                              {statusInfo.label}
+                            </span>
+                          );
+                        })()}
+                        <p className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tabs header - Application / Assessment / Agreements */}
+                <div className="flex border-b border-gray-300 bg-white overflow-x-auto">
+                  {["Application", "Assessment", "Agreements"].map((step) => (
                     <button
                       key={step}
                       type="button"
                       onClick={() => setActiveDetailTab(step)}
-                      className={`px-4 py-2 rounded ${bgColor}`}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                        activeDetailTab === step
+                          ? "border-red-500 text-red-600 bg-red-50"
+                          : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50"
+                      }`}
                     >
                       {step}
                     </button>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
 
-              {/* Detail Content */}
-              <div className="bg-white border rounded-md shadow-sm">
-                {/* Application Tab */}
+               {/* Detail Content */}
+               <div className="bg-white border border-t-0 border-gray-300 rounded-b-lg shadow-sm">
+                {/* Application Tab - styled similarly to Employees profiling tab */}
                 {activeDetailTab === "Application" && (
-                  <section className="p-4">
-                    {/* Header row */}
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                          {selectedApplicant.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  <section className="p-5 space-y-5">
+                    {/* Job Details */}
+                    <div>
+                      <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                        Job Details
+                      </h5>
+                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                        <div>
+                          <span className="text-gray-500">Position Applying For:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.position || "—"}</span>
                         </div>
                         <div>
-                          <div className="font-semibold text-gray-800">{selectedApplicant.name}</div>
-                          <div className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</div>
+                          <span className="text-gray-500">Depot:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.depot || "—"}</span>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs text-gray-500">#{selectedApplicant.id.slice(0, 8)}</div>
-                        {selectedApplicant.interview_date ? (
-                          <div className="mt-2">
-                            <button
-                              type="button"
-                              className="text-sm text-blue-600 hover:underline"
-                              onClick={() => setShowActionModal(true)}
-                            >
-                              Update Application Status
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="text-sm text-blue-600 hover:underline mt-2"
-                            onClick={() => {
-                              setSelectedApplicationForInterview(selectedApplicant);
-                              openInterviewModal(selectedApplicant);
-                            }}
-                          >
-                            Set Interview
-                          </button>
-                        )}
+                        <div>
+                          <span className="text-gray-500">Date Applied:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.dateApplied}</span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Job Details */}
-                    <div className="border rounded-md overflow-hidden">
-                      <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Job Details</div>
-                      <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 border-b">
-                        <div><span className="font-semibold">Position Applying For:</span> {selectedApplicant.position}</div>
-                        <div><span className="font-semibold">Depot:</span> {selectedApplicant.depot}</div>
-                        <div><span className="font-semibold">Date Applied:</span> {selectedApplicant.dateApplied}</div>
-                      </div>
-
-                      {/* Personal Information */}
-                      <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Personal Information</div>
-                      <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
-                        <div><span className="font-semibold">Full Name:</span> {selectedApplicant.name}</div>
-                        <div><span className="font-semibold">Email:</span> {selectedApplicant.email || "—"}</div>
-                        <div><span className="font-semibold">Contact Number:</span> {selectedApplicant.phone || "—"}</div>
+                    {/* Personal Information */}
+                    <div>
+                      <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                        Personal Information
+                      </h5>
+                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                        <div>
+                          <span className="text-gray-500">Full Name:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.name}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Email:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.email || "—"}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Contact Number:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.phone || "—"}</span>
+                        </div>
                       </div>
                     </div>
                   </section>
@@ -857,36 +1739,48 @@ function HrRecruitment() {
                 {/* Assessment Tab */}
                 {activeDetailTab === "Assessment" && (
                   <section className="p-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                          {selectedApplicant.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-800">{selectedApplicant.name}</div>
-                          <div className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</div>
-                        </div>
-                      </div>
-                    </div>
-
                     <div className="flex items-center justify-between mb-3">
                       <h2 className="text-lg font-semibold text-gray-800">Assessment</h2>
                     </div>
 
                     {/* Interview Schedule */}
                     {selectedApplicant.interview_date && (
-                      <div className="bg-gray-50 border rounded-md p-4 mb-4">
-                        <div className="text-sm text-gray-800 font-semibold mb-2">Interview Schedule</div>
+                      <div className="bg-gray-50 border rounded-md p-4 mb-4 relative">
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="text-sm text-gray-800 font-semibold">Interview Schedule</div>
+                          {(() => {
+                            // Check interview status using the new text-based system
+                            const interviewStatus = selectedApplicant.interview_confirmed || selectedApplicant.payload?.interview_confirmed || 'Idle';
+                            
+                            if (interviewStatus === 'Confirmed') {
+                              return (
+                                <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
+                                  Interview Confirmed
+                                </span>
+                              );
+                            } else if (interviewStatus === 'Rejected') {
+                              return (
+                                <span className="text-sm px-3 py-1 rounded bg-red-100 text-red-800 border border-red-300 font-medium">
+                                  Interview Rejected
+                                </span>
+                              );
+                            } else if (interviewStatus === 'Idle' && selectedApplicant.interview_date) {
+                              return (
+                                <span className="text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-medium">
+                                  Awaiting Response
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
+                        </div>
                         <div className="text-sm text-gray-700 space-y-1">
                           <div><span className="font-medium">Date:</span> {selectedApplicant.interview_date}</div>
                           <div><span className="font-medium">Time:</span> {selectedApplicant.interview_time || "—"}</div>
                           <div><span className="font-medium">Location:</span> {selectedApplicant.interview_location || "—"}</div>
                           <div><span className="font-medium">Interviewer:</span> {selectedApplicant.interviewer || "—"}</div>
                         </div>
-                        <div className="mt-3 flex items-center justify-between">
-                          <div className="text-xs text-gray-500 italic">
-                            Important Reminder: Please confirm at least a day before your schedule.
-                          </div>
+                        <div className="mt-3 flex items-center justify-end">
                           <button
                             type="button"
                             className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
@@ -904,27 +1798,144 @@ function HrRecruitment() {
                     {/* Upload Interview Details Section */}
                     <div className="mt-4 border rounded-md p-4">
                       <div className="text-sm font-semibold text-gray-800 mb-3">Upload Interview Details</div>
+                      {selectedApplicant.interview_details_file && (
+                        <div className="mb-3 p-2 bg-gray-50 rounded text-sm">
+                          <span className="text-gray-700">Current file: </span>
+                          <a 
+                            href={supabase.storage.from('application-files').getPublicUrl(selectedApplicant.interview_details_file)?.data?.publicUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {selectedApplicant.interview_details_file.split('/').pop()}
+                          </a>
+                        </div>
+                      )}
                       <div className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-4">
+                        <div className="col-span-8">
                           <input
                             type="text"
                             placeholder="File name"
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                            value={interviewFileName}
+                            onChange={(e) => setInterviewFileName(e.target.value)}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm ${
+                              interviewFile || selectedApplicant.interview_details_file 
+                                ? "text-blue-600 underline" 
+                                : ""
+                            }`}
+                            readOnly={!!(interviewFile || selectedApplicant.interview_details_file)}
                           />
                         </div>
-                        <div className="col-span-4">
-                          <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
-                            {interviewFile ? interviewFile.name : "Upload"}
-                            <input
-                              type="file"
-                              onChange={(e) => setInterviewFile(e.target.files[0])}
-                              className="hidden"
-                            />
-                          </label>
-                        </div>
-                        <div className="col-span-4">
-                          {interviewFile && (
-                            <span className="text-green-600 text-xl">✓</span>
+                        <div className="col-span-4 flex items-center gap-2">
+                          {!interviewFile && !selectedApplicant.interview_details_file && (
+                            <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
+                              Upload
+                              <input
+                                type="file"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    setInterviewFile(file);
+                                    if (!interviewFileName) {
+                                      setInterviewFileName(file.name);
+                                    }
+                                  }
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                          )}
+                          {uploadingInterviewFile ? (
+                            <span className="text-gray-600 text-sm">Uploading...</span>
+                          ) : interviewFile || (selectedApplicant.interview_details_file && interviewFileName) ? (
+                            <div className="flex items-center gap-2">
+                              {interviewFile ? (
+                                <button
+                                  type="button"
+                                  className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                                  onClick={async () => {
+                                  if (!interviewFile || !selectedApplicant?.id) return;
+                                
+                                setUploadingInterviewFile(true);
+                                try {
+                                  const fileExt = interviewFile.name.split('.').pop();
+                                  const fileName = interviewFileName || `interview-details-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
+                                  const filePath = `interview-details/${selectedApplicant.id}/${fileName}`;
+
+                                  const { data: uploadData, error: uploadError } = await supabase.storage
+                                    .from('application-files')
+                                    .upload(filePath, interviewFile, {
+                                      upsert: true,
+                                    });
+
+                                  if (uploadError) {
+                                    throw uploadError;
+                                  }
+
+                                  // Update application record with file path
+                                  // Try to update the column first, fallback to payload if column doesn't exist
+                                  const { error: updateError } = await supabase
+                                    .from('applications')
+                                    .update({ interview_details_file: uploadData.path })
+                                    .eq('id', selectedApplicant.id);
+
+                                  if (updateError && updateError.code === 'PGRST204') {
+                                    // Column doesn't exist, store in payload instead
+                                    console.warn('interview_details_file column not found, storing in payload');
+                                    const currentPayload = selectedApplicant.raw?.payload || {};
+                                    let payloadObj = currentPayload;
+                                    if (typeof payloadObj === 'string') {
+                                      try {
+                                        payloadObj = JSON.parse(payloadObj);
+                                      } catch {
+                                        payloadObj = {};
+                                      }
+                                    }
+                                    
+                                    const updatedPayload = {
+                                      ...payloadObj,
+                                      interview_details_file: uploadData.path
+                                    };
+                                    
+                                    const { error: payloadError } = await supabase
+                                      .from('applications')
+                                      .update({ payload: updatedPayload })
+                                      .eq('id', selectedApplicant.id);
+                                    
+                                    if (payloadError) {
+                                      throw payloadError;
+                                    }
+                                  } else if (updateError) {
+                                    throw updateError;
+                                  }
+
+                                  // Reload applications to show updated file
+                                  await loadApplications();
+                                  // Keep the file name in the field to show it was saved
+                                  setInterviewFileName(fileName);
+                                  // Clear the file object but keep the name
+                                  setInterviewFile(null);
+                                  setSuccessMessage("Interview details file uploaded successfully");
+                                  setShowSuccessAlert(true);
+                                } catch (err) {
+                                  console.error('Error uploading interview file:', err);
+                                  setErrorMessage("Failed to upload file. Please try again.");
+                                  setShowErrorAlert(true);
+                                } finally {
+                                  setUploadingInterviewFile(false);
+                                }
+                              }}
+                                >
+                                  Save
+                                </button>
+                              ) : (
+                                <span className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm border border-green-300">
+                                  Saved ✓
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-sm">No file selected</span>
                           )}
                         </div>
                       </div>
@@ -933,27 +1944,144 @@ function HrRecruitment() {
                     {/* Upload In-Person Assessment Results Section */}
                     <div className="mt-4 border rounded-md p-4">
                       <div className="text-sm font-semibold text-gray-800 mb-3">Upload In-Person Assessment Results</div>
+                      {selectedApplicant.assessment_results_file && (
+                        <div className="mb-3 p-2 bg-gray-50 rounded text-sm">
+                          <span className="text-gray-700">Current file: </span>
+                          <a 
+                            href={supabase.storage.from('application-files').getPublicUrl(selectedApplicant.assessment_results_file)?.data?.publicUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {selectedApplicant.assessment_results_file.split('/').pop()}
+                          </a>
+                        </div>
+                      )}
                       <div className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-4">
+                        <div className="col-span-8">
                           <input
                             type="text"
                             placeholder="File name"
-                            className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+                            value={assessmentFileName}
+                            onChange={(e) => setAssessmentFileName(e.target.value)}
+                            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm ${
+                              assessmentFile || selectedApplicant.assessment_results_file 
+                                ? "text-blue-600 underline" 
+                                : ""
+                            }`}
+                            readOnly={!!(assessmentFile || selectedApplicant.assessment_results_file)}
                           />
                         </div>
-                        <div className="col-span-4">
-                          <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
-                            {assessmentFile ? assessmentFile.name : "Upload"}
-                            <input
-                              type="file"
-                              onChange={(e) => setAssessmentFile(e.target.files[0])}
-                              className="hidden"
-                            />
-                          </label>
-                        </div>
-                        <div className="col-span-4">
-                          {assessmentFile && (
-                            <span className="text-green-600 text-xl">✓</span>
+                        <div className="col-span-4 flex items-center gap-2">
+                          {!assessmentFile && !selectedApplicant.assessment_results_file && (
+                            <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
+                              Upload
+                              <input
+                                type="file"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) {
+                                    setAssessmentFile(file);
+                                    if (!assessmentFileName) {
+                                      setAssessmentFileName(file.name);
+                                    }
+                                  }
+                                }}
+                                className="hidden"
+                              />
+                            </label>
+                          )}
+                          {uploadingAssessmentFile ? (
+                            <span className="text-gray-600 text-sm">Uploading...</span>
+                          ) : assessmentFile || (selectedApplicant.assessment_results_file && assessmentFileName) ? (
+                            <div className="flex items-center gap-2">
+                              {assessmentFile ? (
+                                <button
+                                  type="button"
+                                  className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                                  onClick={async () => {
+                                  if (!assessmentFile || !selectedApplicant?.id) return;
+                                
+                                setUploadingAssessmentFile(true);
+                                try {
+                                  const fileExt = assessmentFile.name.split('.').pop();
+                                  const fileName = assessmentFileName || `assessment-results-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
+                                  const filePath = `assessment-results/${selectedApplicant.id}/${fileName}`;
+
+                                  const { data: uploadData, error: uploadError } = await supabase.storage
+                                    .from('application-files')
+                                    .upload(filePath, assessmentFile, {
+                                      upsert: true,
+                                    });
+
+                                  if (uploadError) {
+                                    throw uploadError;
+                                  }
+
+                                  // Update application record with file path
+                                  // Try to update the column first, fallback to payload if column doesn't exist
+                                  const { error: updateError } = await supabase
+                                    .from('applications')
+                                    .update({ assessment_results_file: uploadData.path })
+                                    .eq('id', selectedApplicant.id);
+
+                                  if (updateError && updateError.code === 'PGRST204') {
+                                    // Column doesn't exist, store in payload instead
+                                    console.warn('assessment_results_file column not found, storing in payload');
+                                    const currentPayload = selectedApplicant.raw?.payload || {};
+                                    let payloadObj = currentPayload;
+                                    if (typeof payloadObj === 'string') {
+                                      try {
+                                        payloadObj = JSON.parse(payloadObj);
+                                      } catch {
+                                        payloadObj = {};
+                                      }
+                                    }
+                                    
+                                    const updatedPayload = {
+                                      ...payloadObj,
+                                      assessment_results_file: uploadData.path
+                                    };
+                                    
+                                    const { error: payloadError } = await supabase
+                                      .from('applications')
+                                      .update({ payload: updatedPayload })
+                                      .eq('id', selectedApplicant.id);
+                                    
+                                    if (payloadError) {
+                                      throw payloadError;
+                                    }
+                                  } else if (updateError) {
+                                    throw updateError;
+                                  }
+
+                                  // Reload applications to show updated file
+                                  await loadApplications();
+                                  // Keep the file name in the field to show it was saved
+                                  setAssessmentFileName(fileName);
+                                  // Clear the file object but keep the name visible
+                                  setAssessmentFile(null);
+                                  setSuccessMessage("Assessment results file uploaded successfully");
+                                  setShowSuccessAlert(true);
+                                } catch (err) {
+                                  console.error('Error uploading assessment file:', err);
+                                  setErrorMessage("Failed to upload file. Please try again.");
+                                  setShowErrorAlert(true);
+                                } finally {
+                                  setUploadingAssessmentFile(false);
+                                }
+                              }}
+                                >
+                                  Save
+                                </button>
+                              ) : (
+                                <span className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm border border-green-300">
+                                  Saved ✓
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 text-sm">No file selected</span>
                           )}
                         </div>
                       </div>
@@ -961,209 +2089,243 @@ function HrRecruitment() {
                   </section>
                 )}
 
-                {/* Requirements Tab */}
-                {activeDetailTab === "Requirements" && (
-                  <section className="p-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                          {selectedApplicant.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-800">{selectedApplicant.name}</div>
-                          <div className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ID numbers row with lock/unlock */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
-                      {[
-                        {key: 'sss', label: 'SSS No.'},
-                        {key: 'philhealth', label: 'PhilHealth No.'},
-                        {key: 'pagibig', label: 'Pag-IBIG No.'},
-                        {key: 'tin', label: 'TIN No.'}
-                      ].map((item) => {
-                        const status = idStatus[item.key] || "Submitted";
-                        const isLocked = idLocked[item.key];
-                        return (
-                          <div key={item.key} className="flex flex-col gap-2">
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                placeholder={item.label}
-                                value={idFields[item.key]}
-                                onChange={(e) => setIdFields((f) => ({ ...f, [item.key]: e.target.value }))}
-                                disabled={isLocked}
-                                className={`flex-1 px-3 py-2 border border-gray-300 rounded bg-white text-sm focus:outline-none focus:ring-1 focus:ring-red-500 ${isLocked ? 'bg-gray-100 text-gray-600' : ''}`}
-                              />
-                              {!isLocked ? (
-                                <button
-                                  type="button"
-                                  className="text-xs px-2 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 flex-shrink-0 flex items-center justify-center min-w-[32px]"
-                                  onClick={() => setIdLocked((l) => ({ ...l, [item.key]: true }))}
-                                  title="Lock value"
-                                >
-                                  ✓
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className="text-xs px-2 py-1.5 rounded bg-red-600 text-white hover:bg-red-700 flex-shrink-0 flex items-center justify-center min-w-[32px]"
-                                  onClick={() => setIdLocked((l) => ({ ...l, [item.key]: false }))}
-                                  title="Unlock to edit"
-                                >
-                                  ✕
-                                </button>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <select
-                                value={status}
-                                onChange={(e) => setIdStatus((s) => ({ ...s, [item.key]: e.target.value }))}
-                                className={`flex-1 border rounded px-2 py-1.5 font-medium text-sm ${
-                                  status === "Validated"
-                                    ? "bg-green-100 text-green-700"
-                                    : status === "Submitted"
-                                    ? "bg-orange-100 text-orange-700"
-                                    : "bg-red-100 text-red-700"
-                                }`}
-                              >
-                                <option>Submitted</option>
-                                <option>Validated</option>
-                                <option>Re-submit</option>
-                              </select>
-                              <button
-                                type="button"
-                                className="text-xs px-2 py-1.5 rounded bg-green-600 text-white hover:bg-green-700 flex-shrink-0 flex items-center justify-center min-w-[32px]"
-                                onClick={() => {
-                                  // Lock in the status selection
-                                  setSuccessMessage(`${item.label} status set to ${status}`);
-                                  setShowSuccessAlert(true);
-                                }}
-                                title="Confirm status"
-                              >
-                                ✓
-                              </button>
-                              {status === "Validated" && (
-                                <span className="text-xs text-gray-500 whitespace-nowrap">{new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })}</span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Documents table */}
-                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
-                    <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
-                      <div className="col-span-6">&nbsp;</div>
-                      <div className="col-span-3">Submission</div>
-                      <div className="col-span-3">Remarks</div>
-                    </div>
-
-                    {[
-                      {name: 'PSA Birth Certificate *'},
-                      {name: "Photocopy of Driver's License (Front and Back) *"},
-                      {name: 'Photocopy of SSS ID'},
-                      {name: 'Photocopy of TIN ID'},
-                      {name: 'Photocopy of Philhealth MDR'},
-                      {name: 'Photocopy of HDMF or Proof of HDMF No. (Pag-IBIG)'},
-                      {name: 'Medical Examination Results *', hasDate: true},
-                      {name: 'NBI Clearance', hasDate: true},
-                      {name: 'Police Clearance', hasDate: true},
-                    ].map((doc, idx) => {
-                      const docKey = `doc_${idx}`;
-                      const status = documentStatus[docKey] || "Submitted";
-                      const isConfirmed = documentStatus[`${docKey}_confirmed`] || false;
-                      return (
-                        <div key={idx} className="border-b">
-                          <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                            <div className="col-span-12 md:col-span-6 text-sm text-gray-800">{doc.name}</div>
-                            <div className="col-span-12 md:col-span-3 text-sm text-gray-600">—</div>
-                            <div className="col-span-12 md:col-span-3 flex items-center gap-2">
-                              <select
-                                value={status}
-                                onChange={(e) => {
-                                  setDocumentStatus({...documentStatus, [docKey]: e.target.value, [`${docKey}_confirmed`]: false});
-                                }}
-                                className={`flex-1 border rounded px-2 py-1 font-medium text-sm ${
-                                  status === "Validated"
-                                    ? "bg-green-100 text-green-700"
-                                    : status === "Submitted"
-                                    ? "bg-orange-100 text-orange-700"
-                                    : "bg-red-100 text-red-700"
-                                }`}
-                              >
-                                <option>Submitted</option>
-                                <option>Validated</option>
-                                <option>Re-submit</option>
-                              </select>
-                              <button
-                                type="button"
-                                className={`text-xs px-2 py-1 rounded flex-shrink-0 ${
-                                  isConfirmed
-                                    ? "bg-green-600 text-white"
-                                    : "bg-gray-300 text-gray-700 hover:bg-gray-400"
-                                }`}
-                                onClick={() => {
-                                  if (!isConfirmed) {
-                                    setDocumentStatus({...documentStatus, [`${docKey}_confirmed`]: true});
-                                    // Optionally show a success message or save to database
-                                    console.log(`Confirmed ${doc.name} status as ${status}`);
-                                  } else {
-                                    // Allow unconfirming
-                                    setDocumentStatus({...documentStatus, [`${docKey}_confirmed`]: false});
-                                  }
-                                }}
-                                title={isConfirmed ? "Status confirmed - Click to unconfirm" : "Confirm status"}
-                              >
-                                ✓
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </section>
-                )}
-
-                {/* Agreements Tab */}
+                {/* Agreements Tab - simplified to agreement-related upload table only */}
                 {activeDetailTab === "Agreements" && (
-                  <section className="p-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                          {selectedApplicant.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-800">{selectedApplicant.name}</div>
-                          <div className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
+                  <section className="px-4 pb-4">
+                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
                     <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
                       <div className="col-span-6">&nbsp;</div>
-                      <div className="col-span-3">File</div>
-                      <div className="col-span-3">&nbsp;</div>
+                      <div className="col-span-6">File</div>
                     </div>
 
                     <div className="border-b">
                       <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
                         <div className="col-span-12 md:col-span-6 text-sm text-gray-800">Employee Appointment Letter</div>
-                        <div className="col-span-12 md:col-span-3 text-sm">
-                          <label className="inline-block px-3 py-1 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-xs">
-                            {agreementFile ? agreementFile.name : "Choose File"}
-                            <input
-                              type="file"
-                              onChange={(e) => setAgreementFile(e.target.files[0])}
-                              className="hidden"
-                            />
-                          </label>
+                        <div className="col-span-12 md:col-span-6 text-sm">
+                          <div className="flex items-center gap-2">
+                            {agreementFile || selectedApplicant.appointment_letter_file ? (
+                              <div className="flex items-center gap-2 w-full">
+                                <div className="flex items-center gap-2 flex-1">
+                                  <input
+                                    type="text"
+                                    placeholder="File name"
+                                    value={agreementFileName || (selectedApplicant.appointment_letter_file ? selectedApplicant.appointment_letter_file.split('/').pop() : "")}
+                                    onChange={(e) => setAgreementFileName(e.target.value)}
+                                    className={`flex-1 px-3 py-2 border border-gray-300 rounded text-sm ${
+                                      agreementFile || selectedApplicant.appointment_letter_file 
+                                        ? "text-blue-600 underline" 
+                                        : ""
+                                    }`}
+                                    readOnly={!!(agreementFile || selectedApplicant.appointment_letter_file)}
+                                  />
+                                  {(agreementFile || selectedApplicant.appointment_letter_file) && (
+                                    <button
+                                      type="button"
+                                      className="w-6 h-6 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center flex-shrink-0 transition-colors"
+                                      onClick={async () => {
+                                        if (agreementFile) {
+                                          // Just remove from selection if not saved yet
+                                          setAgreementFile(null);
+                                          setAgreementFileName("");
+                                        } else if (selectedApplicant.appointment_letter_file) {
+                                          // Remove from database if already saved
+                                          if (!selectedApplicant?.id) return;
+                                          
+                                          try {
+                                            // Remove file path from database
+                                            const { error: updateError } = await supabase
+                                              .from('applications')
+                                              .update({ appointment_letter_file: null })
+                                              .eq('id', selectedApplicant.id);
+
+                                            if (updateError && updateError.code === 'PGRST204') {
+                                              // Column doesn't exist, remove from payload
+                                              const currentPayload = selectedApplicant.raw?.payload || {};
+                                              let payloadObj = currentPayload;
+                                              if (typeof payloadObj === 'string') {
+                                                try {
+                                                  payloadObj = JSON.parse(payloadObj);
+                                                } catch {
+                                                  payloadObj = {};
+                                                }
+                                              }
+                                              
+                                              const updatedPayload = {
+                                                ...payloadObj,
+                                                appointment_letter_file: null
+                                              };
+                                              
+                                              const { error: payloadError } = await supabase
+                                                .from('applications')
+                                                .update({ payload: updatedPayload })
+                                                .eq('id', selectedApplicant.id);
+                                              
+                                              if (payloadError) {
+                                                throw payloadError;
+                                              }
+                                            } else if (updateError) {
+                                              throw updateError;
+                                            }
+
+                                            // Reload applications
+                                            await loadApplications();
+                                            setAgreementFileName("");
+                                            setSelectedApplicant(prev => ({
+                                              ...prev,
+                                              appointment_letter_file: null
+                                            }));
+                                            setSuccessMessage("Appointment letter removed successfully");
+                                            setShowSuccessAlert(true);
+                                          } catch (err) {
+                                            console.error('Error removing appointment letter:', err);
+                                            setErrorMessage("Failed to remove file. Please try again.");
+                                            setShowErrorAlert(true);
+                                          }
+                                        }
+                                      }}
+                                      title="Remove file"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                      </svg>
+                                    </button>
+                                  )}
+                                </div>
+                                {uploadingAgreementFile ? (
+                                  <span className="text-gray-600 text-sm whitespace-nowrap">Uploading...</span>
+                                ) : agreementFile ? (
+                                  <button
+                                    type="button"
+                                    className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 whitespace-nowrap"
+                                    onClick={async () => {
+                                      if (!agreementFile || !selectedApplicant?.id) return;
+                                      
+                                      setUploadingAgreementFile(true);
+                                      try {
+                                        const fileExt = agreementFile.name.split('.').pop();
+                                        const fileName = agreementFileName || `appointment-letter-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
+                                        const filePath = `appointment-letters/${selectedApplicant.id}/${fileName}`;
+
+                                        const { data: uploadData, error: uploadError } = await supabase.storage
+                                          .from('application-files')
+                                          .upload(filePath, agreementFile, {
+                                            upsert: true,
+                                          });
+
+                                        if (uploadError) {
+                                          throw uploadError;
+                                        }
+
+                                        // Update application record with file path
+                                        const { error: updateError } = await supabase
+                                          .from('applications')
+                                          .update({ appointment_letter_file: uploadData.path })
+                                          .eq('id', selectedApplicant.id);
+
+                                        if (updateError && updateError.code === 'PGRST204') {
+                                          // Column doesn't exist, store in payload instead
+                                          console.warn('appointment_letter_file column not found, storing in payload');
+                                          const currentPayload = selectedApplicant.raw?.payload || {};
+                                          let payloadObj = currentPayload;
+                                          if (typeof payloadObj === 'string') {
+                                            try {
+                                              payloadObj = JSON.parse(payloadObj);
+                                            } catch {
+                                              payloadObj = {};
+                                            }
+                                          }
+                                          
+                                          const updatedPayload = {
+                                            ...payloadObj,
+                                            appointment_letter_file: uploadData.path
+                                          };
+                                          
+                                          const { error: payloadError } = await supabase
+                                            .from('applications')
+                                            .update({ payload: updatedPayload })
+                                            .eq('id', selectedApplicant.id);
+                                          
+                                          if (payloadError) {
+                                            throw payloadError;
+                                          }
+                                        } else if (updateError) {
+                                          throw updateError;
+                                        }
+
+                                        // Update local state immediately
+                                        setAgreementFileName(fileName);
+                                        // Clear the file object but keep the name visible
+                                        setAgreementFile(null);
+                                        
+                                        // Update selectedApplicant state with the new file path
+                                        setSelectedApplicant(prev => ({
+                                          ...prev,
+                                          appointment_letter_file: uploadData.path
+                                        }));
+                                        
+                                        // Reload applications to sync with database
+                                        await loadApplications();
+                                        
+                                        // After reload, update selectedApplicant again to ensure it's current
+                                        const { data: updatedApp } = await supabase
+                                          .from('applications')
+                                          .select('*')
+                                          .eq('id', selectedApplicant.id)
+                                          .single();
+                                        
+                                        if (updatedApp) {
+                                          let payloadObj = updatedApp.payload;
+                                          if (typeof payloadObj === 'string') {
+                                            try {
+                                              payloadObj = JSON.parse(payloadObj);
+                                            } catch {
+                                              payloadObj = {};
+                                            }
+                                          }
+                                          
+                                          setSelectedApplicant(prev => ({
+                                            ...prev,
+                                            appointment_letter_file: updatedApp.appointment_letter_file || payloadObj?.appointment_letter_file || uploadData.path,
+                                            raw: updatedApp
+                                          }));
+                                        }
+                                        
+                                        setSuccessMessage("Appointment letter uploaded successfully");
+                                        setShowSuccessAlert(true);
+                                      } catch (err) {
+                                        console.error('Error uploading appointment letter:', err);
+                                        setErrorMessage("Failed to upload file. Please try again.");
+                                        setShowErrorAlert(true);
+                                      } finally {
+                                        setUploadingAgreementFile(false);
+                                      }
+                                    }}
+                                  >
+                                    Save
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
+                                Upload
+                                <input
+                                  type="file"
+                                  accept=".pdf,.docx"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      setAgreementFile(file);
+                                      if (!agreementFileName) {
+                                        setAgreementFileName(file.name);
+                                      }
+                                    }
+                                  }}
+                                  className="hidden"
+                                />
+                              </label>
+                            )}
+                          </div>
                         </div>
-                        <div className="col-span-12 md:col-span-3" />
                       </div>
                     </div>
 
@@ -1184,231 +2346,37 @@ function HrRecruitment() {
             </div>
           )}
 
-          {/* Interview Tab */}
-          {activeSubTab === "Interview" && !selectedApplicant && (
-            <div className="grid grid-cols-3 gap-6">
-              <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">Interview</h3>
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="border px-3 py-1 rounded shadow-sm"
-                  />
-                </div>
-                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
-                  <table className="min-w-full border-collapse">
-                    <thead className="bg-gray-100 text-gray-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredInterview.map((a) => (
-                        <tr
-                          key={a.id}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
-                          onClick={() => {
-                            setSelectedApplicant(a);
-                            setActiveDetailTab("Assessment");
-                          }}
-                        >
-                          <td className="px-4 py-2 border-b">
-                            <div className="flex items-center justify-between">
-                              <span>{a.name}</span>
-                              {isAgency(a) && (
-                                <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
-                                  🚩 Agency
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 border-b">{a.position}</td>
-                          <td className="px-4 py-2 border-b">{a.depot}</td>
-                          <td className="px-4 py-2 border-b">{a.dateApplied}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="col-span-1 flex flex-col gap-4">
-                <button
-                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
-                  onClick={() => navigate("/applicantg/home")}
-                >
-                  View Job Postings
-                </button>
-                <button
-                  onClick={() => setShowRejectedModal(true)}
-                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
-                >
-                  View Rejected Applicants
-                </button>
-              </div>
+          {/* Pagination - placed at the bottom below details area */}
+          {!loading && filteredAllApplicants.length > 0 && (
+            <div className="flex items-center justify-between px-6 py-4 mt-4 border-t border-gray-100">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                className={`px-4 py-2 text-sm rounded border ${
+                  currentPage === 1
+                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                Prev
+              </button>
+              <span className="text-sm text-gray-600">
+                Page {currentPage} of {allApplicantsTotalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, allApplicantsTotalPages))}
+                disabled={currentPage >= allApplicantsTotalPages}
+                className={`px-4 py-2 text-sm rounded border ${
+                  currentPage >= allApplicantsTotalPages
+                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                Next
+              </button>
             </div>
           )}
 
-          {/* Requirements Tab */}
-          {activeSubTab === "Requirements" && !selectedApplicant && (
-            <div className="grid grid-cols-3 gap-6">
-              <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">Requirements</h3>
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="border px-3 py-1 rounded shadow-sm"
-                  />
-                </div>
-                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
-                  <table className="min-w-full border-collapse">
-                    <thead className="bg-gray-100 text-gray-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRequirements.map((a) => (
-                        <tr
-                          key={a.id}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
-                          onClick={() => {
-                            setSelectedApplicant(a);
-                            setActiveDetailTab("Requirements");
-                          }}
-                        >
-                          <td className="px-4 py-2 border-b">
-                            <div className="flex items-center justify-between">
-                              <span>{a.name}</span>
-                              {isAgency(a) && (
-                                <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
-                                  🚩 Agency
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 border-b">{a.position}</td>
-                          <td className="px-4 py-2 border-b">{a.depot}</td>
-                          <td className="px-4 py-2 border-b">{a.dateApplied}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="col-span-1 flex flex-col gap-4">
-                <button
-                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
-                  onClick={() => navigate("/applicantg/home")}
-                >
-                  View Job Postings
-                </button>
-                <button
-                  onClick={() => setShowRejectedModal(true)}
-                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
-                >
-                  View Rejected Applicants
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Agreements Tab */}
-          {activeSubTab === "Agreements" && !selectedApplicant && (
-            <div className="grid grid-cols-3 gap-6">
-              <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">Agreements</h3>
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="border px-3 py-1 rounded shadow-sm"
-                  />
-                </div>
-                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
-                  <table className="min-w-full border-collapse">
-                    <thead className="bg-gray-100 text-gray-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAgreements.map((a) => (
-                        <tr key={a.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-2 border-b">
-                            <div className="flex items-center justify-between">
-                              <span>{a.name}</span>
-                              {isAgency(a) && (
-                                <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
-                                  🚩 Agency
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 border-b">{a.position}</td>
-                          <td className="px-4 py-2 border-b">{a.depot}</td>
-                          <td className="px-4 py-2 border-b">{a.dateApplied}</td>
-                          <td className="px-4 py-2 border-b">
-                            <button
-                              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
-                              onClick={async () => {
-                                await handleMarkAsEmployee(a.id, a.name);
-                              }}
-                            >
-                              Mark as Employee
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="col-span-1 flex flex-col gap-4">
-                <button
-                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
-                  onClick={() => navigate("/applicantg/home")}
-                >
-                  View Job Postings
-                </button>
-                <button
-                  onClick={() => setShowRejectedModal(true)}
-                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
-                >
-                  View Rejected Applicants
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -1562,6 +2530,7 @@ function HrRecruitment() {
                   type="date"
                   value={interviewForm.date}
                   onChange={(e) => setInterviewForm((f) => ({ ...f, date: e.target.value }))}
+                  min={new Date().toISOString().split('T')[0]}
                   className="w-full px-3 py-2 border rounded"
                 />
               </div>
@@ -1570,7 +2539,23 @@ function HrRecruitment() {
                 <input
                   type="time"
                   value={interviewForm.time}
-                  onChange={(e) => setInterviewForm((f) => ({ ...f, time: e.target.value }))}
+                  onChange={(e) => {
+                    const selectedDate = new Date(interviewForm.date);
+                    const today = new Date();
+                    const selectedTime = e.target.value;
+                    
+                    // If selected date is today, prevent selecting past times
+                    if (selectedDate.toDateString() === today.toDateString()) {
+                      const currentTime = today.toTimeString().slice(0, 5);
+                      if (selectedTime <= currentTime) {
+                        setErrorMessage("Please select a future time for today's date.");
+                        setShowErrorAlert(true);
+                        return;
+                      }
+                    }
+                    
+                    setInterviewForm((f) => ({ ...f, time: selectedTime }));
+                  }}
                   className="w-full px-3 py-2 border rounded"
                 />
               </div>

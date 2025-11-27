@@ -28,16 +28,77 @@ function EmployeeLogin() {
     const user = data.user;
 
     // Step 3: Fetch the user's role from the 'profiles' table
-    const { data: profile, error: profileError } = await supabase
+    let { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("email, role, first_name, last_name")
       .eq("id", user.id)
       .single();
 
-    if (profileError) {
-      console.error(profileError);
-      setError("Profile not found.");
-      return;
+    // If profile doesn't exist, try to determine role from user metadata or default to Employee
+    if (profileError || !profile) {
+      console.warn("Profile not found, creating one...", profileError);
+      
+      // Try to get role from user metadata, or default to Employee
+      const defaultRole = user.user_metadata?.role || "Employee";
+      const normalizedDefaultRole = defaultRole.charAt(0).toUpperCase() + defaultRole.slice(1).toLowerCase();
+      
+      // Try to create profile
+      const { data: newProfile, error: createError } = await supabase
+        .from("profiles")
+        .insert([
+          {
+            id: user.id,
+            email: user.email,
+            role: normalizedDefaultRole, // Use role from metadata or default to Employee
+            first_name: user.user_metadata?.first_name || "",
+            last_name: user.user_metadata?.last_name || "",
+          },
+        ])
+        .select()
+        .single();
+
+      if (createError) {
+        console.error("Error creating profile:", createError);
+        // If insert fails (maybe profile exists but query failed), try to fetch again
+        const { data: fetchedProfile, error: fetchError } = await supabase
+          .from("profiles")
+          .select("email, role, first_name, last_name")
+          .eq("id", user.id)
+          .single();
+        
+        if (fetchError || !fetchedProfile) {
+          console.error("Error fetching profile:", fetchError);
+          setError("Profile setup failed. Please contact support.");
+          return;
+        }
+        profile = fetchedProfile;
+      } else {
+        profile = newProfile;
+      }
+    }
+
+    // Normalize role format (capitalize first letter, lowercase rest) but don't change HR to Employee
+    const currentRole = profile.role;
+    const normalizedRole = currentRole ? (currentRole.charAt(0).toUpperCase() + currentRole.slice(1).toLowerCase()) : "Employee";
+    
+    // Only update if the format is wrong (e.g., "hr" -> "Hr" should be "HR", "employee" -> "Employee")
+    if (currentRole !== normalizedRole && normalizedRole !== "Hr") {
+      // Special case: "HR" should stay "HR", not become "Hr"
+      const targetRole = currentRole.toLowerCase() === "hr" ? "HR" : normalizedRole;
+      
+      if (currentRole !== targetRole) {
+        console.warn(`Updating role format from "${currentRole}" to "${targetRole}"...`);
+        const { error: roleUpdateError } = await supabase
+          .from("profiles")
+          .update({ role: targetRole })
+          .eq("id", user.id);
+        
+        if (roleUpdateError) {
+          console.error("Error updating role:", roleUpdateError);
+        } else {
+          profile.role = targetRole;
+        }
+      }
     }
 
     // Step 4: Update the user's metadata so the JWT includes the correct role
@@ -68,24 +129,37 @@ function EmployeeLogin() {
     localStorage.setItem("loggedInHR", JSON.stringify(userDataToSave));
 
     // Step 8: Redirect based on role
-    const normalizedRole = profile.role?.toLowerCase();
+    const roleForRedirect = profile.role?.toLowerCase();
 
-    if (normalizedRole === "hr") {
+    console.log("🔐 Login successful! Role:", profile.role, "Normalized:", roleForRedirect);
+
+    if (roleForRedirect === "hr") {
       navigate("/hr/home");
-    } else if (normalizedRole === "employee") {
+    } else if (roleForRedirect === "employee") {
+      console.log("✅ Redirecting to employee home...");
       navigate("/employee/home");
-    } else if (normalizedRole === "agency") {
+    } else if (roleForRedirect === "agency") {
       navigate("/agency/home");
-    } else if (normalizedRole === "admin") {
+    } else if (roleForRedirect === "admin") {
       navigate("/admin/home");
-    } else {
-      setError("Unknown role.");
+    }
+    else {
+      console.error("❌ Unknown role:", profile.role);
+      setError(`Unknown role: ${profile.role}. Please contact support.`);
     }
   };
 
   return (
-    <div className="flex justify-center items-center min-h-screen bg-neutral-100">
-      <div className="flex flex-col items-center justify-center bg-neutral-200 relative -mt-[100px] p-10 rounded-lg shadow-md max-w-sm w-full">
+    <div className="flex flex-col items-center min-h-screen bg-neutral-100">
+      <div className="flex justify-end gap-2 w-full bg-neutral-100 p-5">
+        <button
+          onClick={() => navigate("/applicant/login")}
+          className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
+          Applicant Login
+        </button>
+      </div>
+
+      <div className="flex flex-col items-center justify-center bg-neutral-200 p-10 rounded-lg shadow-md max-w-sm w-full mt-10">
         <div className="text-red-600 font-bold text-3xl italic mb-4">
           Each-R
         </div>
@@ -115,7 +189,11 @@ function EmployeeLogin() {
           LOGIN
         </button>
 
-        {error && <p className="text-red-600 mt-2">{error}</p>}
+        {error && (
+          <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded w-full text-center">
+            {error}
+          </div>
+        )}
 
         <p className="mt-3 text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
           Forgot Password?

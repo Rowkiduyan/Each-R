@@ -61,6 +61,11 @@ function ApplicantLogin() {
     <div className="flex flex-col items-center min-h-screen bg-neutral-100">
       <div className="flex justify-end gap-2 w-full bg-neutral-100 p-5">
         <button
+          onClick={() => navigate("/employee/login")}
+          className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
+          Employee Login
+        </button>
+        <button
           onClick={() => setShowGuestModal(true)}
           className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
           View Jobs as Guest
@@ -72,12 +77,6 @@ function ApplicantLogin() {
           Each-R
         </div>
         <h2 className="text-black text-xl font-semibold mb-4">Applicant Log In</h2>
-
-        {error && (
-          <div className="w-3/4 mb-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
-            {error}
-          </div>
-        )}
 
         <form onSubmit={handleLogin} className="flex flex-col items-center w-full">
           <input
@@ -104,6 +103,12 @@ function ApplicantLogin() {
             {loading ? "Logging in..." : "LOGIN"}
           </button>
         </form>
+
+        {error && (
+          <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded w-full text-center">
+            {error}
+          </div>
+        )}
 
         <p className="mt-3 text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
           Forgot Password?
