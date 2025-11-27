@@ -76,7 +76,7 @@ export default function HRLayout() {
                 Employees
               </NavLink>
 
-              <NavLink to="/hr/recruitment" className={({ isActive }) =>
+              <NavLink to="/hr/recruitment" end className={({ isActive }) =>
               `hover:text-red-600 ${isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700 font-medium"
                 }`
               }

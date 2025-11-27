@@ -31,6 +31,7 @@ import AgencyEval from "./AgencyEval";
 import AgencySeparation from "./AgencySeparation";
 import AgencyLayout from "./layouts/AgencyLayout";
 import HrCreateJob from "./HrCreateJob";
+import HrPost from "./HrPost";
 import VerifyEmail from "./VerifyEmail";
 import RequireRole from "./RequireRole";
 import HRLayout from "./layouts/HRLayout";
@@ -63,6 +64,7 @@ function App() {
         <Route path="schedules" element={<HrSched />} />
         <Route path="trainings" element={<HrTrainings />} />
         <Route path="recruitment" element={<HrRecruitment />} />
+        <Route path="recruitment/job/:id" element={<HrPost />} />
         <Route path="eval" element={<HrEval />} />
         <Route path="seperation" element={<HrSeperation />} />
         <Route path="notif" element={<HrNotif />} />
