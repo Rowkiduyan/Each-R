@@ -107,6 +107,14 @@ function AgencyEndorse() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
 
+  // CSV Import state
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvPreview, setCsvPreview] = useState([]);
+  const [csvError, setCsvError] = useState('');
+  const [isDraggingCsv, setIsDraggingCsv] = useState(false);
+  const csvInputRef = useRef(null);
+
   const addApplicant = () => {
     const newId = applicants.length + 1;
     setApplicants((prev) => [...prev, { id: newId, name: `Applicant ${newId}` }]);
@@ -170,6 +178,145 @@ function AgencyEndorse() {
       ...prev,
       [appId]: { ...(prev[appId] || makeEmptyValues()), [key]: !prev[appId]?.[key] },
     }));
+  };
+
+  // CSV Import Functions
+  const parseCSV = (text) => {
+    const lines = text.split(/\r?\n/).filter(line => line.trim());
+    if (lines.length < 2) return { headers: [], data: [] };
+    
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+    const data = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim().replace(/['"]/g, ''));
+      if (values.length === headers.length) {
+        const row = {};
+        headers.forEach((h, idx) => {
+          row[h] = values[idx];
+        });
+        data.push(row);
+      }
+    }
+    return { headers, data };
+  };
+
+  const mapCsvToFormValues = (csvRow) => {
+    const values = makeEmptyValues();
+    
+    // Map common CSV column names to form fields
+    const fieldMappings = {
+      'lastname': 'lastName', 'last_name': 'lastName', 'last name': 'lastName', 'surname': 'lastName',
+      'firstname': 'firstName', 'first_name': 'firstName', 'first name': 'firstName', 'given name': 'firstName',
+      'middlename': 'middleName', 'middle_name': 'middleName', 'middle name': 'middleName',
+      'email': 'email', 'email address': 'email', 'emailaddress': 'email',
+      'contact': 'contactNumber', 'contact_number': 'contactNumber', 'contactnumber': 'contactNumber', 
+      'phone': 'contactNumber', 'mobile': 'contactNumber', 'phone number': 'contactNumber',
+      'position': 'position', 'job title': 'position', 'jobtitle': 'position',
+      'department': 'department', 'dept': 'department',
+      'depot': 'depot', 'location': 'depot', 'branch': 'depot',
+      'birthday': 'birthday', 'birthdate': 'birthday', 'birth_date': 'birthday', 'date of birth': 'birthday',
+      'sex': 'sex', 'gender': 'sex',
+      'marital status': 'maritalStatus', 'maritalstatus': 'maritalStatus', 'civil status': 'maritalStatus',
+      'street': 'street', 'address': 'street',
+      'city': 'city', 'municipality': 'city',
+      'zip': 'zip', 'zipcode': 'zip', 'zip_code': 'zip', 'postal': 'zip',
+      'education': 'education', 'educational attainment': 'education',
+      'school': 'tertiarySchool', 'institution': 'tertiarySchool',
+      'course': 'tertiaryProgram', 'program': 'tertiaryProgram',
+      'year graduated': 'tertiaryYear', 'yeargraduated': 'tertiaryYear',
+      'skills': 'skills',
+      'license classification': 'licenseClassification', 'licenseclassification': 'licenseClassification',
+      'license expiry': 'licenseExpiry', 'licenseexpiry': 'licenseExpiry',
+      'years driving': 'yearsDriving', 'yearsdriving': 'yearsDriving', 'driving experience': 'yearsDriving',
+    };
+
+    Object.keys(csvRow).forEach(key => {
+      const normalizedKey = key.toLowerCase().trim();
+      const formField = fieldMappings[normalizedKey];
+      if (formField && csvRow[key]) {
+        values[formField] = csvRow[key];
+      }
+    });
+
+    return values;
+  };
+
+  const handleCsvFileSelect = (file) => {
+    setCsvError('');
+    setCsvPreview([]);
+    
+    if (!file) return;
+    
+    if (!file.name.endsWith('.csv')) {
+      setCsvError('Please upload a CSV file');
+      return;
+    }
+    
+    if (file.size > 5 * 1024 * 1024) {
+      setCsvError('File size must be less than 5MB');
+      return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const { headers, data } = parseCSV(e.target.result);
+        if (data.length === 0) {
+          setCsvError('No valid data found in CSV file');
+          return;
+        }
+        if (data.length > 50) {
+          setCsvError('Maximum 50 employees can be imported at once');
+          return;
+        }
+        setCsvFile(file);
+        setCsvPreview(data.slice(0, 5)); // Preview first 5 rows
+      } catch (err) {
+        setCsvError('Error parsing CSV file. Please check the format.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleCsvImport = () => {
+    if (!csvFile) return;
+    
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const { data } = parseCSV(e.target.result);
+      
+      // Create new applicants from CSV data
+      const newApplicants = [];
+      const newFormValues = { ...formValues };
+      let nextId = Math.max(...applicants.map(a => a.id)) + 1;
+      
+      data.forEach((row, idx) => {
+        const values = mapCsvToFormValues(row);
+        const name = values.firstName && values.lastName 
+          ? `${values.firstName} ${values.lastName}` 
+          : `Employee ${nextId}`;
+        
+        newApplicants.push({ id: nextId, name });
+        newFormValues[nextId] = values;
+        nextId++;
+      });
+      
+      setApplicants(prev => [...prev, ...newApplicants]);
+      setFormValues(newFormValues);
+      if (newApplicants.length > 0) {
+        setActiveApplicant(newApplicants[0].id);
+      }
+      
+      // Close modal and reset
+      setShowImportModal(false);
+      setCsvFile(null);
+      setCsvPreview([]);
+      setCsvError('');
+      
+      alert(`Successfully imported ${data.length} employee(s). Please review and complete their information.`);
+    };
+    reader.readAsText(csvFile);
   };
 
   const nextStep = () => setStep((s) => Math.min(s + 1, totalSteps));
@@ -511,6 +658,15 @@ const handleEndorse = async () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
                 Add Employee
+              </button>
+              <button 
+                className="px-4 py-2 rounded-lg text-sm font-medium text-blue-600 border border-blue-300 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1.5" 
+                onClick={() => setShowImportModal(true)}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Import CSV
               </button>
             </div>
           </div>
@@ -1272,6 +1428,232 @@ const handleEndorse = async () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 Confirm & Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CSV Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">Import Employees from CSV</h3>
+                    <p className="text-sm text-gray-500">Bulk import multiple employees at once</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    setShowImportModal(false);
+                    setCsvFile(null);
+                    setCsvPreview([]);
+                    setCsvError('');
+                  }}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              {/* Instructions */}
+              <div className="bg-blue-50 rounded-xl p-4 border border-blue-100">
+                <div className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm font-medium text-blue-800 mb-1">CSV Format Requirements</p>
+                    <p className="text-xs text-blue-700">Your CSV file should include column headers. Supported columns:</p>
+                    <p className="text-xs text-blue-600 mt-1 font-mono bg-blue-100 px-2 py-1 rounded">
+                      firstname, lastname, middlename, email, contact, position, department, depot, birthday, sex
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* File Upload Area */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Upload CSV File</label>
+                <input
+                  ref={csvInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".csv"
+                  onChange={(e) => handleCsvFileSelect(e.target.files[0])}
+                />
+                
+                {!csvFile ? (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setIsDraggingCsv(true); }}
+                    onDragLeave={(e) => { e.preventDefault(); setIsDraggingCsv(false); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setIsDraggingCsv(false);
+                      handleCsvFileSelect(e.dataTransfer.files[0]);
+                    }}
+                    onClick={() => csvInputRef.current?.click()}
+                    className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
+                      isDraggingCsv 
+                        ? 'border-blue-500 bg-blue-50' 
+                        : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-14 h-14 mx-auto rounded-xl flex items-center justify-center mb-3 ${isDraggingCsv ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                      <svg className={`w-7 h-7 ${isDraggingCsv ? 'text-blue-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-medium text-gray-700">
+                      {isDraggingCsv ? 'Drop your CSV file here' : 'Drag & drop your CSV file here'}
+                    </p>
+                    <p className="text-sm text-gray-500 mt-1">or <span className="text-blue-600 font-medium">browse</span> to choose a file</p>
+                    <p className="text-xs text-gray-400 mt-3">CSV files only (Max 5MB, up to 50 employees)</p>
+                  </div>
+                ) : (
+                  <div className="border-2 border-green-200 bg-green-50 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{csvFile.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{(csvFile.size / 1024).toFixed(1)} KB</p>
+                        <p className="text-xs text-green-600 font-medium mt-1">{csvPreview.length > 0 ? `${csvPreview.length}+ employees found` : 'Ready to import'}</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setCsvFile(null);
+                          setCsvPreview([]);
+                          setCsvError('');
+                        }}
+                        className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Message */}
+                {csvError && (
+                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+                    <svg className="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm text-red-700">{csvError}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Preview Table */}
+              {csvPreview.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Preview (First 5 rows)</label>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                    <div className="overflow-x-auto max-h-48">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 sticky top-0">
+                          <tr>
+                            {Object.keys(csvPreview[0]).slice(0, 6).map((key) => (
+                              <th key={key} className="px-3 py-2 text-left text-gray-600 font-medium capitalize border-b">
+                                {key}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {csvPreview.map((row, idx) => (
+                            <tr key={idx} className="hover:bg-gray-50">
+                              {Object.values(row).slice(0, 6).map((val, vidx) => (
+                                <td key={vidx} className="px-3 py-2 text-gray-700 truncate max-w-[120px]">
+                                  {val || <span className="text-gray-400 italic">empty</span>}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Download Template */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white rounded-lg border border-gray-200 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-gray-700">Need a template?</p>
+                    <p className="text-xs text-gray-500">Download our sample CSV file</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    const template = 'firstname,lastname,middlename,email,contact,position,department,depot,birthday,sex\nJuan,Dela Cruz,Santos,juan@email.com,09171234567,Delivery Driver,Delivery Crew,Makati,1990-05-15,Male\nMaria,Santos,,maria@email.com,09181234567,Helper,Delivery Crew,BGC,1992-08-20,Female';
+                    const blob = new Blob([template], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'employee_template.csv';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                >
+                  Download Template
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+              <button 
+                onClick={() => {
+                  setShowImportModal(false);
+                  setCsvFile(null);
+                  setCsvPreview([]);
+                  setCsvError('');
+                }}
+                className="px-5 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleCsvImport}
+                disabled={!csvFile || csvPreview.length === 0}
+                className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all ${
+                  csvFile && csvPreview.length > 0
+                    ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-600/25'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Import Employees
               </button>
             </div>
           </div>

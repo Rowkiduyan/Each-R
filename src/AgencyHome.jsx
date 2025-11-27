@@ -485,7 +485,7 @@ function AgencyHome() {
                           <div className="flex items-start justify-between gap-4">
                             <h2 className="text-2xl font-bold text-gray-800">{selectedJob.title}</h2>
                             <button
-                              className="px-10 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                              className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
                               onClick={() => handleEndorseNavigate(selectedJob)}
                             >
                               Endorse
@@ -621,8 +621,10 @@ function AgencyHome() {
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t">
-                <button onClick={() => setShowJobModal(false)} className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">Close</button>
-                <button onClick={() => { setShowJobModal(false); navigate("/agency/endorse", { state: { job: selectedJob } }); }} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Endorse Employee</button>
+                <button onClick={() => setShowJobModal(false)} className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors">Close</button>
+                <button onClick={() => { setShowJobModal(false); navigate("/agency/endorse", { state: { job: selectedJob } }); }} className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors">
+                  Endorse Employee
+                </button>
               </div>
             </div>
           </div>
