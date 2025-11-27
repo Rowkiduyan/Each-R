@@ -389,28 +389,12 @@ const handleEndorse = async () => {
     };
 
     // ---------- PRE-CHECK: avoid duplicates ----------
-    // 1) check recruitment_endorsements for same job + email
-    const { data: existingEndorsements, error: errEnd } = await supabase
-      .from("recruitment_endorsements")
-      .select("id, status, created_at")
-      .eq("job_id", jobIdToSend)
-      .ilike("email", email)
-      .limit(1);
-
-    if (errEnd) {
-      console.warn("recruitment_endorsements pre-check warning:", errEnd);
-      // continue — pre-check failure shouldn't block the endorsement
-    } else if (existingEndorsements && existingEndorsements.length > 0) {
-      alert("This endorsement already exists (someone else or you already endorsed this applicant). Endorsement skipped.");
-      return;
-    }
-
-    // 2) check applications for same job + applicant email (the trigger will create applications)
+    // Check applications for same job + applicant email
     const { data: existingApps, error: errAppCheck } = await supabase
       .from("applications")
-      .select("id, created_at")
+      .select("id, created_at, endorsed")
       .eq("job_id", jobIdToSend)
-      .or(`payload->applicant->>email.eq.${email}, payload->form->applicant->>email.eq.${email}`)
+      .or(`payload->applicant->>email.eq.${email}, payload->form->applicant->>email.eq.${email}, payload->>email.eq.${email}`)
       .limit(1);
 
     if (errAppCheck) {
@@ -421,37 +405,39 @@ const handleEndorse = async () => {
       return;
     }
 
-    // ---------- INSERT: only into recruitment_endorsements ----------
-    const { error: errEndorseInsert } = await supabase
-      .from("recruitment_endorsements")
+    // ---------- INSERT: directly into applications table with endorsed=true ----------
+    // Create a user_id if needed (for agency endorsements, we might not have a user_id)
+    // We'll use a placeholder or create a temporary user_id
+    let userIdToUse = authUserId;
+    
+    // If no auth user, try to find or create a placeholder user
+    if (!userIdToUse) {
+      // For agency endorsements without a user, we can use a system user or leave it null
+      // Check if applications table allows null user_id
+      userIdToUse = null; // Will be handled by the database if needed
+    }
+
+    const { error: errAppInsert } = await supabase
+      .from("applications")
       .insert([
         {
-          agency_profile_id: agencyProfileId || null,
-          fname,
-          lname,
-          mname: mname || null,
-          contact_number: contact || null,
-          email,
-          position: position || null,
-          department: vals.department || null,
-          depot: depot || null,
-          date_available: vals.dateAvailable || null,
-          payload,
-          status: "pending",
+          user_id: userIdToUse,
           job_id: jobIdToSend,
+          payload,
+          status: "submitted",
+          endorsed: true, // Mark as endorsed by agency
         },
       ]);
 
-    if (errEndorseInsert) {
-      console.error("Failed to create endorsement:", errEndorseInsert);
+    if (errAppInsert) {
+      console.error("Failed to create application:", errAppInsert);
       alert("Failed to create endorsement. See console for details.");
       return;
     }
 
-
-    // Success: the DB trigger (fn_create_application_from_endorsement) should create the applications row
+    // Success: application created directly with endorsed=true
     alert("Successfully endorsed. ✅ ");
-    navigate("/recruitment"); // or wherever you want to go
+    navigate("/agency/endorsements"); // Navigate to endorsements page
   } catch (err) {
     console.error("unexpected endorse error:", err);
     alert("An unexpected error occurred. Check console.");

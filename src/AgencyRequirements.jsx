@@ -25,7 +25,13 @@ function AgencyRequirements() {
   const [uploadTarget, setUploadTarget] = useState(null); // { employeeId, type: 'default'|'hr', key, name, isResubmit }
   const [uploadForm, setUploadForm] = useState({ idNumber: '', file: null });
   const [isDragging, setIsDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
+  
+  // Alert modals
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+  const [showErrorAlert, setShowErrorAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
 
   // Default requirements (from AgencyEndorsements documents tab)
   const defaultRequirements = [
@@ -35,106 +41,356 @@ function AgencyRequirements() {
     { key: 'philhealth', name: 'PhilHealth', type: 'id_with_copy' },
   ];
 
-  // Mock data - Employees with their requirements
-  const [employees] = useState([
-    {
-      id: 1,
-      name: 'Juan Dela Cruz',
-      position: 'Driver',
-      depot: 'Makati',
-      deployedDate: '2024-10-15',
-      requirements: {
-        sss: { idNumber: '10-1234567-8', hasFile: true, status: 'approved', submittedDate: '2024-10-16' },
-        tin: { idNumber: '123-456-789-000', hasFile: true, status: 'approved', submittedDate: '2024-10-16' },
-        pagibig: { idNumber: '1234-5678-9012', hasFile: true, status: 'approved', submittedDate: '2024-10-16' },
-        philhealth: { idNumber: '12-345678901-2', hasFile: true, status: 'approved', submittedDate: '2024-10-16' },
-      },
-      hrRequests: [],
-      hasUnviewedUpdate: false,
-    },
-    {
-      id: 2,
-      name: 'Maria Santos',
-      position: 'Dispatcher',
-      depot: 'BGC',
-      deployedDate: '2024-11-01',
-      requirements: {
-        sss: { idNumber: '10-9876543-2', hasFile: true, status: 'approved', submittedDate: '2024-11-02' },
-        tin: { idNumber: '987-654-321-000', hasFile: true, status: 'pending', submittedDate: '2024-11-02' },
+  // Real data - Employees with their requirements
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [reloadTrigger, setReloadTrigger] = useState(0);
+
+  // Load endorsed employees and their requirements
+  useEffect(() => {
+    const loadEmployees = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Get all deployed employees that are endorsed (came from agency)
+        // We treat an employee as agency-endorsed if:
+        // - is_agency = true OR
+        // - agency_profile_id is not null
+        // These are the same agency-sourced deployed employees you see in the Endorsements module.
+        // Include requirements column from employees table
+        const { data: employeesData, error: empError } = await supabase
+          .from('employees')
+          .select('id, email, fname, lname, mname, position, depot, hired_at, date_hired, source, is_agency, agency_profile_id, requirements')
+          .or('is_agency.eq.true,agency_profile_id.not.is.null')
+          .not('hired_at', 'is', null) // Only deployed employees (have hired_at)
+          .order('hired_at', { ascending: false });
+
+        if (empError) {
+          // Fallback: query separately and combine
+          const [isAgency, hasAgencyId] = await Promise.all([
+            supabase.from('employees').select('*').eq('is_agency', true).not('hired_at', 'is', null),
+            supabase.from('employees').select('*').not('agency_profile_id', 'is', null).not('hired_at', 'is', null),
+          ]);
+          
+          const allEmployees = [
+            ...(isAgency.data || []),
+            ...(hasAgencyId.data || []),
+          ];
+          
+          // Remove duplicates by email
+          const uniqueEmployees = Array.from(
+            new Map(allEmployees.map(emp => [emp.email, emp])).values()
+          );
+          
+          if (uniqueEmployees.length === 0) {
+            setEmployees([]);
+            setLoading(false);
+            return;
+          }
+          
+          // Continue with uniqueEmployees
+          const employeesToProcess = uniqueEmployees.sort((a, b) => {
+            const dateA = new Date(a.hired_at || a.date_hired || 0);
+            const dateB = new Date(b.hired_at || b.date_hired || 0);
+            return dateB - dateA;
+          });
+          
+          // Process employees
+          if (employeesToProcess.length === 0) {
+            setEmployees([]);
+            setLoading(false);
+            return;
+          }
+          
+          // Requirements are now stored in employees table, not applications table
+          // No need to query applications - requirements come directly from employees.requirements
+          
+          // Map employees to the expected structure
+          const mappedEmployees = employeesToProcess.map(emp => {
+            // Parse requirements directly from employee record
+            let requirementsData = null;
+            
+            // Get requirements from employees.requirements column
+            if (emp.requirements) {
+              if (typeof emp.requirements === 'string') {
+                try {
+                  requirementsData = JSON.parse(emp.requirements);
+                } catch {
+                  requirementsData = null;
+                }
+              } else {
+                requirementsData = emp.requirements;
+              }
+            }
+
+            // Map requirements to expected structure
+            const requirements = {
+              sss: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
+              tin: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
         pagibig: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
-        philhealth: { idNumber: '98-765432109-8', hasFile: true, status: 'resubmit', submittedDate: '2024-11-02', remarks: 'ID copy is blurry. Please upload a clearer image.' },
-      },
-      hrRequests: [
-        { id: 1, document: 'NBI Clearance', deadline: '2024-12-05', status: 'pending', priority: 'high', remarks: null },
-      ],
-      hasUnviewedUpdate: true,
-    },
-    {
-      id: 3,
-      name: 'Pedro Garcia',
-      position: 'Driver',
-      depot: 'Quezon City',
-      deployedDate: '2024-11-10',
-      requirements: {
-        sss: { idNumber: '10-5555555-5', hasFile: true, status: 'pending', submittedDate: '2024-11-11' },
-        tin: { idNumber: '555-555-555-000', hasFile: true, status: 'pending', submittedDate: '2024-11-11' },
-        pagibig: { idNumber: '5555-5555-5555', hasFile: true, status: 'pending', submittedDate: '2024-11-11' },
-        philhealth: { idNumber: '55-555555555-5', hasFile: true, status: 'pending', submittedDate: '2024-11-11' },
-      },
-      hrRequests: [],
-      hasUnviewedUpdate: false,
-    },
-    {
-      id: 4,
-      name: 'Ana Reyes',
-      position: 'Admin Staff',
-      depot: 'Makati',
-      deployedDate: '2024-09-20',
-      requirements: {
-        sss: { idNumber: '10-2222222-2', hasFile: true, status: 'approved', submittedDate: '2024-09-21' },
-        tin: { idNumber: '222-222-222-000', hasFile: true, status: 'approved', submittedDate: '2024-09-21' },
-        pagibig: { idNumber: '2222-2222-2222', hasFile: true, status: 'approved', submittedDate: '2024-09-21' },
-        philhealth: { idNumber: '22-222222222-2', hasFile: true, status: 'approved', submittedDate: '2024-09-21' },
-      },
-      hrRequests: [
-        { id: 1, document: 'Police Clearance', deadline: '2024-12-10', status: 'submitted', priority: 'medium', submittedDate: '2024-11-25', remarks: null },
-        { id: 2, document: 'Medical Certificate', deadline: '2024-12-15', status: 'approved', priority: 'low', submittedDate: '2024-11-20', approvedDate: '2024-11-22', remarks: null },
-      ],
-      hasUnviewedUpdate: false,
-    },
-    {
-      id: 5,
-      name: 'Roberto Santos',
-      position: 'Mechanic',
-      depot: 'Pasig',
-      deployedDate: '2024-11-15',
-      requirements: {
+              philhealth: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
+            };
+
+            if (requirementsData?.id_numbers) {
+              const idNums = requirementsData.id_numbers;
+              
+              // Map SSS
+              if (idNums.sss) {
+                requirements.sss = {
+                  idNumber: idNums.sss.value || '',
+                  hasFile: false,
+                  status: idNums.sss.status === 'Validated' ? 'approved' : 
+                          idNums.sss.status === 'Re-submit' ? 'resubmit' :
+                          idNums.sss.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: idNums.sss.validated_at || requirementsData.submitted_at || null,
+                  remarks: idNums.sss.remarks || null,
+                };
+              }
+
+              // Map TIN
+              if (idNums.tin) {
+                requirements.tin = {
+                  idNumber: idNums.tin.value || '',
+                  hasFile: false,
+                  status: idNums.tin.status === 'Validated' ? 'approved' : 
+                          idNums.tin.status === 'Re-submit' ? 'resubmit' :
+                          idNums.tin.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: idNums.tin.validated_at || requirementsData.submitted_at || null,
+                  remarks: idNums.tin.remarks || null,
+                };
+              }
+
+              // Map PAG-IBIG
+              if (idNums.pagibig) {
+                requirements.pagibig = {
+                  idNumber: idNums.pagibig.value || '',
+                  hasFile: false,
+                  status: idNums.pagibig.status === 'Validated' ? 'approved' : 
+                          idNums.pagibig.status === 'Re-submit' ? 'resubmit' :
+                          idNums.pagibig.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: idNums.pagibig.validated_at || requirementsData.submitted_at || null,
+                  remarks: idNums.pagibig.remarks || null,
+                };
+              }
+
+              // Map PhilHealth
+              if (idNums.philhealth) {
+                requirements.philhealth = {
+                  idNumber: idNums.philhealth.value || '',
+                  hasFile: false,
+                  status: idNums.philhealth.status === 'Validated' ? 'approved' : 
+                          idNums.philhealth.status === 'Re-submit' ? 'resubmit' :
+                          idNums.philhealth.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: idNums.philhealth.validated_at || requirementsData.submitted_at || null,
+                  remarks: idNums.philhealth.remarks || null,
+                };
+              }
+            }
+
+            // Check for document files
+            if (requirementsData?.documents && Array.isArray(requirementsData.documents)) {
+              requirementsData.documents.forEach(doc => {
+                // Match by key first (exact match), then by name/type (partial match)
+                const docKey = (doc.key || doc.type || doc.name || '').toLowerCase();
+                
+                // Exact key matches
+                if (docKey === 'sss') {
+                  requirements.sss.hasFile = !!doc.file_path;
+                  if (!requirements.sss.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
+                    requirements.sss.submittedDate = doc.uploaded_at || doc.submitted_at;
+                  }
+                } else if (docKey === 'tin') {
+                  requirements.tin.hasFile = !!doc.file_path;
+                  if (!requirements.tin.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
+                    requirements.tin.submittedDate = doc.uploaded_at || doc.submitted_at;
+                  }
+                } else if (docKey === 'pagibig' || docKey === 'pag-ibig') {
+                  requirements.pagibig.hasFile = !!doc.file_path;
+                  if (!requirements.pagibig.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
+                    requirements.pagibig.submittedDate = doc.uploaded_at || doc.submitted_at;
+                  }
+                } else if (docKey === 'philhealth') {
+                  requirements.philhealth.hasFile = !!doc.file_path;
+                  if (!requirements.philhealth.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
+                    requirements.philhealth.submittedDate = doc.uploaded_at || doc.submitted_at;
+                  }
+                }
+              });
+            }
+
+            // Build employee name
+            const name = `${emp.fname || ''} ${emp.mname || ''} ${emp.lname || ''}`.trim() || emp.email || 'Unknown';
+
+            return {
+              id: emp.id || emp.email,
+              name: name,
+              position: emp.position || '—',
+              depot: emp.depot || '—',
+              deployedDate: emp.hired_at || emp.date_hired || null,
+              requirements: requirements,
+              hrRequests: [], // TODO: Load HR requests from database if table exists
+              hasUnviewedUpdate: false, // TODO: Implement unviewed tracking
+              employeeId: emp.id, // Store employee ID for updates (requirements are in employees table now)
+              email: emp.email, // Store email for matching
+            };
+          });
+
+          setEmployees(mappedEmployees);
+          setLoading(false);
+          return;
+        }
+
+        // If query succeeded, process employeesData
+        if (employeesData && employeesData.length > 0) {
+          // Requirements are now stored in employees table, not applications table
+          // No need to query applications - requirements come directly from employees.requirements
+          
+          // Map employees to the expected structure
+          const mappedEmployees = employeesData.map(emp => {
+            // Parse requirements directly from employee record
+            let requirementsData = null;
+            
+            // Get requirements from employees.requirements column
+            if (emp.requirements) {
+              if (typeof emp.requirements === 'string') {
+                try {
+                  requirementsData = JSON.parse(emp.requirements);
+                } catch {
+                  requirementsData = null;
+                }
+              } else {
+                requirementsData = emp.requirements;
+              }
+            }
+
+            // Map requirements to expected structure
+            const requirements = {
         sss: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
         tin: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
         pagibig: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
         philhealth: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
-      },
-      hrRequests: [],
-      hasUnviewedUpdate: true,
-    },
-    {
-      id: 6,
-      name: 'Elena Cruz',
-      position: 'Driver',
-      depot: 'BGC',
-      deployedDate: '2024-10-25',
-      requirements: {
-        sss: { idNumber: '10-3333333-3', hasFile: true, status: 'approved', submittedDate: '2024-10-26' },
-        tin: { idNumber: '333-333-333-000', hasFile: true, status: 'approved', submittedDate: '2024-10-26' },
-        pagibig: { idNumber: '3333-3333-3333', hasFile: true, status: 'resubmit', submittedDate: '2024-10-26', remarks: 'Document is expired. Please submit a current copy.' },
-        philhealth: { idNumber: '33-333333333-3', hasFile: true, status: 'approved', submittedDate: '2024-10-26' },
-      },
-      hrRequests: [
-        { id: 1, document: 'Barangay Clearance', deadline: '2024-12-01', status: 'resubmit', priority: 'high', remarks: 'Clearance has expired. Please submit a new one dated within the last 6 months.' },
-      ],
-      hasUnviewedUpdate: true,
-    },
-  ]);
+            };
+
+            if (requirementsData?.id_numbers) {
+              const idNums = requirementsData.id_numbers;
+              
+              // Map SSS
+              if (idNums.sss) {
+                requirements.sss = {
+                  idNumber: idNums.sss.value || '',
+                  hasFile: false,
+                  status: idNums.sss.status === 'Validated' ? 'approved' : 
+                          idNums.sss.status === 'Re-submit' ? 'resubmit' :
+                          idNums.sss.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: idNums.sss.validated_at || requirementsData.submitted_at || null,
+                  remarks: idNums.sss.remarks || null,
+                };
+              }
+
+              // Map TIN
+              if (idNums.tin) {
+                requirements.tin = {
+                  idNumber: idNums.tin.value || '',
+                  hasFile: false,
+                  status: idNums.tin.status === 'Validated' ? 'approved' : 
+                          idNums.tin.status === 'Re-submit' ? 'resubmit' :
+                          idNums.tin.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: idNums.tin.validated_at || requirementsData.submitted_at || null,
+                  remarks: idNums.tin.remarks || null,
+                };
+              }
+
+              // Map PAG-IBIG
+              if (idNums.pagibig) {
+                requirements.pagibig = {
+                  idNumber: idNums.pagibig.value || '',
+                  hasFile: false,
+                  status: idNums.pagibig.status === 'Validated' ? 'approved' : 
+                          idNums.pagibig.status === 'Re-submit' ? 'resubmit' :
+                          idNums.pagibig.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: idNums.pagibig.validated_at || requirementsData.submitted_at || null,
+                  remarks: idNums.pagibig.remarks || null,
+                };
+              }
+
+              // Map PhilHealth
+              if (idNums.philhealth) {
+                requirements.philhealth = {
+                  idNumber: idNums.philhealth.value || '',
+                  hasFile: false,
+                  status: idNums.philhealth.status === 'Validated' ? 'approved' : 
+                          idNums.philhealth.status === 'Re-submit' ? 'resubmit' :
+                          idNums.philhealth.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: idNums.philhealth.validated_at || requirementsData.submitted_at || null,
+                  remarks: idNums.philhealth.remarks || null,
+                };
+              }
+            }
+
+            // Check for document files
+            if (requirementsData?.documents && Array.isArray(requirementsData.documents)) {
+              requirementsData.documents.forEach(doc => {
+                // Match by key first (exact match), then by name/type (partial match)
+                const docKey = (doc.key || doc.type || doc.name || '').toLowerCase();
+                
+                // Exact key matches
+                if (docKey === 'sss') {
+                  requirements.sss.hasFile = !!doc.file_path;
+                  if (!requirements.sss.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
+                    requirements.sss.submittedDate = doc.uploaded_at || doc.submitted_at;
+                  }
+                } else if (docKey === 'tin') {
+                  requirements.tin.hasFile = !!doc.file_path;
+                  if (!requirements.tin.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
+                    requirements.tin.submittedDate = doc.uploaded_at || doc.submitted_at;
+                  }
+                } else if (docKey === 'pagibig' || docKey === 'pag-ibig') {
+                  requirements.pagibig.hasFile = !!doc.file_path;
+                  if (!requirements.pagibig.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
+                    requirements.pagibig.submittedDate = doc.uploaded_at || doc.submitted_at;
+                  }
+                } else if (docKey === 'philhealth') {
+                  requirements.philhealth.hasFile = !!doc.file_path;
+                  if (!requirements.philhealth.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
+                    requirements.philhealth.submittedDate = doc.uploaded_at || doc.submitted_at;
+                  }
+                }
+              });
+            }
+
+            // Build employee name
+            const name = `${emp.fname || ''} ${emp.mname || ''} ${emp.lname || ''}`.trim() || emp.email || 'Unknown';
+
+            return {
+              id: emp.id || emp.email,
+              name: name,
+              position: emp.position || '—',
+              depot: emp.depot || '—',
+              deployedDate: emp.hired_at || emp.date_hired || null,
+              requirements: requirements,
+              hrRequests: [], // TODO: Load HR requests from database if table exists
+              hasUnviewedUpdate: false, // TODO: Implement unviewed tracking
+              employeeId: emp.id, // Store employee ID for updates (requirements are in employees table now)
+              email: emp.email, // Store email for matching
+            };
+          });
+
+          setEmployees(mappedEmployees);
+        } else {
+          // No employees found
+          setEmployees([]);
+        }
+      } catch (err) {
+        console.error('Error loading employees:', err);
+        setError(err.message || 'Failed to load employees');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadEmployees();
+  }, [reloadTrigger]);
 
   // Helper function to check if employee has unviewed update
   const hasUnviewedUpdate = (employee) => {
@@ -164,22 +420,22 @@ function AgencyRequirements() {
     return 'pending';
   };
 
-  // Calculate stats
-  const stats = {
+  // Calculate stats (memoized to avoid recalculating on every render)
+  const stats = React.useMemo(() => ({
     actionRequired: employees.filter(e => getEmployeeStatus(e) === 'action_required').length,
     incomplete: employees.filter(e => getEmployeeStatus(e) === 'incomplete').length,
     pending: employees.filter(e => getEmployeeStatus(e) === 'pending').length,
     complete: employees.filter(e => getEmployeeStatus(e) === 'complete').length,
     total: employees.length,
-  };
+  }), [employees]);
 
   // Unviewed counts
-  const unviewedCounts = {
+  const unviewedCounts = React.useMemo(() => ({
     action_required: employees.filter(e => getEmployeeStatus(e) === 'action_required' && hasUnviewedUpdate(e)).length,
     incomplete: employees.filter(e => getEmployeeStatus(e) === 'incomplete' && hasUnviewedUpdate(e)).length,
     pending: employees.filter(e => getEmployeeStatus(e) === 'pending' && hasUnviewedUpdate(e)).length,
     complete: employees.filter(e => getEmployeeStatus(e) === 'complete' && hasUnviewedUpdate(e)).length,
-  };
+  }), [employees]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -326,21 +582,164 @@ function AgencyRequirements() {
     handleFileSelect(file);
   };
 
-  const handleUploadSubmit = () => {
+  const handleUploadSubmit = async () => {
     // Validate form
     if (uploadTarget?.type === 'default' && !uploadForm.idNumber.trim()) {
-      alert('Please enter the ID number');
+      setAlertMessage('Please enter the ID number');
+      setShowErrorAlert(true);
       return;
     }
     if (!uploadForm.file) {
-      alert('Please select a file to upload');
+      setAlertMessage('Please select a file to upload');
+      setShowErrorAlert(true);
       return;
     }
     
-    // Here you would implement actual upload logic
-    console.log('Uploading:', uploadTarget, uploadForm);
-    alert('Document uploaded successfully!');
+    if (!uploadTarget?.employeeId) {
+      setAlertMessage('Employee ID not found');
+      setShowErrorAlert(true);
+      return;
+    }
+    
+    // Find the employee - requirements are now stored in employees table
+    const employee = employees.find(e => e.id === uploadTarget.employeeId);
+    if (!employee) {
+      setAlertMessage('Employee not found');
+      setShowErrorAlert(true);
+      return;
+    }
+    
+    const employeeId = employee.employeeId || employee.id;
+    if (!employeeId) {
+      setAlertMessage('Employee ID not found');
+      setShowErrorAlert(true);
+      return;
+    }
+    
+    setUploading(true);
+    try {
+      // Upload file to Supabase storage
+      const sanitizedFileName = uploadForm.file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const fileExt = uploadForm.file.name.split('.').pop();
+      const fileName = `${uploadTarget.key}-${Date.now()}.${fileExt}`;
+      const filePath = `requirements/${employeeId}/${uploadTarget.key}/${fileName}`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('application-files')
+        .upload(filePath, uploadForm.file, {
+          upsert: true,
+        });
+      
+      if (uploadError) {
+        throw new Error(`Failed to upload file: ${uploadError.message}`);
+      }
+      
+      // Get current requirements from employees table
+      const { data: employeeData, error: empError } = await supabase
+        .from('employees')
+        .select('id, requirements')
+        .eq('id', employeeId)
+        .single();
+      
+      if (empError) throw empError;
+      
+      // Parse current requirements
+      let currentRequirements = null;
+      if (employeeData.requirements) {
+        if (typeof employeeData.requirements === 'string') {
+          try {
+            currentRequirements = JSON.parse(employeeData.requirements);
+          } catch {
+            currentRequirements = {};
+          }
+        } else {
+          currentRequirements = employeeData.requirements;
+        }
+      }
+      
+      if (!currentRequirements) {
+        currentRequirements = {
+          id_numbers: {},
+          documents: [],
+          submitted: false,
+        };
+      }
+      
+      // Initialize id_numbers if it doesn't exist
+      if (!currentRequirements.id_numbers) {
+        currentRequirements.id_numbers = {};
+      }
+      
+      // Initialize documents array if it doesn't exist
+      if (!Array.isArray(currentRequirements.documents)) {
+        currentRequirements.documents = [];
+      }
+      
+      // Update ID number if it's a default requirement
+      if (uploadTarget.type === 'default') {
+        const idKey = uploadTarget.key;
+        if (!currentRequirements.id_numbers[idKey]) {
+          currentRequirements.id_numbers[idKey] = {};
+        }
+        currentRequirements.id_numbers[idKey].value = uploadForm.idNumber.trim();
+        currentRequirements.id_numbers[idKey].status = uploadTarget.isResubmit ? 'Re-submit' : 'Submitted';
+        currentRequirements.id_numbers[idKey].submitted_at = new Date().toISOString();
+      }
+      
+      // Add or update document in documents array
+      const docKey = uploadTarget.key;
+      const existingDocIndex = currentRequirements.documents.findIndex(
+        d => d.key === docKey || d.name?.toLowerCase().includes(docKey)
+      );
+      
+      const documentEntry = {
+        key: docKey,
+        name: uploadTarget.name,
+        file_path: uploadData.path,
+        uploaded_at: new Date().toISOString(),
+        status: uploadTarget.isResubmit ? 'Re-submit' : 'Submitted',
+      };
+      
+      if (existingDocIndex >= 0) {
+        // Update existing document
+        currentRequirements.documents[existingDocIndex] = {
+          ...currentRequirements.documents[existingDocIndex],
+          ...documentEntry,
+        };
+      } else {
+        // Add new document
+        currentRequirements.documents.push(documentEntry);
+      }
+      
+      // Update submitted flag
+      currentRequirements.submitted = true;
+      currentRequirements.submitted_at = new Date().toISOString();
+      
+      // Update requirements in employees table
+      const { error: updateError } = await supabase
+        .from('employees')
+        .update({ requirements: currentRequirements })
+        .eq('id', employeeId);
+      
+      if (updateError) {
+        throw new Error(`Failed to save requirements: ${updateError.message}`);
+      }
+      
+      // Close modal and show success
     closeUploadModal();
+      setAlertMessage('Document uploaded successfully!');
+      setShowSuccessAlert(true);
+      
+      // Reload employees data by triggering useEffect
+      setReloadTrigger(prev => prev + 1);
+      
+    } catch (err) {
+      console.error('Error uploading document:', err);
+      setAlertMessage(err.message || 'Failed to upload document. Please try again.');
+      setShowErrorAlert(true);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const formatFileSize = (bytes) => {
@@ -390,8 +789,8 @@ function AgencyRequirements() {
         }
       `}</style>
       
-      {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-50">
+      {/* Header (hidden because AgencyLayout provides the main header) */}
+      <div className="bg-white shadow-sm sticky top-0 z-50 hidden">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -645,7 +1044,27 @@ function AgencyRequirements() {
             </div>
           </div>
 
+          {/* Loading State */}
+          {loading && (
+            <div className="px-6 py-12 text-center">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+              <p className="text-sm text-gray-500 mt-3">Loading employees...</p>
+            </div>
+          )}
+
+          {/* Error State */}
+          {error && !loading && (
+            <div className="px-6 py-12 text-center">
+              <svg className="w-12 h-12 text-red-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <p className="font-medium text-red-600">Error loading employees</p>
+              <p className="text-sm text-gray-500 mt-1">{error}</p>
+            </div>
+          )}
+
           {/* Table */}
+          {!loading && !error && (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
@@ -979,6 +1398,7 @@ function AgencyRequirements() {
               </tbody>
             </table>
           </div>
+          )}
 
           {/* Pagination */}
           {filteredData.length > itemsPerPage && (
@@ -1056,6 +1476,60 @@ function AgencyRequirements() {
           </div>
         </div>
       </footer>
+
+      {/* Success Alert Modal */}
+      {showSuccessAlert && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowSuccessAlert(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-green-600">
+                    <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">{alertMessage}</div>
+              <div className="mt-4">
+                <button 
+                  type="button" 
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  onClick={() => setShowSuccessAlert(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Alert Modal */}
+      {showErrorAlert && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowErrorAlert(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-red-600">
+                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">{alertMessage}</div>
+              <div className="mt-4">
+                <button 
+                  type="button" 
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  onClick={() => setShowErrorAlert(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
@@ -1257,19 +1731,28 @@ function AgencyRequirements() {
               </button>
               <button
                 onClick={handleUploadSubmit}
-                disabled={!uploadForm.file || (uploadTarget.type === 'default' && !uploadForm.idNumber.trim())}
+                disabled={uploading || !uploadForm.file || (uploadTarget.type === 'default' && !uploadForm.idNumber.trim())}
                 className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
-                  uploadForm.file && (uploadTarget.type !== 'default' || uploadForm.idNumber.trim())
+                  !uploading && uploadForm.file && (uploadTarget.type !== 'default' || uploadForm.idNumber.trim())
                     ? uploadTarget.isResubmit
                       ? 'bg-red-600 text-white hover:bg-red-700'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
               >
+                {uploading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Uploading...
+                  </>
+                ) : (
+                  <>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
                 {uploadTarget.isResubmit ? 'Re-submit Document' : 'Upload Document'}
+                  </>
+                )}
               </button>
             </div>
           </div>

@@ -113,10 +113,11 @@ function Employees() {
       role: row.role || "Employee",
       hired_at: row.hired_at,
       agency:
-        (row.source && String(row.source).toLowerCase() === "agency")
+        (row.source && (String(row.source).toLowerCase() === "agency" || String(row.source).toLowerCase() === "recruitment"))
         || (row.role && String(row.role).toLowerCase() === "agency")
         || !!row.agency_profile_id
-        || !!row.endorsed_by_agency_id,
+        || !!row.endorsed_by_agency_id
+        || row.is_agency === true,
       source: row.source || null,
       endorsed_by_agency_id: row.endorsed_by_agency_id || row.agency_profile_id || null,
       endorsed_at: row.endorsed_at || null,
@@ -202,22 +203,23 @@ function Employees() {
           .limit(500);
         if (!appsErr3) processApps(apps3);
 
-        // Query 4: endorsements (useful when recruitment_endorsements created and job/depot stored there)
-        const { data: endorseRows, error: endorseErr } = await supabase
-          .from("recruitment_endorsements")
-          .select("id, email, fname, lname, position, depot, payload, status, created_at")
-          .filter("email", "in", inList)
+        // Query 4: endorsed applications (where endorsed=true)
+        // We'll fetch all endorsed apps and filter by email in memory since Supabase doesn't support complex JSONB queries easily
+        const { data: endorseApps, error: endorseErr } = await supabase
+          .from("applications")
+          .select("id, payload, status, created_at, job_posts(id, title, depot), endorsed")
+          .eq("endorsed", true)
           .order("created_at", { ascending: false })
           .limit(500);
-        if (!endorseErr && Array.isArray(endorseRows)) {
-          for (const r of endorseRows) {
+        if (!endorseErr && Array.isArray(endorseApps)) {
+          for (const r of endorseApps) {
             const p = safePayload(r.payload);
-            const em = (r.email || (p?.applicant?.email) || (p?.form?.email) || "").toString().trim();
-            if (!em) continue;
-            if (!emailsToFill.includes(em)) continue;
-            if (!appsByEmail[em]) appsByEmail[em] = [];
-            // convert endorsement into app-like shape so extraction works similarly
-            appsByEmail[em].push({ row: { id: r.id, payload: r.payload, status: r.status, created_at: r.created_at, job_posts: null }, payloadObj: p, endorsement: r });
+            const emails = extractEmailsFromPayload(p);
+            for (const em of emails) {
+              if (!emailsToFill.includes(em)) continue;
+              if (!appsByEmail[em]) appsByEmail[em] = [];
+              appsByEmail[em].push({ row: { id: r.id, payload: r.payload, status: r.status, created_at: r.created_at, job_posts: r.job_posts, endorsed: r.endorsed }, payloadObj: p });
+            }
           }
         }
 
@@ -264,8 +266,8 @@ function Employees() {
               if (source && String(source).toLowerCase() === "agency") {
                 updatedEmp.agency = true;
               }
-              // Also check if it came from recruitment_endorsements
-              if (match.endorsement) {
+              // Also check if the application has endorsed=true
+              if (match.row && match.row.endorsed === true) {
                 updatedEmp.agency = true;
               }
             }
