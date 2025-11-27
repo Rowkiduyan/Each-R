@@ -1,5 +1,11 @@
 import { useState, useEffect, useRef } from "react";
+<<<<<<< Updated upstream
 import { Link, NavLink, useNavigate, Outlet } from "react-router-dom";
+=======
+import { NavLink, useNavigate, Outlet } from "react-router-dom";
+import LogoCropped from "./photos/logo(cropped).png";
+import HrNotificationBell from "../HrNotificationBell";
+>>>>>>> Stashed changes
 
 export default function HRLayout() {
   const [hrUser, setHrUser] = useState(null);
@@ -50,10 +56,24 @@ export default function HRLayout() {
 
   return (
     <>
+<<<<<<< Updated upstream
       <nav className="w-full bg-white shadow-md mb-6">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between items-center h-25">
             <div className="flex-shrink-0 text-red-600 font-bold text-2xl italic">Each-R</div>
+=======
+      {/* Header -  navbar*/}
+      <div className="bg-white shadow-sm sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <img
+                src={LogoCropped}
+                alt="Each-R Logo"
+                className="h-10 w-auto object-contain"
+              />
+            </div>
+>>>>>>> Stashed changes
 
             <div className="flex space-x-6 ml-0 md:ml-32 lg:ml-10">
               <NavLink
