@@ -6,7 +6,6 @@ import AgencyEndorse from "./AgencyEndorse";
 import Employees from "./Employees";
 import ApplicantGHome from "./ApplicantGHome";
 import ApplicantLHome from "./ApplicantLHome";
-import EmployeeDetails from "./EmployeeDetails"; 
 import EmployeeLogin from "./EmployeeLogin";
 import EmHome from "./EmHome";
 import AdminHome from "./AdminHome";
@@ -14,6 +13,7 @@ import ManageAccounts from "./ManageAccounts";
 import HrTrainings from "./HrTrainings";
 import EmployeeTrainings from "./EmployeeTrainings";
 import HrRecruitment from "./HrRecruitment";
+import HrRequirements from "./HrRequirements";
 import ApplicantDetails from "./ApplicantDetails";
 import HrEval from "./HrEval";
 import HrSeperation from "./HrSeperation";
@@ -65,13 +65,13 @@ function App() {
         <Route path="trainings" element={<HrTrainings />} />
         <Route path="recruitment" element={<HrRecruitment />} />
         <Route path="recruitment/job/:id" element={<HrPost />} />
+        <Route path="requirements" element={<HrRequirements />} />
         <Route path="eval" element={<HrEval />} />
         <Route path="seperation" element={<HrSeperation />} />
         <Route path="notif" element={<HrNotif />} />
         <Route path="create/job" element={<HrCreateJob />} />
         <Route path="recruitment/applicant/:id" element={<ApplicantDetails />} />
         <Route path="employees" element={<Employees />} />
-        <Route path="employee/details" element={<EmployeeDetails />} />
       </Route>
       
       

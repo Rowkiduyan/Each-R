@@ -26,27 +26,71 @@ function HrSched() {
   const fetchInterviews = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      // First get applications with interview dates
+      const { data: applicationsData, error: appsError } = await supabase
         .from('applications')
-        .select('id, first_name, last_name, position, interview_date, interview_time, status')
+        .select('id, user_id, payload, interview_date, interview_time, status')
         .not('interview_date', 'is', null)
         .order('interview_date', { ascending: true });
       
-      if (error) {
-        console.error('Error fetching interviews:', error);
+      if (appsError) {
+        console.error('Error fetching applications:', appsError);
         setInterviews([]);
-      } else {
-        // Transform the data to match our component's expected format
-        const transformedData = data.map(app => ({
+        return;
+      }
+
+      if (!applicationsData || applicationsData.length === 0) {
+        console.log('No applications with interview_date found');
+        setInterviews([]);
+        return;
+      }
+
+      console.log('Applications data:', applicationsData);
+
+      // Get all unique applicant IDs
+      const applicantIds = [...new Set(applicationsData.map(app => app.user_id).filter(Boolean))];
+
+      if (applicantIds.length === 0) {
+        console.log('No valid user_ids found');
+        setInterviews([]);
+        return;
+      }
+
+      // Fetch applicant names
+      const { data: applicantsData, error: applicantsError } = await supabase
+        .from('applicants')
+        .select('id, fname, lname')
+        .in('id', applicantIds);
+
+      if (applicantsError) {
+        console.error('Error fetching applicants:', applicantsError);
+      }
+
+      console.log('Applicants data:', applicantsData);
+
+      // Create a map of applicant IDs to names
+      const applicantMap = {};
+      if (applicantsData) {
+        applicantsData.forEach(applicant => {
+          applicantMap[applicant.id] = `${applicant.fname} ${applicant.lname}`;
+        });
+      }
+
+      // Transform the data to match our component's expected format
+      const transformedData = applicationsData.map(app => {
+        console.log('Processing app:', app.id, 'payload:', app.payload);
+        return {
           id: app.id,
-          applicant_name: `${app.first_name} ${app.last_name}`,
-          position: app.position,
+          applicant_name: applicantMap[app.user_id] || 'Unknown Applicant',
+          position: app.payload?.job?.title || app.payload?.title || app.payload?.job_title || 'N/A',
           date: app.interview_date,
           time: app.interview_time || 'Not set',
           status: app.status || 'scheduled'
-        }));
-        setInterviews(transformedData);
-      }
+        };
+      });
+      
+      console.log('Transformed interviews:', transformedData);
+      setInterviews(transformedData);
     } catch (error) {
       console.error('Error fetching interviews:', error);
       setInterviews([]);
@@ -210,7 +254,11 @@ function HrSched() {
               
               <div className="space-y-3">
                 {getInterviewsForDate(selectedDate).map(interview => (
-                  <div key={interview.id} className="border rounded-lg p-3">
+                  <div 
+                    key={interview.id} 
+                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => navigate('/hr/recruitment', { state: { applicationId: interview.id, openTab: 'Assessment' } })}
+                  >
                     <div className="flex items-center justify-between">
                       <div>
                         <h4 className="font-semibold text-gray-800">{interview.applicant_name}</h4>
@@ -229,35 +277,6 @@ function HrSched() {
               </div>
             </div>
           )}
-
-          {/* Upcoming Interviews */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Upcoming Interviews</h3>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {interviews
-                .filter(interview => new Date(interview.date) >= new Date() && interview.status === 'scheduled')
-                .slice(0, 5)
-                .map(interview => (
-                  <div key={interview.id} className="border rounded-lg p-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-semibold text-gray-800">{interview.applicant_name}</h4>
-                        <p className="text-sm text-gray-600">{interview.position}</p>
-                        <p className="text-sm text-gray-600">
-                          {new Date(interview.date).toLocaleDateString()} at {interview.time}
-                        </p>
-                      </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(interview.status)}`}>
-                        {interview.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              {interviews.filter(interview => new Date(interview.date) >= new Date() && interview.status === 'scheduled').length === 0 && (
-                <p className="text-gray-500 text-center py-4">No upcoming interviews</p>
-              )}
-            </div>
-          </div>
         </div>
       </div>
 
