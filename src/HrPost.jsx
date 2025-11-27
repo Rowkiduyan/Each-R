@@ -38,10 +38,13 @@ function HrPost() {
         .select('*')
         .order('created_at', { ascending: false });
       
+      console.log('Fetched job posts:', data);
+      
       if (error) {
         console.error('Error fetching job posts:', error);
       } else {
         setJobPosts(data || []);
+        console.log('Job posts state updated, count:', data?.length || 0);
       }
     } catch (err) {
       console.error('Unexpected error fetching job posts:', err);
@@ -150,28 +153,46 @@ function HrPost() {
   };
 
   const handleDeleteJob = async () => {
-    if (!deletingJob) return;
+    if (!deletingJob) {
+      console.log('No job selected for deletion');
+      return;
+    }
     
+    console.log('Attempting to delete job post with ID:', deletingJob.id);
     setDeleting(true);
+    
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('job_posts')
         .delete()
-        .eq('id', deletingJob.id);
+        .eq('id', deletingJob.id)
+        .select();
+
+      console.log('Delete response:', { data, error });
 
       if (error) {
         console.error('Error deleting job post:', error);
-        alert(`Failed to delete job post: ${error.message}`);
+        alert(`Failed to delete job post: ${error.message}\n\nDetails: ${JSON.stringify(error, null, 2)}`);
       } else {
-        setShowConfirmDelete(false);
-        setDeletingJob(null);
-        setShowSuccessMessage(true);
-        setTimeout(() => setShowSuccessMessage(false), 3000);
-        fetchJobPosts();
+        console.log('Job post deleted successfully');
+        
+        // If the deleted job was selected, clear the selection first
         if (selectedJob?.id === deletingJob.id) {
           setShowDetails(false);
           setSelectedJob(null);
         }
+        
+        // Immediately update the local state by filtering out the deleted job
+        setJobPosts(prevPosts => prevPosts.filter(job => job.id !== deletingJob.id));
+        
+        // Close the modal and show success message
+        setShowConfirmDelete(false);
+        setDeletingJob(null);
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
+        
+        // Refresh from server to ensure consistency
+        await fetchJobPosts();
       }
     } catch (err) {
       console.error('Unexpected error deleting job post:', err);
