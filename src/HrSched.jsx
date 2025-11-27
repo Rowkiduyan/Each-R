@@ -26,37 +26,30 @@ function HrSched() {
   const fetchInterviews = async () => {
     setLoading(true);
     try {
-      // This would fetch from your interviews table when it exists
-      // For now, using mock data
-      const mockInterviews = [
-        {
-          id: 1,
-          applicant_name: 'John Doe',
-          position: 'Driver',
-          date: '2025-11-28',
-          time: '10:00',
-          status: 'scheduled'
-        },
-        {
-          id: 2,
-          applicant_name: 'Jane Smith',
-          position: 'Conductor',
-          date: '2025-11-28',
-          time: '14:00',
-          status: 'completed'
-        },
-        {
-          id: 3,
-          applicant_name: 'Mike Johnson',
-          position: 'Mechanic',
-          date: '2025-11-29',
-          time: '09:00',
-          status: 'scheduled'
-        }
-      ];
-      setInterviews(mockInterviews);
+      const { data, error } = await supabase
+        .from('applications')
+        .select('id, first_name, last_name, position, interview_date, interview_time, status')
+        .not('interview_date', 'is', null)
+        .order('interview_date', { ascending: true });
+      
+      if (error) {
+        console.error('Error fetching interviews:', error);
+        setInterviews([]);
+      } else {
+        // Transform the data to match our component's expected format
+        const transformedData = data.map(app => ({
+          id: app.id,
+          applicant_name: `${app.first_name} ${app.last_name}`,
+          position: app.position,
+          date: app.interview_date,
+          time: app.interview_time || 'Not set',
+          status: app.status || 'scheduled'
+        }));
+        setInterviews(transformedData);
+      }
     } catch (error) {
       console.error('Error fetching interviews:', error);
+      setInterviews([]);
     } finally {
       setLoading(false);
     }
@@ -79,22 +72,48 @@ function HrSched() {
     setShowAddModal(true);
   };
 
-  const saveInterview = () => {
-    // This would save to the database when interviews table is created
-    const newId = Math.max(...interviews.map(i => i.id), 0) + 1;
-    const interview = {
-      ...newInterview,
-      id: newId
-    };
-    setInterviews([...interviews, interview]);
-    setShowAddModal(false);
-    setNewInterview({
-      applicant_name: '',
-      position: '',
-      time: '',
-      date: '',
-      status: 'scheduled'
-    });
+  const saveInterview = async () => {
+    if (!newInterview.applicant_name || !newInterview.position || !newInterview.date || !newInterview.time) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    try {
+      // Split the full name into first and last name
+      const nameParts = newInterview.applicant_name.trim().split(' ');
+      const firstName = nameParts[0];
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      const { data, error } = await supabase
+        .from('applications')
+        .insert([{
+          first_name: firstName,
+          last_name: lastName,
+          position: newInterview.position,
+          interview_date: newInterview.date,
+          interview_time: newInterview.time,
+          status: 'scheduled'
+        }])
+        .select();
+
+      if (error) {
+        console.error('Error saving interview:', error);
+        alert(`Failed to schedule interview: ${error.message}`);
+      } else {
+        setShowAddModal(false);
+        setNewInterview({
+          applicant_name: '',
+          position: '',
+          time: '',
+          date: '',
+          status: 'scheduled'
+        });
+        fetchInterviews(); // Refresh the list
+      }
+    } catch (err) {
+      console.error('Unexpected error saving interview:', err);
+      alert(`Failed to schedule interview: ${err.message}`);
+    }
   };
 
   const getStatusColor = (status) => {
@@ -111,6 +130,18 @@ function HrSched() {
   };
 
   const tileContent = ({ date, view }) => {
+    if (view === 'month') {
+      const dateString = date.toISOString().split('T')[0];
+      const dayInterviews = interviews.filter(interview => interview.date === dateString);
+      
+      if (dayInterviews.length > 0) {
+        return (
+          <div className="flex justify-center items-center">
+            <div className="w-2 h-2 bg-red-600 rounded-full mt-1"></div>
+          </div>
+        );
+      }
+    }
     return null;
   };
 
@@ -128,12 +159,6 @@ function HrSched() {
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Link
-              to="/hr/home"
-              className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              ← Return to Home
-            </Link>
             <div>
               <h1 className="text-3xl font-bold text-gray-800">Interview Schedules</h1>
               <p className="text-gray-600 mt-1">Manage and view all interview appointments</p>
@@ -157,7 +182,11 @@ function HrSched() {
                 style={{ width: '100%', fontSize: '18px', maxWidth: '100%' }}
               />
             </div>
-            <p className="text-sm text-gray-600 mt-4 text-center">
+            <div className="flex items-center justify-center gap-2 mt-4">
+              <div className="w-2 h-2 bg-red-600 rounded-full"></div>
+              <p className="text-sm text-gray-600">Interview scheduled</p>
+            </div>
+            <p className="text-sm text-gray-600 text-center">
               Click on a date to view interviews
             </p>
           </div>

@@ -1,5 +1,5 @@
 // src/HrRecruitment.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 
@@ -172,6 +172,14 @@ function HrRecruitment() {
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmCallback, setConfirmCallback] = useState(null);
   
+  // Filters for unified applications table
+  const [positionFilter, setPositionFilter] = useState("All");
+  const [depotFilter, setDepotFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState("All");
+  const [sortOrder, setSortOrder] = useState("asc");
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const filterMenuRef = useRef(null);
+  
   // Selected applicant detail view state
   const [selectedApplicant, setSelectedApplicant] = useState(null);
   const [activeDetailTab, setActiveDetailTab] = useState("Application");
@@ -212,6 +220,17 @@ function HrRecruitment() {
     pagibig: "",
     tin: "",
   });
+
+  // Close filter dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
+        setShowFilterMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Load rejected applicants when modal opens
   useEffect(() => {
@@ -1145,272 +1164,573 @@ function HrRecruitment() {
     }
   };
 
+  // Helper: Get initials from name
+  const getInitials = (name) => {
+    if (!name) return "??";
+    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
+
+  // Helper: Get avatar color based on name
+  const getAvatarColor = (name) => {
+    const colors = [
+      'from-red-500 to-red-600',
+      'from-blue-500 to-blue-600',
+      'from-green-500 to-green-600',
+      'from-purple-500 to-purple-600',
+      'from-orange-500 to-orange-600',
+      'from-pink-500 to-pink-600',
+      'from-teal-500 to-teal-600',
+      'from-indigo-500 to-indigo-600',
+    ];
+    const index = (name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+    return colors[index];
+  };
+
+  // Helper: Get application status display info
+  const getApplicationStatus = (applicant) => {
+    const status = applicant.status?.toLowerCase() || 'submitted';
+    
+    // Check interview status
+    const hasInterview = applicant.interview_date;
+    const interviewConfirmed = applicant.interview_confirmed === 'Confirmed';
+    
+    // Determine status based on workflow
+    if (status === 'hired') {
+      return { label: 'HIRED', color: 'text-green-600', bg: 'bg-green-50' };
+    }
+    if (status === 'rejected') {
+      return { label: 'REJECTED', color: 'text-red-600', bg: 'bg-red-50' };
+    }
+    if (['agreement', 'agreements', 'final_agreement'].includes(status)) {
+      return { label: 'AGREEMENT', color: 'text-purple-600', bg: 'bg-purple-50' };
+    }
+    if (['requirements', 'docs_needed', 'awaiting_documents'].includes(status)) {
+      return { label: 'REQUIREMENTS', color: 'text-orange-600', bg: 'bg-orange-50' };
+    }
+    if (hasInterview && interviewConfirmed) {
+      return { label: 'INTERVIEW CONFIRMED', color: 'text-blue-600', bg: 'bg-blue-50' };
+    }
+    if (hasInterview) {
+      return { label: 'INTERVIEW SET', color: 'text-cyan-600', bg: 'bg-cyan-50' };
+    }
+    if (['screening', 'interview', 'scheduled', 'onsite'].includes(status)) {
+      return { label: 'IN REVIEW', color: 'text-yellow-600', bg: 'bg-yellow-50' };
+    }
+    return { label: 'SUBMITTED', color: 'text-gray-600', bg: 'bg-gray-50' };
+  };
+
+  // Combined list of all applicants for the unified table
+  const allApplicants = applicants.filter(a => a.status !== 'hired' && a.status !== 'rejected');
+
+  // Distinct positions/depots for filters
+  const positions = useMemo(() => {
+    const s = new Set(allApplicants.map((a) => a.position).filter(Boolean));
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [allApplicants]);
+
+  const depots = useMemo(() => {
+    const s = new Set(allApplicants.map((a) => a.depot).filter(Boolean));
+    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  }, [allApplicants]);
+  
+  const statusOptions = ["All", "SUBMITTED", "IN REVIEW", "INTERVIEW SET", "INTERVIEW CONFIRMED", "REQUIREMENTS", "AGREEMENT", "HIRED", "REJECTED"];
+
+  // Filtered + sorted applicants based on search and filters
+  const filteredAllApplicants = useMemo(() => {
+    let list = allApplicants;
+
+    const term = searchTerm.toLowerCase();
+    if (term) {
+      list = list.filter((a) =>
+        a.name.toLowerCase().includes(term) ||
+        (a.position || "").toLowerCase().includes(term) ||
+        (a.depot || "").toLowerCase().includes(term) ||
+        (a.status || "").toLowerCase().includes(term)
+      );
+    }
+
+    if (positionFilter !== "All") {
+      list = list.filter((a) => a.position === positionFilter);
+    }
+
+    if (depotFilter !== "All") {
+      list = list.filter((a) => a.depot === depotFilter);
+    }
+
+    if (statusFilter !== "All") {
+      list = list.filter((a) => getApplicationStatus(a).label === statusFilter);
+    }
+
+    // Sort by name
+    list = [...list].sort((a, b) =>
+      sortOrder === "asc"
+        ? a.name.localeCompare(b.name)
+        : b.name.localeCompare(a.name)
+    );
+
+    return list;
+  }, [allApplicants, searchTerm, positionFilter, depotFilter, statusFilter, sortOrder]);
+
+  // Pagination for unified table
+  const allApplicantsTotalPages = Math.ceil(filteredAllApplicants.length / itemsPerPage) || 1;
+  const paginatedAllApplicants = filteredAllApplicants.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
   return (
     <>
       {/* Main Content */}
-      <div className="flex justify-center items-start min-h-screen bg-gray-100 p-4">
-        <div className="w-full max-w-[95%] xl:max-w-[1600px] bg-white rounded-2xl shadow-lg p-6">
-          {/* Sub Tabs */}
+      <div className="min-h-screen bg-gray-50 p-6">
+        <div className="max-w-7xl mx-auto">
+          {/* Page Title (always visible, even when viewing details) */}
+          <div className="mb-4">
+            <h1 className="text-2xl font-bold text-gray-800">Recruitment</h1>
+            <p className="text-gray-500 mt-1">
+              Track applications, schedule interviews, and move candidates through the hiring steps.
+            </p>
+          </div>
+
+          {/* Stats + Top Tabs (hidden when viewing applicant details) */}
           {!selectedApplicant && (
-            <div className="flex gap-6 border-b mb-6 justify-center">
-              {[
-                { label: "Applications", count: applicationsBucket.length, show: true },
-                { label: "Interview", count: interviewBucket.length, show: true },
-                { label: "Requirements", count: filteredRequirements.length, show: true },
-                { label: "Agreements", count: agreementsBucket.length, show: true },
-              ]
-                .filter((t) => t.show)
-                .map((tab) => (
-                  <button
-                    key={tab.label}
-                    onClick={() => setActiveSubTab(tab.label)}
-                    className={`px-6 py-3 font-medium ${
-                      activeSubTab === tab.label
-                        ? "border-b-2 border-blue-600 text-blue-600"
-                        : "text-gray-600 hover:text-blue-600"
-                    }`}>
-                    {tab.label} <span className="text-sm text-gray-500">({tab.count})</span>
-                  </button>
-                ))}
-            </div>
+            <>
+              {/* Stats cards */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">Total Applications</p>
+                      <p className="text-2xl font-bold text-gray-800 mt-1">{applicants.length}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-xs text-blue-600 mt-2 font-medium">All active applications</p>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">For Screening</p>
+                      <p className="text-2xl font-bold text-gray-800 mt-1">{applicationsBucket.length}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-yellow-50 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-xs text-yellow-600 mt-2 font-medium">New / pending review</p>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">With Interview</p>
+                      <p className="text-2xl font-bold text-gray-800 mt-1">{interviewBucket.length}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-xs text-green-600 mt-2 font-medium">Scheduled / ongoing interviews</p>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm text-gray-500 font-medium">In Requirements / Agreements</p>
+                      <p className="text-2xl font-bold text-gray-800 mt-1">{requirementsBucket.length + agreementsBucket.length}</p>
+                    </div>
+                    <div className="w-10 h-10 bg-purple-50 rounded-lg flex items-center justify-center">
+                      <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  </div>
+                  <p className="text-xs text-purple-600 mt-2 font-medium">Finalizing files & offers</p>
+                </div>
+              </div>
+
+              {/* Top Navigation Tabs */}
+              <div className="flex border-b border-gray-200 mb-4">
+                <button
+                  className="px-4 pb-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600"
+                  type="button"
+                >
+                  Applications <span className="text-gray-400">({allApplicants.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate("/applicantg/home")}
+                  className="px-4 pb-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
+                >
+                  View Job Posts
+                </button>
+              </div>
+            </>
           )}
 
-          {/* Applications Tab */}
-          {activeSubTab === "Applications" && !selectedApplicant && (
-            <div className="grid grid-cols-3 gap-6">
-              <div className="col-span-2">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-gray-800">Applicants</h3>
-                <input
-                  type="text"
-                  placeholder="Search..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="border px-3 py-1 rounded shadow-sm"
-                />
-              </div>                {loading ? (
-                  <div className="p-6 text-gray-600">Loading applications…</div>
-                ) : (
-                  <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
-                    <table className="min-w-full border-collapse">
-                      <thead className="bg-gray-100 text-gray-700">
+          {/* Applications Table Card */}
+          <div className="bg-white rounded-b-xl shadow-sm border border-gray-100 flex flex-col">
+            {/* Search and Filters Bar (always visible) */}
+            <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  {/* Search */}
+                  <div className="relative flex-1">
+                    <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search by name, position, depot, or status..."
+                      value={searchTerm}
+                      onChange={(e) => {
+                        setSearchTerm(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                    />
+                  </div>
+
+                  {/* Position Filter */}
+                  <select
+                    value={positionFilter}
+                    onChange={(e) => {
+                      setPositionFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white min-w-[160px]"
+                  >
+                    <option value="All">All Positions</option>
+                    {positions.filter(p => p !== "All").map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+
+                  {/* Depot Filter */}
+                  <select
+                    value={depotFilter}
+                    onChange={(e) => {
+                      setDepotFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white min-w-[140px]"
+                  >
+                    <option value="All">All Depots</option>
+                    {depots.filter(d => d !== "All").map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+
+                  {/* More Filters Button */}
+                  <div className="relative" ref={filterMenuRef}>
+                    <button
+                      onClick={() => setShowFilterMenu(!showFilterMenu)}
+                      className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                      </svg>
+                      Filters
+                    </button>
+                    {showFilterMenu && (
+                      <div className="absolute right-0 mt-2 w-64 bg-white border rounded-lg shadow-lg z-10 p-4">
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Sort by Name</label>
+                            <button
+                              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                              className="w-full px-3 py-2 bg-gray-100 rounded-lg text-left hover:bg-gray-200 text-sm"
+                            >
+                              {sortOrder === "asc" ? "A → Z" : "Z → A"}
+                            </button>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
+                            <select
+                              value={statusFilter}
+                              onChange={(e) => {
+                                setStatusFilter(e.target.value);
+                                setCurrentPage(1);
+                              }}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                            >
+                              {statusOptions.map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Export Button */}
+                  <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Export
+                  </button>
+                </div>
+              </div>
+
+              {/* Table only when no applicant detail is open */}
+              {!selectedApplicant && (
+                <div className="overflow-x-auto">
+                  {loading ? (
+                    <div className="p-8 text-center text-gray-500">Loading applications…</div>
+                  ) : filteredAllApplicants.length === 0 ? (
+                    <div className="p-8 text-center text-gray-500">No applications found.</div>
+                  ) : (
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
-                          <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
-                          <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
-                          <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
-                          <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Applicant</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date Applied</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {paginatedApplicants.map((a) => (
-                          <tr
-                            key={a.id}
-                            className="hover:bg-gray-50 transition-colors cursor-pointer"
-                            onClick={() => {
-                              setSelectedApplicant(a);
-                              setActiveDetailTab("Application");
-                              // Reset file states when switching applicants, but keep file names if files exist
-                              setInterviewFile(null);
-                              setInterviewFileName(a.interview_details_file ? a.interview_details_file.split('/').pop() : "");
-                              setAssessmentFile(null);
-                              setAssessmentFileName(a.assessment_results_file ? a.assessment_results_file.split('/').pop() : "");
-                            }}
-                          >
-                            <td className="px-4 py-2 border-b whitespace-nowrap">
-                              <div className="flex items-center justify-between">
-                                <span className="hover:text-blue-600 transition-colors">{a.name}</span>
-                                {isAgency(a) && (
-                                  <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
-                                    🚩 Agency
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            <td className="px-4 py-2 border-b">{a.position}</td>
-                            <td className="px-4 py-2 border-b">{a.depot}</td>
-                            <td className="px-4 py-2 border-b">{a.dateApplied}</td>
-                          </tr>
-                        ))}
+                      <tbody className="divide-y divide-gray-100">
+                        {paginatedAllApplicants.map((a) => {
+                          const statusInfo = getApplicationStatus(a);
+                          return (
+                            <tr
+                              key={a.id}
+                              className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                              onClick={() => {
+                                setSelectedApplicant(a);
+                                setActiveDetailTab("Application");
+                                setInterviewFile(null);
+                                setInterviewFileName(a.interview_details_file ? a.interview_details_file.split('/').pop() : "");
+                                setAssessmentFile(null);
+                                setAssessmentFileName(a.assessment_results_file ? a.assessment_results_file.split('/').pop() : "");
+                                setAgreementFile(null);
+                                setAgreementFileName(a.appointment_letter_file ? a.appointment_letter_file.split('/').pop() : "");
+                              }}
+                            >
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(a.name)} flex items-center justify-center text-white text-sm font-medium shadow-sm ${isAgency(a) ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+                                    {getInitials(a.name)}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm font-medium text-gray-800">{a.name}</p>
+                                      {isAgency(a) && (
+                                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">AGENCY</span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-gray-500">{a.email || `#${a.id.slice(0, 8)}`}</p>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="text-sm text-gray-800">{a.position || "—"}</p>
+                                <p className="text-xs text-gray-500">{a.depot || "—"}</p>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`text-xs font-semibold ${statusInfo.color}`}>
+                                  {statusInfo.label}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="text-sm text-gray-600">{a.dateApplied}</p>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
-                  </div>
-                )}
+                  )}
+                </div>
+              )}
 
-                {/* Pagination */}
-                {!loading && (
-                  <div className="flex justify-between items-center mt-4">
-                    <button
-                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                      disabled={currentPage === 1}
-                      className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-                    >
-                      Prev
-                    </button>
-                    <span className="text-gray-600">Page {currentPage} of {totalPages}</span>
-                    <button
-                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                      disabled={currentPage === totalPages}
-                      className="px-4 py-2 bg-gray-200 rounded disabled:opacity-50"
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Right Side */}
-              <div className="col-span-1 flex flex-col gap-4 justify-start">
-                <button
-                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
-                  onClick={() => navigate("/applicantg/home")}
-                >
-                  View Job Postings
-                </button>
-                <button
-                  onClick={() => setShowRejectedModal(true)}
-                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
-                >
-                  View Rejected Applicants
-                </button>
-              </div>
             </div>
-          )}
 
           {/* Applicant Detail View - Shows for all tabs when applicant is selected */}
           {selectedApplicant && (
-            <div className="grid grid-cols-12 gap-6">
-              {/* Left Sidebar - Applicants List */}
-              <div className="col-span-2 lg:col-span-3 bg-gray-50 border rounded-lg p-4 max-h-[85vh] overflow-y-auto">
-                <h3 className="font-bold text-gray-800 mb-3 text-sm">Applicants</h3>
-                <div className="space-y-2">
-                  {applicationsBucket.map((a) => (
-                    <div
-                      key={a.id}
-                      onClick={() => {
-                        setSelectedApplicant(a);
-                        setActiveDetailTab("Application");
-                        // Reset file states when switching applicants
-                        setInterviewFile(null);
-                        setInterviewFileName("");
-                        setAssessmentFile(null);
-                        setAssessmentFileName("");
-                        setAgreementFile(null);
-                        setAgreementFileName(a.appointment_letter_file ? a.appointment_letter_file.split('/').pop() : "");
-                      }}
-                      className={`p-2 rounded cursor-pointer transition-colors text-xs ${
-                        selectedApplicant.id === a.id
-                          ? "bg-blue-100 border-2 border-blue-500"
-                          : "bg-white border border-gray-200 hover:bg-gray-100"
-                      }`}
-                    >
-                      <div className="font-semibold text-gray-800 truncate">{a.name}</div>
-                      <div className="text-gray-500 truncate">{a.position}</div>
-                      <div className="text-gray-400">{a.dateApplied}</div>
-                      {isAgency(a) && (
-                        <span className="inline-block mt-1 px-1 py-0.5 text-xs bg-blue-100 text-blue-600 rounded border border-blue-200">
-                          🚩 Agency
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            <div className="grid grid-cols-12 gap-6 mt-4">
+              {/* Left Sidebar - Applicants List (table style copied from Employees left list) */}
+              <div className="col-span-2 lg:col-span-3 max-h-[85vh] overflow-y-auto overflow-x-hidden">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                        Applicant
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {allApplicants.map((a) => {
+                      const isSelected = selectedApplicant.id === a.id;
+                      return (
+                        <tr
+                          key={a.id}
+                          className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${
+                            isSelected ? "bg-red-50/50" : ""
+                          }`}
+                          onClick={() => {
+                            setSelectedApplicant(a);
+                            setActiveDetailTab("Application");
+                            // Reset file states when switching applicants
+                            setInterviewFile(null);
+                            setInterviewFileName(
+                              a.interview_details_file ? a.interview_details_file.split("/").pop() : ""
+                            );
+                            setAssessmentFile(null);
+                            setAssessmentFileName(
+                              a.assessment_results_file ? a.assessment_results_file.split("/").pop() : ""
+                            );
+                            setAgreementFile(null);
+                            setAgreementFileName(
+                              a.appointment_letter_file ? a.appointment_letter_file.split("/").pop() : ""
+                            );
+                          }}
+                        >
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(
+                                  a.name
+                                )} flex items-center justify-center text-white text-sm font-medium shadow-sm`}
+                              >
+                                {getInitials(a.name)}
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium text-gray-800 truncate">{a.name}</p>
+                                  {isAgency(a) && (
+                                    <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">
+                                      AGENCY
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-gray-500 truncate">{a.position || "—"}</p>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               {/* Right Side - Detail View */}
-              <div className="col-span-10 lg:col-span-9">
-                <div className="mb-4">
-                  <button
-                    onClick={() => setSelectedApplicant(null)}
-                    className="mb-4 flex items-center text-blue-600 hover:text-blue-800"
-                  >
-                    ← Back to Applicants
-                  </button>
-                </div>
+              <div className="col-span-10 lg:col-span-9 overflow-y-auto flex flex-col">
+                {/* Applicant header card - styled like Employees.jsx with close button */}
+                {selectedApplicant && (
+                  <div className="bg-white border border-gray-300 rounded-t-lg p-4 relative">
+                    <button
+                      onClick={() => setSelectedApplicant(null)}
+                      className="absolute top-2 right-2 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
 
-              {/* Steps header */}
-              <div className="flex items-center gap-3 mb-6 overflow-x-auto">
-                {["Application", "Assessment", "Requirements", "Agreements"].map((step) => {
-                  const isActive = activeDetailTab === step;
-                  let bgColor = 'bg-gray-200 text-gray-800 hover:bg-gray-300';
-                  
-                  if (isActive) {
-                    bgColor = 'bg-red-600 text-white';
-                  }
-                  
-                  return (
+                    <div className="flex items-center gap-3 pr-10">
+                      <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${getAvatarColor(selectedApplicant.name)} flex items-center justify-center text-white text-lg font-semibold shadow-md`}>
+                        {getInitials(selectedApplicant.name)}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-semibold text-gray-800 text-lg">{selectedApplicant.name}</h4>
+                          {isAgency(selectedApplicant) && (
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">AGENCY</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500">#{selectedApplicant.id.slice(0, 8)}</p>
+                        <p className="text-sm text-gray-600">
+                          {selectedApplicant.position || "—"} | {selectedApplicant.depot || "—"}
+                        </p>
+                      </div>
+                      <div className="text-right space-y-1">
+                        {(() => {
+                          const statusInfo = getApplicationStatus(selectedApplicant);
+                          return (
+                            <span className={`inline-block text-xs font-semibold ${statusInfo.color}`}>
+                              {statusInfo.label}
+                            </span>
+                          );
+                        })()}
+                        <p className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tabs header - Application / Assessment / Agreements */}
+                <div className="flex border-b border-gray-300 bg-white overflow-x-auto">
+                  {["Application", "Assessment", "Agreements"].map((step) => (
                     <button
                       key={step}
                       type="button"
                       onClick={() => setActiveDetailTab(step)}
-                      className={`px-4 py-2 rounded ${bgColor}`}
+                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                        activeDetailTab === step
+                          ? "border-red-500 text-red-600 bg-red-50"
+                          : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50"
+                      }`}
                     >
                       {step}
                     </button>
-                  );
-                })}
-              </div>
+                  ))}
+                </div>
 
-              {/* Detail Content */}
-              <div className="bg-white border rounded-md shadow-sm">
-                {/* Application Tab */}
+               {/* Detail Content */}
+               <div className="bg-white border border-t-0 border-gray-300 rounded-b-lg shadow-sm">
+                {/* Application Tab - styled similarly to Employees profiling tab */}
                 {activeDetailTab === "Application" && (
-                  <section className="p-4">
-                    {/* Header row */}
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                          {selectedApplicant.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                  <section className="p-5 space-y-5">
+                    {/* Job Details */}
+                    <div>
+                      <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                        Job Details
+                      </h5>
+                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                        <div>
+                          <span className="text-gray-500">Position Applying For:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.position || "—"}</span>
                         </div>
                         <div>
-                          <div className="font-semibold text-gray-800">{selectedApplicant.name}</div>
-                          <div className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</div>
+                          <span className="text-gray-500">Depot:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.depot || "—"}</span>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xs text-gray-500">#{selectedApplicant.id.slice(0, 8)}</div>
-                        {selectedApplicant.interview_date ? (
-                          <div className="mt-2">
-                            <button
-                              type="button"
-                              className="text-sm text-blue-600 hover:underline"
-                              onClick={() => setShowActionModal(true)}
-                            >
-                              Update Application Status
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="text-sm text-blue-600 hover:underline mt-2"
-                            onClick={() => {
-                              setSelectedApplicationForInterview(selectedApplicant);
-                              openInterviewModal(selectedApplicant);
-                            }}
-                          >
-                            Set Interview
-                          </button>
-                        )}
+                        <div>
+                          <span className="text-gray-500">Date Applied:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.dateApplied}</span>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Job Details */}
-                    <div className="border rounded-md overflow-hidden">
-                      <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Job Details</div>
-                      <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 border-b">
-                        <div><span className="font-semibold">Position Applying For:</span> {selectedApplicant.position}</div>
-                        <div><span className="font-semibold">Depot:</span> {selectedApplicant.depot}</div>
-                        <div><span className="font-semibold">Date Applied:</span> {selectedApplicant.dateApplied}</div>
-                      </div>
-
-                      {/* Personal Information */}
-                      <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Personal Information</div>
-                      <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
-                        <div><span className="font-semibold">Full Name:</span> {selectedApplicant.name}</div>
-                        <div><span className="font-semibold">Email:</span> {selectedApplicant.email || "—"}</div>
-                        <div><span className="font-semibold">Contact Number:</span> {selectedApplicant.phone || "—"}</div>
+                    {/* Personal Information */}
+                    <div>
+                      <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                        Personal Information
+                      </h5>
+                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                        <div>
+                          <span className="text-gray-500">Full Name:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.name}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Email:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.email || "—"}</span>
+                        </div>
+                        <div>
+                          <span className="text-gray-500">Contact Number:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.phone || "—"}</span>
+                        </div>
                       </div>
                     </div>
                   </section>
@@ -1419,18 +1739,6 @@ function HrRecruitment() {
                 {/* Assessment Tab */}
                 {activeDetailTab === "Assessment" && (
                   <section className="p-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                          {selectedApplicant.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-800">{selectedApplicant.name}</div>
-                          <div className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</div>
-                        </div>
-                      </div>
-                    </div>
-
                     <div className="flex items-center justify-between mb-3">
                       <h2 className="text-lg font-semibold text-gray-800">Assessment</h2>
                     </div>
@@ -1781,244 +2089,10 @@ function HrRecruitment() {
                   </section>
                 )}
 
-                {/* Requirements Tab */}
-                {activeDetailTab === "Requirements" && (
-                  <section className="p-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                          {selectedApplicant.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-800">{selectedApplicant.name}</div>
-                          <div className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* ID numbers row with lock/unlock */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                      {[
-                        {key: 'sss', label: 'SSS No.'},
-                        {key: 'philhealth', label: 'PhilHealth No.'},
-                        {key: 'pagibig', label: 'Pag-IBIG No.'},
-                        {key: 'tin', label: 'TIN No.'}
-                      ].map((item) => {
-                        const status = idStatus[item.key] || "Submitted";
-                        const isLocked = idLocked[item.key];
-                        return (
-                          <div key={item.key} className="flex flex-col gap-3 p-4 border border-gray-200 rounded-lg bg-white shadow-sm">
-                            {/* Label */}
-                            <div className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{item.label}</div>
-                            
-                            {/* ID Number Input with Lock Button */}
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                placeholder={item.label}
-                                value={idFields[item.key]}
-                                onChange={(e) => setIdFields((f) => ({ ...f, [item.key]: e.target.value }))}
-                                disabled={isLocked}
-                                className={`w-32 px-3 py-2 border border-gray-300 rounded-md bg-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500 ${isLocked ? 'bg-gray-100 text-gray-600 cursor-not-allowed' : ''}`}
-                              />
-                              {!isLocked && (
-                                <button
-                                  type="button"
-                                  className="px-2.5 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 flex-shrink-0 transition-colors"
-                                  onClick={() => setIdLocked((l) => ({ ...l, [item.key]: true }))}
-                                  title="Lock value"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                    <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
-                                  </svg>
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Status Section */}
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2">
-                                <select
-                                  value={status}
-                                  onChange={(e) => setIdStatus((s) => ({ ...s, [item.key]: e.target.value }))}
-                                  className={`flex-1 border rounded-md px-3 py-2 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-offset-1 ${
-                                    status === "Validated"
-                                      ? "bg-green-100 text-green-700 border-green-300 focus:ring-green-500"
-                                      : status === "Submitted"
-                                      ? "bg-orange-100 text-orange-700 border-orange-300 focus:ring-orange-500"
-                                      : "bg-red-100 text-red-700 border-red-300 focus:ring-red-500"
-                                  }`}
-                                >
-                                  <option>Submitted</option>
-                                  <option>Validated</option>
-                                  <option>Re-submit</option>
-                                </select>
-                                <button
-                                  type="button"
-                                  className="px-2.5 py-2 rounded-md bg-green-600 text-white hover:bg-green-700 flex-shrink-0 transition-colors shadow-sm"
-                                  onClick={async () => {
-                                    // Save ID number validation
-                                    await saveIdNumberValidation(item.key, status, idRemarks[item.key] || "");
-                                    setSuccessMessage(`${item.label} status set to ${status}`);
-                                    setShowSuccessAlert(true);
-                                  }}
-                                  title="Confirm status"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                  </svg>
-                                </button>
-                              </div>
-                              {status === "Validated" && (
-                                <div className="text-xs text-gray-500 px-2">
-                                  Validated: {new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })}
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Remarks Input */}
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">Remarks</label>
-                              <input
-                                type="text"
-                                placeholder="Add remarks..."
-                                value={idRemarks[item.key] || ""}
-                                onChange={(e) => setIdRemarks({...idRemarks, [item.key]: e.target.value})}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Documents table */}
-                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
-                    <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
-                      <div className="col-span-6">&nbsp;</div>
-                      <div className="col-span-3">Submission</div>
-                      <div className="col-span-3">Remarks</div>
-                    </div>
-
-                    {(() => {
-                      let requirements = selectedApplicant.requirements;
-                      if (typeof requirements === 'string') {
-                        try { requirements = JSON.parse(requirements); } catch { requirements = {}; }
-                      }
-                      const submittedDocuments = requirements?.documents || [];
-
-                      const docList = [
-                        {name: 'PSA Birth Certificate *', key: 'psa_birth_certificate'},
-                        {name: "Photocopy of Driver's License (Front and Back) *", key: 'drivers_license'},
-                        {name: 'Photocopy of SSS ID', key: 'sss_id'},
-                        {name: 'Photocopy of TIN ID', key: 'tin_id'},
-                        {name: 'Photocopy of Philhealth MDR', key: 'philhealth_mdr'},
-                        {name: 'Photocopy of HDMF or Proof of HDMF No. (Pag-IBIG)', key: 'pagibig'},
-                        {name: 'Medical Examination Results *', hasDate: true, key: 'medical_exam'},
-                        {name: 'NBI Clearance', hasDate: true, key: 'nbi_clearance'},
-                        {name: 'Police Clearance', hasDate: true, key: 'police_clearance'},
-                      ];
-
-                      return docList.map((doc, idx) => {
-                        const docKey = doc.key || `doc_${idx}`;
-                        const submittedDoc = submittedDocuments.find(d => d.key === docKey || d.name === doc.name);
-                        const status = documentStatus[docKey] || submittedDoc?.status || "Submitted";
-                        const remarks = documentRemarks[docKey] || submittedDoc?.remarks || "";
-                        const isConfirmed = documentStatus[`${docKey}_confirmed`] || false;
-
-                        return (
-                          <div key={idx} className="border-b py-4">
-                            <div className="grid grid-cols-12 items-start gap-4 px-4">
-                              <div className="col-span-12 md:col-span-4 text-sm text-gray-800 font-medium">{doc.name}</div>
-                              <div className="col-span-12 md:col-span-3 text-sm text-gray-600">
-                                {submittedDoc?.file_path ? (
-                                  <a 
-                                    href={supabase.storage.from('application-files').getPublicUrl(submittedDoc.file_path)?.data?.publicUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-600 hover:underline break-all"
-                                  >
-                                    {submittedDoc.file_path.split('/').pop()}
-                                  </a>
-                                ) : (
-                                  <span className="text-gray-400">—</span>
-                                )}
-                              </div>
-                              <div className="col-span-12 md:col-span-5 flex flex-col gap-2">
-                                <div className="flex items-center gap-2">
-                                  <select
-                                    value={status}
-                                    onChange={(e) => {
-                                      setDocumentStatus({...documentStatus, [docKey]: e.target.value, [`${docKey}_confirmed`]: false});
-                                    }}
-                                    className={`flex-1 border rounded px-3 py-2 font-medium text-sm ${
-                                      status === "Validated"
-                                        ? "bg-green-100 text-green-700"
-                                        : status === "Submitted"
-                                        ? "bg-orange-100 text-orange-700"
-                                        : "bg-red-100 text-red-700"
-                                    }`}
-                                  >
-                                    <option>Submitted</option>
-                                    <option>Validated</option>
-                                    <option>Re-submit</option>
-                                  </select>
-                                  <button
-                                    type="button"
-                                    className={`text-xs px-3 py-2 rounded flex-shrink-0 ${
-                                      isConfirmed
-                                        ? "bg-green-600 text-white"
-                                        : "bg-gray-300 text-gray-700 hover:bg-gray-400"
-                                    }`}
-                                    onClick={async () => {
-                                      if (!isConfirmed) {
-                                        // Save status and remarks to database
-                                        await saveDocumentValidation(docKey, status, remarks);
-                                        setDocumentStatus({...documentStatus, [`${docKey}_confirmed`]: true});
-                                        setSuccessMessage(`${doc.name} status updated to ${status}`);
-                                        setShowSuccessAlert(true);
-                                      } else {
-                                        // Allow unconfirming
-                                        setDocumentStatus({...documentStatus, [`${docKey}_confirmed`]: false});
-                                      }
-                                    }}
-                                    title={isConfirmed ? "Status confirmed - Click to unconfirm" : "Confirm status"}
-                                  >
-                                    ✓
-                                  </button>
-                                </div>
-                                <input
-                                  type="text"
-                                  placeholder="Add remarks..."
-                                  value={remarks}
-                                  onChange={(e) => setDocumentRemarks({...documentRemarks, [docKey]: e.target.value})}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      });
-                    })()}
-                  </section>
-                )}
-
-                {/* Agreements Tab */}
+                {/* Agreements Tab - simplified to agreement-related upload table only */}
                 {activeDetailTab === "Agreements" && (
-                  <section className="p-4">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                          {selectedApplicant.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-800">{selectedApplicant.name}</div>
-                          <div className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
+                  <section className="px-4 pb-4">
+                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
                     <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
                       <div className="col-span-6">&nbsp;</div>
                       <div className="col-span-6">File</div>
@@ -2272,245 +2346,37 @@ function HrRecruitment() {
             </div>
           )}
 
-          {/* Interview Tab */}
-          {activeSubTab === "Interview" && !selectedApplicant && (
-            <div className="grid grid-cols-3 gap-6">
-              <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">Interview</h3>
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="border px-3 py-1 rounded shadow-sm"
-                  />
-                </div>
-                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
-                  <table className="min-w-full border-collapse">
-                    <thead className="bg-gray-100 text-gray-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredInterview.map((a) => (
-                        <tr
-                          key={a.id}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
-                            onClick={() => {
-                              setSelectedApplicant(a);
-                              setActiveDetailTab("Assessment");
-                              // Reset file states when switching applicants, but keep file names if files exist
-                              setInterviewFile(null);
-                              setInterviewFileName(a.interview_details_file ? a.interview_details_file.split('/').pop() : "");
-                              setAssessmentFile(null);
-                              setAssessmentFileName(a.assessment_results_file ? a.assessment_results_file.split('/').pop() : "");
-                              setAgreementFile(null);
-                              setAgreementFileName(a.appointment_letter_file ? a.appointment_letter_file.split('/').pop() : "");
-                            }}
-                        >
-                          <td className="px-4 py-2 border-b">
-                            <div className="flex items-center justify-between">
-                              <span>{a.name}</span>
-                              {isAgency(a) && (
-                                <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
-                                  🚩 Agency
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 border-b">{a.position}</td>
-                          <td className="px-4 py-2 border-b">{a.depot}</td>
-                          <td className="px-4 py-2 border-b">{a.dateApplied}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="col-span-1 flex flex-col gap-4">
-                <button
-                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
-                  onClick={() => navigate("/applicantg/home")}
-                >
-                  View Job Postings
-                </button>
-                <button
-                  onClick={() => setShowRejectedModal(true)}
-                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
-                >
-                  View Rejected Applicants
-                </button>
-              </div>
+          {/* Pagination - placed at the bottom below details area */}
+          {!loading && filteredAllApplicants.length > 0 && (
+            <div className="flex items-center justify-between px-6 py-4 mt-4 border-t border-gray-100">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                className={`px-4 py-2 text-sm rounded border ${
+                  currentPage === 1
+                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                Prev
+              </button>
+              <span className="text-sm text-gray-600">
+                Page {currentPage} of {allApplicantsTotalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, allApplicantsTotalPages))}
+                disabled={currentPage >= allApplicantsTotalPages}
+                className={`px-4 py-2 text-sm rounded border ${
+                  currentPage >= allApplicantsTotalPages
+                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                Next
+              </button>
             </div>
           )}
 
-          {/* Requirements Tab */}
-          {activeSubTab === "Requirements" && !selectedApplicant && (
-            <div className="grid grid-cols-3 gap-6">
-              <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">Requirements</h3>
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="border px-3 py-1 rounded shadow-sm"
-                  />
-                </div>
-                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
-                  <table className="min-w-full border-collapse">
-                    <thead className="bg-gray-100 text-gray-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredRequirements.map((a) => (
-                        <tr
-                          key={a.id}
-                          className="hover:bg-gray-50 transition-colors cursor-pointer"
-                            onClick={() => {
-                              setSelectedApplicant(a);
-                              setActiveDetailTab("Requirements");
-                              // Reset file states when switching applicants, but keep file names if files exist
-                              setInterviewFile(null);
-                              setInterviewFileName(a.interview_details_file ? a.interview_details_file.split('/').pop() : "");
-                              setAssessmentFile(null);
-                              setAssessmentFileName(a.assessment_results_file ? a.assessment_results_file.split('/').pop() : "");
-                              setAgreementFile(null);
-                              setAgreementFileName(a.appointment_letter_file ? a.appointment_letter_file.split('/').pop() : "");
-                            }}
-                        >
-                          <td className="px-4 py-2 border-b">
-                            <div className="flex items-center justify-between">
-                              <span>{a.name}</span>
-                              {isAgency(a) && (
-                                <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
-                                  🚩 Agency
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 border-b">{a.position}</td>
-                          <td className="px-4 py-2 border-b">{a.depot}</td>
-                          <td className="px-4 py-2 border-b">{a.dateApplied}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="col-span-1 flex flex-col gap-4">
-                <button
-                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
-                  onClick={() => navigate("/applicantg/home")}
-                >
-                  View Job Postings
-                </button>
-                <button
-                  onClick={() => setShowRejectedModal(true)}
-                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
-                >
-                  View Rejected Applicants
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Agreements Tab */}
-          {activeSubTab === "Agreements" && !selectedApplicant && (
-            <div className="grid grid-cols-3 gap-6">
-              <div className="col-span-2">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-xl font-bold text-gray-800">Agreements</h3>
-                  <input
-                    type="text"
-                    placeholder="Search..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="border px-3 py-1 rounded shadow-sm"
-                  />
-                </div>
-                <div className="border rounded-lg overflow-hidden shadow-sm mx-auto" style={{ maxWidth: "100%" }}>
-                  <table className="min-w-full border-collapse">
-                    <thead className="bg-gray-100 text-gray-700">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Applicant</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Position</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Depot</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Date Applied</th>
-                        <th className="px-4 py-2 text-left font-semibold border-b">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredAgreements.map((a) => (
-                        <tr key={a.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-4 py-2 border-b">
-                            <div className="flex items-center justify-between">
-                              <span>{a.name}</span>
-                              {isAgency(a) && (
-                                <span className="ml-2 inline-flex px-2 py-0.5 text-xs bg-blue-100 text-blue-600 rounded-full border border-blue-200">
-                                  🚩 Agency
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-2 border-b">{a.position}</td>
-                          <td className="px-4 py-2 border-b">{a.depot}</td>
-                          <td className="px-4 py-2 border-b">{a.dateApplied}</td>
-                          <td className="px-4 py-2 border-b">
-                            <button
-                              className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700"
-                              onClick={async () => {
-                                await handleMarkAsEmployee(a.id, a.name);
-                              }}
-                            >
-                              Mark as Employee
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="col-span-1 flex flex-col gap-4">
-                <button
-                  className="w-full px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 shadow"
-                  onClick={() => navigate("/applicantg/home")}
-                >
-                  View Job Postings
-                </button>
-                <button
-                  onClick={() => setShowRejectedModal(true)}
-                  className="w-full px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 shadow"
-                >
-                  View Rejected Applicants
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </div>
 

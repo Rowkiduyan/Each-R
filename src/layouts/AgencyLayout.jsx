@@ -172,6 +172,42 @@ function AgencyLayout() {
       <div className="flex-1 overflow-hidden">
         <Outlet />
       </div>
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <div
+            className="bg-white rounded-xl max-w-md w-full mx-4 overflow-hidden shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-800">Confirm Logout</h3>
+            </div>
+            <div className="p-5 text-sm text-gray-600">
+              Are you sure you want to logout from your account?
+            </div>
+            <div className="p-5 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium"
+                onClick={() => setShowLogoutConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium"
+                onClick={handleLogout}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
