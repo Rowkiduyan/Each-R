@@ -10,7 +10,7 @@ import { supabase } from "./supabaseClient";
  */
 async function scheduleInterviewClient(applicationId, interview) {
   try {
-    const functionName = "dynamic-task"; // must match your Edge Function name exactly
+    const functionName = "schedule-interview-with-notification"; // Updated to use notification-enabled function
     const res = await supabase.functions.invoke(functionName, {
       body: JSON.stringify({ applicationId, interview }),
     });
@@ -914,8 +914,19 @@ function HrRecruitment() {
       return;
     }
 
+    // Validate that the interview is scheduled for the future
+    const interviewDateTime = new Date(`${interviewForm.date}T${interviewForm.time}`);
+    const now = new Date();
+    
+    if (interviewDateTime <= now) {
+      setErrorMessage("Interview must be scheduled for a future date and time.");
+      setShowErrorAlert(true);
+      return;
+    }
+
     setScheduling(true);
     try {
+      // Use the deployed Edge Function for interview scheduling and notifications
       const r = await scheduleInterviewClient(selectedApplicationForInterview.id, interviewForm);
       if (!r.ok) {
         console.error("Edge function error:", r.error);
@@ -924,13 +935,15 @@ function HrRecruitment() {
         setScheduling(false);
         return;
       }
+      
       // success -> reload applications so updated interview fields show
       await loadApplications();
       setShowInterviewModal(false);
       
       // Format interview summary
       const interviewSummary = `${selectedApplicationForInterview.name} - ${interviewForm.date} at ${interviewForm.time}, ${interviewForm.location}`;
-      setSuccessMessage(`Interview Scheduled: ${interviewSummary}`);
+      const isReschedule = r.data?.isReschedule;
+      setSuccessMessage(`Interview ${isReschedule ? 'Rescheduled' : 'Scheduled'}: ${interviewSummary}. Applicant has been notified.`);
       setShowSuccessAlert(true);
     } catch (err) {
       console.error("scheduleInterview unexpected error:", err);
@@ -1383,11 +1396,31 @@ function HrRecruitment() {
                       <div className="bg-gray-50 border rounded-md p-4 mb-4 relative">
                         <div className="flex items-start justify-between mb-2">
                           <div className="text-sm text-gray-800 font-semibold">Interview Schedule</div>
-                          {selectedApplicant.interview_confirmed && (
-                            <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
-                              Interview Confirmed
-                            </span>
-                          )}
+                          {(() => {
+                            // Check interview status using the new text-based system
+                            const interviewStatus = selectedApplicant.interview_confirmed || selectedApplicant.payload?.interview_confirmed || 'Idle';
+                            
+                            if (interviewStatus === 'Confirmed') {
+                              return (
+                                <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
+                                  Interview Confirmed
+                                </span>
+                              );
+                            } else if (interviewStatus === 'Rejected') {
+                              return (
+                                <span className="text-sm px-3 py-1 rounded bg-red-100 text-red-800 border border-red-300 font-medium">
+                                  Interview Rejected
+                                </span>
+                              );
+                            } else if (interviewStatus === 'Idle' && selectedApplicant.interview_date) {
+                              return (
+                                <span className="text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-medium">
+                                  Awaiting Response
+                                </span>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                         <div className="text-sm text-gray-700 space-y-1">
                           <div><span className="font-medium">Date:</span> {selectedApplicant.interview_date}</div>
@@ -1395,10 +1428,7 @@ function HrRecruitment() {
                           <div><span className="font-medium">Location:</span> {selectedApplicant.interview_location || "—"}</div>
                           <div><span className="font-medium">Interviewer:</span> {selectedApplicant.interviewer || "—"}</div>
                         </div>
-                        <div className="mt-3 flex items-center justify-between">
-                          <div className="text-xs text-gray-500 italic">
-                            Important Reminder: Please confirm at least a day before your schedule.
-                          </div>
+                        <div className="mt-3 flex items-center justify-end">
                           <button
                             type="button"
                             className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
@@ -2590,6 +2620,7 @@ function HrRecruitment() {
                   type="date"
                   value={interviewForm.date}
                   onChange={(e) => setInterviewForm((f) => ({ ...f, date: e.target.value }))}
+                  min={new Date().toISOString().split('T')[0]}
                   className="w-full px-3 py-2 border rounded"
                 />
               </div>
@@ -2598,7 +2629,23 @@ function HrRecruitment() {
                 <input
                   type="time"
                   value={interviewForm.time}
-                  onChange={(e) => setInterviewForm((f) => ({ ...f, time: e.target.value }))}
+                  onChange={(e) => {
+                    const selectedDate = new Date(interviewForm.date);
+                    const today = new Date();
+                    const selectedTime = e.target.value;
+                    
+                    // If selected date is today, prevent selecting past times
+                    if (selectedDate.toDateString() === today.toDateString()) {
+                      const currentTime = today.toTimeString().slice(0, 5);
+                      if (selectedTime <= currentTime) {
+                        setErrorMessage("Please select a future time for today's date.");
+                        setShowErrorAlert(true);
+                        return;
+                      }
+                    }
+                    
+                    setInterviewForm((f) => ({ ...f, time: selectedTime }));
+                  }}
                   className="w-full px-3 py-2 border rounded"
                 />
               </div>

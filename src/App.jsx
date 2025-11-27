@@ -17,6 +17,7 @@ import HrRecruitment from "./HrRecruitment";
 import ApplicantDetails from "./ApplicantDetails";
 import HrEval from "./HrEval";
 import HrSeperation from "./HrSeperation";
+import HrSched from "./HrSched";
 import HrNotif from "./HrNotif";
 import EmployeeNotif from "./EmployeeNotif";
 import EmProfile from "./EmProfile";
@@ -33,6 +34,7 @@ import VerifyEmail from "./VerifyEmail";
 import RequireRole from "./RequireRole";
 import HRLayout from "./layouts/HRLayout";
 import AdminLayout from "./layouts/AdminLayout";
+import AdminCreate from "./AdminCreate";
 import TermsAndPrivacy from "./TermsAndPrivacy";
 
 
@@ -57,6 +59,7 @@ function App() {
         }
       >
         <Route path="home" element={<HrHome />} />
+        <Route path="schedules" element={<HrSched />} />
         <Route path="trainings" element={<HrTrainings />} />
         <Route path="recruitment" element={<HrRecruitment />} />
         <Route path="eval" element={<HrEval />} />
@@ -126,6 +129,7 @@ function App() {
         >
         <Route path="home" element={<AdminHome />} />
         <Route path="accounts" element={<ManageAccounts />} />
+        <Route path="create" element={<AdminCreate />} />
       </Route>      {/* Public routes (no protection) */}
       <Route path="/employee/login" element={<EmployeeLogin />} />
       <Route path="/agency/endorse" element={<AgencyEndorse />} />
