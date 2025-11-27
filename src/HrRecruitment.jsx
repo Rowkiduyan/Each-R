@@ -154,7 +154,7 @@ function HrRecruitment() {
   const navigate = useNavigate();
 
   // ---- UI state
-  const [activeSubTab, setActiveSubTab] = useState("Applications");
+  const [_activeSubTab, _setActiveSubTab] = useState("Applications");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [showActionModal, setShowActionModal] = useState(false);
@@ -194,27 +194,27 @@ function HrRecruitment() {
   const [uploadingAgreementFile, setUploadingAgreementFile] = useState(false);
   
   // Requirements state
-  const [documentStatus, setDocumentStatus] = useState({});
-  const [documentRemarks, setDocumentRemarks] = useState({});
-  const [idFields, setIdFields] = useState({
+  const [_documentStatus, setDocumentStatus] = useState({});
+  const [_documentRemarks, setDocumentRemarks] = useState({});
+  const [_idFields, setIdFields] = useState({
     sss: "",
     philhealth: "",
     pagibig: "",
     tin: "",
   });
-  const [idLocked, setIdLocked] = useState({
+  const [_idLocked, setIdLocked] = useState({
     sss: false,
     philhealth: false,
     pagibig: false,
     tin: false,
   });
-  const [idStatus, setIdStatus] = useState({
+  const [_idStatus, setIdStatus] = useState({
     sss: "Submitted",
     philhealth: "Submitted",
     pagibig: "Submitted",
     tin: "Submitted",
   });
-  const [idRemarks, setIdRemarks] = useState({
+  const [_idRemarks, setIdRemarks] = useState({
     sss: "",
     philhealth: "",
     pagibig: "",
@@ -574,30 +574,30 @@ function HrRecruitment() {
       a.depot.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredInterview = interviewBucket.filter(
+  const _filteredInterview = interviewBucket.filter(
     (a) =>
       a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.depot.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredRequirements = requirementsBucket.filter(
+  const _filteredRequirements = requirementsBucket.filter(
     (a) =>
       a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.depot.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const filteredAgreements = agreementsBucket.filter(
+  const _filteredAgreements = agreementsBucket.filter(
     (a) =>
       a.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.position.toLowerCase().includes(searchTerm.toLowerCase()) ||
       a.depot.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const totalPages = Math.ceil(filteredApplicants.length / itemsPerPage) || 1;
+  const _totalPages = Math.ceil(filteredApplicants.length / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedApplicants = filteredApplicants.slice(startIndex, startIndex + itemsPerPage);
+  const _paginatedApplicants = filteredApplicants.slice(startIndex, startIndex + itemsPerPage);
 
   // ---- Try multiple RPC parameter names / function names to be resilient ----
   const rpcCandidates = [
@@ -1018,7 +1018,7 @@ function HrRecruitment() {
   };
 
   // ---- Save ID number validation
-  const saveIdNumberValidation = async (idKey, status, remarks = "") => {
+  const _saveIdNumberValidation = async (idKey, status, remarks = "") => {
     if (!selectedApplicant?.id) return;
     
     try {
@@ -1076,7 +1076,7 @@ function HrRecruitment() {
   };
 
   // ---- Save document validation
-  const saveDocumentValidation = async (docKey, status, remarks = "") => {
+  const _saveDocumentValidation = async (docKey, status, remarks = "") => {
     if (!selectedApplicant?.id) return;
     
     try {
