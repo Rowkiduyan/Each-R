@@ -100,6 +100,17 @@ export default function HRLayout() {
               </NavLink>
 
               <NavLink
+                to="/hr/requirements"
+                className={({ isActive }) =>
+                  `pb-1 transition-colors ${
+                    isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900"
+                  }`
+                }
+              >
+                Requirements
+              </NavLink>
+
+              <NavLink
                 to="/hr/trainings"
                 className={({ isActive }) =>
                   `pb-1 transition-colors ${

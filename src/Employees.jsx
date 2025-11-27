@@ -781,16 +781,8 @@ function Employees() {
                           {/* DOCUMENTS TAB */}
                           {activeTab === 'documents' && (
                             <div className="space-y-6">
-                              <div className="flex items-center justify-between mb-4">
+                              <div className="mb-4">
                                 <h5 className="font-semibold text-gray-800">Required Documents</h5>
-                                {selectedEmployee.agency && (
-                                  <button
-                                    onClick={() => setShowRequestModal(true)}
-                                    className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                                  >
-                                    Request Additional File
-                                  </button>
-                                )}
                               </div>
 
                               <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -800,7 +792,6 @@ function Employees() {
                                       <th className="px-4 py-3 text-left text-gray-600 font-medium">Document</th>
                                       <th className="px-4 py-3 text-left text-gray-600 font-medium">File</th>
                                       <th className="px-4 py-3 text-left text-gray-600 font-medium">Status</th>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">Action</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
@@ -829,30 +820,6 @@ function Employees() {
                                           </td>
                                           <td className="px-4 py-3">
                                             <span className={`px-2 py-1 rounded text-xs font-medium ${badgeClass}`}>{displayStatus}</span>
-                                          </td>
-                                          <td className="px-4 py-3">
-                                            {doc.file ? (
-                                              <select
-                                                value={doc.status}
-                                                onChange={(e) => {
-                                                  const newStatus = e.target.value;
-                                                  setRequiredDocs((prev) =>
-                                                    prev.map((d) =>
-                                                      d.id === doc.id
-                                                        ? { ...d, status: newStatus, validatedAt: newStatus === "validated" ? new Date().toLocaleDateString() : null }
-                                                        : d
-                                                    )
-                                                  );
-                                                }}
-                                                className="px-2 py-1 border border-gray-200 rounded text-xs"
-                                              >
-                                                <option value="pending">Select Action</option>
-                                                <option value="validated">Validate</option>
-                                                <option value="resubmit">Re-submit</option>
-                                              </select>
-                                            ) : (
-                                              <span className="text-gray-400 text-xs">—</span>
-                                            )}
                                           </td>
                                         </tr>
                                       );
@@ -1044,16 +1011,8 @@ function Employees() {
                           {/* SEPARATION TAB */}
                           {activeTab === 'separation' && (
                             <div className="space-y-6">
-                              <div className="flex items-center justify-between mb-4">
+                              <div className="mb-4">
                                 <h5 className="font-semibold text-gray-800">Separation Details</h5>
-                                {!terminationData && (
-                                  <button
-                                    onClick={() => setShowTerminateModal(true)}
-                                    className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
-                                  >
-                                    Terminate Employee
-                                  </button>
-                                )}
                               </div>
 
                               {terminationData ? (
