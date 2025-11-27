@@ -1,96 +1,134 @@
 import { Link } from 'react-router-dom';
-import React, { useState } from "react";
-import { NavLink } from "react-router-dom";
-
-
+import React, { useState, useEffect, useRef } from "react";
+import { supabase } from './supabaseClient';
 
 function HrTrainings() {
-      const [showAdd, setShowAdd] = useState(false);
-      const [form, setForm] = useState({
-        title: "",
-        venue: "",
-        date: "",
-        time: ""
-      });
-      const [upcoming, setUpcoming] = useState([
-        { title: "Defensive Driving Training", venue: "Pasig Roadwise", date: "June 12, 2025", time: "10:00 AM" },
-        { title: "Company Orientation", venue: "Pasig Roadwise", date: "June 15, 2025", time: "1:00 PM" }
-      ]);
-      const [showParticipants, setShowParticipants] = useState(false);
-      const [selected, setSelected] = useState(null);
-      const [showCompletedParticipants, setShowCompletedParticipants] = useState(false);
-      const [completedEditMode, setCompletedEditMode] = useState(false);
-      const [showEdit, setShowEdit] = useState(false);
-      const [editIndex, setEditIndex] = useState(null);
-      const [editForm, setEditForm] = useState({ title: "", venue: "", date: "", time: "" });
-      const [attendeeInputEdit, setAttendeeInputEdit] = useState("");
-      const [attendeesEdit, setAttendeesEdit] = useState([]);
-      const sampleDescription = "Gmeet link: : https://meet.google.com/landing?pli=1\nMeet link code: a5Gh7t";
-      const sampleAttendees = [
-        "Dela cruz, Juan",
-        "Villanueva, Mark",
-        "Manalo, Jose",
-        "Santos, Maria",
-        "Panares, Franco",
-        "Estilla, Paulo",
-        "Santiago, Paul",
-        "Cane, Jack"
-      ];
-      const [attendeeInput, setAttendeeInput] = useState("");
-      const [attendees, setAttendees] = useState([]);
-      const completed = [
-        { title: "Excel & Advanced Spreadsheets", venue: "Google Meet (Online)", date: "June 3, 2025", time: "10:00 AM" },
-        { title: "Health, Safety, and Emergency Protocols", venue: "Pasig Roadwise", date: "May 28, 2025", time: "10:00 AM" }
-      ];
+  const [loading, setLoading] = useState(true);
+  const [upcoming, setUpcoming] = useState([]);
+  const [completed, setCompleted] = useState([]);
+  const [selectedTraining, setSelectedTraining] = useState(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showAttendance, setShowAttendance] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  
+  const [form, setForm] = useState({
+    title: "",
+    venue: "",
+    date: "",
+    time: "",
+    description: ""
+  });
+  
+  const [editForm, setEditForm] = useState({
+    title: "",
+    venue: "",
+    date: "",
+    time: "",
+    description: ""
+  });
+  
+  const [attendees, setAttendees] = useState([]);
+  const [attendeesEdit, setAttendeesEdit] = useState([]);
+  const [attendance, setAttendance] = useState({});
+  
+  // Employee / attendee search state
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
+  const [employeeSearchQueryEdit, setEmployeeSearchQueryEdit] = useState("");
+  const [showEmployeeSuggestions, setShowEmployeeSuggestions] = useState(false);
+  const [showEmployeeSuggestionsEdit, setShowEmployeeSuggestionsEdit] = useState(false);
+  const [employeeOptions, setEmployeeOptions] = useState([]);
 
-<<<<<<< Updated upstream
-      const onChange = (e) => {
-        const { name, value } = e.target;
-        setForm((prev) => ({ ...prev, [name]: value }));
-      };
+  // Tab & search state for main table
+  const [activeTab, setActiveTab] = useState("upcoming");
+  const [searchQuery, setSearchQuery] = useState("");
 
-      const onSubmit = (e) => {
-        e.preventDefault();
-        if (!form.title) return;
-        if (!window.confirm("Add this schedule?")) return;
-        setUpcoming((prev) => [
-          ...prev,
-          {
-            title: form.title,
-            venue: form.venue || "",
-            date: form.date || "",
-            time: form.time || ""
-          }
-        ]);
-        setForm({ title: "", venue: "", date: "", time: "" });
-        setAttendees([]);
-        setAttendeeInput("");
-        setShowAdd(false);
-      };
-      const onDelete = (index) => {
-        if (!window.confirm("Delete this schedule?")) return;
-        setUpcoming((prev) => prev.filter((_, i) => i !== index));
-      };
-      const onAttendeeKeyDown = (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const name = attendeeInput.trim();
-          if (!name) return;
-          setAttendees((prev) => [...prev, name]);
-          setAttendeeInput("");
-=======
-      // Sort upcoming in ascending order by date (soonest first)
-      upcomingTrainings.sort((a, b) => {
-        const dateA = a.start_at ? new Date(a.start_at) : new Date(0);
-        const dateB = b.start_at ? new Date(b.start_at) : new Date(0);
-        return dateA - dateB;
-      });
+  // Fetch trainings from Supabase
+  useEffect(() => {
+    fetchTrainings();
+  }, []);
 
-      // Sort completed in descending order by date (most recent first)
-      completedTrainings.sort((a, b) => {
-        const dateA = a.start_at ? new Date(a.start_at) : new Date(0);
-        const dateB = b.start_at ? new Date(b.start_at) : new Date(0);
-        return dateB - dateA;
+  // Get current logged-in user (for created_by)
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (!error && data?.user) {
+          setCurrentUserId(data.user.id);
+        }
+      } catch (err) {
+        console.error("Error fetching current user for trainings:", err);
+      }
+    };
+
+    loadUser();
+  }, []);
+
+  // Load employees for attendee suggestions (from employees table)
+  useEffect(() => {
+    const fetchEmployees = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("employees")
+          .select("id, fname, lname, mname");
+
+        if (error) {
+          console.error("Error loading employees for training attendees:", error);
+          return;
+        }
+
+        const options =
+          data?.map((emp) => {
+            const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
+            const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
+            return full || "Unnamed employee";
+          }) || [];
+
+        const uniqueSorted = Array.from(new Set(options)).sort((a, b) =>
+          a.localeCompare(b)
+        );
+        setEmployeeOptions(uniqueSorted);
+      } catch (err) {
+        console.error("Unexpected error loading employees for trainings:", err);
+      }
+    };
+
+    fetchEmployees();
+  }, []);
+
+
+  const fetchTrainings = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('trainings')
+        .select('*')
+        .order('start_at', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching trainings:', error);
+        return;
+      }
+
+      // Normalize and separate upcoming and completed trainings
+      const upcomingTrainings = [];
+      const completedTrainings = [];
+
+      (data || []).forEach((training) => {
+        const start = training.start_at ? new Date(training.start_at) : null;
+        const normalized = {
+          ...training,
+          date: start ? start.toISOString().slice(0, 10) : "",
+          time: start ? start.toISOString().slice(11, 16) : "",
+        };
+
+        if (training.is_active === false) {
+          completedTrainings.push(normalized);
+        } else {
+          upcomingTrainings.push(normalized);
+        }
       });
 
       setUpcoming(upcomingTrainings);
@@ -180,18 +218,6 @@ function HrTrainings() {
       alert("Please provide both date and time.");
       return;
     }
-    if (!form.venue) {
-      alert("Venue is required.");
-      return;
-    }
-    if (!form.description) {
-      alert("Description is required.");
-      return;
-    }
-    if (!attendees || attendees.length === 0) {
-      alert("At least one attendee is required.");
-      return;
-    }
 
     const startAt = new Date(`${form.date}T${form.time}:00`);
 
@@ -201,9 +227,9 @@ function HrTrainings() {
         .insert([
           {
             title: form.title,
-            venue: form.venue,
+            venue: form.venue || null,
             start_at: startAt.toISOString(),
-            description: form.description,
+            description: form.description || null,
             // store attendees as plain names only
             attendees: attendees || [],
             is_active: true,
@@ -245,18 +271,6 @@ function HrTrainings() {
       alert("Please provide both date and time.");
       return;
     }
-    if (!editForm.venue) {
-      alert("Venue is required.");
-      return;
-    }
-    if (!editForm.description) {
-      alert("Description is required.");
-      return;
-    }
-    if (!attendeesEdit || attendeesEdit.length === 0) {
-      alert("At least one attendee is required.");
-      return;
-    }
 
     const startAt = new Date(`${editForm.date}T${editForm.time}:00`);
 
@@ -265,9 +279,9 @@ function HrTrainings() {
         .from('trainings')
         .update({
           title: editForm.title,
-          venue: editForm.venue,
+          venue: editForm.venue || null,
           start_at: startAt.toISOString(),
-          description: editForm.description,
+          description: editForm.description || null,
           // keep attendees as plain names only
           attendees: attendeesEdit || [],
         })
@@ -449,172 +463,78 @@ function HrTrainings() {
         .no-scrollbar {
           -ms-overflow-style: none;
           scrollbar-width: none;
->>>>>>> Stashed changes
         }
-      };
-      const removeAttendee = (idx) => {
-        setAttendees((prev) => prev.filter((_, i) => i !== idx));
-      };
-      const onAttendeeKeyDownEdit = (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const name = attendeeInputEdit.trim();
-          if (!name) return;
-          setAttendeesEdit((prev) => [...prev, name]);
-          setAttendeeInputEdit("");
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
         }
-      };
-      const removeAttendeeEdit = (idx) => {
-        setAttendeesEdit((prev) => prev.filter((_, i) => i !== idx));
-      };
+        
+        ::-webkit-scrollbar {
+          width: 6px;
+          height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+          background: #d1d5db;
+          border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+          background: #9ca3af;
+        }
+        
+        * {
+          scrollbar-width: thin;
+          scrollbar-color: #d1d5db transparent;
+        }
+      `}</style>
 
-<<<<<<< Updated upstream
-      const openEditFromParticipants = () => {
-        if (!selected) return;
-        const index = upcoming.findIndex((u) =>
-          u.title === selected.title && u.venue === selected.venue && u.date === selected.date && u.time === selected.time
-        );
-        setEditIndex(index);
-        setEditForm({ title: selected.title, venue: selected.venue, date: selected.date, time: selected.time });
-        setAttendeesEdit(sampleAttendees);
-        setAttendeeInputEdit("");
-        setShowParticipants(false);
-        setShowEdit(true);
-      };
-
-      const onEditChange = (e) => {
-        const { name, value } = e.target;
-        setEditForm((prev) => ({ ...prev, [name]: value }));
-      };
-
-      const onSaveChanges = (e) => {
-        e.preventDefault();
-        if (!window.confirm("Save changes?")) return;
-        setUpcoming((prev) => prev.map((item, i) => i === editIndex ? { ...item, ...editForm } : item));
-        setShowEdit(false);
-        setSelected(null);
-      };
-    return (
-    <>
-  
-
-    <div className="max-w-7xl mx-auto px-4">
-      <div className="bg-white border border-red-200 rounded-lg p-4 shadow">
-        <div className="text-orange-400 text-xs font-semibold mb-3">Upcoming</div>
-        <div className="overflow-x-auto overflow-y-auto h-47">
-          <table className="min-w-full border text-sm table-fixed">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="text-center p-2 border w-2/5">Title</th>
-                <th className="text-center p-2 border">Venue</th>
-                <th className="text-center p-2 border">Date</th>
-                <th className="text-center p-2 border">Time</th>
-                <th className="text-center p-2 border">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {upcoming.map((row, idx) => (
-                <tr key={idx} className="hover:bg-gray-50">
-                  <td className="p-2 border text-center">{row.title}</td>
-                  <td className="p-2 border text-center">{row.venue}</td>
-                  <td className="p-2 border text-center">{row.date}</td>
-                  <td className="p-2 border text-center">{row.time}</td>
-                  <td className="p-2 border text-center">
-                    <div className="flex justify-center gap-2">
-                      <button onClick={() => { setSelected(row); setShowParticipants(true); }} className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1 rounded">Participants</button>
-                      <button onClick={() => onDelete(idx)} className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-1 rounded">Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-=======
       {/* Content */}
       <div className="max-w-7xl mx-auto px-6 py-0">
         {/* Page Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
           <p className="text-gray-500 mt-1">Manage training schedules and track employee participation</p>
->>>>>>> Stashed changes
         </div>
 
-        <div className="text-green-600 text-xs font-semibold my-3">Completed</div>
-        <div className="overflow-x-auto overflow-y-auto h-47">
-          <table className="min-w-full border text-sm table-fixed ">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="text-center p-2 border w-2/5">Title</th>
-                <th className="text-center p-2 border">Venue</th>
-                <th className="text-center p-2 border">Date</th>
-                <th className="text-center p-2 border">Time</th>
-                <th className="text-center p-2 border">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {completed.map((row, idx) => (
-                <tr key={idx} className="hover:bg-gray-50">
-                  <td className="p-2 border text-center">{row.title}</td>
-                  <td className="p-2 border text-center">{row.venue}</td>
-                  <td className="p-2 border text-center">{row.date}</td>
-                  <td className="p-2 border text-center">{row.time}</td>
-                  <td className="p-2 border text-center">
-                    <button onClick={() => { setSelected(row); setShowCompletedParticipants(true); setCompletedEditMode(false); }} className="bg-green-600 hover:bg-green-700 text-white text-xs px-3 py-1 rounded">Participants</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Upcoming</p>
+                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.upcoming}</p>
+              </div>
+              <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-xs text-blue-600 mt-3 font-medium">Scheduled sessions</p>
         </div>
 
-        <div className="mt-4">
-          <button onClick={() => setShowAdd(true)} className="w-full bg-red-600 hover:bg-red-700 text-white font-semibold py-2 rounded">+ Add</button>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Completed Schedules</p>
+                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.completed}</p>
+              </div>
+              <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
         </div>
       </div>
+            <p className="text-xs text-green-600 mt-3 font-medium">Finished sessions</p>
     </div>
 
-    {showAdd && (
-      <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-        <div className="bg-white rounded-md w-full max-w-xl p-5 shadow-lg">
-          <div className="text-center font-semibold text-lg mb-4">Add Training/Seminar Schedule</div>
-          <form onSubmit={onSubmit}>
-            <div className="grid grid-cols-1 gap-3">
-              <label className="text-sm">Title:
-                <input name="title" value={form.title} onChange={onChange} className="mt-1 w-full border rounded px-2 py-1" placeholder="Personal Development" />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm">Date:
-                  <input name="date" value={form.date} onChange={onChange} type="text" className="mt-1 w-full border rounded px-2 py-1" placeholder="06-05-25" />
-                </label>
-                <label className="text-sm">Time:
-                  <input name="time" value={form.time} onChange={onChange} type="text" className="mt-1 w-full border rounded px-2 py-1" placeholder="10:00 AM" />
-                </label>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Total Attendees</p>
+                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.totalAttendees}</p>
               </div>
-<<<<<<< Updated upstream
-              <label className="text-sm">Venue:
-                <input name="venue" value={form.venue} onChange={onChange} className="mt-1 w-full border rounded px-2 py-1" placeholder="Google Meet (Online)" />
-              </label>
-              <label className="text-sm">Description:
-                <textarea className="mt-1 w-full border rounded px-2 py-1" rows="3" placeholder="Gmeet link: https://..." />
-              </label>
-              <label className="text-sm">Attendees:
-                <input
-                  value={attendeeInput}
-                  onChange={(e) => setAttendeeInput(e.target.value)}
-                  onKeyDown={onAttendeeKeyDown}
-                  className="mt-1 w-full border rounded px-2 py-1"
-                  placeholder="Type a name and press enter"
-                />
-                <div className="mt-2 border rounded h-28 overflow-y-auto">
-                  {attendees.map((name, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-1 text-gray-700 border-b last:border-b-0 bg-gray-50">
-                      <span className="truncate">{name}</span>
-                      <button type="button" onClick={() => removeAttendee(i)} className="text-red-600 text-sm px-2">×</button>
-                    </div>
-                  ))}
-                </div>
-              </label>
-=======
               <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center">
                 <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -895,69 +815,96 @@ function HrTrainings() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 4h8M8 20h8M12 8v8m0 0l-3-3m3 3l3-3" />
                 </svg>
               </div>
->>>>>>> Stashed changes
             </div>
-            <div className="flex justify-end gap-3 mt-5">
-              <button type="button" onClick={() => setShowAdd(false)} className="px-4 py-2 rounded bg-gray-500 text-white">Cancel</button>
-              <button type="submit" className="px-4 py-2 rounded bg-red-600 text-white">Add</button>
-            </div>
-          </form>
+          )}
         </div>
       </div>
-    )}
 
-    {showCompletedParticipants && selected && (
-      <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-        <div className="bg-white rounded-md w-full max-w-xl p-5 shadow-lg">
-          <div className="text-center font-semibold text-lg mb-4">Participants</div>
-          <div className="text-sm space-y-2">
-            <div className="flex gap-2"><span className="font-semibold">Title:</span><span>{selected.title}</span></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex gap-2"><span className="font-semibold">Date:</span><span>{selected.date}</span></div>
-              <div className="flex gap-2"><span className="font-semibold">Time:</span><span>{selected.time}</span></div>
+      {/* Training Details Modal */}
+      {showDetails && selectedTraining && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50" onClick={() => setShowDetails(false)}>
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl font-semibold text-gray-800">Training Details</h2>
+              <button onClick={() => setShowDetails(false)} className="text-gray-400 hover:text-gray-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-            <div className="font-semibold">Attendees:</div>
-            <div className="text-gray-500 italic text-xs -mt-1">Check the box next to a participant's name if they attended the event.</div>
-            <div className="mt-1 border rounded h-40 overflow-y-auto">
-              {sampleAttendees.map((name, i) => (
-                <label key={i} className="flex items-center justify-between px-3 py-2 border-b last:border-b-0">
-                  <span className="truncate text-gray-700">{name}</span>
-                  <input type="checkbox" className="h-4 w-4" disabled={!completedEditMode} />
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-500">Title</label>
+                <p className="text-base text-gray-800 mt-1">{selectedTraining.title}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Date</label>
+                  <p className="text-base text-gray-800 mt-1">{formatDate(selectedTraining.date)}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-500">Time</label>
+                  <p className="text-base text-gray-800 mt-1">{selectedTraining.time || 'Not set'}</p>
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Venue</label>
+                <p className="text-base text-gray-800 mt-1">{selectedTraining.venue || 'Not set'}</p>
+              </div>
+            <div>
+                <label className="text-sm font-medium text-gray-500">Description</label>
+                <p className="text-base text-gray-800 mt-1 whitespace-pre-line">{selectedTraining.description || 'No description'}</p>
+            </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">
+                  Attendees ({selectedTraining.attendees?.length || 0})
                 </label>
-              ))}
+                <div className="mt-2 space-y-2">
+                  {selectedTraining.attendees?.map((attendee, idx) => {
+                    const name = typeof attendee === "string" ? attendee : attendee.name || "";
+                    const attendedFlag = !!selectedTraining.attendance?.[name];
+                    return (
+                      <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                        <div
+                          className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(
+                            name
+                          )} flex items-center justify-center text-white text-xs font-medium`}
+                        >
+                          {getInitials(name)}
+                        </div>
+                        <span className="text-sm text-gray-700 flex-1">{name}</span>
+                        {!selectedTraining.is_active && (
+                          <span
+                            className={`text-xs px-2 py-1 rounded ${
+                              attendedFlag
+                                ? "bg-green-100 text-green-700"
+                                : "bg-red-100 text-red-700"
+                            }`}
+                          >
+                            {attendedFlag ? "Present" : "Absent"}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
-          <div className="flex justify-center gap-4 mt-5">
-            <button onClick={() => setShowCompletedParticipants(false)} className="px-4 py-2 rounded bg-gray-500 text-white">Cancel</button>
-            <button onClick={() => setCompletedEditMode((prev) => !prev)} className="px-4 py-2 rounded bg-red-600 text-white">{completedEditMode ? "Save" : "Edit"}</button>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowDetails(false)}
+                className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
+              >
+                Close
+              </button>
           </div>
         </div>
       </div>
     )}
 
-    {showParticipants && selected && (
+      {/* Add Training Modal */}
+      {showAdd && (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-<<<<<<< Updated upstream
-        <div className="bg-white rounded-md w-full max-w-xl p-5 shadow-lg">
-          <div className="text-center font-semibold text-lg mb-4">Training/Seminar Schedule</div>
-          <div className="text-sm space-y-2">
-            <div className="flex gap-2"><span className="font-semibold">Title:</span><span>{selected.title}</span></div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="flex gap-2"><span className="font-semibold">Date:</span><span>{selected.date}</span></div>
-              <div className="flex gap-2"><span className="font-semibold">Time:</span><span>{selected.time}</span></div>
-            </div>
-            <div className="flex gap-2"><span className="font-semibold">Venue:</span><span>{selected.venue}</span></div>
-            <div>
-              <div className="font-semibold">Description:</div>
-              <div className="whitespace-pre-line text-gray-700">{sampleDescription}</div>
-            </div>
-            <div>
-              <div className="font-semibold">Attendees:</div>
-              <div className="mt-1 border rounded h-32 overflow-y-auto p-2 text-gray-700 space-y-1">
-                {sampleAttendees.map((name, i) => (
-                  <div key={i} className="border-b last:border-b-0 px-2 py-1">{name}</div>
-                ))}
-=======
           <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="text-center font-semibold text-xl mb-6">Add Training/Seminar Schedule</div>
             <form onSubmit={onSubmit}>
@@ -975,54 +922,49 @@ function HrTrainings() {
                 </label>
                 <div className="grid grid-cols-2 gap-4">
                   <label className="text-sm font-medium text-gray-700">
-                    Date: *
+                    Date:
                     <input
                       name="date"
                       value={form.date}
                       onChange={onChange}
                       type="date"
-                      min={new Date().toISOString().split('T')[0]}
-                      required
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
                   </label>
                   <label className="text-sm font-medium text-gray-700">
-                    Time: *
+                    Time:
                     <input
                       name="time"
                       value={form.time}
                       onChange={onChange}
                       type="time"
-                      required
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
                   </label>
                 </div>
                 <label className="text-sm font-medium text-gray-700">
-                  Venue: *
+                  Venue:
                   <input
                     name="venue"
                     value={form.venue}
                     onChange={onChange}
-                    required
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     placeholder="Google Meet (Online)"
                   />
               </label>
                 <label className="text-sm font-medium text-gray-700">
-                  Description: *
+                  Description:
                   <textarea
                     name="description"
                     value={form.description}
                     onChange={onChange}
                     rows="3"
-                    required
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     placeholder="Gmeet link: https://..."
                   />
                 </label>
                 <label className="text-sm font-medium text-gray-700">
-                  Attendees: *
+                  Attendees:
                   <div className="mt-1 relative">
                     <input
                       type="text"
@@ -1082,108 +1024,94 @@ function HrTrainings() {
                     )}
                   </div>
                 </label>
->>>>>>> Stashed changes
               </div>
-            </div>
-          </div>
-          <div className="flex justify-center gap-4 mt-5">
-            <button onClick={() => setShowParticipants(false)} className="px-4 py-2 rounded bg-gray-500 text-white">Back</button>
-            <button onClick={openEditFromParticipants} className="px-4 py-2 rounded bg-red-600 text-white">Edit</button>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAdd(false);
+                    setEmployeeSearchQuery("");
+                    setShowEmployeeSuggestions(false);
+                  }}
+                  className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium"
+                >
+                  Add Schedule
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </div>
-    )}
+      )}
 
-    {showEdit && (
-      <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-        <div className="bg-white rounded-md w-full max-w-xl p-5 shadow-lg">
-          <div className="text-center font-semibold text-lg mb-4">Add Training/Seminar Schedule</div>
-          <form onSubmit={onSaveChanges}>
-            <div className="grid grid-cols-1 gap-3">
-              <label className="text-sm">Title:
-                <input name="title" value={editForm.title} onChange={onEditChange} className="mt-1 w-full border rounded px-2 py-1" placeholder="Personal Development" />
+      {/* Edit Training Modal */}
+      {showEdit && selectedTraining && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="text-center font-semibold text-xl mb-6">Edit Training/Seminar Schedule</div>
+            <form onSubmit={onSaveChanges}>
+              <div className="grid grid-cols-1 gap-4">
+                <label className="text-sm font-medium text-gray-700">
+                  Title: *
+                  <input
+                    name="title"
+                    value={editForm.title}
+                    onChange={onEditChange}
+                    required
+                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    placeholder="Personal Development"
+                  />
               </label>
-<<<<<<< Updated upstream
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm">Date:
-                  <input name="date" value={editForm.date} onChange={onEditChange} type="text" className="mt-1 w-full border rounded px-2 py-1" placeholder="06-05-25" />
-                </label>
-                <label className="text-sm">Time:
-                  <input name="time" value={editForm.time} onChange={onEditChange} type="text" className="mt-1 w-full border rounded px-2 py-1" placeholder="10:00 AM" />
-                </label>
-              </div>
-              <label className="text-sm">Venue:
-                <input name="venue" value={editForm.venue} onChange={onEditChange} className="mt-1 w-full border rounded px-2 py-1" placeholder="Google Meet (Online)" />
-              </label>
-              <label className="text-sm">Description:
-                <textarea className="mt-1 w-full border rounded px-2 py-1" rows="3" placeholder="Gmeet link: https://..." defaultValue={sampleDescription} />
-              </label>
-              <label className="text-sm">Attendees:
-                <input
-                  value={attendeeInputEdit}
-                  onChange={(e) => setAttendeeInputEdit(e.target.value)}
-                  onKeyDown={onAttendeeKeyDownEdit}
-                  className="mt-1 w-full border rounded px-2 py-1"
-                  placeholder="Type a name and press enter"
-                />
-                <div className="mt-2 border rounded h-28 overflow-y-auto">
-                  {attendeesEdit.map((name, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-1 text-gray-700 border-b last:border-b-0 bg-gray-50">
-                      <span className="truncate">{name}</span>
-                      <button type="button" onClick={() => removeAttendeeEdit(i)} className="text-red-600 text-sm px-2">×</button>
-                    </div>
-                  ))}
-=======
                 <div className="grid grid-cols-2 gap-4">
                   <label className="text-sm font-medium text-gray-700">
-                    Date: *
+                    Date:
                     <input
                       name="date"
                       value={editForm.date}
                       onChange={onEditChange}
                       type="date"
-                      min={new Date().toISOString().split('T')[0]}
-                      required
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
               </label>
                   <label className="text-sm font-medium text-gray-700">
-                    Time: *
+                    Time:
                 <input
                       name="time"
                       value={editForm.time}
                       onChange={onEditChange}
                       type="time"
-                      required
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
                   </label>
                 </div>
                 <label className="text-sm font-medium text-gray-700">
-                  Venue: *
+                  Venue:
                   <input
                     name="venue"
                     value={editForm.venue}
                     onChange={onEditChange}
-                    required
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     placeholder="Google Meet (Online)"
                   />
                 </label>
                 <label className="text-sm font-medium text-gray-700">
-                  Description: *
+                  Description:
                   <textarea
                     name="description"
                     value={editForm.description}
                     onChange={onEditChange}
                     rows="3"
-                    required
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     placeholder="Gmeet link: https://..."
                   />
                 </label>
                 <label className="text-sm font-medium text-gray-700">
-                  Attendees: *
+                  Attendees:
                   <div className="mt-1 relative">
                     <input
                       type="text"
@@ -1241,22 +1169,97 @@ function HrTrainings() {
                     ) : (
                       <p className="text-sm text-gray-400 text-center py-4">No attendees added yet</p>
                     )}
->>>>>>> Stashed changes
                 </div>
               </label>
             </div>
-            <div className="flex justify-end gap-3 mt-5">
-              <button type="button" onClick={() => setShowEdit(false)} className="px-4 py-2 rounded bg-gray-500 text-white">Cancel</button>
-              <button type="submit" className="px-4 py-2 rounded bg-red-600 text-white">Save Changes</button>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEdit(false);
+                    setEmployeeSearchQueryEdit("");
+                    setShowEmployeeSuggestionsEdit(false);
+                  }}
+                  className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium"
+                >
+                  Save Changes
+                </button>
             </div>
           </form>
         </div>
       </div>
     )}
          
+      {/* Mark Attendance Modal */}
+      {showAttendance && selectedTraining && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
+          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="text-center font-semibold text-xl mb-6">Mark Attendance</div>
+            <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-sm text-blue-800">
+                <strong>Training:</strong> {selectedTraining.title}
+              </p>
+              <p className="text-sm text-blue-700 mt-1">
+                Check the box next to each attendee who attended the training session.
+              </p>
+            </div>
+            <div className="space-y-2 mb-6">
+              {(selectedTraining.attendees || []).map((attendee, idx) => (
+                <label
+                  key={idx}
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 cursor-pointer"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(attendee)} flex items-center justify-center text-white text-sm font-medium`}>
+                      {getInitials(attendee)}
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">{attendee}</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={attendance[attendee] || false}
+                    onChange={(e) => {
+                      setAttendance(prev => ({
+                        ...prev,
+                        [attendee]: e.target.checked
+                      }));
+                    }}
+                    className="h-5 w-5 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                  />
+                </label>
+              ))}
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowAttendance(false);
+                  setSelectedTraining(null);
+                  setAttendance({});
+                }}
+                className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveAttendance}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium"
+              >
+                Save Attendance & Mark Complete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+    </div>
+    
+  );
+}
 
-
-
-</>);
-} 
 export default HrTrainings;
