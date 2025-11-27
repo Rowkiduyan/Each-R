@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import Logo from './Logo.png';
+import NotificationBell from './NotificationBell';
+import { createInterviewScheduledNotification, createInterviewRescheduledNotification } from './notifications';
 
 function ApplicantApplications() {
   const steps = ["Application", "Assessment", "Requirements", "Agreements"];
@@ -47,8 +49,11 @@ function ApplicantApplications() {
   });
 
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [showRejectDialog, setShowRejectDialog] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [showRetractDialog, setShowRetractDialog] = useState(false);
+  const [showConfirmationModal, setShowConfirmationModal] = useState(false);
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [applicationRetracted, setApplicationRetracted] = useState(false);
   const [retracting, setRetracting] = useState(false);
   const [showRetractSuccess, setShowRetractSuccess] = useState(false);
@@ -162,17 +167,10 @@ function ApplicantApplications() {
             payload: payloadObj
           });
 
-          // Check if interview is confirmed (check both column and payload)
-          let isConfirmed = false;
-          if (application.interview_confirmed || application.interview_confirmed_at) {
-            isConfirmed = true;
-          } else {
-            if (payloadObj?.interview_confirmed || payloadObj?.interview_confirmed_at) {
-              isConfirmed = true;
-            }
-          }
+          // Check if interview is confirmed using the new text-based status
+          const interviewStatus = application.interview_confirmed || payloadObj?.interview_confirmed || 'Idle';
           
-          if (isConfirmed) {
+          if (interviewStatus === 'Confirmed') {
             setStepStatus((s) => ({ ...s, Assessment: "done" }));
           }
 
@@ -272,8 +270,46 @@ function ApplicantApplications() {
               table: 'applications',
               filter: `user_id=eq.${user.id}`
             },
-            () => {
-              fetchApplication();
+            (payload) => {
+              console.log('Real-time update received:', payload);
+              // Update local state immediately with the new data
+              if (payload.new) {
+                setApplicationData(prev => {
+                  if (!prev || prev.id !== payload.new.id) return prev;
+                  
+                  // Merge the updated data with existing data
+                  const updatedData = { ...prev, ...payload.new };
+                  
+                  // Parse payload if it's a string
+                  if (typeof updatedData.payload === 'string') {
+                    try {
+                      updatedData.payload = JSON.parse(updatedData.payload);
+                    } catch (e) {
+                      console.warn('Failed to parse payload:', e);
+                    }
+                  }
+                  
+                  console.log('Updated application data:', updatedData);
+                  
+                  // Check if interview was rescheduled (status reset to 'Idle')
+                  if (updatedData.interview_confirmed === 'Idle' && prev.interview_confirmed !== 'Idle') {
+                    console.log('Interview was rescheduled - showing buttons again');
+                    // The notification will be created by the HR system automatically
+                    // No need for alert here as the notification bell will show the update
+                  }
+                  
+                  // Check if new interview was scheduled
+                  if (updatedData.interview_date && updatedData.interview_date !== prev.interview_date) {
+                    console.log('New interview scheduled or rescheduled');
+                    // The notification will be created by the HR system automatically
+                  }
+                  
+                  return updatedData;
+                });
+                
+                // Also refresh the full data to ensure consistency
+                setTimeout(() => fetchApplication(), 100);
+              }
             }
           )
           .subscribe();
@@ -301,6 +337,9 @@ function ApplicantApplications() {
     try {
       setRetracting(true);
       setRetractError('');
+      
+      // Now we can simply delete the application
+      // The database will automatically set application_id to NULL in notifications
       const { error } = await supabase
         .from('applications')
         .delete()
@@ -347,6 +386,7 @@ function ApplicantApplications() {
               <h1 className="text-3xl font-bold text-gray-800">Application Details</h1>
             </div>
             <div className="flex items-end space-x-5">
+              <NotificationBell />
               <Link to="/applicant/login" className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors">Logout</Link>
             </div>
           </div>
@@ -537,9 +577,26 @@ function ApplicantApplications() {
 
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-gray-800">Assessment</h2>
-                {stepStatus.Assessment === "done" && (
-                  <span className="text-sm px-2 py-1 rounded bg-green-100 text-green-800 border border-green-300">Confirmed</span>
-                )}
+                {(() => {
+                  // Get interview status from database
+                  const interviewStatus = applicationData?.interview_confirmed || applicationData?.payload?.interview_confirmed || 'Idle';
+                  
+                  // Only show status if applicant has responded (not Idle)
+                  if (interviewStatus === 'Confirmed') {
+                    return (
+                      <span className="text-sm px-2 py-1 rounded bg-green-100 text-green-800 border border-green-300">
+                        Status: Confirmed
+                      </span>
+                    );
+                  } else if (interviewStatus === 'Rejected') {
+                    return (
+                      <span className="text-sm px-2 py-1 rounded bg-red-100 text-red-800 border border-red-300">
+                        Status: Interview Rejected
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
               <div className="bg-gray-50 border rounded-md p-4">
                 <div className="text-sm text-gray-800 font-semibold mb-2">Interview Schedule</div>
@@ -551,13 +608,30 @@ function ApplicantApplications() {
                 </div>
                 <div className="mt-3 flex items-center justify-between">
                   <div className="text-xs text-gray-500 italic">
-                    Important Reminder: Please confirm at least a day before your schedule.
+                    {interview.date ? 
+                      'Important Reminder: Please confirm at least a day before your schedule.' :
+                      'Please wait for HR to schedule your interview.'
+                    }
                   </div>
-                  {stepStatus.Assessment !== "done" && (
-                    <button type="button" className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700" onClick={() => setShowConfirmDialog(true)}>
-                      Confirm Interview
-                    </button>
-                  )}
+                  {(() => {
+                    // Get interview status
+                    const interviewStatus = applicationData?.interview_confirmed || applicationData?.payload?.interview_confirmed || 'Idle';
+                    
+                    // Show buttons only if no response has been made yet and interview is scheduled
+                    const showButtons = interviewStatus === 'Idle' && 
+                      interview.date && interview.time && interview.location;
+                    
+                    return showButtons ? (
+                      <div className="flex gap-2">
+                        <button type="button" className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600" onClick={() => setShowRejectDialog(true)}>
+                          Reject Interview
+                        </button>
+                        <button type="button" className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700" onClick={() => setShowConfirmDialog(true)}>
+                          Confirm Interview
+                        </button>
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
               </div>
 
@@ -770,10 +844,6 @@ function ApplicantApplications() {
               }
               
               const submittedDocuments = requirements?.documents || [];
-              console.log('Rendering documents - submittedDocuments:', submittedDocuments);
-              console.log('Rendering documents - requirements:', requirements);
-              console.log('Rendering documents - applicationData:', applicationData);
-              console.log('Rendering documents - applicationData.requirements:', applicationData?.requirements);
 
               return [
                 {name: 'PSA Birth Certificate *', key: 'psa_birth_certificate'},
@@ -1289,72 +1359,32 @@ function ApplicantApplications() {
                   try {
                     const confirmedAt = new Date().toISOString();
                     
-                    // Try to update the dedicated columns first (if they exist)
+                    // Update with new text-based status
                     const { error: updateError } = await supabase
                       .from('applications')
                       .update({
-                        interview_confirmed: true,
+                        interview_confirmed: 'Confirmed',
                         interview_confirmed_at: confirmedAt
                       })
                       .eq('id', applicationData.id);
 
-                    // If columns don't exist, fall back to storing in payload
-                    if (updateError && updateError.code === 'PGRST204') {
-                      console.warn('Interview confirmation columns not found, storing in payload instead');
-                      
-                      // Get current payload
-                      let currentPayload = applicationData.payload;
-                      if (typeof currentPayload === 'string') {
-                        try {
-                          currentPayload = JSON.parse(currentPayload);
-                        } catch {
-                          currentPayload = {};
-                        }
-                      }
-                      
-                      // Update payload with confirmation
-                      const updatedPayload = {
-                        ...currentPayload,
-                        interview_confirmed: true,
-                        interview_confirmed_at: confirmedAt
-                      };
-                      
-                      const { error: payloadError } = await supabase
-                        .from('applications')
-                        .update({ payload: updatedPayload })
-                        .eq('id', applicationData.id);
-                      
-                      if (payloadError) {
-                        console.error('Error updating payload:', payloadError);
-                        alert('Failed to confirm interview. Please try again.');
-                        return;
-                      }
-                      
-                      // Update local state with payload method
-                      setApplicationData((prev) => ({
-                        ...prev,
-                        payload: updatedPayload,
-                        interview_confirmed: true,
-                        interview_confirmed_at: confirmedAt
-                      }));
-                    } else if (updateError) {
-                      // Some other error occurred
+                    if (updateError) {
                       console.error('Error confirming interview:', updateError);
                       alert('Failed to confirm interview. Please try again.');
                       return;
-                    } else {
-                      // Success with column update
-                      setApplicationData((prev) => ({
-                        ...prev,
-                        interview_confirmed: true,
-                        interview_confirmed_at: confirmedAt
-                      }));
                     }
+
+                    // Update local state
+                    setApplicationData((prev) => ({
+                      ...prev,
+                      interview_confirmed: 'Confirmed',
+                      interview_confirmed_at: confirmedAt
+                    }));
 
                     // Update UI state
                   setShowConfirmDialog(false);
                   setStepStatus((s) => ({ ...s, Assessment: "done", Requirements: s.Requirements }));
-                  setShowSuccessDialog(true);
+                  setShowConfirmationModal(true);
                   } catch (err) {
                     console.error('Error confirming interview:', err);
                     alert('Failed to confirm interview. Please try again.');
@@ -1363,6 +1393,118 @@ function ApplicantApplications() {
               >
                 Confirm
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject dialog */}
+      {showRejectDialog && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowRejectDialog(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-800">Reject Interview</h3>
+            </div>
+            <div className="p-4 text-sm text-gray-700">
+              Are you sure you want to reject this interview schedule? HR will be notified and may reschedule.
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowRejectDialog(false)}>Cancel</button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-gray-500 text-white hover:bg-gray-600"
+                onClick={async () => {
+                  if (!applicationData?.id) {
+                    console.error('No application ID found');
+                    return;
+                  }
+
+                  try {
+                    const rejectedAt = new Date().toISOString();
+                    
+                    // Update with new text-based status
+                    const { error: updateError } = await supabase
+                      .from('applications')
+                      .update({
+                        interview_confirmed: 'Rejected',
+                        interview_confirmed_at: rejectedAt
+                      })
+                      .eq('id', applicationData.id);
+
+                    if (updateError) {
+                      console.error('Error rejecting interview:', updateError);
+                      alert('Failed to reject interview. Please try again.');
+                      return;
+                    }
+
+                    // Update local state
+                    setApplicationData((prev) => ({
+                      ...prev,
+                      interview_confirmed: 'Rejected',
+                      interview_confirmed_at: rejectedAt
+                    }));
+
+                    // Update UI state
+                    setShowRejectDialog(false);
+                    setStepStatus((s) => ({ ...s, Assessment: "waiting" }));
+                    
+                    // Show notification
+                    setShowRejectionModal(true);
+                  } catch (err) {
+                    console.error('Error rejecting interview:', err);
+                    alert('Failed to reject interview. Please try again.');
+                  }
+                }}
+              >
+                Reject Interview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Success Modal */}
+      {showConfirmationModal && (
+        <div className="fixed inset-0 bg-transparent bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowConfirmationModal(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border border-black" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-green-600">
+                    <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">Interview Confirmed Successfully!</div>
+              <div className="text-sm text-gray-600 mb-4">Your interview has been confirmed. HR has been notified of your response.</div>
+              <div className="border rounded-md text-left p-3 text-sm text-gray-700 mb-4">
+                <div><span className="font-medium">Date:</span> {interview.date}</div>
+                <div><span className="font-medium">Time:</span> {interview.time}</div>
+                <div><span className="font-medium">Location:</span> {interview.location}</div>
+                <div><span className="font-medium">Interviewer:</span> {interview.interviewer}</div>
+              </div>
+              <div className="text-xs text-gray-500 italic mb-4">We look forward to seeing you soon!</div>
+              <button type="button" className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" onClick={() => setShowConfirmationModal(false)}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Success Modal */}
+      {showRejectionModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowRejectionModal(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border border-black" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-red-600">
+                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">Interview Rejected Successfully</div>
+              <div className="text-sm text-gray-600 mb-4">Your interview has been rejected. HR has been notified and may reschedule a new interview for you.</div>
+              <button type="button" className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" onClick={() => setShowRejectionModal(false)}>Close</button>
             </div>
           </div>
         </div>

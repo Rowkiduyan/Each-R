@@ -257,12 +257,13 @@ function ApplicantDetails() {
       try {
         let endorsementRow = null;
 
-        // try by email first
+        // try by email first - check applications with endorsed=true
         if (emailToFind && emailToFind !== "—") {
           const { data: reData, error: reErr } = await supabase
-            .from("recruitment_endorsements")
-            .select("id, agency_profile_id, agency_name, fname, lname, payload, created_at")
-            .eq("email", emailToFind)
+            .from("applications")
+            .select("id, payload, endorsed, created_at")
+            .eq("endorsed", true)
+            .or(`payload->applicant->>email.eq.${emailToFind}, payload->form->>email.eq.${emailToFind}, payload->>email.eq.${emailToFind}`)
             .order("created_at", { ascending: false })
             .limit(1)
             .maybeSingle();
@@ -275,11 +276,12 @@ function ApplicantDetails() {
           }
         }
 
-        // fallback: check recent endorsements and compare names (best-effort)
+        // fallback: check recent endorsed applications and compare names (best-effort)
         if (!endorsementRow && nameToFind) {
           const { data: reData2, error: reErr2 } = await supabase
-            .from("recruitment_endorsements")
-            .select("id, agency_profile_id, agency_name, fname, lname, payload, created_at")
+            .from("applications")
+            .select("id, payload, endorsed, created_at")
+            .eq("endorsed", true)
             .order("created_at", { ascending: false })
             .limit(50);
 
@@ -288,7 +290,9 @@ function ApplicantDetails() {
           } else if (Array.isArray(reData2)) {
             endorsementRow =
               reData2.find((r) => {
-                const rname = `${r.fname || ""} ${r.lname || ""}`.trim();
+                const payload = typeof r.payload === "string" ? JSON.parse(r.payload) : r.payload;
+                const app = payload?.applicant || payload?.form || payload || {};
+                const rname = `${app.firstName || app.fname || ""} ${app.lastName || app.lname || ""}`.trim();
                 return rname && nameToFind && rname.toLowerCase() === nameToFind.toLowerCase();
               }) || null;
 
@@ -300,15 +304,21 @@ function ApplicantDetails() {
           // mark agency flag on applicant
           setApplicant((prev) => ({ ...prev, agency: true }));
 
-          // prefer explicit agency_name
-          let resolved = endorsementRow.agency_name || null;
+          // Extract agency info from payload
+          const payload = typeof endorsementRow.payload === "string" 
+            ? JSON.parse(endorsementRow.payload) 
+            : endorsementRow.payload;
+          const meta = payload?.meta || {};
+          
+          // prefer explicit agency_name from payload
+          let resolved = payload?.agency_name || null;
 
-          // try profile lookup if profile id present
-          if (!resolved && endorsementRow.agency_profile_id) {
+          // try profile lookup if profile id present in meta
+          if (!resolved && meta.endorsed_by_profile_id) {
             const { data: prof, error: profErr } = await supabase
               .from("profiles")
               .select("id, first_name, last_name, company_name")
-              .eq("id", endorsementRow.agency_profile_id)
+              .eq("id", meta.endorsed_by_profile_id)
               .limit(1)
               .maybeSingle();
 
@@ -317,9 +327,10 @@ function ApplicantDetails() {
             }
           }
 
-          // fallback to endorsement fname/lname
+          // fallback to payload applicant name
           if (!resolved) {
-            const fallbackName = `${endorsementRow.fname || ""} ${endorsementRow.lname || ""}`.trim();
+            const app = payload?.applicant || payload?.form || payload || {};
+            const fallbackName = `${app.firstName || app.fname || ""} ${app.lastName || app.lname || ""}`.trim();
             if (fallbackName) resolved = fallbackName;
           }
 
