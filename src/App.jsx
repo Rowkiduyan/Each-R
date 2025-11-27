@@ -6,7 +6,6 @@ import AgencyEndorse from "./AgencyEndorse";
 import Employees from "./Employees";
 import ApplicantGHome from "./ApplicantGHome";
 import ApplicantLHome from "./ApplicantLHome";
-import EmployeeDetails from "./EmployeeDetails"; 
 import EmployeeLogin from "./EmployeeLogin";
 import EmHome from "./EmHome";
 import AdminHome from "./AdminHome";
@@ -69,7 +68,6 @@ function App() {
         <Route path="create/job" element={<HrCreateJob />} />
         <Route path="recruitment/applicant/:id" element={<ApplicantDetails />} />
         <Route path="employees" element={<Employees />} />
-        <Route path="employee/details" element={<EmployeeDetails />} />
       </Route>
       
       

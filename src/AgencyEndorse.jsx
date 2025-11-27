@@ -515,7 +515,7 @@ const handleEndorse = async () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <img src={LogoCropped} alt="Each-R Logo" className="h-10 w-auto object-contain" />
-            </div>
+                </div>
 
             <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
               <Link to="/agency/home" className="pb-1 hover:text-gray-900 transition-colors">Home</Link>
@@ -532,7 +532,7 @@ const handleEndorse = async () => {
                   <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
-                </div>
+            </div>
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </div>
               
@@ -548,9 +548,9 @@ const handleEndorse = async () => {
                     <div className="py-1">
                       <div className="px-4 py-2 text-sm text-gray-700 border-b">Agency User</div>
                       <button onClick={() => { setShowProfileDropdown(false); setShowLogoutConfirm(true); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Logout</button>
-                    </div>
-                  </div>
-                )}
+          </div>
+        </div>
+      )}
               </div>
             </div>
           </div>
@@ -569,7 +569,7 @@ const handleEndorse = async () => {
             </div>
             <h1 className="text-2xl font-bold text-gray-800">Endorse New Employee</h1>
             <p className="text-gray-500 mt-1">Fill out the form below to endorse an employee to HR for review</p>
-          </div>
+      </div>
 
           {/* Progress Indicator */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
@@ -600,7 +600,7 @@ const handleEndorse = async () => {
                 </div>
               ))}
             </div>
-          </div>
+      </div>
 
           {/* Employee Tabs */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6 overflow-hidden">
@@ -614,7 +614,7 @@ const handleEndorse = async () => {
               <span className="text-white/80 text-sm">{applicants.length} employee{applicants.length > 1 ? 's' : ''}</span>
             </div>
             <div className="flex items-center p-3 gap-2 flex-wrap bg-gray-50 border-b border-gray-100">
-              {applicants.map((applicant) => (
+        {applicants.map((applicant) => (
                 <div key={applicant.id} className="relative group">
                   <button 
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
@@ -626,16 +626,16 @@ const handleEndorse = async () => {
                   >
                     {fv.firstName && fv.lastName ? `${fv.firstName} ${fv.lastName}` : applicant.name}
                   </button>
-                  {applicants.length > 1 && (
+            {applicants.length > 1 && (
                     <button 
                       onClick={() => removeApplicant(applicant.id)} 
                       className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center hover:bg-red-700 opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
                     >
                       ×
                     </button>
-                  )}
-                </div>
-              ))}
+            )}
+          </div>
+        ))}
               <button 
                 className="px-4 py-2 rounded-lg text-sm font-medium text-red-600 border-2 border-dashed border-red-300 hover:bg-red-50 transition-colors flex items-center gap-1" 
                 onClick={addApplicant}
@@ -655,10 +655,10 @@ const handleEndorse = async () => {
                 Import CSV
               </button>
             </div>
-          </div>
+      </div>
 
           {/* Step 1: Personal Information */}
-          {step === 1 && (
+      {step === 1 && (
             <div className="space-y-6">
               {/* Employment Details */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -670,36 +670,36 @@ const handleEndorse = async () => {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
                       <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.department} onChange={(e) => handleChange(activeApplicant, "department", e.target.value)}>
-                        <option value="">Select Department</option>
-                        <option>Operations</option>
-                        <option>HR</option>
-                        <option>Admin</option>
-                        <option>Delivery Crew</option>
-                      </select>
+                <option value="">Select Department</option>
+                <option>Operations</option>
+                <option>HR</option>
+                <option>Admin</option>
+                <option>Delivery Crew</option>
+              </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Position <span className="text-red-500">*</span></label>
                       <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.position} onChange={(e) => handleChange(activeApplicant, "position", e.target.value)}>
-                        <option value="">Select Position</option>
-                        <option>Delivery Driver</option>
-                        <option>Delivery Helper</option>
-                        <option>Driver</option>
-                        <option>Security Personnel</option>
-                      </select>
+                <option value="">Select Position</option>
+                <option>Delivery Driver</option>
+                <option>Delivery Helper</option>
+                <option>Driver</option>
+                <option>Security Personnel</option>
+              </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot Assignment <span className="text-red-500">*</span></label>
                       <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.depot} onChange={(e) => handleChange(activeApplicant, "depot", e.target.value)}>
                         <option value="">Select Depot</option>
-                        <option>Pasig</option>
-                        <option>Cebu</option>
-                        <option>Butuan</option>
-                        <option>Manila</option>
-                        <option>Quezon City</option>
-                        <option>Taguig</option>
-                      </select>
-                    </div>
-                    <div>
+                <option>Pasig</option>
+                <option>Cebu</option>
+                <option>Butuan</option>
+                <option>Manila</option>
+                <option>Quezon City</option>
+                <option>Taguig</option>
+              </select>
+            </div>
+            <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Available</label>
                       <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.dateAvailable || ""} onChange={(e) => handleChange(activeApplicant, "dateAvailable", e.target.value)} />
                     </div>
@@ -709,14 +709,14 @@ const handleEndorse = async () => {
                     <div className="flex gap-4">
                       <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${fv.employed === "yes" ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}>
                         <input type="radio" name={`employed-${activeApplicant}`} className="accent-red-600" checked={fv.employed === "yes"} onChange={() => handleChange(activeApplicant, "employed", "yes")} /> Yes
-                      </label>
+              </label>
                       <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${fv.employed !== "yes" ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}>
                         <input type="radio" name={`employed-${activeApplicant}`} className="accent-red-600" checked={fv.employed !== "yes"} onChange={() => handleChange(activeApplicant, "employed", "no")} /> No
-                      </label>
+              </label>
                     </div>
                   </div>
-                </div>
-              </div>
+            </div>
+          </div>
 
               {/* Personal Information */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -747,12 +747,12 @@ const handleEndorse = async () => {
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Marital Status</label>
                       <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.maritalStatus} onChange={(e) => handleChange(activeApplicant, "maritalStatus", e.target.value)}>
                         <option value="">Select status</option>
-                        <option value="Single">Single</option>
-                        <option value="Married">Married</option>
+                <option value="Single">Single</option>
+                <option value="Married">Married</option>
                         <option value="Widowed">Widowed</option>
                         <option value="Separated">Separated</option>
-                      </select>
-                    </div>
+              </select>
+              </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Sex</label>
                       <div className="flex gap-3">
@@ -762,11 +762,11 @@ const handleEndorse = async () => {
                         <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.sex === "Female" ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}>
                           <input type="radio" name={`sex-${activeApplicant}`} className="accent-red-600" checked={fv.sex === "Female"} onChange={() => handleChange(activeApplicant, "sex", "Female")} /> Female
                         </label>
-                      </div>
-                    </div>
+            </div>
+          </div>
                   </div>
-                </div>
-              </div>
+            </div>
+          </div>
 
               {/* Address */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -792,20 +792,20 @@ const handleEndorse = async () => {
                       <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 1600" value={fv.zip} onChange={(e) => handleChange(activeApplicant, "zip", e.target.value)} />
                     </div>
                   </div>
-                </div>
-              </div>
+            </div>
+          </div>
 
               {/* Contact Information */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
                   <h2 className="text-base font-semibold text-gray-800">Contact Information</h2>
-                </div>
+            </div>
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-red-500">*</span></label>
                       <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 09XX XXX XXXX" value={fv.contactNumber} onChange={(e) => handleChange(activeApplicant, "contactNumber", e.target.value)} />
-                    </div>
+          </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-red-500">*</span></label>
                       <input type="email" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. employee@email.com" value={fv.email} onChange={(e) => handleChange(activeApplicant, "email", e.target.value)} />
@@ -817,8 +817,8 @@ const handleEndorse = async () => {
           )}
 
           {/* Step 2: Education & Skills */}
-          {step === 2 && (
-            <div className="space-y-6">
+      {step === 2 && (
+        <div className="space-y-6">
               {/* Highest Educational Attainment */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
@@ -832,17 +832,17 @@ const handleEndorse = async () => {
                       <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.education || ""} onChange={(e) => handleChange(activeApplicant, "education", e.target.value)}>
                         <option value="">Select highest education</option>
                         <option value="Elementary">Elementary Graduate</option>
-                        <option value="High School">High School Graduate</option>
+                <option value="High School">High School Graduate</option>
                         <option value="Vocational">Vocational/Technical Course</option>
-                        <option value="College">College Graduate</option>
+                <option value="College">College Graduate</option>
                         <option value="Post Graduate">Post Graduate (Masters/Doctorate)</option>
-                      </select>
-                    </div>
+              </select>
+            </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Graduated</label>
                       <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 2020" value={fv.tertiaryYear || ""} onChange={(e) => handleChange(activeApplicant, "tertiaryYear", e.target.value)} />
-                    </div>
-                  </div>
+          </div>
+            </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">School/Institution Name</label>
@@ -854,7 +854,7 @@ const handleEndorse = async () => {
                     </div>
                   </div>
                 </div>
-              </div>
+            </div>
 
               {/* Skills & Proficiency */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -872,7 +872,7 @@ const handleEndorse = async () => {
                   />
                   <p className="text-xs text-gray-500 mt-2">Separate each skill with a comma</p>
                 </div>
-              </div>
+            </div>
 
               {/* Specialized Training (Optional) */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -891,8 +891,8 @@ const handleEndorse = async () => {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Completed</label>
                       <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 2023" value={fv.specializedYear || ""} onChange={(e) => handleChange(activeApplicant, "specializedYear", e.target.value)} />
-                    </div>
-                  </div>
+            </div>
+          </div>
 
                   {/* Certificate Upload */}
                   <div>
@@ -950,13 +950,13 @@ const handleEndorse = async () => {
                     )}
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
+          </div>
+        </div>
+      )}
 
           {/* Step 3: License Information */}
-          {step === 3 && (
-            <div className="space-y-6">
+      {step === 3 && (
+        <div className="space-y-6">
               {/* License Details */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
@@ -968,18 +968,18 @@ const handleEndorse = async () => {
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">License Classification <span className="text-red-500">*</span></label>
                       <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.licenseClassification || ""} onChange={(e) => handleChange(activeApplicant, "licenseClassification", e.target.value)}>
                         <option value="">Select classification</option>
-                        <option>Non-Professional</option>
-                        <option>Professional</option>
-                        <option>Student Permit</option>
-                        <option>Conductor</option>
-                        <option>International Driving Permit</option>
-                      </select>
-                    </div>
+                <option>Non-Professional</option>
+                <option>Professional</option>
+                <option>Student Permit</option>
+                <option>Conductor</option>
+                <option>International Driving Permit</option>
+              </select>
+            </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">License Expiry Date <span className="text-red-500">*</span></label>
                       <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.licenseExpiry || ""} onChange={(e) => handleChange(activeApplicant, "licenseExpiry", e.target.value)} />
                     </div>
-                  </div>
+          </div>
 
                   {/* License Photocopy Upload */}
                   <div>
@@ -1057,7 +1057,7 @@ const handleEndorse = async () => {
                           <li>• <strong>Code 3</strong> - Equivalent to Code C in the new LTO license system</li>
                           <li>• <strong>Code B2</strong> - They can only drive up to 1T vehicles</li>
                           <li>• <strong>Code C</strong> - They can drive up to 1T and 2T vehicles</li>
-                        </ul>
+            </ul>
                       </div>
                     </div>
                   </div>
@@ -1066,7 +1066,7 @@ const handleEndorse = async () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3">Select applicable restriction codes:</label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {restrictionCodesList.map((code) => (
+              {restrictionCodesList.map((code) => (
                         <label 
                           key={code} 
                           className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
@@ -1082,23 +1082,23 @@ const handleEndorse = async () => {
                             onChange={() => toggleArrayValue(activeApplicant, "restrictionCodes", code)} 
                           />
                           <span className={`text-sm ${fv.restrictionCodes.includes(code) ? 'text-red-700 font-medium' : 'text-gray-700'}`}>{code}</span>
-                        </label>
-                      ))}
+                </label>
+              ))}
                     </div>
                   </div>
-                </div>
-              </div>
             </div>
-          )}
+          </div>
+        </div>
+      )}
 
           {/* Step 4: Driving History */}
-          {step === 4 && (
-            <div className="space-y-6">
+      {step === 4 && (
+        <div className="space-y-6">
               {/* Driving Experience */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
                   <h2 className="text-base font-semibold text-gray-800">Driving Experience</h2>
-                </div>
+              </div>
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
@@ -1117,8 +1117,8 @@ const handleEndorse = async () => {
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
+            </div>
+          </div>
 
               {/* Troubleshooting Tasks */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1128,7 +1128,7 @@ const handleEndorse = async () => {
                 <div className="p-6">
                   <label className="block text-sm font-medium text-gray-700 mb-3">What troubleshooting tasks can the employee perform?</label>
                   <div className="grid grid-cols-1 gap-2">
-                    {troubleshootingTasksList.map((task) => (
+              {troubleshootingTasksList.map((task) => (
                       <label 
                         key={task} 
                         className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
@@ -1144,11 +1144,11 @@ const handleEndorse = async () => {
                           onChange={() => toggleArrayValue(activeApplicant, "troubleshootingTasks", task)} 
                         />
                         <span className={`text-sm ${fv.troubleshootingTasks.includes(task) ? 'text-purple-700 font-medium' : 'text-gray-700'}`}>{task}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
+                </label>
+              ))}
+            </div>
+          </div>
+          </div>
 
               {/* Vehicle Types */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1158,7 +1158,7 @@ const handleEndorse = async () => {
                 <div className="p-6">
                   <label className="block text-sm font-medium text-gray-700 mb-3">What types of vehicles has the employee driven?</label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {vehicleTypesList.map((vehicle) => (
+              {vehicleTypesList.map((vehicle) => (
                       <label 
                         key={vehicle} 
                         className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
@@ -1174,11 +1174,11 @@ const handleEndorse = async () => {
                           onChange={() => toggleArrayValue(activeApplicant, "vehicleTypes", vehicle)} 
                         />
                         <span className={`text-sm ${fv.vehicleTypes.includes(vehicle) ? 'text-green-700 font-medium' : 'text-gray-700'}`}>{vehicle}</span>
-                      </label>
-                    ))}
+                </label>
+              ))}
                   </div>
-                </div>
-              </div>
+            </div>
+          </div>
 
               {/* Medical Information */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1202,9 +1202,9 @@ const handleEndorse = async () => {
                     <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="When was the last test taken? (e.g. November 2024)" value={fv.medicalTestDate || ""} onChange={(e) => handleChange(activeApplicant, "medicalTestDate", e.target.value)} />
                   )}
                 </div>
-              </div>
-            </div>
-          )}
+          </div>
+        </div>
+      )}
 
           {/* Navigation Buttons */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mt-6">
@@ -1247,8 +1247,8 @@ const handleEndorse = async () => {
                   Submit Endorsement
                 </button>
               )}
-            </div>
-          </div>
+                </div>
+              </div>
         </div>
       </div>
 
@@ -1659,8 +1659,8 @@ const handleEndorse = async () => {
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
               </svg>
-            </div>
-            
+      </div>
+
             <div className="flex items-center gap-6">
               <a href="#" className="hover:text-gray-700 hover:underline">Terms & conditions</a>
               <a href="#" className="hover:text-gray-700 hover:underline">Security</a>
