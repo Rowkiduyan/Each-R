@@ -2,7 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import ApplicantRegister from "./ApplicantRegister";
 import ApplicantLogin from "./ApplicantLogin";
 import HrHome from "./HrHome";
-import DriverAddRecord from "./DriverAddRecord";
+import AgencyEndorse from "./AgencyEndorse";
 import Employees from "./Employees";
 import ApplicantGHome from "./ApplicantGHome";
 import ApplicantLHome from "./ApplicantLHome";
@@ -24,6 +24,7 @@ import ApplicantApplications from "./ApplicantApplications";
 import EmployeeSeparation from "./EmployeeSeparation";
 import AgencyHome from "./AgencyHome";
 import AgencyEndorsements from "./AgencyEndorsements";
+import AgencyRequirements from "./AgencyRequirements";
 import AgencyTrainings from "./AgencyTrainings";
 import AgencyEval from "./AgencyEval";
 import AgencySeparation from "./AgencySeparation";
@@ -127,12 +128,13 @@ function App() {
         <Route path="accounts" element={<ManageAccounts />} />
       </Route>      {/* Public routes (no protection) */}
       <Route path="/employee/login" element={<EmployeeLogin />} />
-      <Route path="/driver/add/record" element={<DriverAddRecord />} />
+      <Route path="/agency/endorse" element={<AgencyEndorse />} />
       <Route path="/applicantg/home" element={<ApplicantGHome />} />
       <Route path="/applicantl/home" element={<ApplicantLHome />} />
       <Route path="/applicant/applications" element={<ApplicantApplications />} />
       <Route path="/agency/home" element={<AgencyHome />} />
       <Route path="/agency/endorsements" element={<AgencyEndorsements />} />
+      <Route path="/agency/requirements" element={<AgencyRequirements />} />
       <Route path="/agency/trainings" element={<AgencyTrainings />} />
       <Route path="/agency/evaluation" element={<AgencyEval />} />
       <Route path="/agency/separation" element={<AgencySeparation />} />

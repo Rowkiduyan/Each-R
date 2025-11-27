@@ -364,6 +364,7 @@ function AgencyEndorsements() {
               >
                 Endorsements
               </button>
+              <Link to="/agency/requirements" className="hover:text-gray-900 transition-colors pb-1">Requirements</Link>
               <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
               <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
               <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>
@@ -949,189 +950,191 @@ function AgencyEndorsements() {
                             </div>
                           )}
 
-                          {/* DOCUMENTS TAB */}
+                          {/* DOCUMENTS TAB - View Only */}
                           {currentTab === 'documents' && (
                             <div className="space-y-6">
-                              <p className="text-sm text-gray-600 mb-4">Default documents required for all employees. Additional documents may be requested by HR.</p>
+                              {/* Header with link to Requirements */}
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm text-gray-600">View employee's submitted documents and their status.</p>
+                                <Link 
+                                  to="/agency/requirements" 
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                  </svg>
+                                  Manage Requirements
+                                </Link>
+                              </div>
                               
-                              {/* Default Documents - SSS */}
-                              <div className="border border-gray-200 rounded-lg p-4">
-                                <h5 className="font-semibold text-gray-800 mb-3">SSS (Social Security System)</h5>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <label className="block text-sm text-gray-600 mb-1">SSS ID Number</label>
-                                    <input type="text" placeholder="Enter SSS ID Number" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-sm text-gray-600 mb-1">SSS ID Photocopy</label>
-                                    <input type="file" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Default Documents - TIN */}
-                              <div className="border border-gray-200 rounded-lg p-4">
-                                <h5 className="font-semibold text-gray-800 mb-3">TIN (Tax Identification Number)</h5>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <label className="block text-sm text-gray-600 mb-1">TIN Number</label>
-                                    <input type="text" placeholder="Enter TIN Number" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-sm text-gray-600 mb-1">TIN ID Photocopy</label>
-                                    <input type="file" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Default Documents - PAG-IBIG */}
-                              <div className="border border-gray-200 rounded-lg p-4">
-                                <h5 className="font-semibold text-gray-800 mb-3">PAG-IBIG (HDMF)</h5>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <label className="block text-sm text-gray-600 mb-1">PAG-IBIG ID Number</label>
-                                    <input type="text" placeholder="Enter PAG-IBIG ID Number" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-sm text-gray-600 mb-1">PAG-IBIG ID Photocopy</label>
-                                    <input type="file" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Default Documents - PHILHEALTH */}
-                              <div className="border border-gray-200 rounded-lg p-4">
-                                <h5 className="font-semibold text-gray-800 mb-3">PhilHealth</h5>
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div>
-                                    <label className="block text-sm text-gray-600 mb-1">PhilHealth ID Number</label>
-                                    <input type="text" placeholder="Enter PhilHealth ID Number" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                                  </div>
-                                  <div>
-                                    <label className="block text-sm text-gray-600 mb-1">PhilHealth ID Photocopy</label>
-                                    <input type="file" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
-                                  </div>
+                              {/* Default Requirements Table */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Default Requirements (Government IDs)</h5>
+                                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-gray-50">
+                                      <tr>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">Document</th>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">ID Number</th>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">File</th>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {/* SSS */}
+                                      <tr className="hover:bg-gray-50/50">
+                                        <td className="px-4 py-3">
+                                          <p className="font-medium text-gray-800">SSS</p>
+                                          <p className="text-xs text-gray-500">Social Security System</p>
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-600">
+                                          <span className="text-gray-400 italic">Not provided</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="text-gray-400 italic">No file</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>
+                                        </td>
+                                      </tr>
+                                      {/* TIN */}
+                                      <tr className="hover:bg-gray-50/50">
+                                        <td className="px-4 py-3">
+                                          <p className="font-medium text-gray-800">TIN</p>
+                                          <p className="text-xs text-gray-500">Tax Identification Number</p>
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-600">
+                                          <span className="text-gray-400 italic">Not provided</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="text-gray-400 italic">No file</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>
+                                        </td>
+                                      </tr>
+                                      {/* PAG-IBIG */}
+                                      <tr className="hover:bg-gray-50/50">
+                                        <td className="px-4 py-3">
+                                          <p className="font-medium text-gray-800">PAG-IBIG</p>
+                                          <p className="text-xs text-gray-500">HDMF</p>
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-600">
+                                          <span className="text-gray-400 italic">Not provided</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="text-gray-400 italic">No file</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>
+                                        </td>
+                                      </tr>
+                                      {/* PhilHealth */}
+                                      <tr className="hover:bg-gray-50/50">
+                                        <td className="px-4 py-3">
+                                          <p className="font-medium text-gray-800">PhilHealth</p>
+                                          <p className="text-xs text-gray-500">Philippine Health Insurance</p>
+                                        </td>
+                                        <td className="px-4 py-3 text-gray-600">
+                                          <span className="text-gray-400 italic">Not provided</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="text-gray-400 italic">No file</span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
                                 </div>
                               </div>
 
                               {/* HR Requested Documents Section */}
-                              <div className="border-t border-gray-300 pt-4 mt-6">
-                                <div className="flex items-center justify-between mb-4">
-                                  <h5 className="font-semibold text-gray-800">HR Requested Documents</h5>
-                                  {documentRequests.filter(d => d.employeeId === selectedEmployee.id).length > 0 && (
-                                    <span className="text-xs text-gray-500">
-                                      {documentRequests.filter(d => d.employeeId === selectedEmployee.id && (d.status === 'pending' || d.status === 'resubmit')).length} action required
-                                    </span>
-                                  )}
+                              <div>
+                                <div className="flex items-center justify-between mb-3">
+                                  <h5 className="font-semibold text-gray-800 bg-gray-100 px-3 py-2 rounded flex-1">HR Requested Documents</h5>
                                 </div>
                                 
                                 {documentRequests.filter(d => d.employeeId === selectedEmployee.id).length === 0 ? (
-                                  <p className="text-sm text-gray-500 italic">No additional documents have been requested by HR yet.</p>
+                                  <div className="border border-gray-200 rounded-lg p-6 text-center">
+                                    <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <p className="text-sm text-gray-500">No additional documents have been requested by HR yet.</p>
+                                  </div>
                                 ) : (
-                                  <div className="space-y-3">
-                                    {documentRequests
-                                      .filter(d => d.employeeId === selectedEmployee.id)
-                                      .sort((a, b) => {
-                                        const statusOrder = { resubmit: 0, pending: 1, submitted: 2, approved: 3 };
-                                        return statusOrder[a.status] - statusOrder[b.status];
-                                      })
-                                      .map((request) => (
-                                      <div 
-                                        key={request.id} 
-                                        className={`border rounded-lg p-4 ${
-                                          request.status === 'resubmit' 
-                                            ? 'bg-red-50 border-red-200' 
-                                            : request.status === 'pending'
-                                            ? 'bg-orange-50 border-orange-200'
-                                            : request.status === 'submitted'
-                                            ? 'bg-blue-50 border-blue-200'
-                                            : 'bg-green-50 border-green-200'
-                                        }`}
-                                      >
-                                        <div className="flex items-start justify-between gap-4">
-                                          <div className="flex-1">
-                                            <div className="flex items-center gap-2 mb-1">
-                                              <span className="text-sm font-semibold text-gray-800">{request.document}</span>
+                                  <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                    <table className="w-full text-sm">
+                                      <thead className="bg-gray-50">
+                                        <tr>
+                                          <th className="px-4 py-3 text-left text-gray-600 font-medium">Document</th>
+                                          <th className="px-4 py-3 text-left text-gray-600 font-medium">Deadline</th>
+                                          <th className="px-4 py-3 text-left text-gray-600 font-medium">Status</th>
+                                          <th className="px-4 py-3 text-left text-gray-600 font-medium">Remarks</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-100">
+                                        {documentRequests
+                                          .filter(d => d.employeeId === selectedEmployee.id)
+                                          .sort((a, b) => {
+                                            const statusOrder = { resubmit: 0, pending: 1, submitted: 2, approved: 3 };
+                                            return statusOrder[a.status] - statusOrder[b.status];
+                                          })
+                                          .map((request) => (
+                                          <tr key={request.id} className={`${
+                                            request.status === 'resubmit' ? 'bg-red-50/50' : 
+                                            request.status === 'pending' ? 'bg-orange-50/50' : 
+                                            'hover:bg-gray-50/50'
+                                          }`}>
+                                            <td className="px-4 py-3">
+                                              <p className="font-medium text-gray-800">{request.document}</p>
+                                              {request.priority === 'high' && (
+                                                <span className="text-xs text-red-600 font-medium">High Priority</span>
+                                              )}
+                                            </td>
+                                            <td className="px-4 py-3 text-gray-600">{formatDate(request.deadline)}</td>
+                                            <td className="px-4 py-3">
                                               {request.status === 'resubmit' && (
-                                                <span className="px-2 py-0.5 text-xs font-medium bg-red-100 text-red-700 rounded-full">RE-SUBMIT REQUIRED</span>
+                                                <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded">Re-submit</span>
                                               )}
                                               {request.status === 'pending' && (
-                                                <span className="px-2 py-0.5 text-xs font-medium bg-orange-100 text-orange-700 rounded-full">PENDING UPLOAD</span>
+                                                <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded">Pending</span>
                                               )}
                                               {request.status === 'submitted' && (
-                                                <span className="px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">UNDER REVIEW</span>
+                                                <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">Under Review</span>
                                               )}
                                               {request.status === 'approved' && (
-                                                <span className="px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">APPROVED</span>
+                                                <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">Approved</span>
                                               )}
-                                            </div>
-                                            
-                                            {/* HR Remarks for Re-submit */}
-                                            {request.status === 'resubmit' && request.remarks && (
-                                              <div className="mt-2 p-2.5 bg-red-100 border border-red-200 rounded-lg">
-                                                <p className="text-xs font-medium text-red-700 mb-1 flex items-center gap-1">
-                                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                                  </svg>
-                                                  HR Remarks:
-                                                </p>
-                                                <p className="text-xs text-red-700">{request.remarks}</p>
-                                              </div>
-                                            )}
-                                            
-                                            <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
-                                              <span>Requested: {formatDate(request.requestedDate)}</span>
-                                              <span>Deadline: {formatDate(request.deadline)}</span>
-                                              {request.submittedDate && <span>Submitted: {formatDate(request.submittedDate)}</span>}
-                                              {request.approvedDate && <span>Approved: {formatDate(request.approvedDate)}</span>}
-                                            </div>
-                                          </div>
-                                          
-                                          {/* Upload/Status Actions */}
-                                          <div className="flex-shrink-0">
-                                            {(request.status === 'pending' || request.status === 'resubmit') && (
-                                              <label className="cursor-pointer">
-                                                <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-                                                <span className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                                                  request.status === 'resubmit'
-                                                    ? 'bg-red-600 text-white hover:bg-red-700'
-                                                    : 'bg-blue-600 text-white hover:bg-blue-700'
-                                                }`}>
-                                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                                  </svg>
-                                                  {request.status === 'resubmit' ? 'Re-upload' : 'Upload'}
-                                                </span>
-                                              </label>
-                                            )}
-                                            {request.status === 'submitted' && (
-                                              <div className="flex items-center gap-2 text-blue-600">
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                </svg>
-                                                <span className="text-sm font-medium">Awaiting Review</span>
-                                              </div>
-                                            )}
-                                            {request.status === 'approved' && (
-                                              <div className="flex items-center gap-2 text-green-600">
-                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                </svg>
-                                                <span className="text-sm font-medium">Complete</span>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    ))}
+                                            </td>
+                                            <td className="px-4 py-3 text-gray-600 max-w-xs">
+                                              {request.remarks ? (
+                                                <p className="text-xs text-red-600 truncate" title={request.remarks}>{request.remarks}</p>
+                                              ) : (
+                                                <span className="text-gray-400 italic text-xs">—</span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
                                   </div>
                                 )}
                               </div>
 
-                              <div className="flex justify-end mt-6">
-                                <button className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">
-                                  Save Documents
-                                </button>
+                              {/* Info Banner */}
+                              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div className="flex items-start gap-3">
+                                  <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                  <div>
+                                    <p className="text-sm text-blue-800">
+                                      <strong>Need to upload or update documents?</strong> Go to the <Link to="/agency/requirements" className="underline font-semibold hover:text-blue-900">Requirements</Link> module to manage all employee documents in one place.
+                                    </p>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           )}
@@ -1277,78 +1280,78 @@ function AgencyEndorsements() {
                             </div>
                           )}
 
-                          {/* SEPARATION TAB */}
+                          {/* SEPARATION TAB - View Only */}
                           {currentTab === 'separation' && (
                             <div className="space-y-6">
-                              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                              {/* Header with link to Separation module */}
+                              <div className="flex items-center justify-between">
+                                <p className="text-sm text-gray-600">View employee's separation request status and history.</p>
+                                <Link 
+                                  to="/agency/separation" 
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                  </svg>
+                                  Submit Request
+                                </Link>
+                              </div>
+
+                              {/* Current Separation Status */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Current Separation Status</h5>
+                                
+                                {/* No Active Request - Placeholder */}
+                                <div className="border border-gray-200 rounded-lg p-6 text-center">
+                                  <div className="w-14 h-14 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <svg className="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                    </svg>
+                                  </div>
+                                  <p className="text-sm font-medium text-gray-700">No Active Separation Request</p>
+                                  <p className="text-xs text-gray-500 mt-1">This employee has no pending or active resignation requests.</p>
+                                </div>
+                              </div>
+
+                              {/* Separation Request History */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Separation History</h5>
+                                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-gray-50">
+                                      <tr>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">Type</th>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">Last Working Day</th>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">Submitted</th>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      <tr>
+                                        <td colSpan="4" className="px-4 py-8 text-center text-gray-500">
+                                          <svg className="w-8 h-8 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                          </svg>
+                                          <p className="text-sm">No separation requests found</p>
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+
+                              {/* Info Banner */}
+                              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                                 <div className="flex items-start gap-3">
-                                  <svg className="w-5 h-5 text-yellow-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                  <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                   </svg>
                                   <div>
-                                    <h6 className="font-medium text-yellow-800">Separation Request</h6>
-                                    <p className="text-sm text-yellow-700">Submitting a resignation request will notify HR for review and approval.</p>
+                                    <p className="text-sm text-blue-800">
+                                      <strong>Need to submit a resignation request?</strong> Go to the <Link to="/agency/separation" className="underline font-semibold hover:text-blue-900">Separation</Link> module to submit and manage all employee resignation requests.
+                                    </p>
                                   </div>
                                 </div>
-                              </div>
-
-                              <div className="border border-gray-200 rounded-lg p-6">
-                                <h5 className="font-semibold text-gray-800 mb-4">Submit Resignation Request</h5>
-                                
-                                <div className="space-y-4">
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Resignation Type *</label>
-                                    <select className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
-                                      <option value="">Select Type</option>
-                                      <option value="voluntary">Voluntary Resignation</option>
-                                      <option value="retirement">Retirement</option>
-                                      <option value="end_of_contract">End of Contract</option>
-                                      <option value="other">Other</option>
-                                    </select>
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Working Day *</label>
-                                    <input type="date" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Reason for Resignation *</label>
-                                    <textarea 
-                                      rows={4} 
-                                      placeholder="Please provide your reason for resignation..."
-                                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                    ></textarea>
-                                  </div>
-
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Upload Resignation Letter (Optional)</label>
-                                    <input type="file" accept=".pdf,.doc,.docx" className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm" />
-                                    <p className="text-xs text-gray-500 mt-1">Accepted formats: PDF, DOC, DOCX</p>
-                                  </div>
-
-                                  <div className="flex items-center gap-2 mt-4">
-                                    <input type="checkbox" id="confirmResignation" className="rounded border-gray-300" />
-                                    <label htmlFor="confirmResignation" className="text-sm text-gray-700">
-                                      I confirm that I want to submit this resignation request
-                                    </label>
-                                  </div>
-                                </div>
-
-                                <div className="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200">
-                                  <button className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md text-sm hover:bg-gray-300">
-                                    Cancel
-                                  </button>
-                                  <button className="px-4 py-2 bg-red-600 text-white rounded-md text-sm hover:bg-red-700">
-                                    Submit Resignation Request
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* Separation History */}
-                              <div className="border-t border-gray-300 pt-4 mt-6">
-                                <h5 className="font-semibold text-gray-800 mb-3">Separation Request History</h5>
-                                <p className="text-sm text-gray-500 italic">No separation requests have been submitted.</p>
                               </div>
                             </div>
                           )}

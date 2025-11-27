@@ -218,7 +218,7 @@ function AgencyHome() {
   }, []);
 
   const handleEndorseNavigate = (job) => {
-    navigate("/driver/add/record", { state: { job } });
+    navigate("/agency/endorse", { state: { job } });
   };
 
   const formatDate = (d) => {
@@ -281,13 +281,14 @@ function AgencyHome() {
                 Home
               </button>
 
-              <Link
-                to="/agency/endorsements"
-                className="pb-1 hover:text-gray-900 transition-colors"
-              >
-                Endorsements
-              </Link>
-              <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
+                <Link
+                  to="/agency/endorsements"
+                  className="pb-1 hover:text-gray-900 transition-colors"
+                >
+                  Endorsements
+                </Link>
+                <Link to="/agency/requirements" className="hover:text-gray-900 transition-colors pb-1">Requirements</Link>
+                <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
               <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
               <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>
             </nav>
@@ -621,7 +622,7 @@ function AgencyHome() {
 
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <button onClick={() => setShowJobModal(false)} className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">Close</button>
-                <button onClick={() => { setShowJobModal(false); navigate("/driver/add/record", { state: { job: selectedJob } }); }} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Endorse Employee</button>
+                <button onClick={() => { setShowJobModal(false); navigate("/agency/endorse", { state: { job: selectedJob } }); }} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">Endorse Employee</button>
               </div>
             </div>
           </div>

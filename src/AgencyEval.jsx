@@ -310,6 +310,7 @@ function AgencyEval() {
               >
                 Endorsements
               </Link>
+              <Link to="/agency/requirements" className="hover:text-gray-900 transition-colors pb-1">Requirements</Link>
               <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
               <button className="pb-1 text-red-600 border-b-2 border-red-600">Evaluation</button>
               <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>

@@ -17,6 +17,36 @@ function AgencySeparation() {
   const [expandedRow, setExpandedRow] = useState(null);
   const itemsPerPage = 8;
 
+  // Track which requests have been viewed (by ID)
+  const [viewedRequests, setViewedRequests] = useState(new Set());
+
+  // Submission modal state
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [submitForm, setSubmitForm] = useState({
+    employeeId: '',
+    resignationType: '',
+    otherReason: '',
+    lastWorkingDay: '',
+    reason: '',
+    resignationLetter: null,
+    confirmSubmit: false,
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Mock deployed employees for selection
+  const deployedEmployees = [
+    { id: 2, name: 'Maria Santos', position: 'Dispatcher', depot: 'BGC' },
+    { id: 6, name: 'Roberto Cruz', position: 'Driver', depot: 'Makati' },
+    { id: 7, name: 'Elena Mendoza', position: 'Admin Staff', depot: 'Quezon City' },
+    { id: 8, name: 'Antonio Reyes', position: 'Mechanic', depot: 'Pasig' },
+    { id: 9, name: 'Lucia Fernandez', position: 'Driver', depot: 'Makati' },
+    { id: 10, name: 'Carlos Villanueva', position: 'Driver', depot: 'Pasay' },
+    { id: 11, name: 'Marco Santos', position: 'Driver', depot: 'BGC' },
+    { id: 12, name: 'Ana Garcia', position: 'Dispatcher', depot: 'Makati' },
+    { id: 13, name: 'Pedro Reyes', position: 'Driver', depot: 'Pasig' },
+  ];
+
   // Mock resignation requests data
   // Status flow: pending_review -> reviewed/rejected -> processing (if reviewed) -> completed/cancelled
   const [resignationRequests, setResignationRequests] = useState([
@@ -36,6 +66,7 @@ function AgencySeparation() {
       completedDate: null,
       hasResignationLetter: true,
       clearanceDocuments: [],
+      hasUnviewedUpdate: false, // No new update
     },
     {
       id: 2,
@@ -53,6 +84,7 @@ function AgencySeparation() {
       completedDate: null,
       hasResignationLetter: true,
       clearanceDocuments: [],
+      hasUnviewedUpdate: true, // New update from HR
     },
     {
       id: 3,
@@ -73,6 +105,7 @@ function AgencySeparation() {
         { id: 1, name: 'Equipment Turnover Form', uploadedDate: '2024-11-25', status: 'approved' },
         { id: 2, name: 'ID and Access Card Return', uploadedDate: '2024-11-26', status: 'approved' },
       ],
+      hasUnviewedUpdate: true, // Final pay update
     },
     {
       id: 4,
@@ -89,9 +122,34 @@ function AgencySeparation() {
       processedDate: '2024-11-24',
       completedDate: null,
       hasResignationLetter: true,
+      clearanceResubmitRequired: false,
+      clearanceResubmitRemarks: null,
       clearanceDocuments: [
         { id: 1, name: 'Tool Inventory Checklist', uploadedDate: '2024-11-25', status: 'pending' },
       ],
+      hasUnviewedUpdate: false,
+    },
+    {
+      id: 7,
+      employeeId: 11,
+      employeeName: 'Marco Santos',
+      position: 'Driver',
+      depot: 'BGC',
+      resignationType: 'voluntary',
+      lastWorkingDay: '2024-12-28',
+      reason: 'Career change - pursuing business venture.',
+      submittedDate: '2024-11-18',
+      status: 'processing',
+      hrRemarks: 'Processing clearance. Awaiting re-submission of clearance documents.',
+      processedDate: '2024-11-20',
+      completedDate: null,
+      hasResignationLetter: true,
+      clearanceResubmitRequired: true,
+      clearanceResubmitRemarks: 'The submitted Equipment Turnover Form is incomplete. Please upload a signed copy with supervisor signature.',
+      clearanceDocuments: [
+        { id: 1, name: 'Equipment Turnover Form', uploadedDate: '2024-11-22', status: 'rejected' },
+      ],
+      hasUnviewedUpdate: true, // Re-submit required - new update
     },
     {
       id: 5,
@@ -109,6 +167,7 @@ function AgencySeparation() {
       completedDate: null,
       hasResignationLetter: true,
       clearanceDocuments: [],
+      hasUnviewedUpdate: false,
     },
     {
       id: 6,
@@ -126,8 +185,19 @@ function AgencySeparation() {
       completedDate: null,
       hasResignationLetter: true,
       clearanceDocuments: [],
+      hasUnviewedUpdate: true, // New update from HR
     },
   ]);
+
+  // Helper function to check if a request has an unviewed update
+  const hasUnviewedUpdate = (request) => {
+    return request.hasUnviewedUpdate && !viewedRequests.has(request.id);
+  };
+
+  // Mark a request as viewed
+  const markAsViewed = (requestId) => {
+    setViewedRequests(prev => new Set([...prev, requestId]));
+  };
 
   // Calculate stats
   const stats = {
@@ -136,6 +206,14 @@ function AgencySeparation() {
     processing: resignationRequests.filter(r => r.status === 'processing').length,
     completed: resignationRequests.filter(r => r.status === 'completed').length,
     total: resignationRequests.length,
+  };
+
+  // Calculate unviewed counts per tab
+  const unviewedCounts = {
+    all: resignationRequests.filter(r => hasUnviewedUpdate(r)).length,
+    pending_review: resignationRequests.filter(r => r.status === 'pending_review' && hasUnviewedUpdate(r)).length,
+    processing: resignationRequests.filter(r => (r.status === 'reviewed' || r.status === 'processing') && hasUnviewedUpdate(r)).length,
+    completed: resignationRequests.filter(r => r.status === 'completed' && hasUnviewedUpdate(r)).length,
   };
 
   // Close dropdowns when clicking outside
@@ -234,6 +312,110 @@ function AgencySeparation() {
     return types[type] || type;
   };
 
+  // Submit Modal Functions
+  const openSubmitModal = () => {
+    setSubmitForm({
+      employeeId: '',
+      resignationType: '',
+      otherReason: '',
+      lastWorkingDay: '',
+      reason: '',
+      resignationLetter: null,
+      confirmSubmit: false,
+    });
+    setShowSubmitModal(true);
+  };
+
+  const closeSubmitModal = () => {
+    setShowSubmitModal(false);
+    setSubmitForm({
+      employeeId: '',
+      resignationType: '',
+      otherReason: '',
+      lastWorkingDay: '',
+      reason: '',
+      resignationLetter: null,
+      confirmSubmit: false,
+    });
+    setIsDragging(false);
+  };
+
+  const handleFileSelect = (file) => {
+    if (file) {
+      const allowedTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      if (!allowedTypes.includes(file.type)) {
+        alert('Please upload a valid file (PDF, DOC, DOCX)');
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be less than 10MB');
+        return;
+      }
+      setSubmitForm(prev => ({ ...prev, resignationLetter: file }));
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    handleFileSelect(file);
+  };
+
+  const handleSubmitRequest = () => {
+    if (!submitForm.employeeId) {
+      alert('Please select an employee');
+      return;
+    }
+    if (!submitForm.resignationType) {
+      alert('Please select resignation type');
+      return;
+    }
+    if (submitForm.resignationType === 'other' && !submitForm.otherReason.trim()) {
+      alert('Please specify the resignation type');
+      return;
+    }
+    if (!submitForm.lastWorkingDay) {
+      alert('Please select last working day');
+      return;
+    }
+    if (!submitForm.reason.trim()) {
+      alert('Please provide a reason for resignation');
+      return;
+    }
+    if (!submitForm.confirmSubmit) {
+      alert('Please confirm that you want to submit this request');
+      return;
+    }
+
+    // Here you would implement actual submission logic
+    console.log('Submitting resignation:', submitForm);
+    alert('Resignation request submitted successfully!');
+    closeSubmitModal();
+  };
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const getSelectedEmployee = () => {
+    return deployedEmployees.find(e => e.id === parseInt(submitForm.employeeId));
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <style>{`
@@ -294,6 +476,7 @@ function AgencySeparation() {
               >
                 Endorsements
               </Link>
+              <Link to="/agency/requirements" className="hover:text-gray-900 transition-colors pb-1">Requirements</Link>
               <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
               <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
               <button className="pb-1 text-red-600 border-b-2 border-red-600">Separation</button>
@@ -358,16 +541,15 @@ function AgencySeparation() {
             <h1 className="text-2xl font-bold text-gray-800">Employee Separation</h1>
             <p className="text-gray-500 mt-1">Track and manage resignation requests for your deployed employees</p>
           </div>
-          <Link
-            to="/agency/endorsements"
-            state={{ openSeparationTab: true }}
+          <button
+            onClick={openSubmitModal}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
             Submit New Request
-          </Link>
+          </button>
         </div>
 
         {/* Stats Cards */}
@@ -435,45 +617,44 @@ function AgencySeparation() {
                 }`}
               >
                 All Requests
-                <span className="ml-2 bg-gray-100 text-gray-600 text-xs px-2 py-0.5 rounded-full">{stats.total}</span>
               </button>
               <button
                 onClick={() => { setActiveTab('pending_review'); setCurrentPage(1); setExpandedRow(null); }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'pending_review'
                     ? 'border-red-600 text-red-600 bg-red-50/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Pending
-                {stats.pendingReview > 0 && (
-                  <span className="ml-2 bg-yellow-100 text-yellow-700 text-xs px-2 py-0.5 rounded-full">{stats.pendingReview}</span>
+                {unviewedCounts.pending_review > 0 && (
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
                 )}
               </button>
               <button
                 onClick={() => { setActiveTab('processing'); setCurrentPage(1); setExpandedRow(null); }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'processing'
                     ? 'border-red-600 text-red-600 bg-red-50/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Processing
-                {(stats.reviewed + stats.processing) > 0 && (
-                  <span className="ml-2 bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">{stats.reviewed + stats.processing}</span>
+                {unviewedCounts.processing > 0 && (
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
                 )}
               </button>
               <button
                 onClick={() => { setActiveTab('completed'); setCurrentPage(1); setExpandedRow(null); }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'completed'
                     ? 'border-red-600 text-red-600 bg-red-50/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Completed
-                {stats.completed > 0 && (
-                  <span className="ml-2 bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">{stats.completed}</span>
+                {unviewedCounts.completed > 0 && (
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
                 )}
               </button>
             </div>
@@ -521,20 +702,42 @@ function AgencySeparation() {
               <tbody className="divide-y divide-gray-100">
                 {paginatedData.length > 0 ? paginatedData.map((request) => {
                   const statusStyle = getStatusBadge(request.status);
+                  const isUnviewed = hasUnviewedUpdate(request);
                   
                   return (
                     <React.Fragment key={request.id}>
                       <tr 
-                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${expandedRow === request.id ? 'bg-red-50/30' : ''}`}
-                        onClick={() => setExpandedRow(expandedRow === request.id ? null : request.id)}
+                        className={`transition-colors cursor-pointer ${
+                          expandedRow === request.id 
+                            ? 'bg-red-50/30' 
+                            : isUnviewed 
+                              ? 'bg-blue-50/60 hover:bg-blue-100/60' 
+                              : 'hover:bg-gray-50/50'
+                        }`}
+                        onClick={() => {
+                          if (isUnviewed) {
+                            markAsViewed(request.id);
+                          }
+                          setExpandedRow(expandedRow === request.id ? null : request.id);
+                        }}
                       >
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(request.employeeName)} flex items-center justify-center text-white text-sm font-medium shadow-sm`}>
-                              {getInitials(request.employeeName)}
+                            <div className="relative">
+                              <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(request.employeeName)} flex items-center justify-center text-white text-sm font-medium shadow-sm ${isUnviewed ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}>
+                                {getInitials(request.employeeName)}
+                              </div>
+                              {isUnviewed && (
+                                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
+                              )}
                             </div>
                             <div>
-                              <p className="text-sm font-medium text-gray-800">{request.employeeName}</p>
+                              <div className="flex items-center gap-2">
+                                <p className={`text-sm font-medium ${isUnviewed ? 'text-gray-900' : 'text-gray-800'}`}>{request.employeeName}</p>
+                                {isUnviewed && (
+                                  <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">NEW</span>
+                                )}
+                              </div>
                               <p className="text-xs text-gray-500">{request.position} · {request.depot}</p>
                             </div>
                           </div>
@@ -681,21 +884,50 @@ function AgencySeparation() {
                                   </div>
                                 )}
 
-                                {/* Clearance Documents Section - Only show for processing/completed */}
-                                {(request.status === 'processing' || request.status === 'completed') && (
+                                {/* Clearance Documents Section - Show for reviewed, processing, and completed */}
+                                {(request.status === 'reviewed' || request.status === 'processing' || request.status === 'completed') && (
                                   <div className="mt-4 pt-4 border-t border-gray-100">
+                                    {/* Resubmit Required Banner */}
+                                    {request.clearanceResubmitRequired && request.status === 'processing' && (
+                                      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                        <div className="flex items-start gap-2">
+                                          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                          </svg>
+                                          <div>
+                                            <p className="text-sm font-semibold text-red-800">Re-submission Required</p>
+                                            <p className="text-xs text-red-700 mt-1">{request.clearanceResubmitRemarks}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
                                     <div className="flex items-center justify-between mb-3">
                                       <span className="text-gray-700 text-sm font-medium">Clearance Documents</span>
-                                      {request.status === 'processing' && (
+                                      {/* Upload enabled for: reviewed status OR processing with resubmit required */}
+                                      {(request.status === 'reviewed' || (request.status === 'processing' && request.clearanceResubmitRequired)) && (
                                         <label className="cursor-pointer">
                                           <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
-                                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700 transition-colors">
+                                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                            request.clearanceResubmitRequired 
+                                              ? 'bg-red-600 text-white hover:bg-red-700' 
+                                              : 'bg-blue-600 text-white hover:bg-blue-700'
+                                          }`}>
                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                             </svg>
-                                            Upload Clearance
+                                            {request.clearanceResubmitRequired ? 'Re-upload Clearance' : 'Upload Clearance'}
                                           </span>
                                         </label>
+                                      )}
+                                      {/* Show disabled state for processing without resubmit */}
+                                      {request.status === 'processing' && !request.clearanceResubmitRequired && (
+                                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-500 rounded-lg text-xs font-medium cursor-not-allowed">
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                          </svg>
+                                          Submitted
+                                        </span>
                                       )}
                                     </div>
                                     
@@ -761,14 +993,14 @@ function AgencySeparation() {
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                         </svg>
                                         <p className="text-sm text-gray-500">No clearance documents uploaded yet</p>
-                                        {request.status === 'processing' && (
-                                          <p className="text-xs text-gray-400 mt-1">Upload required clearance documents for processing</p>
+                                        {request.status === 'reviewed' && (
+                                          <p className="text-xs text-gray-400 mt-1">Upload clearance documents to proceed with processing</p>
                                         )}
                                       </div>
                                     )}
 
-                                    {/* Required Clearance Checklist - Only show for processing */}
-                                    {request.status === 'processing' && (
+                                    {/* Required Clearance Checklist - Show for reviewed status */}
+                                    {request.status === 'reviewed' && (
                                       <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
                                         <p className="text-xs font-medium text-yellow-800 mb-2">Required Clearance Documents:</p>
                                         <ul className="text-xs text-yellow-700 space-y-1">
@@ -879,8 +1111,8 @@ function AgencySeparation() {
             <div>
               <h4 className="text-sm font-semibold text-blue-800">How to Submit a Resignation Request</h4>
               <p className="text-sm text-blue-700 mt-1">
-                To submit a new resignation request, go to <strong>Endorsements</strong> → select the employee → click on the <strong>Separation</strong> tab → fill out the resignation form. 
-                HR will review and process the request accordingly.
+                Click the <strong>"Submit New Request"</strong> button above to open the resignation form. Select the employee, fill in the details, and submit for HR review. 
+                You can track the status of all requests on this page.
               </p>
             </div>
           </div>
@@ -942,6 +1174,275 @@ function AgencySeparation() {
                 onClick={handleLogout}
               >
                 Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Submit Resignation Request Modal */}
+      {showSubmitModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={closeSubmitModal}
+        >
+          <div
+            className="bg-white rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl max-h-[90vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 bg-gradient-to-r from-red-500 to-red-600 flex-shrink-0">
+              <div className="flex items-start justify-between">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-red-400/30 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Submit Resignation Request</h3>
+                    <p className="text-sm text-white/80 mt-0.5">Fill out the form below to submit a resignation request for HR review</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={closeSubmitModal}
+                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-5 overflow-y-auto flex-1">
+              {/* Employee Selection */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Select Employee <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <select
+                    value={submitForm.employeeId}
+                    onChange={(e) => setSubmitForm(prev => ({ ...prev, employeeId: e.target.value }))}
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all appearance-none bg-white"
+                  >
+                    <option value="">Select an employee...</option>
+                    {deployedEmployees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} - {emp.position} ({emp.depot})
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+                {getSelectedEmployee() && (
+                  <div className="mt-2 p-3 bg-gray-50 rounded-lg flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(getSelectedEmployee().name)} flex items-center justify-center text-white text-sm font-medium`}>
+                      {getInitials(getSelectedEmployee().name)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{getSelectedEmployee().name}</p>
+                      <p className="text-xs text-gray-500">{getSelectedEmployee().position} · {getSelectedEmployee().depot}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Resignation Type */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Resignation Type <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <select
+                    value={submitForm.resignationType}
+                    onChange={(e) => setSubmitForm(prev => ({ ...prev, resignationType: e.target.value, otherReason: '' }))}
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all appearance-none bg-white"
+                  >
+                    <option value="">Select resignation type...</option>
+                    <option value="voluntary">Voluntary Resignation</option>
+                    <option value="retirement">Retirement</option>
+                    <option value="end_of_contract">End of Contract</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+                
+                {/* Other - Custom Input */}
+                {submitForm.resignationType === 'other' && (
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium text-gray-600 mb-1.5">
+                      Please specify <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={submitForm.otherReason || ''}
+                      onChange={(e) => setSubmitForm(prev => ({ ...prev, otherReason: e.target.value }))}
+                      placeholder="Enter resignation type..."
+                      className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Last Working Day */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Last Working Day <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="date"
+                    value={submitForm.lastWorkingDay}
+                    onChange={(e) => setSubmitForm(prev => ({ ...prev, lastWorkingDay: e.target.value }))}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1.5">Select the employee's intended last day of work</p>
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Reason for Resignation <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={submitForm.reason}
+                  onChange={(e) => setSubmitForm(prev => ({ ...prev, reason: e.target.value }))}
+                  rows={4}
+                  placeholder="Please provide the reason for resignation..."
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all resize-none"
+                />
+                <p className="text-xs text-gray-500 mt-1.5">{submitForm.reason.length}/500 characters</p>
+              </div>
+
+              {/* Resignation Letter Upload */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Resignation Letter <span className="text-gray-500 font-normal">(Optional)</span>
+                </label>
+                
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx"
+                  onChange={(e) => handleFileSelect(e.target.files[0])}
+                />
+
+                {!submitForm.resignationLetter ? (
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+                      isDragging 
+                        ? 'border-red-500 bg-red-50' 
+                        : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-2 ${isDragging ? 'bg-red-100' : 'bg-gray-100'}`}>
+                      <svg className={`w-6 h-6 ${isDragging ? 'text-red-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-medium text-gray-700">
+                      {isDragging ? 'Drop your file here' : 'Drag & drop or click to upload'}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">PDF, DOC, DOCX (Max 10MB)</p>
+                  </div>
+                ) : (
+                  <div className="border-2 border-green-200 bg-green-50 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-gray-800 truncate">{submitForm.resignationLetter.name}</p>
+                        <p className="text-xs text-gray-500 mt-0.5">{formatFileSize(submitForm.resignationLetter.size)}</p>
+                      </div>
+                      <button
+                        onClick={() => setSubmitForm(prev => ({ ...prev, resignationLetter: null }))}
+                        className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Confirmation Checkbox */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={submitForm.confirmSubmit}
+                    onChange={(e) => setSubmitForm(prev => ({ ...prev, confirmSubmit: e.target.checked }))}
+                    className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500 mt-0.5"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800">I confirm this resignation request</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      I understand that this request will be submitted to HR for review. Once submitted, the resignation process will begin.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-4 border-t border-gray-100 bg-gray-50/80 flex items-center justify-end gap-3 flex-shrink-0">
+              <button
+                onClick={closeSubmitModal}
+                className="px-5 py-2.5 rounded-xl bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubmitRequest}
+                disabled={!submitForm.employeeId || !submitForm.resignationType || (submitForm.resignationType === 'other' && !submitForm.otherReason.trim()) || !submitForm.lastWorkingDay || !submitForm.reason.trim() || !submitForm.confirmSubmit}
+                className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
+                  submitForm.employeeId && submitForm.resignationType && (submitForm.resignationType !== 'other' || submitForm.otherReason.trim()) && submitForm.lastWorkingDay && submitForm.reason.trim() && submitForm.confirmSubmit
+                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+                Submit Request
               </button>
             </div>
           </div>
