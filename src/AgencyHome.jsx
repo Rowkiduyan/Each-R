@@ -7,7 +7,7 @@ import Roadwise from './Roadwise.png';
 
 function AgencyHome() {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState("Job Postings");
+  const [activeTab] = useState("Job Postings");
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const profileDropdownRef = useRef(null);
@@ -261,8 +261,8 @@ function AgencyHome() {
         }
       `}</style>
       
-      {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-50">
+      {/* Header (hidden because AgencyLayout provides the main header) */}
+      <div className="bg-white shadow-sm sticky top-0 z-50 hidden">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -275,22 +275,48 @@ function AgencyHome() {
 
             <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
               <button
-                onClick={() => setActiveTab("Job Postings")}
-                className={`pb-1 ${activeTab === "Job Postings" ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`}
+                type="button"
+                onClick={() => navigate("/agency/home")}
+                className="pb-1 text-red-600 border-b-2 border-red-600"
               >
                 Home
               </button>
 
-                <Link
-                  to="/agency/endorsements"
-                  className="pb-1 hover:text-gray-900 transition-colors"
-                >
-                  Endorsements
-                </Link>
-                <Link to="/agency/requirements" className="hover:text-gray-900 transition-colors pb-1">Requirements</Link>
-                <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
-              <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
-              <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/endorsements")}
+                className="pb-1 hover:text-gray-900 transition-colors"
+              >
+                Endorsements
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/requirements")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Requirements
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/trainings")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Trainings/Orientation
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/evaluation")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Evaluation
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/separation")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Separation
+              </button>
             </nav>
 
             <div className="flex items-center space-x-4">

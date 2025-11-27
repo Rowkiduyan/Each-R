@@ -40,6 +40,19 @@ function AgencyEndorsements() {
   const [endorsementsSearch, setEndorsementsSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [employeeDetailTab, setEmployeeDetailTab] = useState('profiling');
+  
+  // Confirmation dialog state
+  const [showConfirmInterviewDialog, setShowConfirmInterviewDialog] = useState(false);
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+  const [showErrorAlert, setShowErrorAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+  
+  // Document requests state (for deployed employees)
+  const [documentRequests, setDocumentRequests] = useState([]);
+  
+  // Requirements data for selected employee
+  const [employeeRequirements, setEmployeeRequirements] = useState(null);
+  const [loadingRequirements, setLoadingRequirements] = useState(false);
 
 
   // Calculate items per page based on available screen height
@@ -91,29 +104,31 @@ function AgencyEndorsements() {
     navigate("/employee/login");
   };
 
-  // ---------- Load endorsed employees (recruitment_endorsements) ----------
+  // ---------- Load endorsed employees (from applications table with endorsed=true) ----------
   const loadEndorsed = async () => {
     setEndorsedLoading(true);
     setEndorsedError(null);
     try {
       const { data, error } = await supabase
-        .from("recruitment_endorsements")
+        .from("applications")
         .select(
           `id,
-           agency_profile_id,
-           fname,
-           lname,
-           mname,
-           contact_number,
-           email,
-           position,
-           depot,
+           user_id,
+           job_id,
            status,
            payload,
-           endorsed_employee_id,
-           job_id,
-           created_at`
+           endorsed,
+           created_at,
+           interview_date,
+           interview_time,
+           interview_location,
+           interviewer,
+           interview_confirmed,
+           interview_details_file,
+           assessment_results_file,
+           job_posts:job_posts ( id, title, depot )`
         )
+        .eq("endorsed", true)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -123,23 +138,43 @@ function AgencyEndorsements() {
       } else {
         const normalized = (data || []).map((r) => {
           let payload = r.payload;
+          if (typeof payload === "string") {
+            try { payload = JSON.parse(payload); } catch { payload = {}; }
+          }
 
           const app = payload?.applicant || payload?.form || payload || null;
+          const meta = payload?.meta || {};
 
-          const first = r.fname || app?.firstName || app?.fname || app?.first_name || null;
-          const last = r.lname || app?.lastName || app?.lname || app?.last_name || null;
-          const middle = r.mname || app?.middleName || app?.mname || null;
-          const email = r.email || app?.email || app?.contact || null;
-          const contact = r.contact_number || app?.contact || app?.phone || null;
-          const pos = r.position || app?.position || null;
-          const depot = r.depot || app?.depot || null;
+          const first = app?.firstName || app?.fname || app?.first_name || null;
+          const last = app?.lastName || app?.lname || app?.last_name || null;
+          const middle = app?.middleName || app?.mname || null;
+          const email = app?.email || app?.contact || null;
+          const contact = app?.contactNumber || app?.contact || app?.phone || null;
+          const pos = r.job_posts?.title || app?.position || null;
+          const depot = r.job_posts?.depot || app?.depot || null;
 
           const displayName = [first, middle, last].filter(Boolean).join(" ").trim() || (app?.fullName || app?.name) || "Unnamed";
 
-          // Normalize status: if hired or deployed or has endorsed_employee_id, treat as "deployed"
-          let status = r.status || "pending";
-          if (r.endorsed_employee_id || status === "hired" || status === "deployed") {
+          // Normalize status: Only set to "deployed" if application status is "hired"
+          // Otherwise, it's "pending" (even if employee exists, we check application status first)
+          let status = "pending";
+          const appStatus = (r.status || "").toLowerCase();
+          if (appStatus === "hired") {
             status = "deployed";
+          }
+
+          // Check if employee exists in employees table to get employee ID
+          let endorsedEmployeeId = null;
+          if (email && hiredEmployees.length > 0) {
+            const hiredEmp = hiredEmployees.find(h => h.email === email);
+            if (hiredEmp) {
+              endorsedEmployeeId = hiredEmp.id;
+              // Only update status to deployed if application status is also hired
+              // This ensures newly endorsed employees stay as "pending" until marked as hired
+              if (appStatus === "hired") {
+                status = "deployed";
+              }
+            }
           }
 
           return {
@@ -153,11 +188,19 @@ function AgencyEndorsements() {
             position: pos || "—",
             depot: depot || "—",
             status,
-            agency_profile_id: r.agency_profile_id || null,
+            agency_profile_id: meta?.endorsed_by_profile_id || null,
             payload,
-            endorsed_employee_id: r.endorsed_employee_id || null,
+            endorsed_employee_id: endorsedEmployeeId,
             job_id: r.job_id || null,
             created_at: r.created_at || null,
+            // Interview fields
+            interview_date: r.interview_date || null,
+            interview_time: r.interview_time || null,
+            interview_location: r.interview_location || null,
+            interviewer: r.interviewer || null,
+            interview_confirmed: r.interview_confirmed || null,
+            interview_details_file: r.interview_details_file || null,
+            assessment_results_file: r.assessment_results_file || null,
             raw: r,
           };
         });
@@ -215,19 +258,171 @@ function AgencyEndorsements() {
     }
   };
 
+  // Update endorsed employees when hired employees change
+  // Only update status to "deployed" if application status is "hired"
+  // NOTE: Depend only on hiredEmployees to avoid infinite update loops
+  useEffect(() => {
+    if (hiredEmployees.length === 0) return;
+
+    setEndorsedEmployees(prev => {
+      if (!prev || prev.length === 0) return prev;
+
+      return prev.map((emp) => {
+        if (!emp.email) return emp;
+        const hiredEmp = hiredEmployees.find(h => h.email === emp.email);
+        if (!hiredEmp) return emp;
+
+        // Check application status - only set to deployed if status is "hired"
+        const appStatus = (emp.raw?.status || "").toLowerCase();
+        return {
+          ...emp,
+          status: appStatus === "hired" ? "deployed" : emp.status, // Keep current status if not hired
+          endorsed_employee_id: hiredEmp.id,
+        };
+      });
+    });
+  }, [hiredEmployees]);
+
+  // Keep selectedEmployee in sync with latest endorsedEmployees data
+  useEffect(() => {
+    if (!selectedEmployee) return;
+    const updated = endorsedEmployees.find(e => e.id === selectedEmployee.id);
+    if (updated && updated !== selectedEmployee) {
+      setSelectedEmployee(updated);
+    }
+  }, [endorsedEmployees, selectedEmployee]);
+
+  // Load requirements for selected employee
+  useEffect(() => {
+    const loadEmployeeRequirements = async () => {
+      if (!selectedEmployee) {
+        setEmployeeRequirements(null);
+        return;
+      }
+
+      // Prefer the linked employee id; if missing, try to resolve by email
+      let employeeId = selectedEmployee.endorsed_employee_id;
+
+      setLoadingRequirements(true);
+
+      setLoadingRequirements(true);
+      try {
+        let data = null;
+        let error = null;
+
+        if (employeeId) {
+          const result = await supabase
+            .from('employees')
+            .select('id, email, requirements')
+            .eq('id', employeeId)
+            .single();
+          data = result.data;
+          error = result.error;
+        } else if (selectedEmployee.email) {
+          // Fallback: try to find employee by email (same logic Requirements tab uses)
+          const result = await supabase
+            .from('employees')
+            .select('id, email, requirements')
+            .ilike('email', selectedEmployee.email.trim());
+
+          if (result.error) {
+            error = result.error;
+          } else if (result.data && result.data.length > 0) {
+            data = result.data[0];
+            employeeId = data.id;
+            // Update selectedEmployee to remember this mapping for next time
+            setSelectedEmployee(prev => prev ? { ...prev, endorsed_employee_id: employeeId } : prev);
+          }
+        }
+        
+        if (error) {
+          console.error('Error loading employee requirements:', error);
+          setEmployeeRequirements(null);
+        } else {
+          // Parse requirements
+          let requirementsData = null;
+          if (data?.requirements) {
+            if (typeof data.requirements === 'string') {
+              try {
+                requirementsData = JSON.parse(data.requirements);
+              } catch {
+                requirementsData = null;
+              }
+            } else {
+              requirementsData = data.requirements;
+            }
+          }
+          setEmployeeRequirements(requirementsData);
+        }
+      } catch (err) {
+        console.error('Unexpected error loading requirements:', err);
+        setEmployeeRequirements(null);
+      } finally {
+        setLoadingRequirements(false);
+      }
+    };
+    
+    loadEmployeeRequirements();
+  }, [selectedEmployee]);
+  
+  // Subscribe to employees table changes to refresh requirements
+  useEffect(() => {
+    if (!selectedEmployee?.endorsed_employee_id) return;
+    
+    const employeesChannel = supabase
+      .channel(`employees-requirements-rt-${selectedEmployee.endorsed_employee_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'employees',
+          filter: `id=eq.${selectedEmployee.endorsed_employee_id}`
+        },
+        (payload) => {
+          // Reload requirements when employee record is updated
+          if (payload.new?.requirements) {
+            let requirementsData = null;
+            if (typeof payload.new.requirements === 'string') {
+              try {
+                requirementsData = JSON.parse(payload.new.requirements);
+              } catch {
+                requirementsData = null;
+              }
+            } else {
+              requirementsData = payload.new.requirements;
+            }
+            setEmployeeRequirements(requirementsData);
+          }
+        }
+      )
+      .subscribe();
+    
+    return () => {
+      supabase.removeChannel(employeesChannel);
+    };
+  }, [selectedEmployee?.endorsed_employee_id]);
+
   // initial loads + realtime subscriptions
   useEffect(() => {
     loadEndorsed();
     loadHired();
 
-    // subscribe to recruitment_endorsements changes
-    const endorsementsChannel = supabase
-      .channel("recruitment-endorsements-rt")
+    // subscribe to applications changes (where endorsed=true)
+    const applicationsChannel = supabase
+      .channel("applications-endorsed-rt")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "recruitment_endorsements" },
-        () => {
-          loadEndorsed();
+        { 
+          event: "*", 
+          schema: "public", 
+          table: "applications"
+        },
+        (payload) => {
+          // Only reload if the change affects an endorsed application
+          if (payload.new?.endorsed === true || payload.old?.endorsed === true) {
+            loadEndorsed();
+          }
         }
       )
       .subscribe();
@@ -246,7 +441,7 @@ function AgencyEndorsements() {
       .subscribe();
 
     return () => {
-      if (endorsementsChannel) supabase.removeChannel(endorsementsChannel);
+      if (applicationsChannel) supabase.removeChannel(applicationsChannel);
       if (employeesChannel) supabase.removeChannel(employeesChannel);
     };
   
@@ -261,6 +456,41 @@ function AgencyEndorsements() {
   // Get initials from name
   const getInitials = (name) => {
     return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  };
+  
+  // Helper function to get requirement data for a document type
+  const getRequirementData = (key) => {
+    if (!employeeRequirements) {
+      return { idNumber: null, filePath: null, status: 'missing' };
+    }
+    
+    const idNums = employeeRequirements.id_numbers || {};
+    const documents = employeeRequirements.documents || [];
+    
+    const idData = idNums[key] || {};
+    const docData = documents.find(d => (d.key || d.type || d.name || '').toLowerCase() === key.toLowerCase());
+    
+    const idNumber = idData.value || null;
+    const filePath = docData?.file_path || null;
+    
+    // Determine status
+    let status = 'missing';
+    if (idData.status === 'Validated') {
+      status = 'approved';
+    } else if (idData.status === 'Re-submit') {
+      status = 'resubmit';
+    } else if (idData.status === 'Submitted' || idNumber || filePath) {
+      status = 'pending';
+    }
+    
+    return { idNumber, filePath, status, remarks: idData.remarks || null };
+  };
+  
+  // Helper function to get file URL
+  const getFileUrl = (filePath) => {
+    if (!filePath) return null;
+    const { data } = supabase.storage.from('application-files').getPublicUrl(filePath);
+    return data?.publicUrl || null;
   };
 
   // Generate consistent color based on name
@@ -320,8 +550,8 @@ function AgencyEndorsements() {
         }
       `}</style>
       
-      {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-50">
+      {/* Header (hidden because AgencyLayout provides the main header) */}
+      <div className="bg-white shadow-sm sticky top-0 z-50 hidden">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -333,22 +563,48 @@ function AgencyEndorsements() {
             </div>
 
             <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
-              <Link
-                to="/agency/home"
+              <button
+                type="button"
+                onClick={() => navigate("/agency/home")}
                 className="pb-1 hover:text-gray-900 transition-colors"
               >
                 Home
-              </Link>
+              </button>
 
               <button
+                type="button"
                 className="pb-1 text-red-600 border-b-2 border-red-600"
               >
                 Endorsements
               </button>
-              <Link to="/agency/requirements" className="hover:text-gray-900 transition-colors pb-1">Requirements</Link>
-              <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
-              <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
-              <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/requirements")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Requirements
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/trainings")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Trainings/Orientation
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/evaluation")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Evaluation
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate("/agency/separation")}
+                className="hover:text-gray-900 transition-colors pb-1"
+              >
+                Separation
+              </button>
             </nav>
 
             <div className="flex items-center space-x-4">
@@ -940,70 +1196,63 @@ function AgencyEndorsements() {
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
-                                      {/* SSS */}
-                                      <tr className="hover:bg-gray-50/50">
-                                        <td className="px-4 py-3">
-                                          <p className="font-medium text-gray-800">SSS</p>
-                                          <p className="text-xs text-gray-500">Social Security System</p>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600">
-                                          <span className="text-gray-400 italic">Not provided</span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <span className="text-gray-400 italic">No file</span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>
-                                        </td>
-                                      </tr>
-                                      {/* TIN */}
-                                      <tr className="hover:bg-gray-50/50">
-                                        <td className="px-4 py-3">
-                                          <p className="font-medium text-gray-800">TIN</p>
-                                          <p className="text-xs text-gray-500">Tax Identification Number</p>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600">
-                                          <span className="text-gray-400 italic">Not provided</span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <span className="text-gray-400 italic">No file</span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>
-                                        </td>
-                                      </tr>
-                                      {/* PAG-IBIG */}
-                                      <tr className="hover:bg-gray-50/50">
-                                        <td className="px-4 py-3">
-                                          <p className="font-medium text-gray-800">PAG-IBIG</p>
-                                          <p className="text-xs text-gray-500">HDMF</p>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600">
-                                          <span className="text-gray-400 italic">Not provided</span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <span className="text-gray-400 italic">No file</span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>
-                                        </td>
-                                      </tr>
-                                      {/* PhilHealth */}
-                                      <tr className="hover:bg-gray-50/50">
-                                        <td className="px-4 py-3">
-                                          <p className="font-medium text-gray-800">PhilHealth</p>
-                                          <p className="text-xs text-gray-500">Philippine Health Insurance</p>
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600">
-                                          <span className="text-gray-400 italic">Not provided</span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <span className="text-gray-400 italic">No file</span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>
-                                        </td>
-                                      </tr>
+                                      {(() => {
+                                        const requirements = [
+                                          { key: 'sss', name: 'SSS', desc: 'Social Security System' },
+                                          { key: 'tin', name: 'TIN', desc: 'Tax Identification Number' },
+                                          { key: 'pagibig', name: 'PAG-IBIG', desc: 'HDMF' },
+                                          { key: 'philhealth', name: 'PhilHealth', desc: 'Philippine Health Insurance' },
+                                        ];
+                                        
+                                        return requirements.map((req) => {
+                                          const reqData = getRequirementData(req.key);
+                                          const fileUrl = getFileUrl(reqData.filePath);
+                                          
+                                          let statusBadge = null;
+                                          if (reqData.status === 'approved') {
+                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">Approved</span>;
+                                          } else if (reqData.status === 'resubmit') {
+                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded">Re-submit</span>;
+                                          } else if (reqData.status === 'pending') {
+                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded">Pending</span>;
+                                          } else {
+                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>;
+                                          }
+                                          
+                                          return (
+                                            <tr key={req.key} className="hover:bg-gray-50/50">
+                                              <td className="px-4 py-3">
+                                                <p className="font-medium text-gray-800">{req.name}</p>
+                                                <p className="text-xs text-gray-500">{req.desc}</p>
+                                              </td>
+                                              <td className="px-4 py-3 text-gray-600">
+                                                {reqData.idNumber ? (
+                                                  <span className="text-gray-800">{reqData.idNumber}</span>
+                                                ) : (
+                                                  <span className="text-gray-400 italic">Not provided</span>
+                                                )}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {fileUrl ? (
+                                                  <a 
+                                                    href={fileUrl} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                                  >
+                                                    View File
+                                                  </a>
+                                                ) : (
+                                                  <span className="text-gray-400 italic">No file</span>
+                                                )}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                {statusBadge}
+                                              </td>
+                                            </tr>
+                                          );
+                                        });
+                                      })()}
                                     </tbody>
                                   </table>
                                 </div>
@@ -1015,7 +1264,7 @@ function AgencyEndorsements() {
                                   <h5 className="font-semibold text-gray-800 bg-gray-100 px-3 py-2 rounded flex-1">HR Requested Documents</h5>
                                 </div>
                                 
-                                {documentRequests.filter(d => d.employeeId === selectedEmployee.id).length === 0 ? (
+                                {(!documentRequests || documentRequests.filter(d => d.employeeId === selectedEmployee.id).length === 0) ? (
                                   <div className="border border-gray-200 rounded-lg p-6 text-center">
                                     <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1393,35 +1642,146 @@ function AgencyEndorsements() {
                           )}
 
                           {/* ASSESSMENT TAB (for pending) */}
-                          {currentTab === 'assessment' && (
+                          {currentTab === 'assessment' && (() => {
+                            const hasInterview = selectedEmployee.interview_date || selectedEmployee.interview_time || selectedEmployee.interview_location;
+                            const interviewDate = selectedEmployee.interview_date 
+                              ? formatDate(selectedEmployee.interview_date) 
+                              : null;
+                            const interviewTime = selectedEmployee.interview_time 
+                              ? new Date(`2000-01-01T${selectedEmployee.interview_time}`).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+                              : null;
+                            // Normalize interview_confirmed value (handle case-insensitive and trim)
+                            // Check both selectedEmployee and raw data as fallback
+                            const interviewConfirmedRaw = selectedEmployee.interview_confirmed || selectedEmployee.raw?.interview_confirmed;
+                            const interviewConfirmedNormalized = interviewConfirmedRaw 
+                              ? String(interviewConfirmedRaw).trim() 
+                              : null;
+                            const isConfirmed = interviewConfirmedNormalized && interviewConfirmedNormalized.toLowerCase() === 'confirmed';
+                            const isRejected = interviewConfirmedNormalized && interviewConfirmedNormalized.toLowerCase() === 'rejected';
+                            const isIdle = interviewConfirmedNormalized && interviewConfirmedNormalized.toLowerCase() === 'idle';
+                            
+                            return (
                             <div className="space-y-6">
                               <div className="flex items-center justify-between mb-3">
                                 <h5 className="font-semibold text-gray-800">Assessment</h5>
-                                <span className="text-sm px-2 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300">Pending</span>
                               </div>
                               
                               <div className="bg-gray-50 border rounded-md p-4">
                                 <div className="text-sm text-gray-800 font-semibold mb-2">Interview Schedule</div>
-                                <div className="text-sm text-gray-700 space-y-1">
-                                  <div><span className="font-medium">Date:</span> <span className="text-gray-500 italic">To be scheduled</span></div>
-                                  <div><span className="font-medium">Time:</span> <span className="text-gray-500 italic">To be scheduled</span></div>
-                                  <div><span className="font-medium">Location:</span> <span className="text-gray-500 italic">To be scheduled</span></div>
-                                  <div><span className="font-medium">Interviewer:</span> <span className="text-gray-500 italic">To be assigned</span></div>
-                                </div>
-                                <div className="mt-3 text-xs text-gray-500 italic">
-                                  Important Reminder: Interview schedule will be set by HR once the endorsement is reviewed.
-                                </div>
+                                {hasInterview ? (
+                                  <>
+                                    <div className="text-sm text-gray-700 space-y-1">
+                                      <div><span className="font-medium">Date:</span> <span className="text-gray-800">{interviewDate || "—"}</span></div>
+                                      <div><span className="font-medium">Time:</span> <span className="text-gray-800">{interviewTime || "—"}</span></div>
+                                      <div><span className="font-medium">Location:</span> <span className="text-gray-800">{selectedEmployee.interview_location || "—"}</span></div>
+                                      <div><span className="font-medium">Interviewer:</span> <span className="text-gray-800">{selectedEmployee.interviewer || "—"}</span></div>
+                                    </div>
+                                    {/* Show status badge only if confirmed or rejected */}
+                                    {(isConfirmed || isRejected) && (
+                                      <div className="mt-3">
+                                        <span className={`text-xs px-2 py-1 rounded font-medium ${
+                                          isConfirmed
+                                            ? 'bg-green-100 text-green-800 border border-green-300' 
+                                            : 'bg-red-100 text-red-800 border border-red-300'
+                                        }`}>
+                                          {isConfirmed ? '✓ Interview Confirmed' : '✗ Interview Rejected'}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {/* Show pending status if not confirmed/rejected */}
+                                    {!isConfirmed && !isRejected && (
+                                      <div className="mt-3">
+                                        <span className="text-xs px-2 py-1 rounded font-medium bg-yellow-100 text-yellow-800 border border-yellow-300">
+                                          Interview Pending Confirmation
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div className="mt-3 flex items-center justify-between">
+                                      <div className="text-xs text-gray-500 italic">
+                                        Important Reminder: {isConfirmed
+                                          ? 'Interview has been confirmed by the applicant.' 
+                                          : isRejected
+                                          ? 'Interview was rejected by the applicant.'
+                                          : 'Please confirm at least a day before your schedule.'}
+                                      </div>
+                                      {/* Show Confirm Interview button only if not yet confirmed/rejected */}
+                                      {!isConfirmed && !isRejected && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowConfirmInterviewDialog(true)}
+                                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
+                                        >
+                                          Confirm Interview
+                                        </button>
+                                      )}
+                                    </div>
+                                  </>
+                                ) : (
+                                  <>
+                                    <div className="text-sm text-gray-700 space-y-1">
+                                      <div><span className="font-medium">Date:</span> <span className="text-gray-500 italic">To be scheduled</span></div>
+                                      <div><span className="font-medium">Time:</span> <span className="text-gray-500 italic">To be scheduled</span></div>
+                                      <div><span className="font-medium">Location:</span> <span className="text-gray-500 italic">To be scheduled</span></div>
+                                      <div><span className="font-medium">Interviewer:</span> <span className="text-gray-500 italic">To be assigned</span></div>
+                                    </div>
+                                    <div className="mt-3 text-xs text-gray-500 italic">
+                                      Important Reminder: Interview schedule will be set by HR once the endorsement is reviewed.
+                                    </div>
+                                  </>
+                                )}
                               </div>
 
                               {/* In-Person Assessments */}
                               <div className="mt-4">
                                 <div className="text-sm font-semibold text-gray-800 mb-2">In-Person Assessments</div>
                                 <div className="bg-gray-50 border rounded-md p-3">
-                                  <p className="text-sm text-gray-500 italic">No assessment files uploaded yet. Please wait for HR to upload assessment results.</p>
+                                  {selectedEmployee.interview_details_file || selectedEmployee.assessment_results_file ? (
+                                    <div className="space-y-2">
+                                      {selectedEmployee.interview_details_file && (
+                                        <div className="flex items-center justify-between p-2 bg-white rounded border">
+                                          <div className="flex items-center gap-2">
+                                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            <span className="text-sm text-gray-800">Interview Details</span>
+                                          </div>
+                                          <a 
+                                            href={supabase.storage.from('application-files').getPublicUrl(selectedEmployee.interview_details_file)?.data?.publicUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-sm text-blue-600 hover:underline"
+                                          >
+                                            View File
+                                          </a>
+                                        </div>
+                                      )}
+                                      {selectedEmployee.assessment_results_file && (
+                                        <div className="flex items-center justify-between p-2 bg-white rounded border">
+                                          <div className="flex items-center gap-2">
+                                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            <span className="text-sm text-gray-800">Assessment Results</span>
+                                          </div>
+                                          <a 
+                                            href={supabase.storage.from('application-files').getPublicUrl(selectedEmployee.assessment_results_file)?.data?.publicUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-sm text-blue-600 hover:underline"
+                                          >
+                                            View File
+                                          </a>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="text-sm text-gray-500 italic">No assessment files uploaded yet. Please wait for HR to upload assessment results.</p>
+                                  )}
                                 </div>
                               </div>
                             </div>
-                          )}
+                            );
+                          })()}
 
                           {/* AGREEMENTS TAB (for pending) */}
                           {currentTab === 'agreements' && (
@@ -1515,6 +1875,145 @@ function AgencyEndorsements() {
           </div>
         </div>
       </footer>
+
+      {/* Confirm Interview Dialog */}
+      {showConfirmInterviewDialog && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={() => setShowConfirmInterviewDialog(false)}
+        >
+          <div
+            className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold mb-4">Confirm Interview</h3>
+            <div className="text-sm text-gray-700 mb-6">
+              Are you sure you want to confirm this interview schedule?
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                onClick={() => setShowConfirmInterviewDialog(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                onClick={async () => {
+                  if (!selectedEmployee.id) {
+                    setAlertMessage('Error: Application ID not found');
+                    setShowErrorAlert(true);
+                    setShowConfirmInterviewDialog(false);
+                    return;
+                  }
+                  
+                  try {
+                    const confirmedAt = new Date().toISOString();
+                    
+                    const { error: updateError } = await supabase
+                      .from('applications')
+                      .update({
+                        interview_confirmed: 'Confirmed',
+                        interview_confirmed_at: confirmedAt
+                      })
+                      .eq('id', selectedEmployee.id);
+                    
+                    if (updateError) {
+                      console.error('Error confirming interview:', updateError);
+                      setAlertMessage('Failed to confirm interview. Please try again.');
+                      setShowErrorAlert(true);
+                      setShowConfirmInterviewDialog(false);
+                      return;
+                    }
+                    
+                    // Reload the endorsed employees to update the UI
+                    loadEndorsed();
+                    
+                    // Update local state immediately
+                    setSelectedEmployee(prev => ({
+                      ...prev,
+                      interview_confirmed: 'Confirmed',
+                      interview_confirmed_at: confirmedAt,
+                      raw: {
+                        ...prev.raw,
+                        interview_confirmed: 'Confirmed',
+                        interview_confirmed_at: confirmedAt
+                      }
+                    }));
+                    
+                    setShowConfirmInterviewDialog(false);
+                    setAlertMessage('Interview confirmed successfully! ✓');
+                    setShowSuccessAlert(true);
+                  } catch (err) {
+                    console.error('Error confirming interview:', err);
+                    setAlertMessage('Failed to confirm interview. Please try again.');
+                    setShowErrorAlert(true);
+                    setShowConfirmInterviewDialog(false);
+                  }
+                }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Alert Modal */}
+      {showSuccessAlert && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowSuccessAlert(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-green-600">
+                    <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">{alertMessage}</div>
+              <div className="mt-4">
+                <button 
+                  type="button" 
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  onClick={() => setShowSuccessAlert(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Alert Modal */}
+      {showErrorAlert && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowErrorAlert(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-red-600">
+                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">{alertMessage}</div>
+              <div className="mt-4">
+                <button 
+                  type="button" 
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  onClick={() => setShowErrorAlert(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
