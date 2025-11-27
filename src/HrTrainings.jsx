@@ -131,6 +131,20 @@ function HrTrainings() {
         }
       });
 
+      // Sort upcoming in ascending order by date (soonest first)
+      upcomingTrainings.sort((a, b) => {
+        const dateA = a.start_at ? new Date(a.start_at) : new Date(0);
+        const dateB = b.start_at ? new Date(b.start_at) : new Date(0);
+        return dateA - dateB;
+      });
+
+      // Sort completed in descending order by date (most recent first)
+      completedTrainings.sort((a, b) => {
+        const dateA = a.start_at ? new Date(a.start_at) : new Date(0);
+        const dateB = b.start_at ? new Date(b.start_at) : new Date(0);
+        return dateB - dateA;
+      });
+
       setUpcoming(upcomingTrainings);
       setCompleted(completedTrainings);
     } catch (error) {
@@ -218,6 +232,18 @@ function HrTrainings() {
       alert("Please provide both date and time.");
       return;
     }
+    if (!form.venue) {
+      alert("Venue is required.");
+      return;
+    }
+    if (!form.description) {
+      alert("Description is required.");
+      return;
+    }
+    if (!attendees || attendees.length === 0) {
+      alert("At least one attendee is required.");
+      return;
+    }
 
     const startAt = new Date(`${form.date}T${form.time}:00`);
 
@@ -269,6 +295,18 @@ function HrTrainings() {
     }
     if (!editForm.date || !editForm.time) {
       alert("Please provide both date and time.");
+      return;
+    }
+    if (!editForm.venue) {
+      alert("Venue is required.");
+      return;
+    }
+    if (!editForm.description) {
+      alert("Description is required.");
+      return;
+    }
+    if (!attendeesEdit || attendeesEdit.length === 0) {
+      alert("At least one attendee is required.");
       return;
     }
 
@@ -490,7 +528,7 @@ function HrTrainings() {
       `}</style>
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="max-w-7xl mx-auto px-6 py-0">
         {/* Page Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
@@ -546,7 +584,7 @@ function HrTrainings() {
         </div>
 
         {/* Main Content Card with Tabs (Upcoming / History) */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-20">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mb-">
           {/* Tabs - styled like AgencyTrainings */}
           <div className="border-b border-gray-200">
             <div className="flex">
@@ -617,12 +655,12 @@ function HrTrainings() {
 
           {/* Tab content */}
           {loading ? (
-            <div className="px-6 py-12 text-center text-gray-500">
+            <div className="px-6 py-12 text-center text-gray-500 h-[500px] flex items-center justify-center">
               <p>Loading trainings...</p>
             </div>
           ) : activeTab === 'upcoming' ? (
             filteredUpcoming.length === 0 ? (
-              <div className="px-6 py-12 text-center text-gray-500">
+              <div className="px-6 py-12 text-center text-gray-500 h-[500px] flex flex-col items-center justify-center">
                 <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
@@ -630,53 +668,74 @@ function HrTrainings() {
                 <p className="text-sm mt-1">Adjust your search or add a new schedule.</p>
               </div>
             ) : (
-              <div className="divide-y divide-gray-100 h-[300px] overflow-y-auto no-scrollbar">
+              <div className="relative h-[500px] overflow-y-auto no-scrollbar p-4 space-y-3">
                 {filteredUpcoming.map((training) => (
                   <div
                     key={training.id}
-                    className="px-6 py-4 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                    className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer group"
                     onClick={() => viewDetails(training)}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4 flex-1">
-                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm">
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-4 flex-1">
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center text-white shadow-md flex-shrink-0">
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
                           </svg>
                         </div>
-                        <div className="flex-1">
-                          <h3 className="text-sm font-semibold text-gray-800">{training.title}</h3>
-                          <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-                            <span>{formatDate(training.date)}</span>
-                            <span>•</span>
-                            <span>{training.time || 'Time not set'}</span>
-                            <span>•</span>
-                            <span>{training.venue || 'Venue not set'}</span>
-                            <span>•</span>
-                            <span>{training.attendees?.length || 0} attendees</span>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">{training.title}</h3>
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                            <div className="flex items-center gap-1.5">
+                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <span className="font-medium">{formatDate(training.date)}</span>
+                            </div>
+                            <span className="text-gray-300">•</span>
+                            <div className="flex items-center gap-1.5">
+                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>{training.time || 'Time not set'}</span>
+                            </div>
+                            <span className="text-gray-300">•</span>
+                            <div className="flex items-center gap-1.5">
+                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                              <span className="truncate">{training.venue || 'Venue not set'}</span>
+                            </div>
+                            <span className="text-gray-300">•</span>
+                            <div className="flex items-center gap-1.5">
+                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                              </svg>
+                              <span className="font-semibold text-blue-600">{training.attendees?.length || 0} attendees</span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                      <div className="relative">
+                      <div className="relative flex-shrink-0">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setActionMenuOpen(actionMenuOpen === training.id ? null : training.id);
                           }}
-                          className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                         >
-                          <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                           </svg>
                         </button>
                         {actionMenuOpen === training.id && (
-                          <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                          <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openEdit(training);
                               }}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2 transition-colors"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -688,7 +747,7 @@ function HrTrainings() {
                                 e.stopPropagation();
                                 openAttendance(training);
                               }}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2 transition-colors"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -700,7 +759,7 @@ function HrTrainings() {
                                 e.stopPropagation();
                                 onDelete(training.id);
                               }}
-                              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                              className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -716,7 +775,7 @@ function HrTrainings() {
               </div>
             )
           ) : filteredCompleted.length === 0 ? (
-            <div className="px-6 py-12 text-center text-gray-500">
+            <div className="px-6 py-12 text-center text-gray-500 h-[500px] flex flex-col items-center justify-center">
               <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -724,63 +783,89 @@ function HrTrainings() {
               <p className="text-sm mt-1">Completed schedules will appear here.</p>
             </div>
           ) : (
-            <div className="divide-y divide-gray-100 max-h-500 overflow-y-auto no-scrollbar">
+            <div className="relative h-[500px] overflow-y-auto no-scrollbar p-4 space-y-3">
               {filteredCompleted.map((training) => (
                 <div
                   key={training.id}
-                  className="px-6 py-4 hover:bg-gray-50/50 transition-colors cursor-pointer"
+                  className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md hover:border-green-300 transition-all cursor-pointer group"
                   onClick={() => viewDetails(training)}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4 flex-1">
-                      <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center text-white shadow-sm">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4 flex-1">
+                      <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center text-white shadow-md flex-shrink-0">
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                       </div>
-                      <div className="flex-1">
-                        <h3 className="text-sm font-semibold text-gray-800">{training.title}</h3>
-                        <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-                          <span>{formatDate(training.date)}</span>
-                          <span>•</span>
-                          <span>{training.time || 'Time not set'}</span>
-                          <span>•</span>
-                          <span>{training.venue || 'Venue not set'}</span>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-green-600 transition-colors">{training.title}</h3>
+                        <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                          <div className="flex items-center gap-1.5">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <span className="font-medium">{formatDate(training.date)}</span>
+                          </div>
+                          <span className="text-gray-300">•</span>
+                          <div className="flex items-center gap-1.5">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>{training.time || 'Time not set'}</span>
+                          </div>
+                          <span className="text-gray-300">•</span>
+                          <div className="flex items-center gap-1.5">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <span className="truncate">{training.venue || 'Venue not set'}</span>
+                          </div>
                           {training.attendance && (
                             <>
-                              <span>•</span>
-                              <span className="text-green-600">
-                                {Object.values(training.attendance || {}).filter(Boolean).length} present
-                              </span>
-                              <span>•</span>
-                              <span className="text-red-600">
-                                {Object.values(training.attendance || {}).filter((v) => v === false).length} absent
-                              </span>
+                              <span className="text-gray-300">•</span>
+                              <div className="flex items-center gap-1.5">
+                                <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="font-semibold text-green-600">
+                                  {Object.values(training.attendance || {}).filter(Boolean).length} present
+                                </span>
+                              </div>
+                              <span className="text-gray-300">•</span>
+                              <div className="flex items-center gap-1.5">
+                                <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                <span className="font-semibold text-red-600">
+                                  {Object.values(training.attendance || {}).filter((v) => v === false).length} absent
+                                </span>
+                              </div>
                             </>
                           )}
                         </div>
                       </div>
                     </div>
-                    <div className="relative">
+                    <div className="relative flex-shrink-0">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setActionMenuOpen(actionMenuOpen === training.id ? null : training.id);
                         }}
-                        className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                       >
-                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                         </svg>
                       </button>
                       {actionMenuOpen === training.id && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               openAttendance(training);
                             }}
-                            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                            className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 flex items-center gap-2 transition-colors"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -792,7 +877,7 @@ function HrTrainings() {
                               e.stopPropagation();
                               onDelete(training.id);
                             }}
-                            className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                            className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -812,63 +897,111 @@ function HrTrainings() {
 
       {/* Training Details Modal */}
       {showDetails && selectedTraining && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50" onClick={() => setShowDetails(false)}>
-          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-semibold text-gray-800">Training Details</h2>
-              <button onClick={() => setShowDetails(false)} className="text-gray-400 hover:text-gray-600">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowDetails(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Training Details</h2>
+                  <p className="text-sm text-blue-100 mt-0.5">{selectedTraining.title}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowDetails(false)} className="text-white/80 hover:text-white hover:bg-white/20 rounded-lg p-2 transition-colors">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-medium text-gray-500">Title</label>
-                <p className="text-base text-gray-800 mt-1">{selectedTraining.title}</p>
-              </div>
+
+            {/* Content */}
+            <div className="overflow-y-auto flex-1 p-6 space-y-6">
+              {/* Basic Info Cards */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Date</label>
-                  <p className="text-base text-gray-800 mt-1">{formatDate(selectedTraining.date)}</p>
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Date</label>
+                  </div>
+                  <p className="text-base font-bold text-gray-900">{formatDate(selectedTraining.date)}</p>
                 </div>
-                <div>
-                  <label className="text-sm font-medium text-gray-500">Time</label>
-                  <p className="text-base text-gray-800 mt-1">{selectedTraining.time || 'Not set'}</p>
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Time</label>
+                  </div>
+                  <p className="text-base font-bold text-gray-900">{selectedTraining.time || 'Not set'}</p>
                 </div>
               </div>
-              <div>
-                <label className="text-sm font-medium text-gray-500">Venue</label>
-                <p className="text-base text-gray-800 mt-1">{selectedTraining.venue || 'Not set'}</p>
+
+              <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Venue</label>
+                </div>
+                <p className="text-base font-bold text-gray-900">{selectedTraining.venue || 'Not set'}</p>
               </div>
-            <div>
-                <label className="text-sm font-medium text-gray-500">Description</label>
-                <p className="text-base text-gray-800 mt-1 whitespace-pre-line">{selectedTraining.description || 'No description'}</p>
-            </div>
+
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2 block">Description</label>
+                <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{selectedTraining.description || 'No description provided'}</p>
+              </div>
+
+              {/* Attendees Section */}
               <div>
-                <label className="text-sm font-medium text-gray-500">
-                  Attendees ({selectedTraining.attendees?.length || 0})
-                </label>
-                <div className="mt-2 space-y-2">
+                <div className="flex items-center justify-between mb-4">
+                  <label className="text-sm font-bold text-gray-800">
+                    Attendees ({selectedTraining.attendees?.length || 0})
+                  </label>
+                  {!selectedTraining.is_active && selectedTraining.attendance && (
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="flex items-center gap-1.5 text-green-600 font-semibold">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        {Object.values(selectedTraining.attendance || {}).filter(Boolean).length} Present
+                      </span>
+                      <span className="flex items-center gap-1.5 text-red-600 font-semibold">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        {Object.values(selectedTraining.attendance || {}).filter((v) => v === false).length} Absent
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {selectedTraining.attendees?.map((attendee, idx) => {
                     const name = typeof attendee === "string" ? attendee : attendee.name || "";
                     const attendedFlag = !!selectedTraining.attendance?.[name];
                     return (
-                      <div key={idx} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                      <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl hover:shadow-md transition-shadow">
                         <div
-                          className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(
+                          className={`w-10 h-10 rounded-xl bg-gradient-to-br ${getAvatarColor(
                             name
-                          )} flex items-center justify-center text-white text-xs font-medium`}
+                          )} flex items-center justify-center text-white text-sm font-bold shadow-sm flex-shrink-0`}
                         >
                           {getInitials(name)}
                         </div>
-                        <span className="text-sm text-gray-700 flex-1">{name}</span>
+                        <span className="text-sm font-medium text-gray-800 flex-1 truncate">{name}</span>
                         {!selectedTraining.is_active && (
                           <span
-                            className={`text-xs px-2 py-1 rounded ${
+                            className={`text-xs px-3 py-1 rounded-full font-semibold flex-shrink-0 ${
                               attendedFlag
-                                ? "bg-green-100 text-green-700"
-                                : "bg-red-100 text-red-700"
+                                ? "bg-green-100 text-green-700 border border-green-200"
+                                : "bg-red-100 text-red-700 border border-red-200"
                             }`}
                           >
                             {attendedFlag ? "Present" : "Absent"}
@@ -880,17 +1013,19 @@ function HrTrainings() {
                 </div>
               </div>
             </div>
-            <div className="flex justify-end gap-3 mt-6">
+
+            {/* Footer */}
+            <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex justify-end">
               <button
                 onClick={() => setShowDetails(false)}
-                className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
+                className="px-6 py-2.5 rounded-xl bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-semibold text-sm"
               >
                 Close
               </button>
+            </div>
           </div>
         </div>
-      </div>
-    )}
+      )}
 
       {/* Add Training Modal */}
       {showAdd && (
@@ -912,49 +1047,54 @@ function HrTrainings() {
                 </label>
                 <div className="grid grid-cols-2 gap-4">
                   <label className="text-sm font-medium text-gray-700">
-                    Date:
+                    Date: *
                     <input
                       name="date"
                       value={form.date}
                       onChange={onChange}
                       type="date"
+                      required
+                      min={new Date().toISOString().split('T')[0]}
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
                   </label>
                   <label className="text-sm font-medium text-gray-700">
-                    Time:
+                    Time: *
                     <input
                       name="time"
                       value={form.time}
                       onChange={onChange}
                       type="time"
+                      required
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
                   </label>
                 </div>
                 <label className="text-sm font-medium text-gray-700">
-                  Venue:
+                  Venue: *
                   <input
                     name="venue"
                     value={form.venue}
                     onChange={onChange}
+                    required
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     placeholder="Google Meet (Online)"
                   />
               </label>
                 <label className="text-sm font-medium text-gray-700">
-                  Description:
+                  Description: *
                   <textarea
                     name="description"
                     value={form.description}
                     onChange={onChange}
                     rows="3"
+                    required
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     placeholder="Gmeet link: https://..."
                   />
                 </label>
                 <label className="text-sm font-medium text-gray-700">
-                  Attendees:
+                  Attendees: *
                   <div className="mt-1 relative">
                     <input
                       type="text"
@@ -1059,49 +1199,54 @@ function HrTrainings() {
               </label>
                 <div className="grid grid-cols-2 gap-4">
                   <label className="text-sm font-medium text-gray-700">
-                    Date:
+                    Date: *
                     <input
                       name="date"
                       value={editForm.date}
                       onChange={onEditChange}
                       type="date"
+                      required
+                      min={new Date().toISOString().split('T')[0]}
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
               </label>
                   <label className="text-sm font-medium text-gray-700">
-                    Time:
+                    Time: *
                 <input
                       name="time"
                       value={editForm.time}
                       onChange={onEditChange}
                       type="time"
+                      required
                       className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     />
                   </label>
                 </div>
                 <label className="text-sm font-medium text-gray-700">
-                  Venue:
+                  Venue: *
                   <input
                     name="venue"
                     value={editForm.venue}
                     onChange={onEditChange}
+                    required
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     placeholder="Google Meet (Online)"
                   />
                 </label>
                 <label className="text-sm font-medium text-gray-700">
-                  Description:
+                  Description: *
                   <textarea
                     name="description"
                     value={editForm.description}
                     onChange={onEditChange}
                     rows="3"
+                    required
                     className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
                     placeholder="Gmeet link: https://..."
                   />
                 </label>
                 <label className="text-sm font-medium text-gray-700">
-                  Attendees:
+                  Attendees: *
                   <div className="mt-1 relative">
                     <input
                       type="text"
@@ -1199,31 +1344,62 @@ function HrTrainings() {
                 Check the box next to each attendee who attended the training session.
               </p>
             </div>
+            
+            {/* Select All Option */}
+            <div className="mb-4 flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={(selectedTraining.attendees || []).length > 0 && (selectedTraining.attendees || []).every(att => {
+                    const name = typeof att === "string" ? att : att.name || "";
+                    return attendance[name] === true;
+                  })}
+                  onChange={(e) => {
+                    const allAttendees = selectedTraining.attendees || [];
+                    const newAttendance = {};
+                    allAttendees.forEach(att => {
+                      const name = typeof att === "string" ? att : att.name || "";
+                      newAttendance[name] = e.target.checked;
+                    });
+                    setAttendance(newAttendance);
+                  }}
+                  className="h-5 w-5 text-red-600 focus:ring-red-500 border-gray-300 rounded cursor-pointer"
+                />
+                <span className="text-sm font-semibold text-gray-700">Select All</span>
+              </label>
+              <span className="text-xs text-gray-500">
+                {Object.values(attendance).filter(Boolean).length} of {(selectedTraining.attendees || []).length} selected
+              </span>
+            </div>
+
             <div className="space-y-2 mb-6">
-              {(selectedTraining.attendees || []).map((attendee, idx) => (
-                <label
-                  key={idx}
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 cursor-pointer"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(attendee)} flex items-center justify-center text-white text-sm font-medium`}>
-                      {getInitials(attendee)}
+              {(selectedTraining.attendees || []).map((attendee, idx) => {
+                const name = typeof attendee === "string" ? attendee : attendee.name || "";
+                return (
+                  <label
+                    key={idx}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(name)} flex items-center justify-center text-white text-sm font-medium`}>
+                        {getInitials(name)}
+                      </div>
+                      <span className="text-sm font-medium text-gray-700">{name}</span>
                     </div>
-                    <span className="text-sm font-medium text-gray-700">{attendee}</span>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={attendance[attendee] || false}
-                    onChange={(e) => {
-                      setAttendance(prev => ({
-                        ...prev,
-                        [attendee]: e.target.checked
-                      }));
-                    }}
-                    className="h-5 w-5 text-red-600 focus:ring-red-500 border-gray-300 rounded"
-                  />
-                </label>
-              ))}
+                    <input
+                      type="checkbox"
+                      checked={attendance[name] || false}
+                      onChange={(e) => {
+                        setAttendance(prev => ({
+                          ...prev,
+                          [name]: e.target.checked
+                        }));
+                      }}
+                      className="h-5 w-5 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                    />
+                  </label>
+                );
+              })}
             </div>
             <div className="flex justify-end gap-3">
               <button
