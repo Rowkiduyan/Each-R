@@ -1,6 +1,6 @@
 // src/HrRecruitment.jsx
 import React, { useEffect, useState, useMemo, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 
 /**
@@ -152,6 +152,7 @@ function generateEmployeePassword(firstName, lastName, birthday) {
 
 function HrRecruitment() {
   const navigate = useNavigate();
+  const location = useLocation();
 
   // ---- UI state
   const [activeSubTab, setActiveSubTab] = useState("Applications");
@@ -365,6 +366,23 @@ function HrRecruitment() {
       }
     }
   }, [activeDetailTab, selectedApplicant]);
+
+  // Handle navigation from HrSched - open applicant detail with Assessment tab
+  useEffect(() => {
+    if (location.state?.applicationId && location.state?.openTab) {
+      const appId = location.state.applicationId;
+      const tab = location.state.openTab;
+      
+      // Find the applicant in the loaded data
+      const applicant = applicants.find(a => a.id === appId);
+      if (applicant) {
+        setSelectedApplicant(applicant);
+        setActiveDetailTab(tab);
+        // Clear the location state to prevent reopening on refresh
+        navigate(location.pathname, { replace: true, state: {} });
+      }
+    }
+  }, [location.state, applicants, navigate, location.pathname]);
 
   useEffect(() => {
     window.openHrActionModal = (applicant) => {

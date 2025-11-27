@@ -26,7 +26,6 @@ function HrSched() {
   const fetchInterviews = async () => {
     setLoading(true);
     try {
-<<<<<<< HEAD
       // First get applications with interview dates
       const { data: applicationsData, error: appsError } = await supabase
         .from('applications')
@@ -92,29 +91,6 @@ function HrSched() {
       
       console.log('Transformed interviews:', transformedData);
       setInterviews(transformedData);
-=======
-      const { data, error } = await supabase
-        .from('applications')
-        .select('id, first_name, last_name, position, interview_date, interview_time, status')
-        .not('interview_date', 'is', null)
-        .order('interview_date', { ascending: true });
-      
-      if (error) {
-        console.error('Error fetching interviews:', error);
-        setInterviews([]);
-      } else {
-        // Transform the data to match our component's expected format
-        const transformedData = data.map(app => ({
-          id: app.id,
-          applicant_name: `${app.first_name} ${app.last_name}`,
-          position: app.position,
-          date: app.interview_date,
-          time: app.interview_time || 'Not set',
-          status: app.status || 'scheduled'
-        }));
-        setInterviews(transformedData);
-      }
->>>>>>> 4fca9ca701139099d8449049501b619be3adb1b3
     } catch (error) {
       console.error('Error fetching interviews:', error);
       setInterviews([]);
@@ -278,7 +254,11 @@ function HrSched() {
               
               <div className="space-y-3">
                 {getInterviewsForDate(selectedDate).map(interview => (
-                  <div key={interview.id} className="border rounded-lg p-3">
+                  <div 
+                    key={interview.id} 
+                    className="border rounded-lg p-3 cursor-pointer hover:bg-gray-50 transition-colors"
+                    onClick={() => navigate('/hr/recruitment', { state: { applicationId: interview.id, openTab: 'Assessment' } })}
+                  >
                     <div className="flex items-center justify-between">
                       <div>
                         <h4 className="font-semibold text-gray-800">{interview.applicant_name}</h4>
@@ -297,38 +277,6 @@ function HrSched() {
               </div>
             </div>
           )}
-<<<<<<< HEAD
-=======
-
-          {/* Upcoming Interviews */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <h3 className="text-lg font-bold text-gray-800 mb-4">Upcoming Interviews</h3>
-            <div className="space-y-3 max-h-96 overflow-y-auto">
-              {interviews
-                .filter(interview => new Date(interview.date) >= new Date() && interview.status === 'scheduled')
-                .slice(0, 5)
-                .map(interview => (
-                  <div key={interview.id} className="border rounded-lg p-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="font-semibold text-gray-800">{interview.applicant_name}</h4>
-                        <p className="text-sm text-gray-600">{interview.position}</p>
-                        <p className="text-sm text-gray-600">
-                          {new Date(interview.date).toLocaleDateString()} at {interview.time}
-                        </p>
-                      </div>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(interview.status)}`}>
-                        {interview.status}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              {interviews.filter(interview => new Date(interview.date) >= new Date() && interview.status === 'scheduled').length === 0 && (
-                <p className="text-gray-500 text-center py-4">No upcoming interviews</p>
-              )}
-            </div>
-          </div>
->>>>>>> 4fca9ca701139099d8449049501b619be3adb1b3
         </div>
       </div>
 
