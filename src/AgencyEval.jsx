@@ -18,14 +18,38 @@ function AgencyEval() {
   const [expandedRow, setExpandedRow] = useState(null);
   const itemsPerPage = 8;
 
+  // Helper function to calculate status dynamically by comparing nextEvaluation date vs real today's date
+  // - "uptodate": nextEvaluation is in the future (after today)
+  // - "duetoday": nextEvaluation exactly matches today's date
+  // - "overdue": nextEvaluation is in the past (at least 1 day before today)
+  const calculateStatus = (nextEvaluation) => {
+    if (!nextEvaluation) return 'uptodate';
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Reset time to start of day
+    
+    const dueDate = new Date(nextEvaluation);
+    dueDate.setHours(0, 0, 0, 0); // Reset time to start of day
+    
+    // Check if due date exactly matches today (same day, month, year)
+    if (dueDate.getTime() === today.getTime()) {
+      return 'duetoday';
+    }
+    
+    // Check if due date is in the past (overdue by 1+ days)
+    if (dueDate < today) {
+      return 'overdue';
+    }
+    
+    // Due date is in the future - up to date
+    return 'uptodate';
+  };
+
   // Mock data - Employees with evaluation records
-  // Today's date reference: November 26, 2024
-  // Status logic:
-  // - "uptodate": Has completed evaluation for current period (this year for regular, this month for probationary)
-  // - "duetoday": Today is the due date for evaluation
-  // - "overdue": Due date has passed (1+ days) and no evaluation record exists for that period
+  // nextEvaluation is based on hire date anniversary (+ 1 year after last evaluation year for regular, + 1 month for probationary)
+  // Status is calculated dynamically by comparing nextEvaluation vs real today's date
   
-  const employees = [
+  const employeesRaw = [
     // === UP TO DATE EXAMPLES ===
     { 
       id: 'EMP-001', 
@@ -33,10 +57,9 @@ function AgencyEval() {
       position: 'Driver',
       depot: 'Makati',
       employmentType: 'regular', // yearly evaluation on hire anniversary
-      hireDate: '2022-03-15',
-      lastEvaluation: '2024-03-18', // Completed 2024 eval (due was March 15)
-      nextEvaluation: '2025-03-15', // Next year's due date
-      status: 'uptodate',
+      hireDate: '2022-12-15',
+      lastEvaluation: '2024-12-18', // Completed 2024 eval (due was March 15)
+      nextEvaluation: '2025-12-15', // Next year's due date (future = uptodate)
       evaluations: [
         { id: 1, period: '2024', type: 'Annual Performance Review', date: '2024-03-18', rating: 'Exceeds Expectations', score: '4.5/5', evaluator: 'Maria Santos (HR)', remarks: 'Excellent attendance and performance. Recommended for salary increase.' },
         { id: 2, period: '2023', type: 'Annual Performance Review', date: '2023-03-16', rating: 'Meets Expectations', score: '3.8/5', evaluator: 'Maria Santos (HR)', remarks: 'Good overall performance. Needs improvement in documentation.' },
@@ -48,58 +71,27 @@ function AgencyEval() {
       position: 'Dispatcher',
       depot: 'BGC',
       employmentType: 'regular',
-      hireDate: '2021-06-01',
-      lastEvaluation: '2024-06-05', // Completed 2024 eval
-      nextEvaluation: '2025-06-01',
-      status: 'uptodate',
+      hireDate: '2021-12-01',
+      lastEvaluation: '2024-12-01', // Completed 2024 eval
+      nextEvaluation: '2025-12-01', // Future = uptodate
       evaluations: [
         { id: 1, period: '2024', type: 'Annual Performance Review', date: '2024-06-05', rating: 'Exceeds Expectations', score: '4.7/5', evaluator: 'Roberto Cruz (HR Manager)', remarks: 'Outstanding leadership and coordination skills.' },
         { id: 2, period: '2023', type: 'Annual Performance Review', date: '2023-06-02', rating: 'Exceeds Expectations', score: '4.5/5', evaluator: 'Roberto Cruz (HR Manager)', remarks: 'Consistently exceeds targets.' },
       ]
     },
-    { 
-      id: 'EMP-010', 
-      name: 'Ricardo Fernandez', 
-      position: 'Driver',
-      depot: 'Quezon City',
-      employmentType: 'probationary', // monthly evaluation
-      hireDate: '2024-10-01',
-      lastEvaluation: '2024-11-03', // November eval done (due was Nov 1)
-      nextEvaluation: '2024-12-01', // Next month's due
-      status: 'uptodate',
-      evaluations: [
-        { id: 1, period: 'Nov 2024', type: 'Monthly Probation Review', date: '2024-11-03', rating: 'On Track', score: '3.5/5', evaluator: 'Ana Reyes (Supervisor)', remarks: 'Showing improvement. Needs to work on punctuality.' },
-        { id: 2, period: 'Oct 2024', type: 'Monthly Probation Review', date: '2024-10-05', rating: 'Needs Improvement', score: '3.0/5', evaluator: 'Ana Reyes (Supervisor)', remarks: 'Initial month. Still adjusting to procedures.' },
-      ]
-    },
-    { 
-      id: 'EMP-003', 
-      name: 'Pedro Garcia', 
-      position: 'Mechanic',
-      depot: 'Quezon City',
-      employmentType: 'regular',
-      hireDate: '2020-01-10',
-      lastEvaluation: '2024-01-15', // 2024 eval done
-      nextEvaluation: '2025-01-10',
-      status: 'uptodate',
-      evaluations: [
-        { id: 1, period: '2024', type: 'Annual Performance Review', date: '2024-01-15', rating: 'Exceeds Expectations', score: '4.8/5', evaluator: 'Roberto Cruz (HR Manager)', remarks: 'Expert technical skills. Mentors junior mechanics effectively.' },
-        { id: 2, period: '2023', type: 'Annual Performance Review', date: '2023-01-12', rating: 'Exceeds Expectations', score: '4.6/5', evaluator: 'Roberto Cruz (HR Manager)', remarks: 'Consistent high performer.' },
-        { id: 3, period: '2022', type: 'Annual Performance Review', date: '2022-01-10', rating: 'Meets Expectations', score: '4.0/5', evaluator: 'Maria Santos (HR)', remarks: 'Solid performance throughout the year.' },
-      ]
-    },
     
-    // === DUE TODAY EXAMPLES ===
+  
+    
+    // === DUE TODAY EXAMPLES (nextEvaluation = Nov 27, 2024 - today's date) ===
     { 
       id: 'EMP-005', 
       name: 'Carlos Mendoza', 
       position: 'Senior Driver',
       depot: 'Makati',
       employmentType: 'regular',
-      hireDate: '2023-11-26', // Hired exactly 1 year ago today
+      hireDate: '2023-11-27', // Hired Nov 27, 2023
       lastEvaluation: null, // First year - no previous eval
-      nextEvaluation: '2024-11-26', // Due TODAY (Nov 26, 2024)
-      status: 'duetoday',
+      nextEvaluation: '2025-11-27', // Due on hire anniversary (1 year later)
       evaluations: []
     },
     { 
@@ -108,14 +100,13 @@ function AgencyEval() {
       position: 'Driver',
       depot: 'BGC',
       employmentType: 'probationary',
-      hireDate: '2024-10-26', // Hired 1 month ago today
+      hireDate: '2024-11-27', // Hired Oct 27, 2024
       lastEvaluation: null, // First month - due today
-      nextEvaluation: '2024-11-26', // Due TODAY
-      status: 'duetoday',
+      nextEvaluation: '2025-11-27', // Due 1 month after hire
       evaluations: []
     },
     
-    // === OVERDUE EXAMPLES ===
+    // === OVERDUE EXAMPLES (past dates = overdue) ===
     { 
       id: 'EMP-011', 
       name: 'Lucia Villanueva', 
@@ -124,41 +115,20 @@ function AgencyEval() {
       employmentType: 'probationary',
       hireDate: '2024-09-15',
       lastEvaluation: '2024-10-16', // October eval done
-      nextEvaluation: '2024-11-15', // November eval was due Nov 15 - 11 days overdue!
-      status: 'overdue',
+      nextEvaluation: '2024-11-15', // November eval was due Nov 15 - overdue!
       evaluations: [
         { id: 1, period: 'Oct 2024', type: 'Monthly Probation Review', date: '2024-10-16', rating: 'Meets Expectations', score: '3.8/5', evaluator: 'Pedro Garcia (Admin Head)', remarks: 'Good communication skills. Quick learner.' },
         { id: 2, period: 'Sep 2024', type: 'Monthly Probation Review', date: '2024-09-18', rating: 'On Track', score: '3.5/5', evaluator: 'Pedro Garcia (Admin Head)', remarks: 'Good first month. Adapting well.' },
       ]
     },
-    { 
-      id: 'EMP-006', 
-      name: 'Elena Cruz', 
-      position: 'Dispatcher',
-      depot: 'Quezon City',
-      employmentType: 'regular',
-      hireDate: '2021-11-20',
-      lastEvaluation: '2023-11-22', // Last eval was 2023 - missed 2024!
-      nextEvaluation: '2024-11-20', // Was due Nov 20, 2024 - 6 days overdue!
-      status: 'overdue',
-      evaluations: [
-        { id: 1, period: '2023', type: 'Annual Performance Review', date: '2023-11-22', rating: 'Meets Expectations', score: '3.9/5', evaluator: 'Maria Santos (HR)', remarks: 'Good performance overall. Room for improvement in customer handling.' },
-        { id: 2, period: '2022', type: 'Annual Performance Review', date: '2022-11-21', rating: 'Meets Expectations', score: '3.7/5', evaluator: 'Maria Santos (HR)', remarks: 'Consistent performer.' },
-      ]
-    },
-    { 
-      id: 'EMP-013', 
-      name: 'Antonio Reyes', 
-      position: 'Helper',
-      depot: 'Makati',
-      employmentType: 'probationary',
-      hireDate: '2024-10-20',
-      lastEvaluation: null, // Never had an evaluation!
-      nextEvaluation: '2024-11-20', // First eval was due Nov 20 - 6 days overdue!
-      status: 'overdue',
-      evaluations: []
-    },
+
   ];
+
+  // Apply dynamic status calculation to employees based on real today's date
+  const employees = employeesRaw.map(emp => ({
+    ...emp,
+    status: calculateStatus(emp.nextEvaluation)
+  }));
 
   // Calculate stats
   const stats = {
@@ -315,7 +285,7 @@ function AgencyEval() {
       `}</style>
       
       {/* Header */}
-      <div className="bg-white shadow-sm">
+      <div className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -552,7 +522,7 @@ function AgencyEval() {
           {/* Table */}
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-100">
+              <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
@@ -772,6 +742,31 @@ function AgencyEval() {
           </div>
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 py-4 mt-auto">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
+            <div className="flex items-center gap-1 hover:text-gray-700 cursor-pointer">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Philippines</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+              </svg>
+            </div>
+            
+            <div className="flex items-center gap-6">
+              <a href="#" className="hover:text-gray-700 hover:underline">Terms & conditions</a>
+              <a href="#" className="hover:text-gray-700 hover:underline">Security</a>
+              <a href="#" className="hover:text-gray-700 hover:underline">Privacy</a>
+              <span className="text-gray-400">Copyright © 2025, Roadwise</span>
+            </div>
+          </div>
+        </div>
+      </footer>
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (

@@ -340,7 +340,7 @@ function AgencyEndorsements() {
       `}</style>
       
       {/* Header */}
-      <div className="bg-white shadow-sm">
+      <div className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -610,7 +610,7 @@ function AgencyEndorsements() {
                         <div className="p-6 text-gray-600">No endorsements match your search.</div>
                       ) : (
                       <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-100 sticky top-0">
+                        <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                           <tr>
                             <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
                             {!selectedEmployee && (
@@ -645,11 +645,25 @@ function AgencyEndorsements() {
                                 >
                                   <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
-                                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(emp.name)} flex items-center justify-center text-white text-sm font-medium shadow-sm`}>
-                                        {getInitials(emp.name)}
+                                      <div className="relative">
+                                        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(emp.name)} flex items-center justify-center text-white text-sm font-medium shadow-sm ${emp.status === 'pending' ? 'ring-2 ring-yellow-400 ring-offset-1' : ''}`}>
+                                          {getInitials(emp.name)}
+                                        </div>
+                                        {emp.status === 'pending' && (
+                                          <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-yellow-400 rounded-full flex items-center justify-center border-2 border-white">
+                                            <svg className="w-2.5 h-2.5 text-yellow-800" fill="currentColor" viewBox="0 0 20 20">
+                                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                                            </svg>
+                                          </div>
+                                        )}
                                       </div>
                                       <div>
-                                        <p className="text-sm font-medium text-gray-800">{emp.name}</p>
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-sm font-medium text-gray-800">{emp.name}</p>
+                                          {emp.status === 'pending' && (
+                                            <span className="text-xs px-1.5 py-0.5 bg-yellow-100 text-yellow-700 rounded font-medium">ENDORSED</span>
+                                          )}
+                                        </div>
                                         <p className="text-xs text-gray-500">#{emp.id}</p>
                                       </div>
                                     </div>
@@ -730,8 +744,10 @@ function AgencyEndorsements() {
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <h4 className="font-semibold text-gray-800">{selectedEmployee.name}</h4>
-                                {isDeployed && (
+                                {isDeployed ? (
                                   <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">DEPLOYED</span>
+                                ) : (
+                                  <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded">ENDORSED</span>
                                 )}
                               </div>
                               <p className="text-xs text-gray-500">#{selectedEmployee.id}</p>
@@ -1512,6 +1528,31 @@ function AgencyEndorsements() {
           </div>
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 py-4 flex-shrink-0">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
+            <div className="flex items-center gap-1 hover:text-gray-700 cursor-pointer">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Philippines</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+              </svg>
+            </div>
+            
+            <div className="flex items-center gap-6">
+              <a href="#" className="hover:text-gray-700 hover:underline">Terms & conditions</a>
+              <a href="#" className="hover:text-gray-700 hover:underline">Security</a>
+              <a href="#" className="hover:text-gray-700 hover:underline">Privacy</a>
+              <span className="text-gray-400">Copyright © 2025, Roadwise</span>
+            </div>
+          </div>
+        </div>
+      </footer>
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (

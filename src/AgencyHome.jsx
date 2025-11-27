@@ -228,7 +228,7 @@ function AgencyHome() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <style>{`
         .no-scrollbar {
           -ms-overflow-style: none;
@@ -262,7 +262,7 @@ function AgencyHome() {
       `}</style>
       
       {/* Header */}
-      <div className="bg-white shadow-sm">
+      <div className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -345,8 +345,8 @@ function AgencyHome() {
 
       {/* Search Bar with Photo Banner - Only show on Job Postings tab */}
       {activeTab === "Job Postings" && (
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="relative overflow-hidden">
+        <div className="w-full">
+          <div className="relative">
             <img
               src={Roadwise}
               alt="Delivery trucks on the road"
@@ -420,7 +420,7 @@ function AgencyHome() {
       )}
 
       {/* Content */}
-      <div className="flex flex-col items-center min-h-screen">
+      <div className="flex flex-col items-center flex-1">
         <div className="max-w-7xl mx-auto px-6 py-8 w-full">
           {/* Job Postings */}
           <section className={`p-4 ${activeTab === "Job Postings" ? "" : "hidden"}`}>
@@ -659,6 +659,31 @@ function AgencyHome() {
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <footer className="bg-white border-t border-gray-200 py-4 mt-auto">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
+            <div className="flex items-center gap-1 hover:text-gray-700 cursor-pointer">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span>Philippines</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+              </svg>
+            </div>
+            
+            <div className="flex items-center gap-6">
+              <a href="#" className="hover:text-gray-700 hover:underline">Terms & conditions</a>
+              <a href="#" className="hover:text-gray-700 hover:underline">Security</a>
+              <a href="#" className="hover:text-gray-700 hover:underline">Privacy</a>
+              <span className="text-gray-400">Copyright © 2025, Roadwise</span>
+            </div>
+          </div>
+        </div>
+      </footer>
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (
