@@ -479,22 +479,10 @@ function HrRecruitment() {
         };
       });
 
-      // dedupe by user_id + job_id; keep newest (by created_at)
-      const uniqueByUserJob = {};
-      mapped.forEach((r) => {
-        const key = `${r.user_id || "nouser"}:${r.job_id || "nojob"}`;
-        if (!uniqueByUserJob[key]) {
-          uniqueByUserJob[key] = r;
-        } else {
-          const existingDate = new Date(uniqueByUserJob[key].raw.created_at).getTime();
-          const thisDate = new Date(r.raw.created_at).getTime();
-          if (thisDate > existingDate) uniqueByUserJob[key] = r;
-        }
-      });
-
-      const deduped = Object.values(uniqueByUserJob);
-      
-      setApplicants(deduped);
+      // Previously we tried to de‑duplicate by user_id + job_id, but this could
+      // incorrectly hide distinct applicants that happen to share those fields.
+      // Use the raw mapped list instead so every application row is visible.
+      setApplicants(mapped);
     } catch (err) {
       console.error("loadApplications unexpected error:", err);
       setApplicants([]);
@@ -642,8 +630,10 @@ function HrRecruitment() {
       setShowErrorAlert(true);
       return;
     }
-    // Show confirm dialog
-    setConfirmMessage(`Mark ${applicantName} as Employee? This will create an employee record, create an employee account, and send credentials via email.`);
+    // Show confirm dialog (generic wording that works for agency and direct hires)
+    setConfirmMessage(
+      `Mark ${applicantName} as Employee? This will create or update their employee record and mark the application as hired.`
+    );
     setConfirmCallback(async () => {
       setShowConfirmDialog(false);
       try {
@@ -678,17 +668,36 @@ function HrRecruitment() {
         const birthday = source.birthday || source.birth_date || source.dateOfBirth || null;
 
         if (!firstName || !lastName) {
-          setErrorMessage("Cannot generate employee account: missing name information.");
+          setErrorMessage("Cannot mark as employee: missing name information.");
           setShowErrorAlert(true);
           return;
         }
 
-        // Generate employee email and password
-        const employeeEmail = generateEmployeeEmail(firstName, lastName);
-        const employeePassword = generateEmployeePassword(firstName, lastName, birthday);
+        // Detect if this applicant is agency/endorsed
+        const meta = payloadObj.meta || {};
+        const isAgencyApplicant =
+          applicationData.endorsed === true ||
+          meta.source === "agency" ||
+          meta.source === "Agency" ||
+          !!meta.endorsed_by_profile_id ||
+          !!meta.endorsed_by_auth_user_id ||
+          source.agency === true;
+
+        // Decide which email to store on the employee record:
+        // - For agency/endorsed: use their original applicant email (no corporate account)
+        // - For direct hires: generate a corporate employee email
+        let employeeEmail;
+        let employeePassword = null;
+
+        if (isAgencyApplicant) {
+          employeeEmail = applicantEmail || generateEmployeeEmail(firstName, lastName);
+        } else {
+          employeeEmail = generateEmployeeEmail(firstName, lastName);
+          employeePassword = generateEmployeePassword(firstName, lastName, birthday);
+        }
 
         if (!employeeEmail) {
-          setErrorMessage("Failed to generate employee email.");
+          setErrorMessage("Failed to determine employee email.");
           setShowErrorAlert(true);
           return;
         }
@@ -711,9 +720,23 @@ function HrRecruitment() {
         const rpcData = rpcResult.data;
         if (rpcData && typeof rpcData === "object" && (rpcData.ok === false || rpcData.error)) {
           const msg = rpcData.message || JSON.stringify(rpcData);
-          // Ignore duplicate email errors - the employee is already in the database
-          if (msg.includes('duplicate key') && msg.includes('email')) {
-            console.log("Employee already exists (duplicate email), continuing...");
+
+          // Non‑fatal cases where we still want to continue and fall back to JS logic
+          const isDuplicateEmail =
+            msg.includes("duplicate key") && msg.includes("email");
+
+          // Old RPCs may reference the dropped recruitment_endorsements table.
+          // If that's the only problem, ignore it and let the JS upsert to employees handle it.
+          const isMissingRecruitmentEndorsements =
+            msg.toLowerCase().includes("recruitment_endorsements") ||
+            msg.includes("42P01");
+
+          if (isDuplicateEmail || isMissingRecruitmentEndorsements) {
+            console.warn(
+              "RPC reported non‑fatal issue, continuing with JS flow:",
+              rpcResult.candidate,
+              msg
+            );
             // Continue with success flow
           } else {
             console.error("RPC returned failure payload:", rpcResult.candidate, rpcData);
@@ -723,31 +746,34 @@ function HrRecruitment() {
           }
         }
 
-        // Create/update Supabase Auth account for the employee using Edge Function (handles existing users)
+        // For direct hires, create/update Supabase Auth account so they can log in.
+        // For agency/endorsed hires, skip auth account creation (they won't log in).
         let authUserId = null;
-        try {
-          const authResult = await createEmployeeAuthAccount({
-            employeeEmail: employeeEmail,
-            employeePassword: employeePassword,
-            firstName: firstName,
-            lastName: lastName,
-          });
+        if (!isAgencyApplicant && employeePassword) {
+          try {
+            const authResult = await createEmployeeAuthAccount({
+              employeeEmail: employeeEmail,
+              employeePassword: employeePassword,
+              firstName: firstName,
+              lastName: lastName,
+            });
 
-          if (!authResult.ok) {
-            console.error("Failed to create/update auth account:", authResult.error);
+            if (!authResult.ok) {
+              console.error("Failed to create/update auth account:", authResult.error);
+              // Continue anyway - the employee record was created, we'll just skip the auth account
+              console.warn("Proceeding without auth account creation");
+            } else {
+              authUserId = authResult.data?.userId;
+              console.log("Auth account created/updated successfully:", authResult.data?.message);
+            }
+          } catch (authErr) {
+            console.error("Error creating auth account:", authErr);
             // Continue anyway - the employee record was created, we'll just skip the auth account
             console.warn("Proceeding without auth account creation");
-          } else {
-            authUserId = authResult.data?.userId;
-            console.log("Auth account created/updated successfully:", authResult.data?.message);
           }
-        } catch (authErr) {
-          console.error("Error creating auth account:", authErr);
-          // Continue anyway - the employee record was created, we'll just skip the auth account
-          console.warn("Proceeding without auth account creation");
         }
 
-        // Create or update profile with Employee role
+        // Create or update profile with Employee role (only for direct hires with auth account)
         if (authUserId) {
           try {
             // Check if profile exists
@@ -790,6 +816,9 @@ function HrRecruitment() {
 
         // Ensure there's a matching row in employees table (for HR/Agency modules)
         try {
+          // Set source based on whether applicant is from agency or direct
+          const employeeSource = isAgencyApplicant ? "recruitment" : "internal";
+          
           const { error: empUpsertErr } = await supabase
             .from("employees")
             .upsert(
@@ -801,8 +830,16 @@ function HrRecruitment() {
                 position: position || null,
                 role: "Employee",
                 hired_at: new Date().toISOString(),
-                source: "recruitment",
+                source: employeeSource,
+                // For agency applicants, preserve agency metadata
+                ...(isAgencyApplicant && {
+                  is_agency: true,
+                  agency_profile_id: meta.endorsed_by_profile_id || null,
+                  endorsed_by_agency_id: meta.endorsed_by_profile_id || null,
+                  endorsed_at: meta.endorsed_at || new Date().toISOString(),
+                }),
               },
+              // De‑duplicate by email so we only keep one employee row per email
               { onConflict: "email" }
             );
 
@@ -814,23 +851,26 @@ function HrRecruitment() {
         }
 
         // Send email with credentials
-        try {
-          const emailResult = await sendEmployeeAccountEmail({
-            toEmail: applicantEmail, // Send to the email they used for application
-            employeeEmail: employeeEmail,
-            employeePassword: employeePassword,
-            firstName: firstName,
-            lastName: lastName,
-            fullName: `${firstName}${middleName ? ` ${middleName}` : ''} ${lastName}`.trim(),
-          });
+        // Send email with credentials only for direct hires who got an account
+        if (!isAgencyApplicant && employeePassword) {
+          try {
+            const emailResult = await sendEmployeeAccountEmail({
+              toEmail: applicantEmail, // Send to the email they used for application
+              employeeEmail: employeeEmail,
+              employeePassword: employeePassword,
+              firstName: firstName,
+              lastName: lastName,
+              fullName: `${firstName}${middleName ? ` ${middleName}` : ''} ${lastName}`.trim(),
+            });
 
-          if (!emailResult.ok) {
-            console.warn("Failed to send email, but employee account was created:", emailResult.error);
+            if (!emailResult.ok) {
+              console.warn("Failed to send email, but employee account was created:", emailResult.error);
+              // Don't fail the whole process if email fails
+            }
+          } catch (emailErr) {
+            console.error("Error sending email:", emailErr);
             // Don't fail the whole process if email fails
           }
-        } catch (emailErr) {
-          console.error("Error sending email:", emailErr);
-          // Don't fail the whole process if email fails
         }
 
         // Success path - still update applications.status = 'hired' to keep canonical state
@@ -850,7 +890,11 @@ function HrRecruitment() {
         await loadApplications();
 
         // Show success message
-        setSuccessMessage(`${applicantName} marked as employee. Account credentials sent to ${applicantEmail}`);
+        if (isAgencyApplicant) {
+          setSuccessMessage(`${applicantName} marked as employee (agency/endorsed).`);
+        } else {
+          setSuccessMessage(`${applicantName} marked as employee. Account credentials sent to ${applicantEmail}`);
+        }
         setShowSuccessAlert(true);
         
         // Clear selected applicant if it was the one we just hired

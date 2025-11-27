@@ -126,10 +126,10 @@ function AgencyRequirements() {
 
             // Map requirements to expected structure
             const requirements = {
-              sss: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
-              tin: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
-        pagibig: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
-              philhealth: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
+              sss: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null },
+              tin: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null },
+              pagibig: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null },
+              philhealth: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null },
             };
 
             if (requirementsData?.id_numbers) {
@@ -140,6 +140,7 @@ function AgencyRequirements() {
                 requirements.sss = {
                   idNumber: idNums.sss.value || '',
                   hasFile: false,
+                  filePath: null,
                   status: idNums.sss.status === 'Validated' ? 'approved' : 
                           idNums.sss.status === 'Re-submit' ? 'resubmit' :
                           idNums.sss.status === 'Submitted' ? 'pending' : 'missing',
@@ -153,6 +154,7 @@ function AgencyRequirements() {
                 requirements.tin = {
                   idNumber: idNums.tin.value || '',
                   hasFile: false,
+                  filePath: null,
                   status: idNums.tin.status === 'Validated' ? 'approved' : 
                           idNums.tin.status === 'Re-submit' ? 'resubmit' :
                           idNums.tin.status === 'Submitted' ? 'pending' : 'missing',
@@ -166,6 +168,7 @@ function AgencyRequirements() {
                 requirements.pagibig = {
                   idNumber: idNums.pagibig.value || '',
                   hasFile: false,
+                  filePath: null,
                   status: idNums.pagibig.status === 'Validated' ? 'approved' : 
                           idNums.pagibig.status === 'Re-submit' ? 'resubmit' :
                           idNums.pagibig.status === 'Submitted' ? 'pending' : 'missing',
@@ -179,6 +182,7 @@ function AgencyRequirements() {
                 requirements.philhealth = {
                   idNumber: idNums.philhealth.value || '',
                   hasFile: false,
+                  filePath: null,
                   status: idNums.philhealth.status === 'Validated' ? 'approved' : 
                           idNums.philhealth.status === 'Re-submit' ? 'resubmit' :
                           idNums.philhealth.status === 'Submitted' ? 'pending' : 'missing',
@@ -197,21 +201,25 @@ function AgencyRequirements() {
                 // Exact key matches
                 if (docKey === 'sss') {
                   requirements.sss.hasFile = !!doc.file_path;
+                  requirements.sss.filePath = doc.file_path || null;
                   if (!requirements.sss.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
                     requirements.sss.submittedDate = doc.uploaded_at || doc.submitted_at;
                   }
                 } else if (docKey === 'tin') {
                   requirements.tin.hasFile = !!doc.file_path;
+                  requirements.tin.filePath = doc.file_path || null;
                   if (!requirements.tin.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
                     requirements.tin.submittedDate = doc.uploaded_at || doc.submitted_at;
                   }
                 } else if (docKey === 'pagibig' || docKey === 'pag-ibig') {
                   requirements.pagibig.hasFile = !!doc.file_path;
+                  requirements.pagibig.filePath = doc.file_path || null;
                   if (!requirements.pagibig.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
                     requirements.pagibig.submittedDate = doc.uploaded_at || doc.submitted_at;
                   }
                 } else if (docKey === 'philhealth') {
                   requirements.philhealth.hasFile = !!doc.file_path;
+                  requirements.philhealth.filePath = doc.file_path || null;
                   if (!requirements.philhealth.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
                     requirements.philhealth.submittedDate = doc.uploaded_at || doc.submitted_at;
                   }
@@ -266,10 +274,10 @@ function AgencyRequirements() {
 
             // Map requirements to expected structure
             const requirements = {
-        sss: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
-        tin: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
-        pagibig: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
-        philhealth: { idNumber: '', hasFile: false, status: 'missing', submittedDate: null },
+              sss: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null },
+              tin: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null },
+              pagibig: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null },
+              philhealth: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null },
             };
 
             if (requirementsData?.id_numbers) {
@@ -280,6 +288,7 @@ function AgencyRequirements() {
                 requirements.sss = {
                   idNumber: idNums.sss.value || '',
                   hasFile: false,
+                  filePath: null,
                   status: idNums.sss.status === 'Validated' ? 'approved' : 
                           idNums.sss.status === 'Re-submit' ? 'resubmit' :
                           idNums.sss.status === 'Submitted' ? 'pending' : 'missing',
@@ -293,6 +302,7 @@ function AgencyRequirements() {
                 requirements.tin = {
                   idNumber: idNums.tin.value || '',
                   hasFile: false,
+                  filePath: null,
                   status: idNums.tin.status === 'Validated' ? 'approved' : 
                           idNums.tin.status === 'Re-submit' ? 'resubmit' :
                           idNums.tin.status === 'Submitted' ? 'pending' : 'missing',
@@ -306,6 +316,7 @@ function AgencyRequirements() {
                 requirements.pagibig = {
                   idNumber: idNums.pagibig.value || '',
                   hasFile: false,
+                  filePath: null,
                   status: idNums.pagibig.status === 'Validated' ? 'approved' : 
                           idNums.pagibig.status === 'Re-submit' ? 'resubmit' :
                           idNums.pagibig.status === 'Submitted' ? 'pending' : 'missing',
@@ -319,6 +330,7 @@ function AgencyRequirements() {
                 requirements.philhealth = {
                   idNumber: idNums.philhealth.value || '',
                   hasFile: false,
+                  filePath: null,
                   status: idNums.philhealth.status === 'Validated' ? 'approved' : 
                           idNums.philhealth.status === 'Re-submit' ? 'resubmit' :
                           idNums.philhealth.status === 'Submitted' ? 'pending' : 'missing',
@@ -337,21 +349,25 @@ function AgencyRequirements() {
                 // Exact key matches
                 if (docKey === 'sss') {
                   requirements.sss.hasFile = !!doc.file_path;
+                  requirements.sss.filePath = doc.file_path || null;
                   if (!requirements.sss.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
                     requirements.sss.submittedDate = doc.uploaded_at || doc.submitted_at;
                   }
                 } else if (docKey === 'tin') {
                   requirements.tin.hasFile = !!doc.file_path;
+                  requirements.tin.filePath = doc.file_path || null;
                   if (!requirements.tin.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
                     requirements.tin.submittedDate = doc.uploaded_at || doc.submitted_at;
                   }
                 } else if (docKey === 'pagibig' || docKey === 'pag-ibig') {
                   requirements.pagibig.hasFile = !!doc.file_path;
+                  requirements.pagibig.filePath = doc.file_path || null;
                   if (!requirements.pagibig.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
                     requirements.pagibig.submittedDate = doc.uploaded_at || doc.submitted_at;
                   }
                 } else if (docKey === 'philhealth') {
                   requirements.philhealth.hasFile = !!doc.file_path;
+                  requirements.philhealth.filePath = doc.file_path || null;
                   if (!requirements.philhealth.submittedDate && (doc.uploaded_at || doc.submitted_at)) {
                     requirements.philhealth.submittedDate = doc.uploaded_at || doc.submitted_at;
                   }
@@ -498,6 +514,13 @@ function AgencyRequirements() {
     ];
     const index = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
     return colors[index];
+  };
+
+  // Get public URL for a stored file
+  const getFileUrl = (filePath) => {
+    if (!filePath) return null;
+    const { data } = supabase.storage.from('application-files').getPublicUrl(filePath);
+    return data?.publicUrl || null;
   };
 
   const formatDate = (dateStr) => {
@@ -1219,6 +1242,25 @@ function AgencyRequirements() {
                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                                 </svg>
                                                 <p className="text-xs text-gray-500">Submitted {formatDate(data.submittedDate)}</p>
+                                              </div>
+                                            )}
+                                            {data.hasFile && (
+                                              <div className="flex items-center gap-1.5 mt-1">
+                                                <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                </svg>
+                                                {getFileUrl(data.filePath) ? (
+                                                  <a
+                                                    href={getFileUrl(data.filePath)}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                                                  >
+                                                    View File
+                                                  </a>
+                                                ) : (
+                                                  <span className="text-xs text-gray-500">File uploaded</span>
+                                                )}
                                               </div>
                                             )}
                                             {data.remarks && (

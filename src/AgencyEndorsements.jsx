@@ -165,16 +165,32 @@ function AgencyEndorsements() {
 
           // Check if employee exists in employees table to get employee ID
           let endorsedEmployeeId = null;
+          let hasAgencyEmployee = false;
+
           if (email && hiredEmployees.length > 0) {
             const hiredEmp = hiredEmployees.find(h => h.email === email);
+
             if (hiredEmp) {
               endorsedEmployeeId = hiredEmp.id;
+              const isAgencyEmployee =
+                hiredEmp.is_agency ||
+                !!hiredEmp.agency_profile_id ||
+                !!hiredEmp.endorsed_by_agency_id ||
+                hiredEmp.source === "recruitment" ||
+                hiredEmp.source === "agency";
+              hasAgencyEmployee = isAgencyEmployee;
+
               // Only update status to deployed if application status is also hired
-              // This ensures newly endorsed employees stay as "pending" until marked as hired
-              if (appStatus === "hired") {
+              if (isAgencyEmployee && appStatus === "hired") {
                 status = "deployed";
               }
             }
+          }
+
+          // If this application has already been converted to an agency employee,
+          // skip listing the application row and let the employee row represent it.
+          if (hasAgencyEmployee && appStatus === "hired") {
+            return null;
           }
 
           return {
@@ -203,7 +219,7 @@ function AgencyEndorsements() {
             assessment_results_file: r.assessment_results_file || null,
             raw: r,
           };
-        });
+        }).filter(Boolean);
 
         setEndorsedEmployees(normalized);
       }
@@ -223,7 +239,11 @@ function AgencyEndorsements() {
     try {
       const { data, error } = await supabase
         .from("employees")
-        .select("id, email, fname, lname, mname, contact_number, position, depot, hired_at, agency_profile_id, source")
+        .select("id, email, fname, lname, mname, contact_number, position, depot, hired_at, agency_profile_id, endorsed_by_agency_id, is_agency, source")
+        // Only include employees that are agency-sourced / endorsed
+        // Explicitly exclude source: "internal" (direct applicants)
+        .or("is_agency.eq.true,agency_profile_id.not.is.null,endorsed_by_agency_id.not.is.null,source.eq.recruitment,source.eq.agency")
+        .neq("source", "internal")
         .order("hired_at", { ascending: false });
 
       if (error) {
@@ -231,21 +251,26 @@ function AgencyEndorsements() {
         setHiredError(error.message || String(error));
         setHiredEmployees([]);
       } else {
-        const normalized = (data || []).map((r) => {
-          const name = [r.fname, r.mname, r.lname].filter(Boolean).join(" ").trim() || r.email || "Unnamed";
-          return {
-            id: r.id,
-            name,
-            email: r.email || null,
-            contact: r.contact_number || null,
-            position: r.position || "Employee",
-            depot: r.depot || "—",
-            hired_at: r.hired_at || null,
-            agency_profile_id: r.agency_profile_id || null,
-            source: r.source || null,
-            raw: r,
-          };
-        });
+        const normalized = (data || [])
+          // Double-check: explicitly filter out any employees with source: "internal"
+          .filter((r) => r.source !== "internal")
+          .map((r) => {
+            const name = [r.fname, r.mname, r.lname].filter(Boolean).join(" ").trim() || r.email || "Unnamed";
+            return {
+              id: r.id,
+              name,
+              email: r.email || null,
+              contact: r.contact_number || null,
+              position: r.position || "Employee",
+              depot: r.depot || "—",
+              hired_at: r.hired_at || null,
+              agency_profile_id: r.agency_profile_id || null,
+              endorsed_by_agency_id: r.endorsed_by_agency_id || null,
+              is_agency: !!r.is_agency,
+              source: r.source || null,
+              raw: r,
+            };
+          });
 
         setHiredEmployees(normalized);
       }
@@ -258,28 +283,102 @@ function AgencyEndorsements() {
     }
   };
 
-  // Update endorsed employees when hired employees change
-  // Only update status to "deployed" if application status is "hired"
-  // NOTE: Depend only on hiredEmployees to avoid infinite update loops
+  // Sync endorsed list with agency-sourced employees
+  // - If an endorsed application has a matching agency employee, mark it as deployed and link employee row
+  // - If there is an agency employee without an application row (but still endorsed/from agency), add it to the list as deployed
+  // NOTE: Depend only on hiredEmployees to avoid infinite loops
   useEffect(() => {
     if (hiredEmployees.length === 0) return;
 
     setEndorsedEmployees(prev => {
-      if (!prev || prev.length === 0) return prev;
+      const existing = prev || [];
 
-      return prev.map((emp) => {
+      // Map emails to existing endorsement entries for quick lookup
+      const byEmail = new Map(
+        existing
+          .filter(e => e.email)
+          .map(e => [e.email, e])
+      );
+
+      // First, update existing endorsements that now have an employee row
+      const updatedList = existing.map((emp) => {
         if (!emp.email) return emp;
         const hiredEmp = hiredEmployees.find(h => h.email === emp.email);
         if (!hiredEmp) return emp;
 
-        // Check application status - only set to deployed if status is "hired"
+        // Explicitly exclude internal/direct applicants
+        if (hiredEmp.source === "internal") return emp;
+
+        const isAgencyEmployee =
+          hiredEmp.is_agency ||
+          !!hiredEmp.agency_profile_id ||
+          !!hiredEmp.endorsed_by_agency_id ||
+          hiredEmp.source === "recruitment" ||
+          hiredEmp.source === "agency";
+
+        if (!isAgencyEmployee) return emp;
+
+        // Only set to deployed if the underlying application status is "hired"
         const appStatus = (emp.raw?.status || "").toLowerCase();
+        const isDeployedFromApp = appStatus === "hired";
+
         return {
           ...emp,
-          status: appStatus === "hired" ? "deployed" : emp.status, // Keep current status if not hired
+          status: isDeployedFromApp ? "deployed" : emp.status,
           endorsed_employee_id: hiredEmp.id,
+          // Prefer employee position/depot if application data is missing
+          position: emp.position || hiredEmp.position || "Employee",
+          depot: emp.depot || hiredEmp.depot || "—",
         };
       });
+
+      // Then, add any agency employees that don't yet appear in the endorsements list
+      hiredEmployees.forEach((h) => {
+        // Explicitly exclude internal/direct applicants
+        if (h.source === "internal") return;
+
+        const isAgencyEmployee =
+          h.is_agency ||
+          !!h.agency_profile_id ||
+          !!h.endorsed_by_agency_id ||
+          h.source === "recruitment" ||
+          h.source === "agency";
+
+        if (!isAgencyEmployee) return;
+        if (!h.email) return;
+        if (byEmail.has(h.email)) return;
+
+        updatedList.push({
+          id: `emp-${h.id}`,
+          name: h.name,
+          first: null,
+          middle: null,
+          last: null,
+          email: h.email,
+          contact: h.contact,
+          position: h.position || "Employee",
+          depot: h.depot || "—",
+          status: "deployed",
+          agency_profile_id: h.agency_profile_id || h.endorsed_by_agency_id || null,
+          payload: null,
+          endorsed_employee_id: h.id,
+          job_id: null,
+          created_at: h.hired_at || null,
+          // No interview data on pure employee rows
+          interview_date: null,
+          interview_time: null,
+          interview_location: null,
+          interviewer: null,
+          interview_confirmed: null,
+          interview_details_file: null,
+          assessment_results_file: null,
+          raw: { source: h.source || null, from: "employees" },
+        });
+
+        byEmail.set(h.email, true);
+      });
+
+      return updatedList;
     });
   }, [hiredEmployees]);
 

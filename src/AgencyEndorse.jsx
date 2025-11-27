@@ -406,22 +406,13 @@ const handleEndorse = async () => {
     }
 
     // ---------- INSERT: directly into applications table with endorsed=true ----------
-    // Create a user_id if needed (for agency endorsements, we might not have a user_id)
-    // We'll use a placeholder or create a temporary user_id
-    let userIdToUse = authUserId;
-    
-    // If no auth user, try to find or create a placeholder user
-    if (!userIdToUse) {
-      // For agency endorsements without a user, we can use a system user or leave it null
-      // Check if applications table allows null user_id
-      userIdToUse = null; // Will be handled by the database if needed
-    }
+    // For agency endorsements, we no longer tie applications.user_id to the agency auth user.
+    // Insert with NULL user_id to avoid foreign key issues; HR/Employees modules will use payload/meta.
 
     const { error: errAppInsert } = await supabase
       .from("applications")
       .insert([
         {
-          user_id: userIdToUse,
           job_id: jobIdToSend,
           payload,
           status: "submitted",

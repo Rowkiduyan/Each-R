@@ -99,29 +99,38 @@ function Employees() {
     let channel;
     let cancelled = false;
 
-    const normalize = (row) => ({
-      id: row.id, // uuid
-      name:
-        [row.fname, row.mname, row.lname]
-          .filter(Boolean)
-          .join(" ")
-          .replace(/\s+/g, " ")
-          .trim() || row.email || "Unnamed",
-      position: row.position || null, // null means "try to fill"
-      depot: row.depot || null,
-      email: row.email || "",
-      role: row.role || "Employee",
-      hired_at: row.hired_at,
-      agency:
-        (row.source && (String(row.source).toLowerCase() === "agency" || String(row.source).toLowerCase() === "recruitment"))
-        || (row.role && String(row.role).toLowerCase() === "agency")
-        || !!row.agency_profile_id
-        || !!row.endorsed_by_agency_id
-        || row.is_agency === true,
-      source: row.source || null,
-      endorsed_by_agency_id: row.endorsed_by_agency_id || row.agency_profile_id || null,
-      endorsed_at: row.endorsed_at || null,
-    });
+    const normalize = (row) => {
+      const sourceLower = row.source ? String(row.source).toLowerCase() : "";
+
+      // Base agency flag from employees table only on explicit agency markers,
+      // not on generic "recruitment" source. This prevents direct hires from
+      // being incorrectly tagged as agency.
+      const baseAgency =
+        (sourceLower === "agency") ||
+        (row.role && String(row.role).toLowerCase() === "agency") ||
+        !!row.agency_profile_id ||
+        !!row.endorsed_by_agency_id ||
+        row.is_agency === true;
+
+      return {
+        id: row.id, // uuid
+        name:
+          [row.fname, row.mname, row.lname]
+            .filter(Boolean)
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim() || row.email || "Unnamed",
+        position: row.position || null, // null means "try to fill"
+        depot: row.depot || null,
+        email: row.email || "",
+        role: row.role || "Employee",
+        hired_at: row.hired_at,
+        agency: baseAgency,
+        source: row.source || null,
+        endorsed_by_agency_id: row.endorsed_by_agency_id || row.agency_profile_id || null,
+        endorsed_at: row.endorsed_at || null,
+      };
+    };
 
     const load = async () => {
       setLoading(true);
