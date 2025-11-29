@@ -139,8 +139,16 @@ function App() {
       <Route path="/applicantg/home" element={<ApplicantGHome />} />
       <Route path="/applicantl/home" element={<ApplicantLHome />} />
       <Route path="/applicant/applications" element={<ApplicantApplications />} />
-      {/* Agency routes share a common layout */}
-      <Route path="/agency" element={<AgencyLayout />}>
+      
+      {/* Agency protected routes */}
+      <Route 
+        path="/agency" 
+        element={
+          <RequireRole role="Agency">
+            <AgencyLayout />
+          </RequireRole>
+        }
+      >
         <Route path="home" element={<AgencyHome />} />
         <Route path="endorsements" element={<AgencyEndorsements />} />
         <Route path="requirements" element={<AgencyRequirements />} />
