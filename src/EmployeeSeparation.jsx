@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
-import EmployeeNavbar from "./EmployeeNavbar";
 
 function  EmployeeSeparation () {
   const [status1, setStatus1] = useState("Validated");
@@ -8,8 +7,6 @@ function  EmployeeSeparation () {
   const [status3, setStatus3] = useState("None");
     return(
     <>
-        <EmployeeNavbar />
-
         <div className="max-w-7xl mx-auto px-4 py-8">
         <h1 className="text-2xl font-bold text-gray-800 mb-6">Separation</h1>
         <div className="bg-white shadow-md rounded-lg overflow-auto">

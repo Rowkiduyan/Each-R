@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
-import EmployeeNavbar from "./EmployeeNavbar";
 
 function EmployeeTrainings() {
     const [activeTab, setActiveTab] = useState("roadwise");
@@ -8,8 +7,6 @@ function EmployeeTrainings() {
     const [newTraining, setNewTraining] = useState({ title: "", date: "", certification: "" });
     return (
         <>
-        <EmployeeNavbar />
-
         <div className="max-w-7xl mx-auto px-4">
             <div className="bg-white border rounded-lg p-3 shadow mx-auto">
                 

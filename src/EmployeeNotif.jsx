@@ -1,11 +1,8 @@
 import { Link } from "react-router-dom";
-import EmployeeNavbar from "./EmployeeNavbar";
 
 function EmployeeNotif() {
     return ( 
         <>
-        <EmployeeNavbar />
-
         <div className="max-w-7xl mx-auto px-4">
             <div className="bg-white border rounded-lg p-3 shadow mx-auto">
                 <div className="text-xs font-semibold text-blue-600 mb-2">Notifications</div>

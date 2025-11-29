@@ -1,11 +1,8 @@
 import { Link } from "react-router-dom";
-import EmployeeNavbar from "./EmployeeNavbar";
 
 function EmHome() {
     return(
      <>
-        <EmployeeNavbar />
-
         <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row gap-6">
             <div className="md:w-1/3 w-full">
             <div className="bg-white rounded-lg shadow-md p-6">

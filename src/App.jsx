@@ -36,6 +36,7 @@ import VerifyEmail from "./VerifyEmail";
 import RequireRole from "./RequireRole";
 import HRLayout from "./layouts/HRLayout";
 import AdminLayout from "./layouts/AdminLayout";
+import EmployeeLayout from "./layouts/EmployeeLayout";
 import AdminCreate from "./AdminCreate";
 import TermsAndPrivacy from "./TermsAndPrivacy";
 
@@ -81,45 +82,19 @@ function App() {
 
       {/* Employee protected routes */}
       <Route
-        path="/employee/home"
+        path="/employee"
         element={
           <RequireRole role="Employee">
-            <EmHome />
+            <EmployeeLayout />
           </RequireRole>
         }
-      />
-      <Route
-        path="/employee/trainings"
-        element={
-          <RequireRole role="Employee">
-            <EmployeeTrainings />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/employee/notif"
-        element={
-          <RequireRole role="Employee">
-            <EmployeeNotif />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/employee/profile"
-        element={
-          <RequireRole role="Employee">
-            <EmProfile />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/employee/separation"
-        element={
-          <RequireRole role="Employee">
-            <EmployeeSeparation />
-          </RequireRole>
-        }
-      />
+      >
+        <Route path="home" element={<EmHome />} />
+        <Route path="trainings" element={<EmployeeTrainings />} />
+        <Route path="notif" element={<EmployeeNotif />} />
+        <Route path="profile" element={<EmProfile />} />
+        <Route path="separation" element={<EmployeeSeparation />} />
+      </Route>
 
       {/* Admin protected routes */}
       <Route
