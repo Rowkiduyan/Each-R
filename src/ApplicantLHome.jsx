@@ -124,6 +124,11 @@
     const [resumeFile, setResumeFile] = useState(null);
     const [userApplication, setUserApplication] = useState(null);
 
+    // PSGC API states for location dropdowns
+    const [cities, setCities] = useState([]);
+    const [barangays, setBarangays] = useState([]);
+    const [profileBarangays, setProfileBarangays] = useState([]);
+
     // Fetch profile data
     useEffect(() => {
       const fetchProfileData = async () => {
@@ -826,6 +831,64 @@ const formatDateForInput = (dateString) => {
       return () => unsub && unsub();
     }, [navigate]);
 
+    // Fetch all cities from PSGC API on mount
+    useEffect(() => {
+      const fetchAllCities = async () => {
+        try {
+          const response = await fetch('https://psgc.gitlab.io/api/cities-municipalities/');
+          const data = await response.json();
+          setCities(data);
+        } catch (error) {
+          console.error('Error fetching cities:', error);
+        }
+      };
+      fetchAllCities();
+    }, []);
+
+    // Fetch barangays when city is selected
+    useEffect(() => {
+      if (form.city) {
+        const fetchBarangays = async () => {
+          try {
+            // Find the city code from the city name
+            const selectedCity = cities.find(city => city.name === form.city);
+            if (selectedCity) {
+              const response = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.code}/barangays/`);
+              const data = await response.json();
+              setBarangays(data);
+            }
+          } catch (error) {
+            console.error('Error fetching barangays:', error);
+          }
+        };
+        fetchBarangays();
+      } else {
+        setBarangays([]);
+      }
+    }, [form.city, cities]);
+
+    // Fetch barangays when profile city is selected
+    useEffect(() => {
+      if (profileForm.city) {
+        const fetchProfileBarangays = async () => {
+          try {
+            // Find the city code from the city name
+            const selectedCity = cities.find(city => city.name === profileForm.city);
+            if (selectedCity) {
+              const response = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.code}/barangays/`);
+              const data = await response.json();
+              setProfileBarangays(data);
+            }
+          } catch (error) {
+            console.error('Error fetching profile barangays:', error);
+          }
+        };
+        fetchProfileBarangays();
+      } else {
+        setProfileBarangays([]);
+      }
+    }, [profileForm.city, cities]);
+
     // NEW: Load job posts from DB and subscribe to realtime inserts
     useEffect(() => {
       let channel;
@@ -1254,32 +1317,48 @@ const formatDateForInput = (dateString) => {
                                                     )}
                                                 </label>
                                                 <label className="text-sm text-gray-600">
-                                                    Barangay
+                                                    City
                                                     {isEditMode ? (
-                                                        <input
-                                                            type="text"
-                                                            value={profileForm.barangay}
-                                                            onChange={(e) => handleFormChange('barangay', e.target.value)}
-                                                            className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                        />
+                                                        <>
+                                                            <input
+                                                                type="text"
+                                                                list="profile-city-list"
+                                                                value={profileForm.city}
+                                                                onChange={(e) => handleFormChange('city', e.target.value)}
+                                                                className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                            />
+                                                            <datalist id="profile-city-list">
+                                                                {cities.map((city) => (
+                                                                    <option key={city.code} value={city.name} />
+                                                                ))}
+                                                            </datalist>
+                                                        </>
                                                     ) : (
                                                         <span className="block text-gray-800">
-                                                            {profileForm.barangay || 'Not provided'}
+                                                            {profileForm.city || 'Not provided'}
                                                         </span>
                                                     )}
                                                 </label>
                                                 <label className="text-sm text-gray-600">
-                                                    City
+                                                    Barangay
                                                     {isEditMode ? (
-                                                        <input
-                                                            type="text"
-                                                            value={profileForm.city}
-                                                            onChange={(e) => handleFormChange('city', e.target.value)}
-                                                            className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                        />
+                                                        <>
+                                                            <input
+                                                                type="text"
+                                                                list="profile-barangay-list"
+                                                                value={profileForm.barangay}
+                                                                onChange={(e) => handleFormChange('barangay', e.target.value)}
+                                                                className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                            />
+                                                            <datalist id="profile-barangay-list">
+                                                                {profileBarangays.map((brgy) => (
+                                                                    <option key={brgy.code} value={brgy.name} />
+                                                                ))}
+                                                            </datalist>
+                                                        </>
                                                     ) : (
                                                         <span className="block text-gray-800">
-                                                            {profileForm.city || 'Not provided'}
+                                                            {profileForm.barangay || 'Not provided'}
                                                         </span>
                                                     )}
                                                 </label>
@@ -1636,28 +1715,47 @@ const formatDateForInput = (dateString) => {
                               />
                             </div>
                             <div>
+                              <label className="block text-xs text-gray-600 mb-1">City *</label>
+                              <input
+                                type="text"
+                                name="city"
+                                list="city-list"
+                                value={form.city}
+                                onChange={(e) => {
+                                  handleInput(e);
+                                  setForm(prev => ({ ...prev, barangay: '' }));
+                                }}
+                                required
+                                disabled={cities.length === 0}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                placeholder="Type or select city"
+                              />
+                              <datalist id="city-list">
+                                {cities.map((city) => (
+                                  <option key={city.code} value={city.name} />
+                                ))}
+                              </datalist>
+                            </div>
+                            <div>
                               <label className="block text-xs text-gray-600 mb-1">
                                 Barangay *
                               </label>
                               <input
                                 type="text"
                                 name="barangay"
+                                list="barangay-list"
                                 value={form.barangay}
                                 onChange={handleInput}
                                 required
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
+                                disabled={!form.city || barangays.length === 0}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
+                                placeholder="Type or select barangay"
                               />
-                            </div>
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">City *</label>
-                              <input
-                                type="text"
-                                name="city"
-                                value={form.city}
-                                onChange={handleInput}
-                                required
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
-                              />
+                              <datalist id="barangay-list">
+                                {barangays.map((brgy) => (
+                                  <option key={brgy.code} value={brgy.name} />
+                                ))}
+                              </datalist>
                             </div>
                             <div>
                               <label className="block text-xs text-gray-600 mb-1">Zip Code *</label>
