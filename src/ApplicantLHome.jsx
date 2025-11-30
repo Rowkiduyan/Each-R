@@ -64,7 +64,8 @@
         year_graduated: '',
         skills: '',
         work_experiences: [],
-        character_references: []
+        character_references: [],
+        preferred_depot: ''
       });
 
     // NEW: jobs from DB + selected job
@@ -129,6 +130,15 @@
     const [barangays, setBarangays] = useState([]);
     const [profileBarangays, setProfileBarangays] = useState([]);
 
+    // Depot options for preferred depot dropdown
+    const depotOptions = [
+      "Batangas", "Bulacan", "Cagayan", "Calamba", "Calbayog", "Cebu", 
+      "Davao", "Dipolog", "Iloilo", "Isabela", "Kalibo", "Kidapawan", 
+      "La Union", "Liip", "Manggahan", "Mindoro", "Naga", "Ozamis", 
+      "Palawan", "Pampanga", "Pasig", "Sucat", "Tacloban", "Tarlac", 
+      "Taytay", "Tuguegarao", "Vigan"
+    ];
+
     // Fetch profile data
     useEffect(() => {
       const fetchProfileData = async () => {
@@ -171,6 +181,7 @@
               institution_name: mergedProfile.institution_name || '',
               year_graduated: mergedProfile.year_graduated || '',
               skills: mergedProfile.skills || '',
+              preferred_depot: mergedProfile.preferred_depot || ''
             });
             prefillApplicationForm(mergedProfile);
           }
@@ -189,6 +200,22 @@ useEffect(() => {
     prefillApplicationForm(profileData);
   }
 }, [profileData]);
+
+    // Check profile completeness and redirect to Profile tab if incomplete
+    useEffect(() => {
+      const isComplete = 
+        profileForm.street &&
+        profileForm.barangay &&
+        profileForm.city &&
+        profileForm.zip &&
+        profileForm.sex &&
+        profileForm.birthday &&
+        profileForm.marital_status;
+
+      if (!isComplete && !loading) {
+        setActiveTab('Profile');
+      }
+    }, [profileForm.street, profileForm.barangay, profileForm.city, profileForm.zip, profileForm.sex, profileForm.birthday, profileForm.marital_status, loading]);
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -417,7 +444,8 @@ const handleSave = async () => {
         year_graduated: profileForm.year_graduated,
         skills: profileForm.skills,
         work_experiences: profileForm.work_experiences,
-        character_references: profileForm.character_references
+        character_references: profileForm.character_references,
+        preferred_depot: profileForm.preferred_depot
       })
       .eq('email', user.email);
 
@@ -489,7 +517,8 @@ const handleCancel = () => {
       year_graduated: profileData.year_graduated || '',
       skills: profileData.skills || '',
       work_experiences: profileData.work_experiences || [],
-      character_references: profileData.character_references || []
+      character_references: profileData.character_references || [],
+      preferred_depot: profileData.preferred_depot || ''
     });
   }
   setBirthdayError('');
@@ -787,6 +816,19 @@ const formatDateForInput = (dateString) => {
         return;
       }
 
+      // Update the applicant's profile with depot from the job
+      if (job?.depot) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ depot: job.depot })
+          .eq('id', userId);
+        
+        if (profileError) {
+          console.error('Failed to update profile depot:', profileError);
+          // Don't fail the application, just log the error
+        }
+      }
+
       if (insertedData && insertedData.length > 0) {
         setUserApplication(insertedData[0]);
       }
@@ -957,6 +999,25 @@ const formatDateForInput = (dateString) => {
       return keywordMatch && locationMatch;
     });
 
+    // Check if profile is complete
+    const isProfileComplete = 
+      profileForm.street &&
+      profileForm.barangay &&
+      profileForm.city &&
+      profileForm.zip &&
+      profileForm.sex &&
+      profileForm.birthday &&
+      profileForm.marital_status;
+
+    // Get missing fields for the indicator
+    const missingFields = [];
+    if (!profileForm.street) missingFields.push('Street/Village');
+    if (!profileForm.barangay) missingFields.push('Barangay');
+    if (!profileForm.city) missingFields.push('City');
+    if (!profileForm.zip) missingFields.push('ZIP Code');
+    if (!profileForm.sex) missingFields.push('Sex');
+    if (!profileForm.birthday) missingFields.push('Birthday');
+    if (!profileForm.marital_status) missingFields.push('Marital Status');
 
     // Build job card elements for the split-view
     const jobCardElements = filteredJobs.map((job) => {
@@ -967,6 +1028,7 @@ const formatDateForInput = (dateString) => {
         : 'Not available';
       const isSelected = selectedJob?.id === job.id;
       const isCurrentApplication = appliedJobId === job.id;
+      const isPreferredDepot = profileForm.preferred_depot && job.depot === profileForm.preferred_depot;
 
       return (
         <div
@@ -981,10 +1043,15 @@ const formatDateForInput = (dateString) => {
               URGENT HIRING!
             </div>
           )}
+          {isPreferredDepot && (
+            <div className="absolute top-0 right-0 bg-blue-600 text-white text-xs font-bold px-4 py-1 flex items-center gap-1">
+              <span>⭐</span> PREFERRED DEPOT
+            </div>
+          )}
           <div className="mt-4 flex flex-col flex-grow">
             <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
             <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
-              <span>{job.depot}</span>
+              <span className={isPreferredDepot ? 'font-semibold text-blue-600' : ''}>{job.depot}</span>
               <span>Posted {postedLabel}</span>
             </div>
             <p className="text-gray-700 line-clamp-3">{job.description}</p>
@@ -1184,6 +1251,30 @@ const formatDateForInput = (dateString) => {
           <div className="max-w-7xl mx-auto px-6 py-8">
             <section className={`p-4 ${activeTab === 'Home' ? '' : 'hidden'}`}>
               <div className="max-w-7xl mx-auto px-6 py-8">
+                {/* Profile Incomplete Warning */}
+                {!isProfileComplete && (
+                  <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="ml-3">
+                        <h3 className="text-sm font-medium text-yellow-800">Complete Your Profile</h3>
+                        <div className="mt-2 text-sm text-yellow-700">
+                          <p>Complete your profile's information to have an easier time applying to jobs.</p>
+                          <button
+                            onClick={() => setActiveTab('Profile')}
+                            className="mt-2 inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded text-yellow-800 bg-yellow-100 hover:bg-yellow-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+                          >
+                            Go to Profile
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {/* Jobs from DB */}
                 {jobsLoading ? (
                   <div className="text-gray-600">Loading jobs…</div>
@@ -1378,6 +1469,27 @@ const formatDateForInput = (dateString) => {
                                                     )}
                                                 </label>
                                             </div>
+                                        </div>
+                                        <div>
+                                            <span className="font-bold">Preferred Depot:</span>{' '}
+                                            {isEditMode ? (
+                                                <>
+                                                    <input
+                                                        list="profile-depot-list"
+                                                        value={profileForm.preferred_depot || ''}
+                                                        onChange={(e) => handleFormChange('preferred_depot', e.target.value)}
+                                                        className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                                                        placeholder="Select preferred depot"
+                                                    />
+                                                    <datalist id="profile-depot-list">
+                                                        {depotOptions.map((depot) => (
+                                                            <option key={depot} value={depot} />
+                                                        ))}
+                                                    </datalist>
+                                                </>
+                                            ) : (
+                                                profileForm.preferred_depot || 'Not provided'
+                                            )}
                                         </div>
                                         <div>
                                             <span className="font-bold">Contact Number:</span> {profileData.contact_number || 'Not provided'}

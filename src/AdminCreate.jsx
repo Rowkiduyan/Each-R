@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from './supabaseClient';
+import emailjs from '@emailjs/browser';
 
 function AdminCreate() {
   const [formData, setFormData] = useState({
@@ -95,10 +96,28 @@ function AdminCreate() {
         // Continue anyway, as the main account was created
       }
 
-      // You might want to create an agencies table entry here as well
-      // For now, we'll just show success
+      // Send credentials email via EmailJS
+      try {
+        await emailjs.send(
+          'service_7dbtuyn', // Service ID
+          'template_6949qsc', // Template ID
+          {
+            contact_person: formData.contactPerson,
+            agency_name: formData.agencyName,
+            email: formData.email,
+            password: formData.password,
+            login_url: window.location.origin + '/employee/login',
+            to_email: formData.email
+          },
+          'TsWcN7KUc6VQo6a5V' // Public Key
+        );
+        console.log('Credentials email sent successfully');
+      } catch (emailError) {
+        console.error('Failed to send credentials email:', emailError);
+        // Don't fail the whole process if email fails
+      }
 
-      setSuccess('Agency account has been successfully created!');
+      setSuccess('Agency account has been successfully created and credentials have been sent to ' + formData.email + '!');
       
       // Reset form
       setFormData({
@@ -163,11 +182,37 @@ function AdminCreate() {
                 />
               </div>
             </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Address
+              </label>
+              <textarea
+                name="address"
+                value={formData.address}
+                onChange={handleInputChange}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                placeholder="Enter agency address"
+              />
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Agency Description
+              </label>
+              <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleInputChange}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                placeholder="Enter agency description or additional information"
+              />
+            </div>
           </div>
 
-          {/* Contact Information */}
+          {/* Account Credentials */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Contact Information</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Account Credentials</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -196,26 +241,6 @@ function AdminCreate() {
                   placeholder="Enter contact number"
                 />
               </div>
-            </div>
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Address
-              </label>
-              <textarea
-                name="address"
-                value={formData.address}
-                onChange={handleInputChange}
-                rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                placeholder="Enter agency address"
-              />
-            </div>
-          </div>
-
-          {/* Account Credentials */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Account Credentials</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Password *
@@ -245,21 +270,6 @@ function AdminCreate() {
                 />
               </div>
             </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Agency Description
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleInputChange}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-              placeholder="Enter agency description or additional information"
-            />
           </div>
 
           {/* Error/Success Messages */}
