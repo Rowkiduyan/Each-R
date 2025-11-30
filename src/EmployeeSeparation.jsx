@@ -1,38 +1,6 @@
 import { useState } from "react";
 import { useEmployeeUser } from "./layouts/EmployeeLayout";
 
-<<<<<<< HEAD
-function  EmployeeSeparation () {
-  const { userId, userEmail } = useEmployeeUser();
-  const [status1, setStatus1] = useState("Validated");
-  const [status2, setStatus2] = useState("None");
-  const [status3, setStatus3] = useState("None");
-    return(
-    <>
-        <div className="max-w-7xl mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Separation</h1>
-        <div className="bg-white shadow-md rounded-lg overflow-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 md:px-4 md:py-2 lg:px-8 lg:py-3 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider">File</th>
-                <th className="px-6 py-3 md:px-4 md:py-2 lg:px-8 lg:py-3 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                <th className="px-6 py-3 md:px-4 md:py-2 lg:px-8 lg:py-3 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider">Submit</th>
-                <th className="px-6 py-3 md:px-4 md:py-2 lg:px-8 lg:py-3 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider">Remove</th>
-                <th className="px-6 py-3 md:px-4 md:py-2 lg:px-8 lg:py-3 text-left text-xs md:text-sm font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              <tr>
-                <td className="px-6 py-4 md:px-4 md:py-3 lg:px-8 lg:py-4 whitespace-nowrap text-sm md:text-base text-gray-900"><a href="resignation_letter.pdf" download>resignation_letter.pdf</a></td>
-                <td className="px-6 py-4 md:px-4 md:py-3 lg:px-8 lg:py-4 whitespace-nowrap text-sm md:text-base text-gray-900">Resignation Letter</td>
-                <td className="px-6 py-4 md:px-4 md:py-3 lg:px-8 lg:py-4 whitespace-nowrap text-sm md:text-base text-gray-900"><button onClick={() => setStatus1("Submitted")} className="bg-green-500 text-white rounded cursor-pointer px-4 py-2">Submit</button></td>
-                <td className="px-6 py-4 md:px-4 md:py-3 lg:px-8 lg:py-4 whitespace-nowrap text-sm md:text-base text-gray-900"><button onClick={() => setStatus1("None")} className="bg-red-500 text-white rounded cursor-pointer px-4 py-2">Remove</button></td>
-                <td className="px-6 py-4 md:px-4 md:py-3 lg:px-8 lg:py-4 whitespace-nowrap text-sm md:text-base text-gray-900" style={status1 === "Validated" ? {backgroundColor: 'green', color: 'white'} : status1 === "Submitted" ? {backgroundColor: 'orange', color: 'white'} : {backgroundColor: 'white', color: 'black'}}>{status1}</td>
-              </tr>
-            </tbody>
-          </table>
-=======
 function EmployeeSeparation() {
   // Stage 1: Resignation Letter
   const [resignationFile, setResignationFile] = useState(null);
@@ -131,7 +99,6 @@ function EmployeeSeparation() {
               <p className="text-xs text-gray-500">Review</p>
             </div>
           </div>
->>>>>>> alexisfix
         </div>
       </div>
 
