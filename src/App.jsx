@@ -23,6 +23,8 @@ import EmployeeNotif from "./EmployeeNotif";
 import EmProfile from "./EmProfile";
 import ApplicantApplications from "./ApplicantApplications";
 import EmployeeSeparation from "./EmployeeSeparation";
+import EmployeeRequirements from "./EmployeeRequirements";
+import EmployeeEval from "./EmployeeEval";
 import AgencyHome from "./AgencyHome";
 import AgencyEndorsements from "./AgencyEndorsements";
 import AgencyRequirements from "./AgencyRequirements";
@@ -90,10 +92,12 @@ function App() {
         }
       >
         <Route path="home" element={<EmHome />} />
+        <Route path="requirements" element={<EmployeeRequirements />} />
         <Route path="trainings" element={<EmployeeTrainings />} />
+        <Route path="evaluation" element={<EmployeeEval />} />
+        <Route path="separation" element={<EmployeeSeparation />} />
         <Route path="notif" element={<EmployeeNotif />} />
         <Route path="profile" element={<EmProfile />} />
-        <Route path="separation" element={<EmployeeSeparation />} />
       </Route>
 
       {/* Admin protected routes */}

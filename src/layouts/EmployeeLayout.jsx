@@ -11,51 +11,78 @@ function EmployeeLayout() {
     const navigate = useNavigate();
 
     useEffect(() => {
-        const fetchEmployeeData = async () => {
+        const checkAuth = async () => {
             try {
-                // First check if there's logged-in employee data in localStorage
-                const storedEmployee = localStorage.getItem("loggedInEmployee");
-                if (storedEmployee) {
-                    try {
-                        const parsedEmployee = JSON.parse(storedEmployee);
-                        setEmployeeUser(parsedEmployee);
-                        return;
-                    } catch (parseErr) {
-                        console.error("Failed to parse logged-in employee data:", parseErr);
-                    }
+                // First check if user is authenticated
+                const { data: { user }, error: authError } = await supabase.auth.getUser();
+                
+                if (!user || authError) {
+                    // Not authenticated -> redirect to login
+                    navigate("/employee/login");
+                    return;
                 }
 
-                // If no localStorage data, try to get from Supabase auth
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                    // Fetch employee data from employees table
-                    const { data: employee, error } = await supabase
+                // Check user's role in profiles table
+                const { data: profile, error: profileError } = await supabase
+                    .from("profiles")
+                    .select("role, first_name, last_name, email")
+                    .eq("id", user.id)
+                    .single();
+
+                if (profileError || !profile) {
+                    console.error("Error fetching profile:", profileError);
+                    navigate("/employee/login");
+                    return;
+                }
+
+                // Check if role is Employee (case-insensitive)
+                const role = profile.role?.toLowerCase();
+                if (role !== "employee") {
+                    // Not an employee -> redirect to login
+                    console.warn("User is not an employee, role:", role);
+                    navigate("/employee/login");
+                    return;
+                }
+
+                // User is authenticated and is an employee
+                // Try to get employee data from employees table
+                try {
+                    const { data: employee, error: empError } = await supabase
                         .from('employees')
                         .select('fname, mname, lname, email')
                         .eq('email', user.email)
-                        .single();
+                        .maybeSingle();
                     
-                    if (!error && employee) {
+                    if (!empError && employee) {
                         setEmployeeUser(employee);
                     } else {
-                        // Fallback to user email if employee data not found
-                        setEmployeeUser({ email: user.email });
+                        // Use profile data as fallback
+                        setEmployeeUser({
+                            fname: profile.first_name || "",
+                            lname: profile.last_name || "",
+                            email: profile.email || user.email
+                        });
                     }
-                } else {
-                    // Default fallback - you can customize this
-                    setEmployeeUser({ fname: "Stephen", lname: "Yvone" });
+                } catch (queryErr) {
+                    console.warn('Exception fetching employee data:', queryErr);
+                    // Use profile data as fallback
+                    setEmployeeUser({
+                        fname: profile.first_name || "",
+                        lname: profile.last_name || "",
+                        email: profile.email || user.email
+                    });
                 }
             } catch (err) {
-                console.error('Error fetching employee data:', err);
-                // Default fallback
-                setEmployeeUser({ fname: "Stephen", lname: "Yvone" });
+                console.error('Error in authentication check:', err);
+                navigate("/employee/login");
             }
         };
 
-        fetchEmployeeData();
-    }, []);
+        checkAuth();
+    }, [navigate]);
 
-    const handleLogout = () => {
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
         navigate("/employee/login");
     };
 
@@ -91,6 +118,11 @@ function EmployeeLayout() {
         return employeeUser?.email?.[0]?.toUpperCase() || "U";
     };
 
+    // Don't render anything until authentication is verified
+    if (!employeeUser) {
+        return null;
+    }
+
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col">
             {/* Header */}
@@ -115,12 +147,12 @@ function EmployeeLayout() {
                                 Home
                             </NavLink>
                             <NavLink
-                                to="/employee/separation"
+                                to="/employee/requirements"
                                 className={({ isActive }) =>
                                     `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
                                 }
                             >
-                                Separation
+                                Requirements
                             </NavLink>
                             <NavLink
                                 to="/employee/trainings"
@@ -128,15 +160,23 @@ function EmployeeLayout() {
                                     `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
                                 }
                             >
-                                Trainings
+                                Trainings/Orientation
                             </NavLink>
                             <NavLink
-                                to="/employee/profile"
+                                to="/employee/evaluation"
                                 className={({ isActive }) =>
                                     `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
                                 }
                             >
-                                Profile
+                                Evaluation
+                            </NavLink>
+                            <NavLink
+                                to="/employee/separation"
+                                className={({ isActive }) =>
+                                    `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
+                                }
+                            >
+                                Separation
                             </NavLink>
                         </nav>
 
@@ -173,6 +213,15 @@ function EmployeeLayout() {
                                             <div className="px-4 py-2 text-sm text-gray-700 border-b">
                                                 {getFullName()}
                                             </div>
+                                            <NavLink
+                                                to="/employee/profile"
+                                                onClick={() => setShowProfileDropdown(false)}
+                                                className={({ isActive }) =>
+                                                    `block w-full text-left px-4 py-2 text-sm ${isActive ? "bg-gray-100 text-red-600" : "text-gray-700 hover:bg-gray-100"}`
+                                                }
+                                            >
+                                                Profile
+                                            </NavLink>
                                             <button
                                                 onClick={handleLogout}
                                                 className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
