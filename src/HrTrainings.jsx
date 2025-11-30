@@ -40,6 +40,11 @@ function HrTrainings() {
   const [showEmployeeSuggestions, setShowEmployeeSuggestions] = useState(false);
   const [showEmployeeSuggestionsEdit, setShowEmployeeSuggestionsEdit] = useState(false);
   const [employeeOptions, setEmployeeOptions] = useState([]);
+  
+  // Position-based selection state
+  const [positions, setPositions] = useState([]);
+  const [selectedPositions, setSelectedPositions] = useState([]); // Array of selected positions
+  const [employeesByPositionMap, setEmployeesByPositionMap] = useState({}); // Map: position -> employees[]
 
   // Tab & search state for main table
   const [activeTab, setActiveTab] = useState("upcoming");
@@ -72,7 +77,7 @@ function HrTrainings() {
       try {
         const { data, error } = await supabase
           .from("employees")
-          .select("id, fname, lname, mname");
+          .select("id, fname, lname, mname, position");
 
         if (error) {
           console.error("Error loading employees for training attendees:", error);
@@ -97,6 +102,116 @@ function HrTrainings() {
 
     fetchEmployees();
   }, []);
+
+  // Load unique positions from employees table
+  useEffect(() => {
+    const fetchPositions = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("employees")
+          .select("position");
+
+        if (error) {
+          console.error("Error loading positions:", error);
+          return;
+        }
+
+        const uniquePositions = Array.from(
+          new Set(
+            (data || [])
+              .map((emp) => emp.position)
+              .filter((pos) => pos && pos.trim() !== "")
+          )
+        ).sort((a, b) => a.localeCompare(b));
+
+        setPositions(uniquePositions);
+      } catch (err) {
+        console.error("Unexpected error loading positions:", err);
+      }
+    };
+
+    fetchPositions();
+  }, []);
+
+  // Load employees for each selected position
+  useEffect(() => {
+    const fetchEmployeesForPositions = async () => {
+      if (selectedPositions.length === 0) {
+        setEmployeesByPositionMap({});
+        setAttendees([]);
+        return;
+      }
+
+      const newMap = { ...employeesByPositionMap };
+      const allEmployees = new Set();
+
+      // Fetch employees for each position
+      for (const position of selectedPositions) {
+        // Skip if we already have employees for this position
+        if (newMap[position]) {
+          // Add existing employees to the set
+          newMap[position].forEach(emp => allEmployees.add(emp));
+          continue;
+        }
+
+        try {
+          const { data, error } = await supabase
+            .from("employees")
+            .select("id, fname, lname, mname, position")
+            .eq("position", position);
+
+          if (error) {
+            console.error(`Error loading employees for position ${position}:`, error);
+            continue;
+          }
+
+          const options =
+            data?.map((emp) => {
+              const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
+              const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
+              return full || "Unnamed employee";
+            }) || [];
+
+          newMap[position] = options;
+          // Add employees to attendees
+          options.forEach(emp => allEmployees.add(emp));
+        } catch (err) {
+          console.error(`Unexpected error loading employees for position ${position}:`, err);
+        }
+      }
+
+      setEmployeesByPositionMap(newMap);
+      // Merge with existing attendees (to keep manually added ones)
+      setAttendees(prev => {
+        const combined = new Set([...prev, ...allEmployees]);
+        return [...combined];
+      });
+    };
+
+    fetchEmployeesForPositions();
+  }, [selectedPositions]);
+
+  // Handle position selection
+  const handlePositionSelect = (position) => {
+    if (position && !selectedPositions.includes(position)) {
+      setSelectedPositions([...selectedPositions, position]);
+    }
+  };
+
+  // Handle position removal
+  const handlePositionRemove = (positionToRemove) => {
+    const updatedPositions = selectedPositions.filter(pos => pos !== positionToRemove);
+    setSelectedPositions(updatedPositions);
+    
+    // Remove employees from this position
+    const employeesToRemove = employeesByPositionMap[positionToRemove] || [];
+    setAttendees(prev => prev.filter(emp => !employeesToRemove.includes(emp)));
+    
+    // Remove from map
+    const updatedMap = { ...employeesByPositionMap };
+    delete updatedMap[positionToRemove];
+    setEmployeesByPositionMap(updatedMap);
+  };
 
 
   const fetchTrainings = async () => {
@@ -275,6 +390,8 @@ function HrTrainings() {
       setForm({ title: "", venue: "", date: "", time: "", description: "" });
       setAttendees([]);
       setEmployeeSearchQuery("");
+      setSelectedPositions([]);
+      setEmployeesByPositionMap({});
       setShowAdd(false);
       
       // Refresh list
@@ -466,6 +583,20 @@ function HrTrainings() {
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     } catch {
       return dateStr;
+    }
+  };
+
+  // Format time to 12-hour with AM/PM
+  const formatTime = (timeStr) => {
+    if (!timeStr) return 'Not set';
+    try {
+      const [hours, minutes] = timeStr.split(':');
+      const hour = parseInt(hours, 10);
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      return `${hour12}:${minutes} ${ampm}`;
+    } catch {
+      return timeStr;
     }
   };
 
@@ -897,128 +1028,143 @@ function HrTrainings() {
 
       {/* Training Details Modal */}
       {showDetails && selectedTraining && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowDetails(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowDetails(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                  </svg>
-                </div>
+            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-xl font-bold text-white">Training Details</h2>
-                  <p className="text-sm text-blue-100 mt-0.5">{selectedTraining.title}</p>
+                  <h2 className="text-lg font-bold text-gray-900">Training Details</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">Complete information about this training session</p>
                 </div>
+                <button 
+                  onClick={() => setShowDetails(false)} 
+                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
-              <button onClick={() => setShowDetails(false)} className="text-white/80 hover:text-white hover:bg-white/20 rounded-lg p-2 transition-colors">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
             </div>
 
-            {/* Content */}
-            <div className="overflow-y-auto flex-1 p-6 space-y-6">
-              {/* Basic Info Cards */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border border-blue-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <label className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Date</label>
-                  </div>
-                  <p className="text-base font-bold text-gray-900">{formatDate(selectedTraining.date)}</p>
+            {/* Content - Two Column Layout */}
+            <div className="flex-1 overflow-hidden flex">
+              {/* Left Side - Training Information */}
+              <div className="w-[40%] overflow-y-auto p-6 border-r border-gray-200">
+                {/* Title Section */}
+                <div className="mb-4">
+                  <h3 className="text-xl font-bold text-gray-900">{selectedTraining.title}</h3>
                 </div>
-                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <label className="text-xs font-semibold text-purple-600 uppercase tracking-wide">Time</label>
-                  </div>
-                  <p className="text-base font-bold text-gray-900">{selectedTraining.time || 'Not set'}</p>
+
+                {/* Description Section */}
+                <div className="mb-6">
+                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{selectedTraining.description || 'No description provided'}</p>
                 </div>
-              </div>
 
-              <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border border-orange-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <label className="text-xs font-semibold text-orange-600 uppercase tracking-wide">Venue</label>
-                </div>
-                <p className="text-base font-bold text-gray-900">{selectedTraining.venue || 'Not set'}</p>
-              </div>
-
-              <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-                <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2 block">Description</label>
-                <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">{selectedTraining.description || 'No description provided'}</p>
-              </div>
-
-              {/* Attendees Section */}
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <label className="text-sm font-bold text-gray-800">
-                    Attendees ({selectedTraining.attendees?.length || 0})
-                  </label>
-                  {!selectedTraining.is_active && selectedTraining.attendance && (
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="flex items-center gap-1.5 text-green-600 font-semibold">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        {Object.values(selectedTraining.attendance || {}).filter(Boolean).length} Present
-                      </span>
-                      <span className="flex items-center gap-1.5 text-red-600 font-semibold">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                        {Object.values(selectedTraining.attendance || {}).filter((v) => v === false).length} Absent
-                      </span>
+                {/* Basic Info */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-2">
+                    <div className="w-7 h-7 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
                     </div>
-                  )}
+                    <p className="text-xs font-bold text-blue-900">{formatDate(selectedTraining.date)}</p>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-2">
+                    <div className="w-7 h-7 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <p className="text-xs font-bold text-purple-900">{formatTime(selectedTraining.time)}</p>
+                  </div>
+                  
+                  <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-2.5 py-2">
+                    <div className="w-7 h-7 bg-orange-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                    </div>
+                    <p className="text-xs font-bold text-orange-900">{selectedTraining.venue || 'Not set'}</p>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {selectedTraining.attendees?.map((attendee, idx) => {
-                    const name = typeof attendee === "string" ? attendee : attendee.name || "";
-                    const attendedFlag = !!selectedTraining.attendance?.[name];
-                    return (
-                      <div key={idx} className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl hover:shadow-md transition-shadow">
-                        <div
-                          className={`w-10 h-10 rounded-xl bg-gradient-to-br ${getAvatarColor(
-                            name
-                          )} flex items-center justify-center text-white text-sm font-bold shadow-sm flex-shrink-0`}
-                        >
-                          {getInitials(name)}
-                        </div>
-                        <span className="text-sm font-medium text-gray-800 flex-1 truncate">{name}</span>
-                        {!selectedTraining.is_active && (
-                          <span
-                            className={`text-xs px-3 py-1 rounded-full font-semibold flex-shrink-0 ${
-                              attendedFlag
-                                ? "bg-green-100 text-green-700 border border-green-200"
-                                : "bg-red-100 text-red-700 border border-red-200"
-                            }`}
-                          >
-                            {attendedFlag ? "Present" : "Absent"}
+              </div>
+
+              {/* Right Side - Attendees List */}
+              <div className="w-[60%] flex flex-col bg-gray-50">
+                <div className="p-4 border-b border-gray-200 bg-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-bold text-gray-900">
+                        Attendees ({selectedTraining.attendees?.length || 0})
+                      </h3>
+                    </div>
+                    {!selectedTraining.is_active && selectedTraining.attendance && (
+                      <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                          <span className="text-xs font-semibold text-gray-700">
+                            {Object.values(selectedTraining.attendance || {}).filter(Boolean).length}
                           </span>
-                        )}
+                        </div>
+                        <div className="w-px h-3 bg-gray-300"></div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                          <span className="text-xs font-semibold text-gray-700">
+                            {Object.values(selectedTraining.attendance || {}).filter((v) => v === false).length}
+                          </span>
+                        </div>
                       </div>
-                    );
-                  })}
+                    )}
+                  </div>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {selectedTraining.attendees?.map((attendee, idx) => {
+                      const name = typeof attendee === "string" ? attendee : attendee.name || "";
+                      const attendedFlag = !!selectedTraining.attendance?.[name];
+                      return (
+                        <div 
+                          key={idx} 
+                          className="bg-white rounded-lg p-3 border border-gray-200 hover:shadow-sm transition-all"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center text-white text-xs font-semibold shadow-sm flex-shrink-0">
+                              {getInitials(name)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs font-medium text-gray-900 truncate">{name}</p>
+                              {!selectedTraining.is_active && (
+                                <span
+                                  className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-semibold mt-0.5 ${
+                                    attendedFlag
+                                      ? "bg-green-100 text-green-700"
+                                      : "bg-red-100 text-red-700"
+                                  }`}
+                                >
+                                  {attendedFlag ? "✓" : "✗"}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Footer */}
-            <div className="border-t border-gray-200 px-6 py-4 bg-gray-50 flex justify-end">
+            <div className="border-t border-gray-100 px-6 py-3 bg-gray-50 flex justify-end">
               <button
                 onClick={() => setShowDetails(false)}
-                className="px-6 py-2.5 rounded-xl bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-semibold text-sm"
+                className="px-5 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-semibold text-sm shadow-sm"
               >
                 Close
               </button>
@@ -1030,72 +1176,162 @@ function HrTrainings() {
       {/* Add Training Modal */}
       {showAdd && (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="text-center font-semibold text-xl mb-6">Add Training/Seminar Schedule</div>
-            <form onSubmit={onSubmit}>
-              <div className="grid grid-cols-1 gap-4">
-                <label className="text-sm font-medium text-gray-700">
-                  Title: *
-                  <input
-                    name="title"
-                    value={form.title}
-                    onChange={onChange}
-                    required
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder="Personal Development"
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-4">
-                  <label className="text-sm font-medium text-gray-700">
-                    Date: *
-                    <input
-                      name="date"
-                      value={form.date}
-                      onChange={onChange}
-                      type="date"
-                      required
-                      min={new Date().toISOString().split('T')[0]}
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    />
-                  </label>
-                  <label className="text-sm font-medium text-gray-700">
-                    Time: *
-                    <input
-                      name="time"
-                      value={form.time}
-                      onChange={onChange}
-                      type="time"
-                      required
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    />
-                  </label>
-                </div>
-                <label className="text-sm font-medium text-gray-700">
-                  Venue: *
-                  <input
-                    name="venue"
-                    value={form.venue}
-                    onChange={onChange}
-                    required
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder="Google Meet (Online)"
-                  />
-              </label>
-                <label className="text-sm font-medium text-gray-700">
-                  Description: *
-                  <textarea
-                    name="description"
-                    value={form.description}
-                    onChange={onChange}
-                    rows="3"
-                    required
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder="Gmeet link: https://..."
-                  />
-                </label>
-                <label className="text-sm font-medium text-gray-700">
-                  Attendees: *
-                  <div className="mt-1 relative">
+          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col h-[660px]">
+            {/* Header - Fixed */}
+            <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-white">
+              <h2 className="text-center font-semibold text-xl text-gray-800">Add Training/Seminar Schedule</h2>
+            </div>
+            
+            {/* Content - Two Column Layout */}
+            <div className="flex-1 overflow-hidden flex">
+              {/* Left Side - Form Fields */}
+              <div className="flex-1 px-6 py-4 border-r border-gray-200 overflow-hidden">
+                <form onSubmit={onSubmit} className="h-full">
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Title <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        name="title"
+                        value={form.title}
+                        onChange={onChange}
+                        required
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        placeholder="Personal Development"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Date <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="date"
+                          value={form.date}
+                          onChange={onChange}
+                          type="date"
+                          required
+                          min={new Date().toISOString().split('T')[0]}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Time <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="time"
+                          value={form.time}
+                          onChange={onChange}
+                          type="time"
+                          required
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Venue <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        name="venue"
+                        value={form.venue}
+                        onChange={onChange}
+                        required
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        placeholder="Google Meet (Online)"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Description <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        name="description"
+                        value={form.description}
+                        onChange={onChange}
+                        rows="2"
+                        required
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none transition-colors"
+                        placeholder="Gmeet link: https://..."
+                      />
+                    </div>
+                    
+                    {/* Attendees Label */}
+                    <div className="pt-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Attendees <span className="text-red-500">*</span>
+                      </label>
+                    </div>
+                    
+                    {/* Position Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Select Positions
+                      </label>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handlePositionSelect(e.target.value);
+                            e.target.value = "";
+                          }
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
+                      >
+                        <option value="">Add a position...</option>
+                        {positions
+                          .filter(pos => !selectedPositions.includes(pos))
+                          .map((pos, idx) => (
+                            <option key={idx} value={pos}>
+                              {pos}
+                            </option>
+                          ))}
+                      </select>
+                      
+                      {/* Selected Positions Chips */}
+                      {selectedPositions.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                          {selectedPositions.map((pos) => {
+                            const empCount = employeesByPositionMap[pos]?.length || 0;
+                            return (
+                              <div
+                                key={pos}
+                                className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 group hover:bg-blue-100 transition-colors"
+                              >
+                                <span className="text-xs font-medium text-blue-800">{pos}</span>
+                                <span className="text-xs text-blue-700 bg-blue-200 px-1.5 py-0.5 rounded-full font-medium">
+                                  {empCount}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePositionRemove(pos)}
+                                  className="text-blue-600 hover:text-red-600 hover:bg-red-100 rounded-full p-0.5 transition-colors"
+                                  title={`Remove ${pos} and its employees`}
+                                >
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </form>
+              </div>
+
+              {/* Right Side - Others Search and Selected Attendees List */}
+              <div className="flex-1 px-6 py-4 bg-gray-50 overflow-hidden">
+                <div className="h-full flex flex-col">
+                  {/* Search Input - Optional for additional employees */}
+                  <div className="mb-3 relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Others
+                    </label>
                     <input
                       type="text"
                       value={employeeSearchQuery}
@@ -1107,7 +1343,7 @@ function HrTrainings() {
                       onFocus={() => {
                         if (employeeSearchQuery) setShowEmployeeSuggestions(true);
                       }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
                       placeholder="Search employee name..."
                     />
                     {showEmployeeSuggestions && filteredEmployees.length > 0 && (
@@ -1135,46 +1371,76 @@ function HrTrainings() {
                       </ul>
                     )}
                   </div>
-                  <div className="mt-2 border border-gray-300 rounded-lg h-32 overflow-y-auto p-2 bg-gray-50">
-                    {attendees.length > 0 ? (
-                      attendees.map((name, i) => (
-                        <div key={i} className="flex items-center justify-between px-3 py-2 mb-1 bg-white rounded border border-gray-200">
-                          <span className="text-sm text-gray-700 truncate">{name}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeAttendee(i)}
-                            className="text-red-600 hover:text-red-700 text-lg font-bold ml-2"
-                          >
-                            ×
-                          </button>
+                  
+                  {/* Attendees List - Scrollable */}
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-medium text-gray-700">
+                        Selected Attendees <span className="text-gray-500">({attendees.length})</span>
+                      </span>
+                      {attendees.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttendees([]);
+                            setSelectedPositions([]);
+                            setEmployeesByPositionMap({});
+                          }}
+                          className="text-xs text-red-600 hover:text-red-700 font-medium transition-colors"
+                        >
+                          Clear All
+                        </button>
+                      )}
+                    </div>
+                    <div className="border border-gray-300 rounded-lg p-2 bg-white flex-1 overflow-y-auto">
+                      {attendees.length > 0 ? (
+                        <div className="space-y-1">
+                          {attendees.map((name, i) => (
+                            <div key={i} className="flex items-center justify-between px-2 py-1.5 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors">
+                              <span className="text-xs text-gray-700 truncate flex-1">{name}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeAttendee(i)}
+                                className="text-red-600 hover:text-red-700 text-base font-bold ml-2 flex-shrink-0 transition-colors"
+                                title="Remove"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-gray-400 text-center py-4">No attendees added yet</p>
-                    )}
+                      ) : (
+                        <p className="text-sm text-gray-400 text-center py-8">No attendees added yet. Select positions or search for employees.</p>
+                      )}
+                    </div>
                   </div>
-                </label>
+                </div>
               </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowAdd(false);
-                    setEmployeeSearchQuery("");
-                    setShowEmployeeSuggestions(false);
-                  }}
-                  className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium"
-                >
-                  Add Schedule
-                </button>
-              </div>
-            </form>
+            </div>
+            
+            {/* Footer - Fixed */}
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0 bg-white">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAdd(false);
+                  setEmployeeSearchQuery("");
+                  setSelectedPositions([]);
+                  setEmployeesByPositionMap({});
+                  setShowEmployeeSuggestions(false);
+                }}
+                className="px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors font-medium text-sm border border-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onSubmit}
+                className="px-5 py-2.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm shadow-sm"
+              >
+                Add Schedule
+              </button>
+            </div>
           </div>
         </div>
       )}
