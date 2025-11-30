@@ -19,6 +19,14 @@ function HrCreateJob() {
   const [success, setSuccess] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
 
+  const depotOptions = [
+    "Batangas", "Bulacan", "Cagayan", "Calamba", "Calbayog", "Cebu", 
+    "Davao", "Dipolog", "Iloilo", "Isabela", "Kalibo", "Kidapawan", 
+    "La Union", "Liip", "Manggahan", "Mindoro", "Naga", "Ozamis", 
+    "Palawan", "Pampanga", "Pasig", "Sucat", "Tacloban", "Tarlac", 
+    "Taytay", "Tuguegarao", "Vigan"
+  ];
+
   const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
   const addResp = () =>
@@ -44,6 +52,11 @@ function HrCreateJob() {
     }
     if (!depot || String(depot).trim() === "") {
       throw new Error("Depot is required.");
+    }
+    
+    // Validate depot is from the allowed list
+    if (!depotOptions.includes(String(depot).trim())) {
+      throw new Error("Invalid depot selected. Please choose from the dropdown list.");
     }
 
     const payload = {
@@ -196,11 +209,17 @@ function HrCreateJob() {
             <div>
               <label className="block text-sm font-medium mb-1">Depot</label>
               <input
+                list="depot-options"
                 className="w-full border rounded px-3 py-2"
                 value={form.depot}
                 onChange={(e) => setField("depot", e.target.value)}
-                placeholder="Pasig Depot"
+                placeholder="Select or type depot"
               />
+              <datalist id="depot-options">
+                {depotOptions.map((depot) => (
+                  <option key={depot} value={depot} />
+                ))}
+              </datalist>
             </div>
           </div>
 
