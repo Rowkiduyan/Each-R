@@ -29,6 +29,19 @@ function HrPost() {
   const [deleting, setDeleting] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
+  // Get current user info from localStorage
+  const [currentUser, setCurrentUser] = useState(null);
+  useEffect(() => {
+    const stored = localStorage.getItem("loggedInHR");
+    if (stored) {
+      try {
+        setCurrentUser(JSON.parse(stored));
+      } catch (err) {
+        console.error("Failed to parse loggedInHR:", err);
+      }
+    }
+  }, []);
+
   // Function to fetch job posts
   const fetchJobPosts = async () => {
     setLoading(true);
@@ -43,8 +56,13 @@ function HrPost() {
       if (error) {
         console.error('Error fetching job posts:', error);
       } else {
-        setJobPosts(data || []);
-        console.log('Job posts state updated, count:', data?.length || 0);
+        // Filter by depot if user is HRC
+        let filtered = data || [];
+        if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+          filtered = filtered.filter(job => job.depot === currentUser.depot);
+        }
+        setJobPosts(filtered);
+        console.log('Job posts state updated, count:', filtered.length || 0);
       }
     } catch (err) {
       console.error('Unexpected error fetching job posts:', err);
@@ -54,8 +72,10 @@ function HrPost() {
   };
 
   useEffect(() => {
-    fetchJobPosts();
-  }, []);
+    if (currentUser !== null) {
+      fetchJobPosts();
+    }
+  }, [currentUser]);
 
   const handleCardSelect = (job) => {
     setSelectedJob(job);

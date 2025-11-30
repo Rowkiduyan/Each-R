@@ -10,6 +10,19 @@ function HrRequirements() {
   const [expandedRow, setExpandedRow] = useState(null);
   const itemsPerPage = 8;
 
+  // Get current user info from localStorage
+  const [currentUser, setCurrentUser] = useState(null);
+  useEffect(() => {
+    const stored = localStorage.getItem("loggedInHR");
+    if (stored) {
+      try {
+        setCurrentUser(JSON.parse(stored));
+      } catch (err) {
+        console.error("Failed to parse loggedInHR:", err);
+      }
+    }
+  }, []);
+
   // Advanced filters
   const [employeeTypeFilter, setEmployeeTypeFilter] = useState('all'); // 'all', 'agency', 'direct'
   const [positionFilter, setPositionFilter] = useState('All');
@@ -300,13 +313,21 @@ function HrRequirements() {
   };
 
   // Calculate stats
-  const stats = useMemo(() => ({
-    actionRequired: employees.filter(e => getEmployeeStatus(e) === 'action_required').length,
-    incomplete: employees.filter(e => getEmployeeStatus(e) === 'incomplete').length,
-    pending: employees.filter(e => getEmployeeStatus(e) === 'pending').length,
-    complete: employees.filter(e => getEmployeeStatus(e) === 'complete').length,
-    total: employees.length,
-  }), [employees]);
+  const stats = useMemo(() => {
+    // Filter employees by depot for HRC users
+    let filteredEmployees = employees;
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      filteredEmployees = employees.filter(e => e.depot === currentUser.depot);
+    }
+
+    return {
+      actionRequired: filteredEmployees.filter(e => getEmployeeStatus(e) === 'action_required').length,
+      incomplete: filteredEmployees.filter(e => getEmployeeStatus(e) === 'incomplete').length,
+      pending: filteredEmployees.filter(e => getEmployeeStatus(e) === 'pending').length,
+      complete: filteredEmployees.filter(e => getEmployeeStatus(e) === 'complete').length,
+      total: filteredEmployees.length,
+    };
+  }, [employees, currentUser]);
 
   // Get unique positions and depots for filters
   const uniquePositions = useMemo(() => {
@@ -333,6 +354,11 @@ function HrRequirements() {
   // Filter data based on active tab, search, and filters
   const getFilteredData = () => {
     let data = [...employees];
+
+    // Filter by depot for HRC users first
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      data = data.filter(e => e.depot === currentUser.depot);
+    }
 
     // Filter by employee type (agency vs direct)
     if (employeeTypeFilter === 'agency') {

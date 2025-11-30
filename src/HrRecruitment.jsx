@@ -154,6 +154,19 @@ function HrRecruitment() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Get current user info from localStorage
+  const [currentUser, setCurrentUser] = useState(null);
+  useEffect(() => {
+    const stored = localStorage.getItem("loggedInHR");
+    if (stored) {
+      try {
+        setCurrentUser(JSON.parse(stored));
+      } catch (err) {
+        console.error("Failed to parse loggedInHR:", err);
+      }
+    }
+  }, []);
+
   // ---- UI state
   const [_activeSubTab, _setActiveSubTab] = useState("Applications");
   const [searchTerm, setSearchTerm] = useState("");
@@ -564,22 +577,30 @@ function HrRecruitment() {
     return a.status || "submitted";
   };
 
-  const applicationsBucket = applicants.filter((a) => {
+  // Filter applicants by depot for HRC users
+  const filteredApplicantsByDepot = useMemo(() => {
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      return applicants.filter(a => a.depot === currentUser.depot);
+    }
+    return applicants;
+  }, [applicants, currentUser]);
+
+  const applicationsBucket = filteredApplicantsByDepot.filter((a) => {
     const s = getStatus(a);
     return ["submitted", "pending"].includes(s);
   });
 
-  const interviewBucket = applicants.filter((a) => {
+  const interviewBucket = filteredApplicantsByDepot.filter((a) => {
     const s = getStatus(a);
     return ["screening", "interview", "scheduled", "onsite"].includes(s);
   });
 
-  const requirementsBucket = applicants.filter((a) => {
+  const requirementsBucket = filteredApplicantsByDepot.filter((a) => {
     const s = getStatus(a);
     return ["requirements", "docs_needed", "awaiting_documents"].includes(s);
   });
 
-  const agreementsBucket = applicants.filter((a) => {
+  const agreementsBucket = filteredApplicantsByDepot.filter((a) => {
     const s = getStatus(a);
     return ["agreement", "agreements", "final_agreement"].includes(s);
   });
@@ -1238,7 +1259,17 @@ function HrRecruitment() {
   };
 
   // Combined list of all applicants for the unified table
-  const allApplicants = applicants.filter(a => a.status !== 'hired' && a.status !== 'rejected');
+  // Filter by depot if user role is HRC
+  const allApplicants = useMemo(() => {
+    let filtered = applicants.filter(a => a.status !== 'hired' && a.status !== 'rejected');
+    
+    // If user is HRC, only show applications for their depot
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      filtered = filtered.filter(a => a.depot === currentUser.depot);
+    }
+    
+    return filtered;
+  }, [applicants, currentUser]);
 
   // Distinct positions/depots for filters
   const positions = useMemo(() => {
@@ -1318,7 +1349,7 @@ function HrRecruitment() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm text-gray-500 font-medium">Total Applications</p>
-                      <p className="text-2xl font-bold text-gray-800 mt-1">{applicants.length}</p>
+                      <p className="text-2xl font-bold text-gray-800 mt-1">{filteredApplicantsByDepot.length}</p>
                     </div>
                     <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
                       <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

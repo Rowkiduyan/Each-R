@@ -27,10 +27,10 @@ function EmployeeLogin() {
     // Step 2: Get the user from the login response
     const user = data.user;
 
-    // Step 3: Fetch the user's role from the 'profiles' table
+    // Step 3: Fetch the user's role and depot from the 'profiles' table
     let { data: profile, error: profileError } = await supabase
       .from("profiles")
-      .select("email, role, first_name, last_name")
+      .select("email, role, first_name, last_name, depot")
       .eq("id", user.id)
       .single();
 
@@ -62,7 +62,7 @@ function EmployeeLogin() {
         // If insert fails (maybe profile exists but query failed), try to fetch again
         const { data: fetchedProfile, error: fetchError } = await supabase
           .from("profiles")
-          .select("email, role, first_name, last_name")
+          .select("email, role, first_name, last_name, depot")
           .eq("id", user.id)
           .single();
         
@@ -124,6 +124,7 @@ function EmployeeLogin() {
       role: profile.role,
       first_name: profile.first_name,
       last_name: profile.last_name,
+      depot: profile.depot || null,
     };
 
     localStorage.setItem("loggedInHR", JSON.stringify(userDataToSave));
@@ -133,7 +134,7 @@ function EmployeeLogin() {
 
     console.log("🔐 Login successful! Role:", profile.role, "Normalized:", roleForRedirect);
 
-    if (roleForRedirect === "hr") {
+    if (roleForRedirect === "hr" || roleForRedirect === "hrc") {
       navigate("/hr/home");
     } else if (roleForRedirect === "employee") {
       console.log("✅ Redirecting to employee home...");
