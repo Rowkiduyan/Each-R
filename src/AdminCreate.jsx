@@ -182,11 +182,37 @@ function AdminCreate() {
                 />
               </div>
             </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Address
+              </label>
+              <textarea
+                name="address"
+                value={formData.address}
+                onChange={handleInputChange}
+                rows={2}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                placeholder="Enter agency address"
+              />
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Agency Description
+              </label>
+              <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleInputChange}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                placeholder="Enter agency description or additional information"
+              />
+            </div>
           </div>
 
-          {/* Contact Information */}
+          {/* Account Credentials */}
           <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Contact Information</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Account Credentials</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -215,26 +241,6 @@ function AdminCreate() {
                   placeholder="Enter contact number"
                 />
               </div>
-            </div>
-            <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Address
-              </label>
-              <textarea
-                name="address"
-                value={formData.address}
-                onChange={handleInputChange}
-                rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                placeholder="Enter agency address"
-              />
-            </div>
-          </div>
-
-          {/* Account Credentials */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Account Credentials</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Password *
@@ -264,21 +270,6 @@ function AdminCreate() {
                 />
               </div>
             </div>
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Agency Description
-            </label>
-            <textarea
-              name="description"
-              value={formData.description}
-              onChange={handleInputChange}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-              placeholder="Enter agency description or additional information"
-            />
           </div>
 
           {/* Error/Success Messages */}
