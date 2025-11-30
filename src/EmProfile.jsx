@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
 import { useState } from 'react';
-import EmployeeNavbar from "./EmployeeNavbar";
 
 function EmpProfile() {
 
@@ -8,8 +7,6 @@ function EmpProfile() {
     const tabs = ["Profiling", "Documents", "Evaluation"];
     return (
     <>
-        <EmployeeNavbar />
-
         <div className="flex justify-around mt-4">
             <ul className="list-none flex space-x-6 mt-2">
                 {tabs.map((tab) => (
