@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 
@@ -18,6 +18,25 @@ function HrCreateJob() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
+
+  // Get current user info from localStorage
+  const [currentUser, setCurrentUser] = useState(null);
+  useEffect(() => {
+    const stored = localStorage.getItem("loggedInHR");
+    if (stored) {
+      try {
+        const user = JSON.parse(stored);
+        setCurrentUser(user);
+        
+        // If user is HRC, auto-fill depot
+        if (user.role?.toUpperCase() === 'HRC' && user.depot) {
+          setForm(prev => ({ ...prev, depot: user.depot }));
+        }
+      } catch (err) {
+        console.error("Failed to parse loggedInHR:", err);
+      }
+    }
+  }, []);
 
   const depotOptions = [
     "Batangas", "Bulacan", "Cagayan", "Calamba", "Calbayog", "Cebu", 
@@ -214,12 +233,17 @@ function HrCreateJob() {
                 value={form.depot}
                 onChange={(e) => setField("depot", e.target.value)}
                 placeholder="Select or type depot"
+                disabled={currentUser?.role?.toUpperCase() === 'HRC'}
+                style={currentUser?.role?.toUpperCase() === 'HRC' ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
               />
               <datalist id="depot-options">
                 {depotOptions.map((depot) => (
                   <option key={depot} value={depot} />
                 ))}
               </datalist>
+              {currentUser?.role?.toUpperCase() === 'HRC' && (
+                <p className="text-xs text-gray-500 mt-1">HRC users can only create jobs for their assigned depot</p>
+              )}
             </div>
           </div>
 

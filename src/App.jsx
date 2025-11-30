@@ -58,7 +58,7 @@ function App() {
       <Route
         path="/hr"
         element={
-          <RequireRole role="HR">
+          <RequireRole role={["HR", "HRC"]}>
             <HRLayout />
           </RequireRole>
         }

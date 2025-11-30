@@ -8,6 +8,7 @@ function HrNotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [currentHrUser, setCurrentHrUser] = useState(null);
 
   useEffect(() => {
     let channel;
@@ -19,9 +20,10 @@ function HrNotificationBell() {
         if (!storedUser) return;
         
         const hrUser = JSON.parse(storedUser);
+        setCurrentHrUser(hrUser);
         const currentUserId = hrUser.id;
         
-        await fetchNotifications(currentUserId);
+        await fetchNotifications(currentUserId, hrUser);
 
         // Set up real-time subscription for new applications
         channel = supabase
@@ -36,9 +38,11 @@ function HrNotificationBell() {
             (payload) => {
               console.log('New application received:', payload);
               if (payload.new) {
-                const newNotification = createApplicationNotification(payload.new);
-                setNotifications(prev => [newNotification, ...prev.slice(0, 19)]);
-                setUnreadCount(prev => prev + 1);
+                const newNotification = createApplicationNotification(payload.new, hrUser);
+                if (newNotification) {
+                  setNotifications(prev => [newNotification, ...prev.slice(0, 19)]);
+                  setUnreadCount(prev => prev + 1);
+                }
               }
             }
           )
@@ -65,12 +69,12 @@ function HrNotificationBell() {
       }
     };
 
-    const fetchNotifications = async (userId) => {
+    const fetchNotifications = async (userId, hrUser) => {
       setLoading(true);
       try {
         // Fetch both application notifications and direct notifications
         const [applicationNotifications, directNotifications] = await Promise.all([
-          fetchApplicationNotifications(),
+          fetchApplicationNotifications(hrUser),
           getNotifications(userId, 10)
         ]);
 
@@ -89,26 +93,36 @@ function HrNotificationBell() {
       }
     };
 
-    const fetchApplicationNotifications = async () => {
+    const fetchApplicationNotifications = async (hrUser) => {
       try {
-        // Fetch recent applications to show as notifications (last 10)
+        // Fetch recent applications with job_posts to filter by depot
         const { data: applications, error } = await supabase
           .from('applications')
           .select(`
             id,
             created_at,
             payload,
-            user_id
+            user_id,
+            job_posts:job_posts(depot)
           `)
           .order('created_at', { ascending: false })
-          .limit(10);
+          .limit(20);
 
         if (error) {
           console.error('Error fetching applications:', error);
           return [];
         }
 
-        return applications.map(app => createApplicationNotification(app));
+        // Filter by depot if HRC user
+        let filtered = applications;
+        if (hrUser?.role?.toUpperCase() === 'HRC' && hrUser?.depot) {
+          filtered = applications.filter(app => {
+            const depot = app.job_posts?.depot;
+            return depot === hrUser.depot;
+          });
+        }
+
+        return filtered.map(app => createApplicationNotification(app, hrUser)).filter(Boolean);
       } catch (error) {
         console.error('Error fetching application notifications:', error);
         return [];
@@ -124,9 +138,10 @@ function HrNotificationBell() {
     };
   }, []);
 
-  const createApplicationNotification = (application) => {
+  const createApplicationNotification = (application, hrUser) => {
     let applicantName = 'Unknown Applicant';
     let position = 'Unknown Position';
+    let depot = null;
     
     try {
       if (application.payload) {
@@ -139,9 +154,15 @@ function HrNotificationBell() {
         
         const job = payload.job || {};
         position = job.title || 'Unknown Position';
+        depot = job.depot || application.job_posts?.depot;
       }
     } catch (error) {
       console.error('Error parsing application payload:', error);
+    }
+
+    // Filter by depot for HRC users
+    if (hrUser?.role?.toUpperCase() === 'HRC' && hrUser?.depot && depot !== hrUser.depot) {
+      return null;
     }
 
     return {
