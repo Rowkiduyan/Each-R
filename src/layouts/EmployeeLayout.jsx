@@ -1,11 +1,25 @@
 import { NavLink, useNavigate } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { supabase } from "../supabaseClient";
 import { Outlet } from "react-router-dom";
 import LogoCropped from "./photos/logo(cropped).png";
 
+// Create context for employee user data
+const EmployeeUserContext = createContext(null);
+
+// Export hook to access employee user data in child components
+export const useEmployeeUser = () => {
+    const context = useContext(EmployeeUserContext);
+    if (!context) {
+        throw new Error('useEmployeeUser must be used within EmployeeLayout');
+    }
+    return context;
+};
+
 function EmployeeLayout() {
     const [employeeUser, setEmployeeUser] = useState(null);
+    const [currentUserId, setCurrentUserId] = useState(null);
+    const [currentUserEmail, setCurrentUserEmail] = useState(null);
     const [showProfileDropdown, setShowProfileDropdown] = useState(false);
     const profileDropdownRef = useRef(null);
     const navigate = useNavigate();
@@ -43,6 +57,10 @@ function EmployeeLayout() {
                     navigate("/employee/login");
                     return;
                 }
+
+                // Store current user ID and email for data filtering
+                setCurrentUserId(user.id);
+                setCurrentUserEmail(user.email);
 
                 // User is authenticated and is an employee
                 // Try to get employee data from employees table
@@ -239,7 +257,13 @@ function EmployeeLayout() {
 
             {/* Main Content */}
             <main className="flex-1 py-8">
-                <Outlet />
+                <EmployeeUserContext.Provider value={{ 
+                    userId: currentUserId, 
+                    userEmail: currentUserEmail,
+                    employeeData: employeeUser 
+                }}>
+                    <Outlet />
+                </EmployeeUserContext.Provider>
             </main>
 
             {/* Footer */}

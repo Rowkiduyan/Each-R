@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
+import { useEmployeeUser } from "./layouts/EmployeeLayout";
 
 function  EmployeeSeparation () {
+  const { userId, userEmail } = useEmployeeUser();
   const [status1, setStatus1] = useState("Validated");
   const [status2, setStatus2] = useState("None");
   const [status3, setStatus3] = useState("None");

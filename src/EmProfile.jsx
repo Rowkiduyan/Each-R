@@ -1,8 +1,9 @@
 import { Link } from "react-router-dom";
 import { useState } from 'react';
+import { useEmployeeUser } from "./layouts/EmployeeLayout";
 
 function EmpProfile() {
-
+    const { userId, userEmail, employeeData } = useEmployeeUser();
     const [activeTab, setActiveTab] = useState("Profiling");
     const tabs = ["Profiling", "Documents", "Evaluation"];
     return (

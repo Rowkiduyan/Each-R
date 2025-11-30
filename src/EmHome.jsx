@@ -1,6 +1,8 @@
 import { Link } from "react-router-dom";
+import { useEmployeeUser } from "./layouts/EmployeeLayout";
 
 function EmHome() {
+    const { userId, userEmail } = useEmployeeUser();
     return(
      <>
         <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row gap-6">

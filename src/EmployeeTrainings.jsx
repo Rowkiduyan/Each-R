@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
+import { useEmployeeUser } from "./layouts/EmployeeLayout";
 
 function EmployeeTrainings() {
+    const { userId, userEmail } = useEmployeeUser();
     const [activeTab, setActiveTab] = useState("roadwise");
     const [externalTrainings, setExternalTrainings] = useState([]);
     const [newTraining, setNewTraining] = useState({ title: "", date: "", certification: "" });
