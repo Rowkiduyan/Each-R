@@ -13,6 +13,8 @@ function HrCreateJob() {
     others: [""],
     urgent: true,
     jobType: "delivery_crew", // "delivery_crew" or "office_employee"
+    durationHours: "",
+    durationMinutes: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -63,8 +65,8 @@ function HrCreateJob() {
     setForm(prev => ({ ...prev, others: prev.others.filter((_, idx) => idx !== i) }));
 
   // safe create + debug function
-  // call: await createJobPost({ title, depot, description, responsibilities, urgent, job_type })
-  const createJobPost = async ({ title, depot, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew" }) => {
+  // call: await createJobPost({ title, depot, description, responsibilities, urgent, job_type, duration })
+  const createJobPost = async ({ title, depot, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", duration = null }) => {
     // client-side validation (title & depot are NOT NULL in your DB)
     if (!title || String(title).trim() === "") {
       throw new Error("Job title is required.");
@@ -89,6 +91,7 @@ function HrCreateJob() {
       urgent: Boolean(urgent),
       is_active: Boolean(is_active),
       job_type: String(job_type).trim(), // Add job_type to payload
+      duration: duration ?? null, // Add duration to payload
     };
 
     // VERY IMPORTANT: log the payload so you can see what is being sent
@@ -120,6 +123,15 @@ function HrCreateJob() {
       ...form.responsibilities,
       ...form.others,
     ];
+    
+    // Format duration if both hours and minutes are provided
+    let duration = null;
+    if (form.durationHours || form.durationMinutes) {
+      const hours = form.durationHours ? parseInt(form.durationHours) : 0;
+      const minutes = form.durationMinutes ? parseInt(form.durationMinutes) : 0;
+      duration = `${hours}h ${minutes}m`;
+    }
+    
     try {
       // attempt to create a job post (this will throw if validations fail)
       await createJobPost({
@@ -130,6 +142,7 @@ function HrCreateJob() {
         urgent: form.urgent,
         is_active: true,
         job_type: form.jobType, // Add job_type to the payload
+        duration: duration, // Add duration to the payload
       });
 
       setSuccess("Job post created successfully.");
@@ -142,6 +155,8 @@ function HrCreateJob() {
         others: [""],
         urgent: true,
         jobType: "delivery_crew",
+        durationHours: "",
+        durationMinutes: "",
       });
       setShowConfirm(false);
     } catch (err) {
@@ -244,6 +259,36 @@ function HrCreateJob() {
               {currentUser?.role?.toUpperCase() === 'HRC' && (
                 <p className="text-xs text-gray-500 mt-1">HRC users can only create jobs for their assigned depot</p>
               )}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Duration (Optional)</label>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Hours</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  className="w-full border rounded px-3 py-2"
+                  value={form.durationHours}
+                  onChange={(e) => setField("durationHours", e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Minutes</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  className="w-full border rounded px-3 py-2"
+                  value={form.durationMinutes}
+                  onChange={(e) => setField("durationMinutes", e.target.value)}
+                  placeholder="0"
+                />
+              </div>
             </div>
           </div>
 

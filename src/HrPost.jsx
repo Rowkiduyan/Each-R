@@ -28,6 +28,10 @@ function HrPost() {
   const [deletingJob, setDeletingJob] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [showReopenModal, setShowReopenModal] = useState(false);
+  const [reopeningJob, setReopeningJob] = useState(null);
+  const [reopenDuration, setReopenDuration] = useState({ hours: '', minutes: '' });
+  const [reopening, setReopening] = useState(false);
 
   // Get current user info from localStorage
   const [currentUser, setCurrentUser] = useState(null);
@@ -41,6 +45,24 @@ function HrPost() {
       }
     }
   }, []);
+
+  // Helper to check if job is expired based on duration
+  const isJobExpired = (job) => {
+    if (!job.duration || !job.created_at) return false;
+    
+    // Parse duration (format: "Xh Ym")
+    const match = job.duration.match(/(\d+)h\s*(\d+)m/);
+    if (!match) return false;
+    
+    const hours = parseInt(match[1]) || 0;
+    const minutes = parseInt(match[2]) || 0;
+    const durationMs = (hours * 60 * 60 * 1000) + (minutes * 60 * 1000);
+    
+    const createdAt = new Date(job.created_at).getTime();
+    const now = Date.now();
+    
+    return (now - createdAt) > durationMs;
+  };
 
   // Function to fetch job posts
   const fetchJobPosts = async () => {
@@ -222,6 +244,49 @@ function HrPost() {
     }
   };
 
+  const handleReopenJob = async () => {
+    if (!reopeningJob) return;
+    
+    const hours = parseInt(reopenDuration.hours) || 0;
+    const minutes = parseInt(reopenDuration.minutes) || 0;
+    
+    if (hours === 0 && minutes === 0) {
+      alert('Please enter a valid duration (at least 1 minute)');
+      return;
+    }
+    
+    setReopening(true);
+    try {
+      const newDuration = `${hours}h ${minutes}m`;
+      
+      const { data, error } = await supabase
+        .from('job_posts')
+        .update({
+          duration: newDuration,
+          created_at: new Date().toISOString() // Reset created_at to now
+        })
+        .eq('id', reopeningJob.id)
+        .select();
+
+      if (error) {
+        console.error('Error reopening job post:', error);
+        alert(`Failed to reopen job post: ${error.message}`);
+      } else {
+        setShowReopenModal(false);
+        setReopeningJob(null);
+        setReopenDuration({ hours: '', minutes: '' });
+        setShowSuccessMessage(true);
+        setTimeout(() => setShowSuccessMessage(false), 3000);
+        fetchJobPosts();
+      }
+    } catch (err) {
+      console.error('Unexpected error reopening job post:', err);
+      alert(`Failed to reopen job post: ${err.message}`);
+    } finally {
+      setReopening(false);
+    }
+  };
+
   const locationSuggestions = Array.from(
     new Set(
       jobPosts
@@ -270,9 +335,14 @@ function HrPost() {
             URGENT HIRING!
           </div>
         )}
+        {isJobExpired(job) && (
+          <div className="absolute top-0 right-0 bg-gray-600 text-white text-xs font-bold px-4 py-1">
+            CLOSED
+          </div>
+        )}
         
         {/* 3-dot menu */}
-        <div className="absolute top-2 right-2">
+        <div className={`absolute ${isJobExpired(job) ? 'top-8' : 'top-2'} right-2`}>
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -298,6 +368,19 @@ function HrPost() {
               >
                 ✏️ Edit
               </button>
+              {isJobExpired(job) && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setReopeningJob(job);
+                    setShowReopenModal(true);
+                    setShowMenuId(null);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                >
+                  🔄 Reopen
+                </button>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -444,6 +527,11 @@ function HrPost() {
                       {selectedJob.urgent && (
                         <div className="inline-block px-4 py-1 rounded bg-red-100 text-red-700 text-2xl font-semibold">
                           Urgent Hiring
+                        </div>
+                      )}
+                      {isJobExpired(selectedJob) && (
+                        <div className="inline-block px-4 py-1 rounded bg-gray-200 text-gray-800 text-2xl font-semibold ml-2">
+                          CLOSED
                         </div>
                       )}
                       <div className="flex items-start justify-between gap-4">
@@ -645,6 +733,73 @@ function HrPost() {
             <div className="flex items-center gap-2">
               <span className="text-lg">✓</span>
               <span>Operation completed successfully!</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reopen Job Modal */}
+      {showReopenModal && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Reopen Job Post</h3>
+            <p className="text-gray-600 mb-4">Set a new duration for this job post.</p>
+            
+            <div className="space-y-4 mb-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Hours
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="999"
+                    value={reopenDuration.hours}
+                    onChange={(e) => setReopenDuration(prev => ({ ...prev, hours: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Minutes
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={reopenDuration.minutes}
+                    onChange={(e) => setReopenDuration(prev => ({ ...prev, minutes: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <p className="text-sm text-gray-500">
+                The job post will be active for the specified duration starting from now.
+              </p>
+            </div>
+            
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowReopenModal(false);
+                  setReopeningJob(null);
+                  setReopenDuration({ hours: '', minutes: '' });
+                }}
+                disabled={reopening}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReopenJob}
+                disabled={reopening}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+              >
+                {reopening ? 'Reopening...' : 'Reopen Job'}
+              </button>
             </div>
           </div>
         </div>

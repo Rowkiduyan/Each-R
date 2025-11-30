@@ -932,6 +932,24 @@ const formatDateForInput = (dateString) => {
     }, [profileForm.city, cities]);
 
     // NEW: Load job posts from DB and subscribe to realtime inserts
+    // Helper to check if job is expired based on duration
+    const isJobExpired = (job) => {
+      if (!job.duration || !job.created_at) return false;
+      
+      // Parse duration (format: "Xh Ym")
+      const match = job.duration.match(/(\d+)h\s*(\d+)m/);
+      if (!match) return false;
+      
+      const hours = parseInt(match[1]) || 0;
+      const minutes = parseInt(match[2]) || 0;
+      const durationMs = (hours * 60 * 60 * 1000) + (minutes * 60 * 1000);
+      
+      const createdAt = new Date(job.created_at).getTime();
+      const now = Date.now();
+      
+      return (now - createdAt) > durationMs;
+    };
+
     useEffect(() => {
       let channel;
 
@@ -939,7 +957,7 @@ const formatDateForInput = (dateString) => {
         setJobsLoading(true);
         const { data, error } = await supabase
           .from('job_posts')
-          .select('id, title, depot, description, responsibilities, urgent, created_at, job_type')
+          .select('id, title, depot, description, responsibilities, urgent, created_at, job_type, duration')
           .order('created_at', { ascending: false });
 
         if (error) {
@@ -950,10 +968,13 @@ const formatDateForInput = (dateString) => {
         }
 
         const list = data || [];
+        // Filter out expired jobs for applicants
+        const activeList = list.filter(job => !isJobExpired(job));
+        
         // ensure redirected job appears even if cache delay (avoid dupe)
         const merged = newJob
-          ? [list.find(j => j.id === newJob.id) ? null : newJob, ...list].filter(Boolean)
-          : list;
+          ? [activeList.find(j => j.id === newJob.id) ? null : newJob, ...activeList].filter(Boolean)
+          : activeList;
 
         setJobs(merged);
         setJobsLoading(false);
