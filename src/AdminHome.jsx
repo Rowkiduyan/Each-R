@@ -6,7 +6,9 @@ function AdminHome() {
     totalEmployees: 0,
     activeAccounts: 0,
     disabledAccounts: 0,
-    adminUsers: 0
+    adminUsers: 0,
+    hrAccounts: 0,
+    agencyAccounts: 0
   });
   const [loading, setLoading] = useState(true);
   const [employees, setEmployees] = useState([]);
@@ -20,13 +22,13 @@ function AdminHome() {
     try {
       setLoading(true);
 
-      // Get role counts (admin and HR from profiles)
+      // Get role counts (admin from profiles)
       const { data: roleCounts, error: roleError } = await supabase
         .rpc('get_role_counts');
       
       if (roleError) throw roleError;
 
-      // Get total employees from employees table
+      // Get total employees from employees table only
       const { count: employeeCount, error: empError } = await supabase
         .from('employees')
         .select('*', { count: 'exact', head: true });
@@ -38,19 +40,31 @@ function AdminHome() {
       
       const adminCount = roleCounts?.[0]?.admin_count || 0;
       const hrCount = roleCounts?.[0]?.hr_count || 0;
-      const employeesFromTable = employeeCount || 0;
+      const totalEmployees = employeeCount || 0;
       
-      // Total employees = employees table + HR from profiles (HR are also employees)
-      const totalEmployees = employeesFromTable + hrCount;
+      // Get Agency count from profiles
+      const { data: agencyProfiles, count: agencyCount, error: agencyError } = await supabase
+        .from('profiles')
+        .select('id, email, role', { count: 'exact' })
+        .ilike('role', 'Agency');
       
-      // Active accounts = employees + HR (since they have active accounts)
+      if (agencyError) {
+        console.error('Error counting agencies:', agencyError);
+      }
+      
+      console.log('Agency profiles found:', agencyProfiles);
+      console.log('Agency count:', agencyCount);
+      
+      // Active accounts = employees from employees table
       const activeAccounts = totalEmployees;
 
       setStats({
         totalEmployees,
         activeAccounts, 
         disabledAccounts: 0, // Set to 0 for now since we don't have disabled account info
-        adminUsers: adminCount
+        adminUsers: adminCount,
+        hrAccounts: hrCount,
+        agencyAccounts: agencyCount || 0
       });
 
     } catch (error) {
@@ -84,7 +98,7 @@ function AdminHome() {
         </div>
 
         {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Total Employees Card */}
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <div className="flex items-center">
@@ -148,6 +162,40 @@ function AdminHome() {
                 <p className="text-sm font-medium text-gray-500">Admin Users</p>
                 <p className="text-2xl font-bold text-gray-900">
                   {loading ? "..." : stats.adminUsers}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* HR Accounts Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-indigo-100 text-indigo-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">HR Accounts</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? "..." : stats.hrAccounts}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Agency Accounts Card */}
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center">
+              <div className="p-3 rounded-full bg-orange-100 text-orange-600">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-500">Agency Accounts</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {loading ? "..." : stats.agencyAccounts}
                 </p>
               </div>
             </div>
