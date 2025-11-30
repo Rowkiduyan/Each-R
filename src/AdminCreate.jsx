@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from './supabaseClient';
+import emailjs from '@emailjs/browser';
 
 function AdminCreate() {
   const [formData, setFormData] = useState({
@@ -95,10 +96,28 @@ function AdminCreate() {
         // Continue anyway, as the main account was created
       }
 
-      // You might want to create an agencies table entry here as well
-      // For now, we'll just show success
+      // Send credentials email via EmailJS
+      try {
+        await emailjs.send(
+          'service_7dbtuyn', // Service ID
+          'template_6949qsc', // Template ID
+          {
+            contact_person: formData.contactPerson,
+            agency_name: formData.agencyName,
+            email: formData.email,
+            password: formData.password,
+            login_url: window.location.origin + '/employee/login',
+            to_email: formData.email
+          },
+          'TsWcN7KUc6VQo6a5V' // Public Key
+        );
+        console.log('Credentials email sent successfully');
+      } catch (emailError) {
+        console.error('Failed to send credentials email:', emailError);
+        // Don't fail the whole process if email fails
+      }
 
-      setSuccess('Agency account has been successfully created!');
+      setSuccess('Agency account has been successfully created and credentials have been sent to ' + formData.email + '!');
       
       // Reset form
       setFormData({
