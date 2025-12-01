@@ -841,7 +841,7 @@ function EmployeeSeparation() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-800">Stage 3: Final Review</h2>
           </div>
-          <p className="text-gray-600 mb-6">HR is reviewing your submitted documents. Status updates will appear below.</p>
+          <p className="text-gray-600 mb-6">HR is reviewing your documents. Please wait for possible additional files.</p>
 
           <div className="space-y-4">
             {/* Final HR Documents */}
