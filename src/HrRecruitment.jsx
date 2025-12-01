@@ -1781,6 +1781,19 @@ function HrRecruitment() {
                   <section className="p-4">
                     <div className="flex items-center justify-between mb-3">
                       <h2 className="text-lg font-semibold text-gray-800">Assessment</h2>
+                      {/* Set Interview Schedule button - show if no interview scheduled */}
+                      {!selectedApplicant.interview_date && (
+                        <button
+                          type="button"
+                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                          onClick={() => {
+                            setSelectedApplicationForInterview(selectedApplicant);
+                            openInterviewModal(selectedApplicant);
+                          }}
+                        >
+                          Set Interview Schedule
+                        </button>
+                      )}
                     </div>
 
                     {/* Interview Schedule */}

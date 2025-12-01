@@ -6,7 +6,7 @@ import NotificationBell from './NotificationBell';
 import { createInterviewScheduledNotification, createInterviewRescheduledNotification } from './notifications';
 
 function ApplicantApplications() {
-  const steps = ["Application", "Assessment", "Requirements", "Agreements"];
+  const steps = ["Application", "Assessment", "Agreements"];
   const [activeStep, setActiveStep] = useState("Application");
   const [loading, setLoading] = useState(true);
   const [applicationData, setApplicationData] = useState(null);
@@ -16,7 +16,6 @@ function ApplicantApplications() {
   const [stepStatus, setStepStatus] = useState({
     Application: "done",
     Assessment: "pending",
-    Requirements: "waiting",
     Agreements: "waiting",
   });
 
@@ -305,7 +304,6 @@ function ApplicantApplications() {
       setStepStatus({
         Application: 'waiting',
         Assessment: 'waiting',
-        Requirements: 'waiting',
         Agreements: 'waiting',
       });
       setShowRetractDialog(false);
@@ -1332,7 +1330,7 @@ function ApplicantApplications() {
 
                     // Update UI state
                   setShowConfirmDialog(false);
-                  setStepStatus((s) => ({ ...s, Assessment: "done", Requirements: s.Requirements }));
+                  setStepStatus((s) => ({ ...s, Assessment: "done", Agreements: "pending" }));
                   setShowConfirmationModal(true);
                   } catch (err) {
                     console.error('Error confirming interview:', err);

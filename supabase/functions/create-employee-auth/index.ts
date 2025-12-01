@@ -18,14 +18,20 @@ serve(async (req) => {
   }
 
   try {
+    const body = await req.json();
+    console.log("Received request body:", JSON.stringify(body, null, 2));
+    
     const {
       email,
       password,
       firstName,
       lastName,
-    } = await req.json();
+    } = body;
+
+    console.log("Parsed values:", { email, hasPassword: !!password, firstName, lastName });
 
     if (!email || !password) {
+      console.error("Validation failed - missing email or password");
       return new Response(
         JSON.stringify({ error: "Missing email or password" }),
         {
@@ -130,9 +136,18 @@ serve(async (req) => {
       }
     );
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Error in create-employee-auth:", error);
+    console.error("Error details:", {
+      message: error.message,
+      name: error.name,
+      stack: error.stack,
+      cause: error.cause,
+    });
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ 
+        error: error.message || "Unknown error",
+        details: error.toString(),
+      }),
       {
         status: 500,
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
