@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { supabase } from "../supabaseClient";
 import { Outlet } from "react-router-dom";
 import LogoCropped from "./photos/logo(cropped).png";
+import NotificationBell from "../NotificationBell";
 
 // Create context for employee user data
 const EmployeeUserContext = createContext(null);
@@ -62,6 +63,26 @@ function EmployeeLayout() {
                 setCurrentUserId(user.id);
                 setCurrentUserEmail(user.email);
 
+                // Check if employee is terminated and if account has expired
+                const { data: separationData, error: sepError } = await supabase
+                    .from('employee_separations')
+                    .select('is_terminated, account_expires_at')
+                    .eq('employee_id', user.id)
+                    .maybeSingle();
+
+                if (!sepError && separationData?.is_terminated && separationData?.account_expires_at) {
+                    const expiryDate = new Date(separationData.account_expires_at);
+                    const now = new Date();
+                    
+                    if (now >= expiryDate) {
+                        // Account has expired - force logout
+                        console.log('Account has expired. Logging out...');
+                        await supabase.auth.signOut();
+                        navigate("/employee/login");
+                        return;
+                    }
+                }
+
                 // User is authenticated and is an employee
                 // Try to get employee data from employees table
                 try {
@@ -98,6 +119,43 @@ function EmployeeLayout() {
 
         checkAuth();
     }, [navigate]);
+
+    // Periodic check for account expiration (every 30 seconds)
+    useEffect(() => {
+        if (!currentUserId) return;
+
+        const checkExpiration = async () => {
+            try {
+                const { data: separationData, error: sepError } = await supabase
+                    .from('employee_separations')
+                    .select('is_terminated, account_expires_at')
+                    .eq('employee_id', currentUserId)
+                    .maybeSingle();
+
+                if (!sepError && separationData?.is_terminated && separationData?.account_expires_at) {
+                    const expiryDate = new Date(separationData.account_expires_at);
+                    const now = new Date();
+                    
+                    if (now >= expiryDate) {
+                        // Account has expired - force logout
+                        console.log('Account has expired during session. Logging out...');
+                        await supabase.auth.signOut();
+                        navigate("/employee/login");
+                    }
+                }
+            } catch (err) {
+                console.error('Error checking expiration:', err);
+            }
+        };
+
+        // Check immediately
+        checkExpiration();
+
+        // Then check every 30 seconds
+        const interval = setInterval(checkExpiration, 30000);
+
+        return () => clearInterval(interval);
+    }, [currentUserId, navigate]);
 
     const handleLogout = async () => {
         await supabase.auth.signOut();
@@ -200,16 +258,7 @@ function EmployeeLayout() {
 
                         <div className="flex items-center space-x-4">
                             {/* Notification Bell */}
-                            <NavLink to="/employee/notif" className={({ isActive }) => `relative ${
-                                isActive ? "text-red-600" : ""
-                            }`}>
-                                <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300 cursor-pointer">
-                                    <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                                    </svg>
-                                </div>
-                                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
-                            </NavLink>
+                            <NotificationBell />
 
                             {/* User Profile Picture/Initials with Dropdown */}
                             <div className="relative" ref={profileDropdownRef}>

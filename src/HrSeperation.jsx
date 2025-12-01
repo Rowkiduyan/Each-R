@@ -1,5 +1,13 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient";
+import {
+  createResignationValidatedNotification,
+  createExitFormsUploadedNotification,
+  createFormValidatedNotification,
+  createFormResubmissionNotification,
+  createSeparationCompletedNotification,
+  createAccountTerminationNotification
+} from "./notifications";
 
 function HrSeperation() {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
@@ -7,14 +15,34 @@ function HrSeperation() {
   const [activeTab, setActiveTab] = useState("all"); // all, pending, clearance, completed
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [hrUserId, setHrUserId] = useState(null);
 
   // Employee data with separation stages
   const [employees, setEmployees] = useState([]);
 
   // Fetch employees with separation records
   useEffect(() => {
+    const getHrUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setHrUserId(user.id);
+    };
+    getHrUser();
     fetchEmployeeSeparations();
     fetchTemplates();
+
+    // Poll every 30 seconds
+    const interval = setInterval(fetchEmployeeSeparations, 30000);
+    
+    // Refetch when HR comes back to the tab
+    const handleVisibilityChange = () => {
+      if (!document.hidden) fetchEmployeeSeparations();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const fetchTemplates = async () => {
@@ -97,9 +125,11 @@ function HrSeperation() {
           stage,
           resignationStatus: sep.resignation_status === 'validated' ? 'Validated' : 'Submitted',
           exitClearanceStatus: sep.signed_exit_clearance_status === 'validated' ? 'Validated' : 
+                               sep.signed_exit_clearance_status === 'resubmission_required' ? 'Re-submission Required' :
                                sep.signed_exit_clearance_status === 'submitted' ? 'Submitted' : 
                                sep.exit_clearance_form_status === 'uploaded' ? 'Pending Validation' : 'None',
           exitInterviewStatus: sep.signed_exit_interview_status === 'validated' ? 'Validated' : 
+                              sep.signed_exit_interview_status === 'resubmission_required' ? 'Re-submission Required' :
                               sep.signed_exit_interview_status === 'submitted' ? 'Submitted' : 
                               sep.exit_interview_form_status === 'uploaded' ? 'Pending Validation' : 'None',
           resignationFile: sep.resignation_original_filename || sep.resignation_letter_url,
@@ -108,7 +138,14 @@ function HrSeperation() {
           exitInterviewFile: sep.signed_exit_interview_url,
           isResignationApproved: sep.resignation_status === 'validated',
           hrExitFormsUploaded: sep.exit_clearance_form_url && sep.exit_interview_form_url,
-          finalDocs: sep.additional_files_urls || [],
+          finalDocs: Array.isArray(sep.additional_files_urls) 
+            ? sep.additional_files_urls.map(f => {
+                if (typeof f === 'object' && f !== null) {
+                  return f.name || 'Unknown File';
+                }
+                return f || 'Unknown File';
+              })
+            : [],
           isCompleted: sep.status === 'completed',
           dbId: sep.id,
           employeeUserId: employee.id
@@ -134,8 +171,24 @@ function HrSeperation() {
   const [showCancelApprovalConfirm, setShowCancelApprovalConfirm] = useState(false);
   const [showUploadFormsConfirm, setShowUploadFormsConfirm] = useState(false);
   const [showUploadSuccess, setShowUploadSuccess] = useState(false);
+  const [showValidateConfirm, setShowValidateConfirm] = useState(false);
+  const [showRejectConfirm, setShowRejectConfirm] = useState(false);
+  const [showValidateSuccess, setShowValidateSuccess] = useState(false);
+  const [showRejectSuccess, setShowRejectSuccess] = useState(false);
   const [pendingApprovalId, setPendingApprovalId] = useState(null);
   const [pendingUploadEmployeeId, setPendingUploadEmployeeId] = useState(null);
+  const [pendingValidation, setPendingValidation] = useState(null); // { employeeId, docType }
+  const [showUploadFinalDocsConfirm, setShowUploadFinalDocsConfirm] = useState(false);
+  const [showMarkCompletedConfirm, setShowMarkCompletedConfirm] = useState(false);
+  const [uploadingFinalDocs, setUploadingFinalDocs] = useState(false);
+  const [pendingCompletionEmployeeId, setPendingCompletionEmployeeId] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingDeleteEmployeeId, setPendingDeleteEmployeeId] = useState(null);
+  const [showTerminateModal, setShowTerminateModal] = useState(false);
+  const [terminateFile, setTerminateFile] = useState(null);
+  const [pendingTerminateEmployeeId, setPendingTerminateEmployeeId] = useState(null);
+  const [showTerminateConfirm, setShowTerminateConfirm] = useState(false);
+  const [showTerminateSuccess, setShowTerminateSuccess] = useState(false);
 
   // State for global templates (staging area)
   const [showTemplateManager, setShowTemplateManager] = useState(false);
@@ -159,11 +212,17 @@ function HrSeperation() {
         .update({
           resignation_status: 'validated',
           resignation_validated_at: new Date().toISOString(),
+          resignation_validated_by: hrUserId,
           status: 'reviewed'
         })
         .eq('id', employee.dbId);
 
       if (updateError) throw updateError;
+
+      // Send notification to employee
+      await createResignationValidatedNotification({
+        employeeUserId: employee.employeeUserId
+      });
 
       // Update local state
       setEmployees(employees.map(emp => 
@@ -287,13 +346,22 @@ function HrSeperation() {
           exit_clearance_form_url: clearanceFileName,
           exit_clearance_form_filename: hrExitClearanceFile.name,
           exit_clearance_form_status: 'uploaded',
+          exit_clearance_form_uploaded_by: hrUserId,
+          exit_clearance_form_uploaded_at: new Date().toISOString(),
           exit_interview_form_url: interviewFileName,
           exit_interview_form_filename: hrExitInterviewFile.name,
-          exit_interview_form_status: 'uploaded'
+          exit_interview_form_status: 'uploaded',
+          exit_interview_form_uploaded_by: hrUserId,
+          exit_interview_form_uploaded_at: new Date().toISOString()
         })
         .eq('id', employee.dbId);
 
       if (updateError) throw updateError;
+
+      // Send notification to employee
+      await createExitFormsUploadedNotification({
+        employeeUserId: employee.employeeUserId
+      });
 
       // Update local state
       setEmployees(employees.map(emp => 
@@ -319,40 +387,350 @@ function HrSeperation() {
     }
   };
 
-  const handleValidateDocument = (employeeId, docType, action) => {
-    const status = action === "validate" ? "Validated" : "Re-submission Required";
-    setEmployees(employees.map(emp => {
-      if (emp.id === employeeId) {
+  const handleValidateDocument = async (employeeId, docType) => {
+    try {
+      const employee = employees.find(emp => emp.id === employeeId);
+      if (!employee) return;
+
+      const updateData = docType === "clearance" 
+        ? {
+            signed_exit_clearance_status: 'validated'
+          }
+        : {
+            signed_exit_interview_status: 'validated'
+          };
+
+      const { error: updateError } = await supabase
+        .from('employee_separations')
+        .update(updateData)
+        .eq('id', employee.dbId);
+
+      if (updateError) throw updateError;
+
+      // Send notification to employee
+      await createFormValidatedNotification({
+        employeeUserId: employee.employeeUserId,
+        formType: docType
+      });
+
+      // Update local state
+      const status = "Validated";
+      setEmployees(employees.map(emp => {
+        if (emp.id === employeeId) {
+          const updates = docType === "clearance" 
+            ? { exitClearanceStatus: status }
+            : { exitInterviewStatus: status };
+          return { ...emp, ...updates };
+        }
+        return emp;
+      }));
+      
+      if (selectedEmployee?.id === employeeId) {
         const updates = docType === "clearance" 
           ? { exitClearanceStatus: status }
           : { exitInterviewStatus: status };
-        
-        // Check if both are validated to enable final stage
-        const bothValidated = 
-          (docType === "clearance" ? status === "Validated" : emp.exitClearanceStatus === "Validated") &&
-          (docType === "interview" ? status === "Validated" : emp.exitInterviewStatus === "Validated");
-        
-        return { ...emp, ...updates };
+        setSelectedEmployee({ ...selectedEmployee, ...updates });
       }
-      return emp;
-    }));
-    
-    if (selectedEmployee?.id === employeeId) {
-      const updates = docType === "clearance" 
-        ? { exitClearanceStatus: status }
-        : { exitInterviewStatus: status };
-      setSelectedEmployee({ ...selectedEmployee, ...updates });
+
+      setShowValidateConfirm(false);
+      setPendingValidation(null);
+      setShowValidateSuccess(true);
+    } catch (err) {
+      console.error('Error validating document:', err);
+      setError(`Failed to validate document: ${err.message}`);
+      setShowValidateConfirm(false);
+      setPendingValidation(null);
     }
   };
 
-  const handleMarkCompleted = (employeeId) => {
-    setEmployees(employees.map(emp => 
-      emp.id === employeeId 
-        ? { ...emp, isCompleted: true, stage: "completed", finalDocs: finalDocFiles.map(f => f.name) }
-        : emp
-    ));
-    if (selectedEmployee?.id === employeeId) {
-      setSelectedEmployee({ ...selectedEmployee, isCompleted: true, stage: "completed", finalDocs: finalDocFiles.map(f => f.name) });
+  const handleRejectDocument = async (employeeId, docType) => {
+    try {
+      const employee = employees.find(emp => emp.id === employeeId);
+      if (!employee) return;
+
+      const updateData = docType === "clearance" 
+        ? {
+            signed_exit_clearance_status: 'resubmission_required',
+            signed_exit_clearance_url: null,
+            signed_exit_clearance_filename: null
+          }
+        : {
+            signed_exit_interview_status: 'resubmission_required',
+            signed_exit_interview_url: null,
+            signed_exit_interview_filename: null
+          };
+
+      const { error: updateError } = await supabase
+        .from('employee_separations')
+        .update(updateData)
+        .eq('id', employee.dbId);
+
+      if (updateError) throw updateError;
+
+      // Send notification to employee
+      await createFormResubmissionNotification({
+        employeeUserId: employee.employeeUserId,
+        formType: docType
+      });
+
+      // Update local state
+      const status = "Re-submission Required";
+      setEmployees(employees.map(emp => {
+        if (emp.id === employeeId) {
+          const updates = docType === "clearance" 
+            ? { exitClearanceStatus: status, exitClearanceFile: null }
+            : { exitInterviewStatus: status, exitInterviewFile: null };
+          return { ...emp, ...updates };
+        }
+        return emp;
+      }));
+      
+      if (selectedEmployee?.id === employeeId) {
+        const updates = docType === "clearance" 
+          ? { exitClearanceStatus: status, exitClearanceFile: null }
+          : { exitInterviewStatus: status, exitInterviewFile: null };
+        setSelectedEmployee({ ...selectedEmployee, ...updates });
+      }
+
+      setShowRejectConfirm(false);
+      setPendingValidation(null);
+      setShowRejectSuccess(true);
+    } catch (err) {
+      console.error('Error rejecting document:', err);
+      setError(`Failed to reject document: ${err.message}`);
+      setShowRejectConfirm(false);
+      setPendingValidation(null);
+    }
+  };
+
+  const handleUploadFinalDocs = async (employeeId) => {
+    if (finalDocFiles.length === 0) return;
+    
+    setShowUploadFinalDocsConfirm(false);
+    setUploadingFinalDocs(true);
+    
+    try {
+      setError(null);
+      const employee = employees.find(emp => emp.id === employeeId);
+      if (!employee) return;
+
+      // Upload files to storage
+      const uploadedFileUrls = [];
+      const uploadedFileNames = [];
+      
+      for (const file of finalDocFiles) {
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${employee.employeeUserId}/final_docs_${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('separation-documents')
+          .upload(fileName, file, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (uploadError) throw uploadError;
+        
+        uploadedFileUrls.push(fileName);
+        uploadedFileNames.push(file.name);
+      }
+
+      // Get existing final docs from database
+      const { data: existingRecord } = await supabase
+        .from('employee_separations')
+        .select('additional_files_urls')
+        .eq('id', employee.dbId)
+        .single();
+
+      const existingUrls = existingRecord?.additional_files_urls || [];
+
+      // Merge with new uploads - store objects with url and name
+      const newFileObjects = uploadedFileUrls.map((url, index) => ({
+        url: url,
+        name: uploadedFileNames[index]
+      }));
+      const allFiles = [...existingUrls, ...newFileObjects];
+
+      // Update database
+      const { error: updateError } = await supabase
+        .from('employee_separations')
+        .update({
+          additional_files_urls: allFiles
+        })
+        .eq('id', employee.dbId);
+
+      if (updateError) throw updateError;
+
+      // Update local state with file names for display
+      const allNames = allFiles.map(f => f.name);
+      setEmployees(employees.map(emp => 
+        emp.id === employeeId 
+          ? { ...emp, finalDocs: allNames }
+          : emp
+      ));
+      if (selectedEmployee?.id === employeeId) {
+        setSelectedEmployee({ ...selectedEmployee, finalDocs: allNames });
+      }
+
+      // Clear file input
+      setFinalDocFiles([]);
+      
+    } catch (err) {
+      console.error('Error uploading final documents:', err);
+      setError(`Failed to upload final documents: ${err.message}`);
+    } finally {
+      setUploadingFinalDocs(false);
+    }
+  };
+
+  const handleMarkCompleted = async (employeeId) => {
+    setShowMarkCompletedConfirm(false);
+    setPendingCompletionEmployeeId(null);
+    
+    try {
+      const employee = employees.find(emp => emp.id === employeeId);
+      if (!employee) return;
+
+      const { error: updateError } = await supabase
+        .from('employee_separations')
+        .update({
+          status: 'completed',
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', employee.dbId);
+
+      if (updateError) throw updateError;
+
+      // Send notification to employee
+      await createSeparationCompletedNotification({
+        employeeUserId: employee.employeeUserId
+      });
+
+      // Update local state
+      setEmployees(employees.map(emp => 
+        emp.id === employeeId 
+          ? { ...emp, isCompleted: true, stage: "completed" }
+          : emp
+      ));
+      if (selectedEmployee?.id === employeeId) {
+        setSelectedEmployee({ ...selectedEmployee, isCompleted: true, stage: "completed" });
+      }
+    } catch (err) {
+      console.error('Error marking as completed:', err);
+      setError(`Failed to mark as completed: ${err.message}`);
+    }
+  };
+
+  const handleDeleteSeparation = async (employeeId) => {
+    setShowDeleteConfirm(false);
+    setPendingDeleteEmployeeId(null);
+    
+    try {
+      const employee = employees.find(emp => emp.id === employeeId);
+      if (!employee) return;
+
+      // Delete resignation letter file from storage
+      if (employee.resignationFileUrl) {
+        const { error: storageError } = await supabase.storage
+          .from('separation-documents')
+          .remove([employee.resignationFileUrl]);
+        
+        if (storageError) console.error('Error deleting file from storage:', storageError);
+      }
+
+      // Delete the separation record
+      const { error: deleteError } = await supabase
+        .from('employee_separations')
+        .delete()
+        .eq('id', employee.dbId);
+
+      if (deleteError) throw deleteError;
+
+      // Remove from local state
+      setEmployees(employees.filter(emp => emp.id !== employeeId));
+      
+      // Clear selection if deleted employee was selected
+      if (selectedEmployee?.id === employeeId) {
+        setSelectedEmployee(null);
+      }
+
+    } catch (err) {
+      console.error('Error deleting separation:', err);
+      setError(`Failed to delete separation: ${err.message}`);
+    }
+  };
+
+  const handleTerminateEmployee = async (employeeId) => {
+    setShowTerminateConfirm(false);
+    
+    try {
+      const employee = employees.find(emp => emp.id === employeeId);
+      if (!employee) return;
+
+      let terminationDocUrl = null;
+      let terminationDocFilename = null;
+
+      // Upload termination file if provided
+      if (terminateFile) {
+        const fileExt = terminateFile.name.split('.').pop();
+        const fileName = `${employee.employeeUserId}/termination_${Date.now()}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('separation-documents')
+          .upload(fileName, terminateFile, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (uploadError) throw uploadError;
+        
+        terminationDocUrl = fileName;
+        terminationDocFilename = terminateFile.name;
+      }
+
+      // Calculate account expiry (2 minutes from now for testing)
+      const accountExpiry = new Date();
+      accountExpiry.setMinutes(accountExpiry.getMinutes() + 2);
+
+      // Update employee_separations table
+      const { error: updateError } = await supabase
+        .from('employee_separations')
+        .update({
+          is_terminated: true,
+          terminated_at: new Date().toISOString(),
+          account_expires_at: accountExpiry.toISOString(),
+          termination_doc_url: terminationDocUrl,
+          termination_doc_filename: terminationDocFilename
+        })
+        .eq('id', employee.dbId);
+
+      if (updateError) throw updateError;
+
+      // Send notification to employee
+      await createAccountTerminationNotification({
+        employeeUserId: employee.employeeUserId,
+        expiryDate: accountExpiry.toISOString()
+      });
+
+      // Update local state
+      setEmployees(employees.map(emp => 
+        emp.id === employeeId 
+          ? { ...emp, isTerminated: true, terminatedAt: new Date().toISOString() }
+          : emp
+      ));
+      if (selectedEmployee?.id === employeeId) {
+        setSelectedEmployee({ ...selectedEmployee, isTerminated: true, terminatedAt: new Date().toISOString() });
+      }
+
+      // Clear form
+      setShowTerminateModal(false);
+      setPendingTerminateEmployeeId(null);
+      setTerminateFile(null);
+      setShowTerminateSuccess(true);
+
+    } catch (err) {
+      console.error('Error terminating employee:', err);
+      setError(`Failed to terminate employee: ${err.message}`);
     }
   };
 
@@ -648,7 +1026,7 @@ function HrSeperation() {
             </div>
 
             {/* Stage 1: Resignation Review */}
-            <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div className={`bg-white rounded-lg shadow-md p-6 mb-6 ${selectedEmployee.isResignationApproved ? 'opacity-50' : ''}`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-semibold text-gray-800">Stage 1: Resignation Letter Review</h3>
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${
@@ -697,15 +1075,26 @@ function HrSeperation() {
                 </div>
 
                 {!selectedEmployee.isResignationApproved && (
-                  <button
-                    onClick={() => {
-                      setPendingApprovalId(selectedEmployee.id);
-                      setShowApproveConfirm(true);
-                    }}
-                    className="w-full px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
-                  >
-                    Approve Resignation (Unlock Stage 2)
-                  </button>
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => {
+                        setPendingApprovalId(selectedEmployee.id);
+                        setShowApproveConfirm(true);
+                      }}
+                      className="w-full px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
+                    >
+                      Approve Resignation (Unlock Stage 2)
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPendingDeleteEmployeeId(selectedEmployee.id);
+                        setShowDeleteConfirm(true);
+                      }}
+                      className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
+                    >
+                      Delete Separation Request
+                    </button>
+                  </div>
                 )}
 
                 {selectedEmployee.isResignationApproved && (
@@ -718,7 +1107,8 @@ function HrSeperation() {
                         setPendingApprovalId(selectedEmployee.id);
                         setShowCancelApprovalConfirm(true);
                       }}
-                      className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
+                      disabled={true}
+                      className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Cancel Approval
                     </button>
@@ -822,20 +1212,28 @@ function HrSeperation() {
                         <a href={selectedEmployee.exitClearanceFile} download className="text-sm text-blue-600 hover:underline">
                           {selectedEmployee.exitClearanceFile}
                         </a>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleValidateDocument(selectedEmployee.id, "clearance", "validate")}
-                            className="px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm transition-colors"
-                          >
-                            Validate
-                          </button>
-                          <button
-                            onClick={() => handleValidateDocument(selectedEmployee.id, "clearance", "reject")}
-                            className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm transition-colors"
-                          >
-                            Require Re-submission
-                          </button>
-                        </div>
+                        {selectedEmployee.exitClearanceStatus !== "Validated" && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setPendingValidation({ employeeId: selectedEmployee.id, docType: "clearance" });
+                                setShowValidateConfirm(true);
+                              }}
+                              className="px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm transition-colors"
+                            >
+                              Validate
+                            </button>
+                            <button
+                              onClick={() => {
+                                setPendingValidation({ employeeId: selectedEmployee.id, docType: "clearance" });
+                                setShowRejectConfirm(true);
+                              }}
+                              className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm transition-colors"
+                            >
+                              Require Re-submission
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <p className="text-sm text-gray-500">No file uploaded yet</p>
@@ -859,20 +1257,28 @@ function HrSeperation() {
                         <a href={selectedEmployee.exitInterviewFile} download className="text-sm text-blue-600 hover:underline">
                           {selectedEmployee.exitInterviewFile}
                         </a>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleValidateDocument(selectedEmployee.id, "interview", "validate")}
-                            className="px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm transition-colors"
-                          >
-                            Validate
-                          </button>
-                          <button
-                            onClick={() => handleValidateDocument(selectedEmployee.id, "interview", "reject")}
-                            className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm transition-colors"
-                          >
-                            Require Re-submission
-                          </button>
-                        </div>
+                        {selectedEmployee.exitInterviewStatus !== "Validated" && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setPendingValidation({ employeeId: selectedEmployee.id, docType: "interview" });
+                                setShowValidateConfirm(true);
+                              }}
+                              className="px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm transition-colors"
+                            >
+                              Validate
+                            </button>
+                            <button
+                              onClick={() => {
+                                setPendingValidation({ employeeId: selectedEmployee.id, docType: "interview" });
+                                setShowRejectConfirm(true);
+                              }}
+                              className="px-3 py-1 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm transition-colors"
+                            >
+                              Require Re-submission
+                            </button>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <p className="text-sm text-gray-500">No file uploaded yet</p>
@@ -904,26 +1310,53 @@ function HrSeperation() {
                       className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                     />
                     {finalDocFiles.length > 0 && (
-                      <div className="mt-2 space-y-1">
-                        {finalDocFiles.map((file, index) => (
-                          <p key={index} className="text-sm text-gray-600">• {file.name}</p>
-                        ))}
+                      <div className="mt-3 space-y-2">
+                        <div className="space-y-1">
+                          {finalDocFiles.map((file, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                              <p className="text-sm text-gray-600">• {file.name}</p>
+                              <button
+                                onClick={() => {
+                                  const newFiles = finalDocFiles.filter((_, i) => i !== index);
+                                  setFinalDocFiles(newFiles);
+                                }}
+                                className="text-red-600 hover:text-red-800 text-sm font-medium"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setShowUploadFinalDocsConfirm(true)}
+                          disabled={uploadingFinalDocs}
+                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm"
+                        >
+                          {uploadingFinalDocs ? 'Uploading...' : 'Upload Files'}
+                        </button>
                       </div>
                     )}
                   </div>
 
-                  {selectedEmployee.finalDocs.length > 0 && (
+                  {selectedEmployee.finalDocs && selectedEmployee.finalDocs.length > 0 && (
                     <div className="p-3 bg-gray-50 rounded-lg">
                       <p className="text-sm font-medium text-gray-700 mb-2">Uploaded Final Documents:</p>
-                      {selectedEmployee.finalDocs.map((doc, index) => (
-                        <p key={index} className="text-sm text-gray-600">• {doc}</p>
-                      ))}
+                      {selectedEmployee.finalDocs.map((doc, index) => {
+                        // Handle both object format {url, name} and string format
+                        const fileName = typeof doc === 'object' ? doc.name : doc;
+                        return (
+                          <p key={index} className="text-sm text-gray-600">• {fileName}</p>
+                        );
+                      })}
                     </div>
                   )}
 
                   {!selectedEmployee.isCompleted && (
                     <button
-                      onClick={() => handleMarkCompleted(selectedEmployee.id)}
+                      onClick={() => {
+                        setPendingCompletionEmployeeId(selectedEmployee.id);
+                        setShowMarkCompletedConfirm(true);
+                      }}
                       className="w-full px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
                     >
                       Mark Separation as Completed
@@ -931,8 +1364,19 @@ function HrSeperation() {
                   )}
 
                   {selectedEmployee.isCompleted && (
-                    <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                      <p className="text-sm font-medium text-green-800">✓ Separation process completed</p>
+                    <div className="space-y-3">
+                      <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                        <p className="text-sm font-medium text-green-800">✓ Separation process completed</p>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setPendingTerminateEmployeeId(selectedEmployee.id);
+                          setShowTerminateModal(true);
+                        }}
+                        className="w-full px-4 py-3 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium"
+                      >
+                        Terminate Employee
+                      </button>
                     </div>
                   )}
                 </div>
@@ -987,6 +1431,112 @@ function HrSeperation() {
                 className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
               >
                 Approve
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Terminate Employee Modal */}
+      {showTerminateModal && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-red-600 mb-4">Terminate Employee</h3>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Employee Name:</p>
+                <p className="font-medium text-gray-800">{selectedEmployee?.name}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Termination Date:</p>
+                <p className="font-medium text-gray-800">{new Date().toLocaleDateString('en-CA')}</p>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-2">Upload Termination Document:</label>
+                <input
+                  type="file"
+                  onChange={(e) => setTerminateFile(e.target.files[0])}
+                  className="w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowTerminateModal(false);
+                  setPendingTerminateEmployeeId(null);
+                  setTerminateFile(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowTerminateModal(false);
+                  setShowTerminateConfirm(true);
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Terminate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Terminate Confirmation Modal */}
+      {showTerminateConfirm && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-red-600 mb-4">Confirm Termination?</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to terminate this employee? The employee will have access to their account for 2 minutes before it is closed.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowTerminateConfirm(false);
+                  setShowTerminateModal(true);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleTerminateEmployee(pendingTerminateEmployeeId)}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Confirm Terminate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Separation Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-red-600 mb-4">Delete Separation Request?</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to delete this separation request? This will permanently remove the resignation letter and all associated data. The employee will need to submit a new resignation if they wish to proceed.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setPendingDeleteEmployeeId(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteSeparation(pendingDeleteEmployeeId)}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Delete
               </button>
             </div>
           </div>
@@ -1230,6 +1780,206 @@ function HrSeperation() {
                 className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validate Document Confirmation Modal */}
+      {showValidateConfirm && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Validate Document?</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to validate this {pendingValidation?.docType === "clearance" ? "Exit Clearance" : "Exit Interview"} form? This will mark it as approved.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowValidateConfirm(false);
+                  setPendingValidation(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleValidateDocument(pendingValidation?.employeeId, pendingValidation?.docType)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                Validate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Document Confirmation Modal */}
+      {showRejectConfirm && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Require Re-submission?</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to reject this {pendingValidation?.docType === "clearance" ? "Exit Clearance" : "Exit Interview"} form? The employee will need to re-submit it.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowRejectConfirm(false);
+                  setPendingValidation(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRejectDocument(pendingValidation?.employeeId, pendingValidation?.docType)}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Require Re-submission
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Validate Success Modal */}
+      {showValidateSuccess && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800">
+                Document Validated!
+              </h3>
+            </div>
+            <p className="text-gray-600 mb-6 ml-16">
+              The document has been successfully validated and approved.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowValidateSuccess(false)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Success Modal */}
+      {showRejectSuccess && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mr-4">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800">
+                Re-submission Required
+              </h3>
+            </div>
+            <p className="text-gray-600 mb-6 ml-16">
+              The document has been rejected. The employee will be notified to re-submit.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowRejectSuccess(false)}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Terminate Success Modal */}
+      {showTerminateSuccess && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <div className="flex items-center mb-4">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-800">
+                Employee Terminated Successfully!
+              </h3>
+            </div>
+            <p className="text-gray-600 mb-6 ml-16">
+              The employee has been terminated. Their account will expire in 2 minutes and they will be notified.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowTerminateSuccess(false)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Final Docs Confirmation Modal */}
+      {showUploadFinalDocsConfirm && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Upload Final Documents?</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to upload these final HR documents? They will be saved to the employee's separation record.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowUploadFinalDocsConfirm(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleUploadFinalDocs(selectedEmployee.id)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              >
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mark Completed Confirmation Modal */}
+      {showMarkCompletedConfirm && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Mark Separation as Completed?</h3>
+            <p className="text-gray-600 mb-6">
+              Are you sure you want to mark this employee's separation as completed? This action will finalize the separation process.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowMarkCompletedConfirm(false);
+                  setPendingCompletionEmployeeId(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleMarkCompleted(pendingCompletionEmployeeId)}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                Mark as Completed
               </button>
             </div>
           </div>

@@ -90,7 +90,6 @@ function ApplicantApplications() {
 
   // Fetch application data
   useEffect(() => {
-    let channel;
     let userId = null;
 
     const fetchApplication = async () => {
@@ -256,70 +255,20 @@ function ApplicantApplications() {
 
     fetchApplication();
 
-    // Set up realtime subscription to refresh when application is updated
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        channel = supabase
-          .channel(`application-updates-${user.id}`)
-          .on(
-            'postgres_changes',
-            {
-              event: 'UPDATE',
-              schema: 'public',
-              table: 'applications',
-              filter: `user_id=eq.${user.id}`
-            },
-            (payload) => {
-              console.log('Real-time update received:', payload);
-              // Update local state immediately with the new data
-              if (payload.new) {
-                setApplicationData(prev => {
-                  if (!prev || prev.id !== payload.new.id) return prev;
-                  
-                  // Merge the updated data with existing data
-                  const updatedData = { ...prev, ...payload.new };
-                  
-                  // Parse payload if it's a string
-                  if (typeof updatedData.payload === 'string') {
-                    try {
-                      updatedData.payload = JSON.parse(updatedData.payload);
-                    } catch (e) {
-                      console.warn('Failed to parse payload:', e);
-                    }
-                  }
-                  
-                  console.log('Updated application data:', updatedData);
-                  
-                  // Check if interview was rescheduled (status reset to 'Idle')
-                  if (updatedData.interview_confirmed === 'Idle' && prev.interview_confirmed !== 'Idle') {
-                    console.log('Interview was rescheduled - showing buttons again');
-                    // The notification will be created by the HR system automatically
-                    // No need for alert here as the notification bell will show the update
-                  }
-                  
-                  // Check if new interview was scheduled
-                  if (updatedData.interview_date && updatedData.interview_date !== prev.interview_date) {
-                    console.log('New interview scheduled or rescheduled');
-                    // The notification will be created by the HR system automatically
-                  }
-                  
-                  return updatedData;
-                });
-                
-                // Also refresh the full data to ensure consistency
-                setTimeout(() => fetchApplication(), 100);
-              }
-            }
-          )
-          .subscribe();
+    // Polling: refetch every 30 seconds
+    const interval = setInterval(fetchApplication, 30000);
+
+    // Refetch when user returns to tab
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchApplication();
       }
-    })();
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (channel) {
-        supabase.removeChannel(channel);
-      }
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []);
 

@@ -270,15 +270,15 @@ function HrCreateJob() {
                 <input
                   type="number"
                   min="0"
-                  max="23"
                   className="w-full border rounded px-3 py-2"
                   value={form.durationHours}
                   onChange={(e) => setField("durationHours", e.target.value)}
-                  placeholder="0"
+                  placeholder="e.g., 8"
                 />
+                
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Minutes</label>
+                <label className="block text-xs text-gray-600 mb-1">Minutes (0-59)</label>
                 <input
                   type="number"
                   min="0"
@@ -286,7 +286,7 @@ function HrCreateJob() {
                   className="w-full border rounded px-3 py-2"
                   value={form.durationMinutes}
                   onChange={(e) => setField("durationMinutes", e.target.value)}
-                  placeholder="0"
+                  placeholder="e.g., 30"
                 />
               </div>
             </div>

@@ -541,33 +541,24 @@ function HrRecruitment() {
     }
   };
 
-  // ---- useEffect: initial load + realtime subscription for INSERT/UPDATE/DELETE
+  // ---- useEffect: initial load + polling + refetch on focus
   useEffect(() => {
-    let channel;
     loadApplications();
 
-    // subscribe to INSERT / UPDATE / DELETE so UI stays in sync across clients
-    channel = supabase
-      .channel("applications-realtime")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "applications" },
-        () => loadApplications()
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "applications" },
-        () => loadApplications()
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "applications" },
-        () => loadApplications()
-      )
-      .subscribe();
+    // Polling: refetch every 30 seconds
+    const interval = setInterval(loadApplications, 30000);
+
+    // Refetch when user returns to tab
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        loadApplications();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (channel) supabase.removeChannel(channel);
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, []); // run once on mount
 
