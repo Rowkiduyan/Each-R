@@ -168,7 +168,7 @@ function HrRecruitment() {
   }, []);
 
   // ---- UI state
-  const [_activeSubTab, _setActiveSubTab] = useState("Applications");
+  const [activeSubTab, setActiveSubTab] = useState("Applications"); // "Applications" | "JobPosts"
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [showActionModal, setShowActionModal] = useState(false);
@@ -1167,6 +1167,49 @@ function HrRecruitment() {
     }
   };
 
+  // ---- APPROVE: move application from Application step to Assessment step (with confirmation)
+  const proceedToAssessment = (applicant) => {
+    if (!applicant?.id) return;
+
+    setConfirmMessage(
+      `Approve ${applicant.name}'s application and move to Assessment step?`
+    );
+    setConfirmCallback(async () => {
+      try {
+        const { error } = await supabase
+          .from("applications")
+          .update({ status: "screening" })
+          .eq("id", applicant.id);
+
+        if (error) {
+          console.error("proceedToAssessment update error:", error);
+          setErrorMessage("Failed to move application to assessment. See console.");
+          setShowErrorAlert(true);
+          return;
+        }
+
+        // Refresh list so buckets & stats update
+        await loadApplications();
+
+        // Keep the selected applicant and reflect new status locally
+        setSelectedApplicant((prev) =>
+          prev && prev.id === applicant.id ? { ...prev, status: "screening" } : prev
+        );
+
+        // Move UI to Assessment step
+        setActiveDetailTab("Assessment");
+
+        setSuccessMessage(`${applicant.name} has been approved to proceed to assessment.`);
+        setShowSuccessAlert(true);
+      } catch (err) {
+        console.error("proceedToAssessment unexpected error:", err);
+        setErrorMessage("Unexpected error while moving to assessment. See console.");
+        setShowErrorAlert(true);
+      }
+    });
+    setShowConfirmDialog(true);
+  };
+
   // ---- REJECT action: update DB row status -> 'rejected' and optionally save remarks
   const rejectApplication = async (applicationId, name, remarks = null) => {
     if (!applicationId) return;
@@ -1274,6 +1317,28 @@ function HrRecruitment() {
   }, [allApplicants]);
   
   const statusOptions = ["All", "SUBMITTED", "IN REVIEW", "INTERVIEW SET", "INTERVIEW CONFIRMED", "REQUIREMENTS", "AGREEMENT", "HIRED", "REJECTED"];
+
+  // Simple aggregation to show recent "job posts" based on applications
+  const jobPostStats = useMemo(() => {
+    const map = new Map();
+    filteredApplicantsByDepot.forEach((a) => {
+      const key = `${a.position || "Untitled role"}-${a.depot || "—"}`;
+      if (!map.has(key)) {
+        map.set(key, {
+          id: key,
+          title: a.position || "Untitled role",
+          depot: a.depot || "—",
+          status: "Draft",
+          applied: 0,
+          hired: 0,
+          waitlisted: 0,
+        });
+      }
+      const item = map.get(key);
+      item.applied += 1;
+    });
+    return Array.from(map.values());
+  }, [filteredApplicantsByDepot]);
 
   // Filtered + sorted applicants based on search and filters
   const filteredAllApplicants = useMemo(() => {
@@ -1400,15 +1465,27 @@ function HrRecruitment() {
               {/* Top Navigation Tabs */}
               <div className="flex border-b border-gray-200 mb-4">
                 <button
-                  className="px-4 pb-2 text-sm font-medium border-b-2 border-blue-600 text-blue-600"
+                  className={`px-4 pb-2 text-sm font-medium border-b-2 ${
+                    activeSubTab === "Applications"
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
                   type="button"
+                  onClick={() => setActiveSubTab("Applications")}
                 >
                   Applications <span className="text-gray-400">({allApplicants.length})</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => navigate("/applicantg/home")}
-                  className="px-4 pb-2 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 transition-colors"
+                  onClick={() => {
+                    setActiveSubTab("JobPosts");
+                    setSelectedApplicant(null);
+                  }}
+                  className={`px-4 pb-2 text-sm font-medium border-b-2 ${
+                    activeSubTab === "JobPosts"
+                      ? "border-blue-600 text-blue-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  } transition-colors`}
                 >
                   View Job Posts
                 </button>
@@ -1416,7 +1493,8 @@ function HrRecruitment() {
             </>
           )}
 
-          {/* Applications Table Card */}
+          {/* Main card below tabs: Applications vs Job Posts */}
+          {activeSubTab === "Applications" && (
           <div className="bg-white rounded-b-xl shadow-sm border border-gray-100 flex flex-col">
             {/* Search and Filters Bar (always visible) */}
             <div className="p-4 border-b border-gray-100 bg-gray-50/50">
@@ -1594,6 +1672,7 @@ function HrRecruitment() {
               )}
 
             </div>
+          )}
 
           {/* Applicant Detail View - Shows for all tabs when applicant is selected */}
           {selectedApplicant && (
@@ -1619,7 +1698,6 @@ function HrRecruitment() {
                           }`}
                           onClick={() => {
                             setSelectedApplicant(a);
-                            setActiveDetailTab("Application");
                             // Reset file states when switching applicants
                             setInterviewFile(null);
                             setInterviewFileName(
@@ -1709,22 +1787,64 @@ function HrRecruitment() {
                   </div>
                 )}
 
-                {/* Tabs header - Application / Assessment / Agreements */}
-                <div className="flex border-b border-gray-300 bg-white overflow-x-auto">
-                  {["Application", "Assessment", "Agreements"].map((step) => (
-                    <button
-                      key={step}
-                      type="button"
-                      onClick={() => setActiveDetailTab(step)}
-                      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                        activeDetailTab === step
-                          ? "border-red-500 text-red-600 bg-red-50"
-                          : "border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50"
-                      }`}
-                    >
-                      {step}
-                    </button>
-                  ))}
+                {/* 3-step visual guide for the hiring flow (also acts as tabs) */}
+                <div className="bg-white border-l border-r border-b border-gray-300 px-4 pt-3 pb-4">
+                  <div className="flex items-center justify-between gap-3">
+                    {[
+                      { key: "Application", label: "Application", description: "Step 1 · Review application" },
+                      { key: "Assessment", label: "Assessment", description: "Step 2 · Schedule & assess" },
+                      { key: "Agreements", label: "Agreements", description: "Step 3 · Final agreements & hire" },
+                    ].map((step, index, arr) => {
+                      const isActive = activeDetailTab === step.key;
+                      const isCompleted =
+                        (step.key === "Application" && ["Assessment", "Agreements"].includes(activeDetailTab)) ||
+                        (step.key === "Assessment" && activeDetailTab === "Agreements");
+
+                      return (
+                        <button
+                          key={step.key}
+                          type="button"
+                          onClick={() => setActiveDetailTab(step.key)}
+                          className="flex-1 flex items-center text-left focus:outline-none"
+                        >
+                          <div className="flex items-center gap-3 w-full">
+                            <div
+                              className={[
+                                "w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border transition-colors",
+                                isActive
+                                  ? "bg-red-600 text-white border-red-600 shadow"
+                                  : isCompleted
+                                  ? "bg-green-50 text-green-700 border-green-500"
+                                  : "bg-gray-50 text-gray-500 border-gray-300",
+                              ].join(" ")}
+                            >
+                              {index + 1}
+                            </div>
+                            <div className="flex flex-col">
+                              <span
+                                className={[
+                                  "text-xs font-semibold",
+                                  isActive
+                                    ? "text-red-600"
+                                    : isCompleted
+                                    ? "text-green-700"
+                                    : "text-gray-600",
+                                ].join(" ")}
+                              >
+                                {step.label}
+                              </span>
+                              <span className="text-[10px] text-gray-400">
+                                {step.description}
+                              </span>
+                            </div>
+                            {index < arr.length - 1 && (
+                              <div className="flex-1 h-px mx-2 rounded-full bg-gradient-to-r from-gray-200 via-gray-200 to-gray-200" />
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                {/* Detail Content */}
@@ -1772,6 +1892,30 @@ function HrRecruitment() {
                           <span className="ml-2 text-gray-800">{selectedApplicant.phone || "—"}</span>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Action: Approve to proceed to Assessment */}
+                    <div className="pt-2 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => proceedToAssessment(selectedApplicant)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 transition-colors"
+                      >
+                        <span>Approve &amp; Proceed to Assessment</span>
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M13 7l5 5m0 0l-5 5m5-5H6"
+                          />
+                        </svg>
+                      </button>
                     </div>
                   </section>
                 )}
@@ -2399,34 +2543,89 @@ function HrRecruitment() {
             </div>
           )}
 
-          {/* Pagination - placed at the bottom below details area */}
-          {!loading && filteredAllApplicants.length > 0 && (
-            <div className="flex items-center justify-between px-6 py-4 mt-4 border-t border-gray-100">
-              <button
-                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                disabled={currentPage === 1}
-                className={`px-4 py-2 text-sm rounded border ${
-                  currentPage === 1
-                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                }`}
-              >
-                Prev
-              </button>
-              <span className="text-sm text-gray-600">
-                Page {currentPage} of {allApplicantsTotalPages}
-              </span>
-              <button
-                onClick={() => setCurrentPage((p) => Math.min(p + 1, allApplicantsTotalPages))}
-                disabled={currentPage >= allApplicantsTotalPages}
-                className={`px-4 py-2 text-sm rounded border ${
-                  currentPage >= allApplicantsTotalPages
-                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
-                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
-                }`}
-              >
-                Next
-              </button>
+          {activeSubTab === "JobPosts" && (
+            // Job posts view (stays in this module, mimicking external job ads UI)
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              {/* Header row */}
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-800">My recent job posts</h2>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Draft and active postings with a quick overview of candidates.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate("/hr/create/job")}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-pink-500 text-white text-sm font-semibold shadow hover:bg-pink-600 transition-colors"
+                >
+                  Create a job ad
+                  <span className="text-lg leading-none">＋</span>
+                </button>
+              </div>
+
+              {/* Job posts table */}
+              <div className="border border-gray-100 rounded-xl overflow-hidden">
+                <div className="bg-gray-50 px-5 py-3 border-b border-gray-100 flex items-center justify-between text-xs font-medium text-gray-500 uppercase tracking-wide">
+                  <div className="flex gap-8 items-center">
+                    <span className="w-20">Status</span>
+                    <span className="w-48">Job</span>
+                    <span className="w-32">Depot</span>
+                    <span className="w-24 text-center">Applied</span>
+                    <span className="w-24 text-center">Hired</span>
+                    <span className="w-28 text-center">Waitlisted</span>
+                  </div>
+                  <span className="w-32 text-right pr-2">Job actions</span>
+                </div>
+
+                {jobPostStats.length === 0 ? (
+                  <div className="px-5 py-8 text-sm text-gray-500">
+                    No job ads yet. Use <span className="font-medium text-gray-700">Create a job ad</span> to start a posting.
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {jobPostStats.map((job) => (
+                      <div
+                        key={job.id}
+                        className="px-5 py-3 flex items-center justify-between text-sm hover:bg-gray-50/80 transition-colors"
+                      >
+                        <div className="flex items-center gap-8">
+                          <span className="inline-flex items-center justify-center px-2.5 py-1 text-[11px] rounded-full bg-yellow-50 text-yellow-700 border border-yellow-200 w-20">
+                            {job.status}
+                          </span>
+                          <div className="w-48">
+                            <p className="font-medium text-gray-800 truncate">{job.title}</p>
+                          </div>
+                          <div className="w-32 text-gray-700">{job.depot}</div>
+                          <div className="w-24 text-center text-gray-800">{job.applied}</div>
+                          <div className="w-24 text-center text-gray-800">{job.hired}</div>
+                          <div className="w-28 text-center text-gray-800">{job.waitlisted}</div>
+                        </div>
+                        <div className="w-32 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => navigate("/applicantg/home")}
+                            className="px-3 py-1.5 rounded-full border border-gray-300 text-xs text-gray-700 hover:bg-gray-50"
+                          >
+                            Continue draft
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Footer link */}
+              <div className="flex justify-end mt-4">
+                <button
+                  type="button"
+                  onClick={() => navigate("/hr/recruitment/job/all")}
+                  className="text-xs font-medium text-gray-600 hover:text-gray-800 hover:underline"
+                >
+                  View all job ads
+                </button>
+              </div>
             </div>
           )}
 

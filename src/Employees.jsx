@@ -620,7 +620,8 @@ function Employees() {
                                 className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${isSelected ? 'bg-red-50/50' : ''}`}
                                 onClick={() => {
                                   setSelectedEmployee(emp);
-                                  setActiveTab('profiling');
+                                  // Only reset tab to Profiling when opening details for the first time
+                                  setActiveTab((prev) => (selectedEmployee ? prev : 'profiling'));
                                 }}
                               >
                                 <td className="px-6 py-4">
