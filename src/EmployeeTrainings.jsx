@@ -7,6 +7,7 @@ function EmployeeTrainings() {
     const { userId, userEmail, employeeUser } = useEmployeeUser();
     const [loading, setLoading] = useState(true);
     const [upcoming, setUpcoming] = useState([]);
+    const [pendingAttendance, setPendingAttendance] = useState([]);
     const [completed, setCompleted] = useState([]);
     const [selectedTraining, setSelectedTraining] = useState(null);
     const [showDetails, setShowDetails] = useState(false);
@@ -169,8 +170,11 @@ function EmployeeTrainings() {
                 });
             });
 
-            // Normalize and separate upcoming and completed trainings
+            // Normalize and separate upcoming, pending attendance, and completed trainings
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Start of today (no time)
             const upcomingTrainings = [];
+            const pendingAttendanceTrainings = [];
             const completedTrainings = [];
 
             myTrainings.forEach((training) => {
@@ -182,9 +186,24 @@ function EmployeeTrainings() {
                 };
 
                 if (training.is_active === false) {
+                    // Attendance has been marked
                     completedTrainings.push(normalized);
                 } else {
-                    upcomingTrainings.push(normalized);
+                    // Still active, check if date has passed
+                    if (start) {
+                        // Compare dates only (ignore time) to determine if it's a past date
+                        const trainingDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+                        if (trainingDate < today) {
+                            // Past date but no attendance marked yet
+                            pendingAttendanceTrainings.push(normalized);
+                        } else {
+                            // Today or future date
+                            upcomingTrainings.push(normalized);
+                        }
+                    } else {
+                        // No start date, treat as upcoming
+                        upcomingTrainings.push(normalized);
+                    }
                 }
             });
 
@@ -195,6 +214,13 @@ function EmployeeTrainings() {
                 return dateA - dateB;
             });
 
+            // Sort pending attendance in descending order by date (most recent first)
+            pendingAttendanceTrainings.sort((a, b) => {
+                const dateA = a.start_at ? new Date(a.start_at) : new Date(0);
+                const dateB = b.start_at ? new Date(b.start_at) : new Date(0);
+                return dateB - dateA;
+            });
+
             // Sort completed in descending order by date (most recent first)
             completedTrainings.sort((a, b) => {
                 const dateA = a.start_at ? new Date(a.start_at) : new Date(0);
@@ -203,6 +229,7 @@ function EmployeeTrainings() {
             });
 
             setUpcoming(upcomingTrainings);
+            setPendingAttendance(pendingAttendanceTrainings);
             setCompleted(completedTrainings);
         } catch (error) {
             console.error('Error fetching trainings:', error);
@@ -236,6 +263,24 @@ function EmployeeTrainings() {
         }
     };
 
+    // Check if training is happening today
+    const isHappeningToday = (training) => {
+        if (!training.start_at) return false;
+        try {
+            const trainingDate = new Date(training.start_at);
+            const now = new Date();
+            
+            // Check if same date (year, month, day)
+            const isSameDate = trainingDate.getFullYear() === now.getFullYear() &&
+                             trainingDate.getMonth() === now.getMonth() &&
+                             trainingDate.getDate() === now.getDate();
+            
+            return isSameDate;
+        } catch {
+            return false;
+        }
+    };
+
     // View training details
     const viewDetails = (training) => {
         setSelectedTraining(training);
@@ -245,6 +290,7 @@ function EmployeeTrainings() {
     // Stats
     const stats = {
         upcoming: upcoming.length,
+        pendingAttendance: pendingAttendance.length,
         completed: completed.length,
     };
 
@@ -258,6 +304,11 @@ function EmployeeTrainings() {
     };
 
     const filteredUpcoming = upcoming.filter((t) => {
+        if (!searchQuery) return true;
+        return normalizeForSearch(t).includes(searchQuery.toLowerCase());
+    });
+
+    const filteredPendingAttendance = pendingAttendance.filter((t) => {
         if (!searchQuery) return true;
         return normalizeForSearch(t).includes(searchQuery.toLowerCase());
     });
@@ -320,7 +371,7 @@ function EmployeeTrainings() {
                 </div>
 
                 {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between">
                             <div>
@@ -334,6 +385,21 @@ function EmployeeTrainings() {
                             </div>
                         </div>
                         <p className="text-xs text-blue-600 mt-3 font-medium">Scheduled sessions</p>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <p className="text-sm text-gray-500 font-medium">Pending Attendance</p>
+                                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.pendingAttendance}</p>
+                            </div>
+                            <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center">
+                                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            </div>
+                        </div>
+                        <p className="text-xs text-orange-600 mt-3 font-medium">Awaiting HR confirmation</p>
                     </div>
 
                     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
@@ -374,6 +440,22 @@ function EmployeeTrainings() {
                                 </div>
                             </button>
                             <button
+                                onClick={() => setActiveTab('pending')}
+                                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                                    activeTab === 'pending'
+                                        ? 'border-red-600 text-red-600 bg-red-50/50'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                }`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Pending Attendance
+                                    <span className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">{pendingAttendance.length}</span>
+                                </div>
+                            </button>
+                            <button
                                 onClick={() => setActiveTab('history')}
                                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'history'
@@ -383,7 +465,7 @@ function EmployeeTrainings() {
                             >
                                 <div className="flex items-center gap-2">
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
                                     History
                                     <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">{completed.length}</span>
@@ -452,7 +534,15 @@ function EmployeeTrainings() {
                                                     </svg>
                                                 </div>
                                                 <div className="flex-1 min-w-0">
-                                                    <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-blue-600 transition-colors">{training.title}</h3>
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <h3 className="text-base font-bold text-gray-900 group-hover:text-blue-600 transition-colors">{training.title}</h3>
+                                                        {isHappeningToday(training) && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
+                                                                <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                                                                Happening Now
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
                                                         <div className="flex items-center gap-1.5">
                                                             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -474,6 +564,66 @@ function EmployeeTrainings() {
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                                                             </svg>
                                                             <span className="truncate">{training.venue || 'Venue not set'}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )
+                    ) : activeTab === 'pending' ? (
+                        filteredPendingAttendance.length === 0 ? (
+                            <div className="px-6 py-12 text-center text-gray-500 h-[500px] flex flex-col items-center justify-center">
+                                <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <p className="font-medium">No pending attendance</p>
+                                <p className="text-sm mt-1">All completed trainings have been marked by HR.</p>
+                            </div>
+                        ) : (
+                            <div className="relative h-[500px] overflow-y-auto no-scrollbar p-4 space-y-3">
+                                {filteredPendingAttendance.map((training) => (
+                                    <div
+                                        key={training.id}
+                                        className="bg-white border border-orange-200 rounded-xl p-5 hover:shadow-md hover:border-orange-300 transition-all cursor-pointer group"
+                                        onClick={() => viewDetails(training)}
+                                    >
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex items-start gap-4 flex-1">
+                                                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center text-white shadow-md flex-shrink-0">
+                                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-orange-600 transition-colors">{training.title}</h3>
+                                                    <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                            </svg>
+                                                            <span className="font-medium">{formatDate(training.date)}</span>
+                                                        </div>
+                                                        <span className="text-gray-300">•</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                            <span>{formatTime(training.time)}</span>
+                                                        </div>
+                                                        <span className="text-gray-300">•</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                            </svg>
+                                                            <span className="truncate">{training.venue || 'Venue not set'}</span>
+                                                        </div>
+                                                        <span className="text-gray-300">•</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-xs font-semibold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">Pending HR Confirmation</span>
                                                         </div>
                                                     </div>
                                                 </div>
