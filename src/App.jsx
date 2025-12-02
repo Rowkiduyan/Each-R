@@ -40,6 +40,7 @@ import HRLayout from "./layouts/HRLayout";
 import AdminLayout from "./layouts/AdminLayout";
 import EmployeeLayout from "./layouts/EmployeeLayout";
 import AdminCreate from "./AdminCreate";
+import AdminEnableDisable from "./AdminEnableDisable";
 import TermsAndPrivacy from "./TermsAndPrivacy";
 
 
@@ -112,6 +113,7 @@ function App() {
         <Route path="home" element={<AdminHome />} />
         <Route path="accounts" element={<ManageAccounts />} />
         <Route path="create" element={<AdminCreate />} />
+        <Route path="enable-disable" element={<AdminEnableDisable />} />
       </Route>      {/* Public routes (no protection) */}
       <Route path="/employee/login" element={<EmployeeLogin />} />
       <Route path="/agency/endorse" element={<AgencyEndorse />} />

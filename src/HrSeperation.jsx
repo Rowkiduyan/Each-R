@@ -12,7 +12,7 @@ import {
 function HrSeperation() {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState("all"); // all, pending, clearance, completed
+  const [activeTab, setActiveTab] = useState("all"); // all, pending, clearance, completed, terminated
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hrUserId, setHrUserId] = useState(null);
@@ -147,6 +147,8 @@ function HrSeperation() {
               })
             : [],
           isCompleted: sep.status === 'completed',
+          isTerminated: sep.is_terminated || false,
+          terminationDate: sep.terminated_at,
           dbId: sep.id,
           employeeUserId: employee.id
         };
@@ -713,13 +715,14 @@ function HrSeperation() {
       });
 
       // Update local state
+      const terminationDate = new Date().toISOString();
       setEmployees(employees.map(emp => 
         emp.id === employeeId 
-          ? { ...emp, isTerminated: true, terminatedAt: new Date().toISOString() }
+          ? { ...emp, isTerminated: true, terminationDate: terminationDate }
           : emp
       ));
       if (selectedEmployee?.id === employeeId) {
-        setSelectedEmployee({ ...selectedEmployee, isTerminated: true, terminatedAt: new Date().toISOString() });
+        setSelectedEmployee({ ...selectedEmployee, isTerminated: true, terminationDate: terminationDate });
       }
 
       // Clear form
@@ -890,10 +893,11 @@ function HrSeperation() {
                          emp.id.includes(searchTerm) ||
                          emp.position.toLowerCase().includes(searchTerm.toLowerCase());
     
-    if (activeTab === "all") return matchesSearch;
-    if (activeTab === "pending") return matchesSearch && emp.stage === "pending";
-    if (activeTab === "clearance") return matchesSearch && emp.stage === "clearance";
-    if (activeTab === "completed") return matchesSearch && emp.stage === "completed";
+    if (activeTab === "all") return matchesSearch && !emp.isTerminated;
+    if (activeTab === "pending") return matchesSearch && emp.stage === "pending" && !emp.isTerminated;
+    if (activeTab === "clearance") return matchesSearch && emp.stage === "clearance" && !emp.isTerminated;
+    if (activeTab === "completed") return matchesSearch && emp.stage === "completed" && !emp.isTerminated;
+    if (activeTab === "terminated") return matchesSearch && emp.isTerminated;
     return matchesSearch;
   });
 
@@ -939,14 +943,14 @@ function HrSeperation() {
           />
 
           {/* Tabs */}
-          <div className="flex gap-2 mt-4">
+          <div className="flex gap-2 mt-4 flex-wrap">
             <button
               onClick={() => setActiveTab("all")}
               className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
                 activeTab === "all" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              All ({employees.length})
+              All ({employees.filter(e => !e.isTerminated).length})
             </button>
             <button
               onClick={() => setActiveTab("pending")}
@@ -954,7 +958,7 @@ function HrSeperation() {
                 activeTab === "pending" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              Pending ({employees.filter(e => e.stage === "pending").length})
+              Pending ({employees.filter(e => e.stage === "pending" && !e.isTerminated).length})
             </button>
             <button
               onClick={() => setActiveTab("clearance")}
@@ -962,7 +966,7 @@ function HrSeperation() {
                 activeTab === "clearance" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              Clearance ({employees.filter(e => e.stage === "clearance").length})
+              Clearance ({employees.filter(e => e.stage === "clearance" && !e.isTerminated).length})
             </button>
             <button
               onClick={() => setActiveTab("completed")}
@@ -970,7 +974,15 @@ function HrSeperation() {
                 activeTab === "completed" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              Completed ({employees.filter(e => e.stage === "completed").length})
+              Completed ({employees.filter(e => e.stage === "completed" && !e.isTerminated).length})
+            </button>
+            <button
+              onClick={() => setActiveTab("terminated")}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "terminated" ? "bg-red-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Terminated ({employees.filter(e => e.isTerminated).length})
             </button>
           </div>
         </div>
@@ -989,14 +1001,19 @@ function HrSeperation() {
                   onClick={() => handleEmployeeClick(employee)}
                   className={`p-4 cursor-pointer hover:bg-gray-50 transition-colors ${
                     selectedEmployee?.id === employee.id ? "bg-blue-50 border-l-4 border-blue-600" : ""
-                  }`}
+                  } ${employee.isTerminated ? "bg-red-50" : ""}`}
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <h3 className="font-semibold text-gray-900">{employee.name}</h3>
                       <p className="text-sm text-gray-600">{employee.position}</p>
+                      {employee.isTerminated && (
+                        <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">
+                          Terminated
+                        </span>
+                      )}
                     </div>
-                    {getStageBadge(employee.stage)}
+                    {!employee.isTerminated && getStageBadge(employee.stage)}
                   </div>
                   <div className="flex justify-between items-center text-xs text-gray-500">
                     <span>ID: {employee.id}</span>
@@ -1022,7 +1039,19 @@ function HrSeperation() {
                 <span>•</span>
                 <span>Submitted: {selectedEmployee.submissionDate}</span>
               </div>
-              {getStageBadge(selectedEmployee.stage)}
+              <div className="flex items-center gap-2 mt-2">
+                {!selectedEmployee.isTerminated && getStageBadge(selectedEmployee.stage)}
+                {selectedEmployee.isTerminated && (
+                  <span className="px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
+                    Terminated
+                  </span>
+                )}
+              </div>
+              {selectedEmployee.isTerminated && selectedEmployee.terminationDate && (
+                <div className="mt-2 text-sm text-gray-600">
+                  Termination Date: {new Date(selectedEmployee.terminationDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                </div>
+              )}
             </div>
 
             {/* Stage 1: Resignation Review */}

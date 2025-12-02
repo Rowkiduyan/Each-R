@@ -18,6 +18,8 @@
     const [showSuccessPage, setShowSuccessPage] = useState(false);
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
     const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    const [showProfileIncompleteModal, setShowProfileIncompleteModal] = useState(false);
+    const [profileIncompleteMessage, setProfileIncompleteMessage] = useState('');
     const [applicationTab, setApplicationTab] = useState('personal');
     const [showProfileDropdown, setShowProfileDropdown] = useState(false);
     const profileDropdownRef = useRef(null);
@@ -698,6 +700,12 @@ const formatDateForInput = (dateString) => {
     };
 
     const proceedToApplicationForm = () => {
+      // Check if profile is complete before allowing application
+      if (!isProfileComplete) {
+        setProfileIncompleteMessage(`Please complete your profile before applying. Missing fields: ${missingFields.join(', ')}`);
+        setShowProfileIncompleteModal(true);
+        return;
+      }
       setShowDetails(false);
       setApplicationTab('personal');
       setShowModal(true);
@@ -1057,7 +1065,15 @@ const formatDateForInput = (dateString) => {
           className={`bg-white rounded-lg shadow-md p-6 flex flex-col relative overflow-hidden cursor-pointer transition-colors ${
             isSelected ? 'border-2 border-red-600' : 'border border-transparent'
           } hover:bg-gray-100`}
-          onClick={() => !isCurrentApplication && handleCardSelect(job)}
+          onClick={() => {
+            if (isCurrentApplication) return;
+            if (!isProfileComplete) {
+              setProfileIncompleteMessage(`Please complete your profile before viewing job details. Missing fields: ${missingFields.join(', ')}`);
+              setShowProfileIncompleteModal(true);
+              return;
+            }
+            handleCardSelect(job);
+          }}
         >
           {job.urgent && (
             <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1">
@@ -1334,6 +1350,19 @@ const formatDateForInput = (dateString) => {
                                 <span className="px-10 py-2 rounded bg-gray-300 text-gray-600 cursor-not-allowed">
                                   Apply (Disabled)
                                 </span>
+                              ) : !isProfileComplete ? (
+                                <div className="flex flex-col items-center gap-2">
+                                  <button
+                                    className="px-10 py-2 rounded bg-gray-400 text-white cursor-not-allowed"
+                                    disabled
+                                    title="Complete your profile to apply"
+                                  >
+                                    Apply
+                                  </button>
+                                  <span className="text-xs text-red-600 font-medium">
+                                    Complete your profile first
+                                  </span>
+                                </div>
                               ) : (
                                 <button
                                   className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
@@ -2679,6 +2708,51 @@ const formatDateForInput = (dateString) => {
                       }}
                     >
                       Confirm
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Profile Incomplete Modal */}
+            {showProfileIncompleteModal && (
+              <div
+                className="fixed inset-0 transparent bg-opacity-50 flex items-center justify-center z-50"
+                onClick={() => setShowProfileIncompleteModal(false)}
+              >
+                <div
+                  className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border border-black"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="p-4 border-b bg-red-50">
+                    <h3 className="text-lg font-semibold text-red-800 flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                        <path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clipRule="evenodd" />
+                      </svg>
+                      Profile Incomplete
+                    </h3>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-sm text-gray-700 mb-4">{profileIncompleteMessage}</p>
+                    <p className="text-xs text-gray-600 italic">You will be redirected to your profile to complete the required information.</p>
+                  </div>
+                  <div className="p-4 border-t flex justify-end gap-2">
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      onClick={() => setShowProfileIncompleteModal(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                      onClick={() => {
+                        setShowProfileIncompleteModal(false);
+                        setActiveTab('Profile');
+                      }}
+                    >
+                      Go to Profile
                     </button>
                   </div>
                 </div>
