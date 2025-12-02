@@ -172,7 +172,6 @@ function EmployeeTrainings() {
 
             // Normalize and separate upcoming, pending attendance, and completed trainings
             const now = new Date();
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Start of today (no time)
             const upcomingTrainings = [];
             const pendingAttendanceTrainings = [];
             const completedTrainings = [];
@@ -185,25 +184,35 @@ function EmployeeTrainings() {
                     time: start ? start.toISOString().slice(11, 16) : "",
                 };
 
-                if (training.is_active === false) {
-                    // Attendance has been marked
-                    completedTrainings.push(normalized);
-                } else {
-                    // Still active, check if date has passed
-                    if (start) {
-                        // Compare dates only (ignore time) to determine if it's a past date
-                        const trainingDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-                        if (trainingDate < today) {
-                            // Past date but no attendance marked yet
-                            pendingAttendanceTrainings.push(normalized);
+                if (start) {
+                    // Get the end of the training day (23:59:59.999)
+                    const trainingDayEnd = new Date(
+                        start.getFullYear(),
+                        start.getMonth(),
+                        start.getDate(),
+                        23, 59, 59, 999
+                    );
+
+                    // Training is in the past day
+                    if (trainingDayEnd < now) {
+                        const hasAttendance =
+                            training.attendance &&
+                            Object.keys(training.attendance || {}).length > 0;
+
+                        if (hasAttendance) {
+                            // Past training with recorded attendance → History
+                            completedTrainings.push(normalized);
                         } else {
-                            // Today or future date
-                            upcomingTrainings.push(normalized);
+                            // Past training without attendance yet → Pending Attendance
+                            pendingAttendanceTrainings.push(normalized);
                         }
                     } else {
-                        // No start date, treat as upcoming
+                        // Training is happening today or in the future → Upcoming
                         upcomingTrainings.push(normalized);
                     }
+                } else {
+                    // No start date, treat as upcoming
+                    upcomingTrainings.push(normalized);
                 }
             });
 
