@@ -137,7 +137,7 @@ function ApplicantLogin() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-6 text-center">
-              <div className="text-lg font-semibold text-gray-800 mb-4">Log in as Guest?</div>
+              <div className="text-lg font-semibold text-gray-800 mb-4">Continue as Guest?</div>
               <div className="flex justify-center gap-2">
                 <button
                   type="button"
