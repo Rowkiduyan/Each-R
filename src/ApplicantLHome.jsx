@@ -1413,39 +1413,24 @@ const formatDateForInput = (dateString) => {
             </div>
 
             {/* Depot Filter */}
-            <div className="mt-6 flex items-center gap-3 flex-wrap">
-              <span className="text-sm font-medium text-gray-700">Filter by Depot:</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setLocationFilter('');
-                  setLocationInput('');
+            <div className="mt-6 flex items-center gap-3">
+              <label htmlFor="depot-filter" className="text-sm font-medium text-gray-700">Filter by Depot:</label>
+              <select
+                id="depot-filter"
+                value={locationFilter}
+                onChange={(e) => {
+                  setLocationFilter(e.target.value);
+                  setLocationInput(e.target.value);
                 }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  locationFilter === ''
-                    ? 'bg-red-600 text-white'
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                }`}
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
               >
-                All Depots
-              </button>
-              {locationSuggestions.map((depot) => (
-                <button
-                  key={depot}
-                  type="button"
-                  onClick={() => {
-                    setLocationFilter(depot);
-                    setLocationInput(depot);
-                  }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    locationFilter === depot
-                      ? 'bg-red-600 text-white'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  {depot}
-                </button>
-              ))}
+                <option value="">All Depots</option>
+                {locationSuggestions.map((depot) => (
+                  <option key={depot} value={depot}>
+                    {depot}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
         )}
