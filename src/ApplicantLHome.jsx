@@ -9,6 +9,7 @@
     const navigate = useNavigate();
     const location = useLocation();
     const newJob = location.state?.newJob;
+    const jobIdFromGuest = location.state?.jobId;
 
     const [activeTab, setActiveTab] = useState('Home');
     const [showModal, setShowModal] = useState(false);
@@ -23,6 +24,7 @@
     const [applicationTab, setApplicationTab] = useState('personal');
     const [showProfileDropdown, setShowProfileDropdown] = useState(false);
     const profileDropdownRef = useRef(null);
+    const jobDetailsRef = useRef(null);
 
     const formTabs = [
       { key: 'personal', label: 'Personal' },
@@ -51,6 +53,8 @@
     const [birthdayError, setBirthdayError] = useState('');
     const [formBirthdayError, setFormBirthdayError] = useState('');
     const [startDateError, setStartDateError] = useState('');
+    const [showAllResponsibilities, setShowAllResponsibilities] = useState(false);
+    const [selectedJobFromGuest, setSelectedJobFromGuest] = useState(null);
     const [profileForm, setProfileForm] = useState({
         address: '',
         street: '',
@@ -203,21 +207,40 @@ useEffect(() => {
   }
 }, [profileData]);
 
-    // Check profile completeness and redirect to Profile tab if incomplete
-    useEffect(() => {
-      const isComplete = 
-        profileForm.street &&
-        profileForm.barangay &&
-        profileForm.city &&
-        profileForm.zip &&
-        profileForm.sex &&
-        profileForm.birthday &&
-        profileForm.marital_status;
+    // Profile completeness is checked when user clicks Apply button
 
-      if (!isComplete && !loading) {
-        setActiveTab('Profile');
-      }
-    }, [profileForm.street, profileForm.barangay, profileForm.city, profileForm.zip, profileForm.sex, profileForm.birthday, profileForm.marital_status, loading]);
+    // Handle job from guest view - fetch the specific job and show it
+    useEffect(() => {
+      const fetchGuestJob = async () => {
+        if (jobIdFromGuest && !loading) {
+          try {
+            const { data, error } = await supabase
+              .from('job_posts')
+              .select('*')
+              .eq('id', jobIdFromGuest)
+              .single();
+
+            if (!error && data) {
+              setSelectedJobFromGuest(data);
+              setSelectedJob(data);
+              setShowDetails(true);
+              // Profile check happens when user clicks Apply button
+              
+              // Scroll to job details after a short delay to ensure rendering
+              setTimeout(() => {
+                if (jobDetailsRef.current) {
+                  jobDetailsRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+              }, 100);
+            }
+          } catch (err) {
+            console.error('Error fetching guest job:', err);
+          }
+        }
+      };
+
+      fetchGuestJob();
+    }, [jobIdFromGuest, loading]);
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -704,6 +727,12 @@ const formatDateForInput = (dateString) => {
       if (!isProfileComplete) {
         setProfileIncompleteMessage(`Please complete your profile before applying. Missing fields: ${missingFields.join(', ')}`);
         setShowProfileIncompleteModal(true);
+        // Redirect to Profile tab after showing the message
+        setTimeout(() => {
+          setShowProfileIncompleteModal(false);
+          setActiveTab('Profile');
+          setShowDetails(false);
+        }, 1500);
         return;
       }
       setShowDetails(false);
@@ -1018,6 +1047,12 @@ const formatDateForInput = (dateString) => {
     const showLicenseSection = currentJobType !== 'office_employee';
 
     const filteredJobs = jobs.filter((job) => {
+      // If user has already applied, only show the job they applied for
+      if (hasExistingApplication && appliedJobId) {
+        return job.id === appliedJobId;
+      }
+      
+      // Otherwise, show all jobs matching search/filter criteria
       const keywordMatch = searchTerm
         ? job.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           job.description?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -1067,11 +1102,6 @@ const formatDateForInput = (dateString) => {
           } hover:bg-gray-100`}
           onClick={() => {
             if (isCurrentApplication) return;
-            if (!isProfileComplete) {
-              setProfileIncompleteMessage(`Please complete your profile before viewing job details. Missing fields: ${missingFields.join(', ')}`);
-              setShowProfileIncompleteModal(true);
-              return;
-            }
             handleCardSelect(job);
           }}
         >
@@ -1285,9 +1315,9 @@ const formatDateForInput = (dateString) => {
         )}
 
         <div className="flex flex-col items-center  min-h-screen">
-          <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="w-full px-6 py-8">
             <section className={`p-4 ${activeTab === 'Home' ? '' : 'hidden'}`}>
-              <div className="max-w-7xl mx-auto px-6 py-8">
+              <div className="w-full px-6 py-8">
                 {/* Profile Incomplete Warning */}
                 {!isProfileComplete && (
                   <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
@@ -1320,7 +1350,7 @@ const formatDateForInput = (dateString) => {
                 ) : filteredJobs.length === 0 ? (
                   <div className="text-gray-600">No job postings match your search.</div>
                 ) : showDetails && selectedJob ? (
-                  <div className="space-y-4">
+                  <div ref={jobDetailsRef} className="space-y-4">
                     <button
                       type="button"
                       onClick={handleViewAll}
@@ -1351,18 +1381,13 @@ const formatDateForInput = (dateString) => {
                                   Apply (Disabled)
                                 </span>
                               ) : !isProfileComplete ? (
-                                <div className="flex flex-col items-center gap-2">
-                                  <button
-                                    className="px-10 py-2 rounded bg-gray-400 text-white cursor-not-allowed"
-                                    disabled
-                                    title="Complete your profile to apply"
-                                  >
-                                    Apply
-                                  </button>
-                                  <span className="text-xs text-red-600 font-medium">
-                                    Complete your profile first
-                                  </span>
-                                </div>
+                                <button
+                                  className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                                  onClick={proceedToApplicationForm}
+                                  title="Complete your profile to apply"
+                                >
+                                  Apply
+                                </button>
                               ) : (
                                 <button
                                   className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
@@ -1402,7 +1427,105 @@ const formatDateForInput = (dateString) => {
                     </div>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{jobCardElements}</div>
+                  <div className={`${
+                    hasExistingApplication && filteredJobs.length === 1
+                      ? 'w-full max-w-[89%] mx-auto' // Slightly smaller than full width
+                      : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+                  }`}>
+                    {hasExistingApplication && filteredJobs.length === 1 ? (
+                      // Enhanced layout for single applied job
+                      <div className="bg-white rounded-lg shadow-lg border-2 border-green-500 overflow-hidden">
+                        {filteredJobs[0].urgent && (
+                          <div className="bg-red-600 text-white text-xs font-bold px-4 py-1.5 text-center">
+                            URGENT HIRING!
+                          </div>
+                        )}
+                        <div className="p-6">
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <h3 className="text-2xl font-bold text-gray-800 mb-2">{filteredJobs[0].title}</h3>
+                              <div className="flex flex-wrap items-center gap-2 text-gray-600 text-sm mb-3">
+                                <div className="flex items-center gap-1.5">
+                                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-red-600">
+                                    <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z" />
+                                  </svg>
+                                  <span className="font-semibold">{filteredJobs[0].depot}</span>
+                                </div>
+                                {filteredJobs[0].job_type && (
+                                  <>
+                                    <span>•</span>
+                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
+                                      {filteredJobs[0].job_type.replace(/_/g, ' ')}
+                                    </span>
+                                  </>
+                                )}
+                                <span>•</span>
+                                <span>Posted {formatPostedLabel(filteredJobs[0])}</span>
+                              </div>
+                              <button
+                                onClick={() => navigate('/applicant/applications')}
+                                className="bg-blue-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors text-sm"
+                              >
+                                View Application Status
+                              </button>
+                            </div>
+                            <div className="ml-3 flex-shrink-0">
+                              <div className="px-4 py-2 bg-green-100 text-green-700 text-sm font-semibold rounded-lg border-2 border-green-500">
+                                ✓ Applied
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="border-t border-gray-200 pt-4 mt-4 space-y-4">
+                            <div>
+                              <h4 className="text-base font-semibold text-gray-800 mb-2">Description</h4>
+                              <p className="text-gray-700 text-sm leading-relaxed line-clamp-3">{filteredJobs[0].description || 'No description provided.'}</p>
+                            </div>
+                            
+                            {filteredJobs[0].responsibilities && filteredJobs[0].responsibilities.length > 0 && (
+                              <div>
+                                <h4 className="text-base font-semibold text-gray-800 mb-2">Key Responsibilities</h4>
+                                <ul className="list-disc list-inside text-gray-700 text-sm space-y-1 ml-1">
+                                  {(showAllResponsibilities ? filteredJobs[0].responsibilities : filteredJobs[0].responsibilities.slice(0, 4)).map((item, idx) => (
+                                    <li key={idx} className="leading-relaxed">{item}</li>
+                                  ))}
+                                </ul>
+                                {filteredJobs[0].responsibilities.length > 4 && (
+                                  <button
+                                    className="text-blue-600 hover:text-blue-800 italic font-medium cursor-pointer transition-colors text-sm mt-1 ml-1"
+                                    onClick={() => setShowAllResponsibilities(!showAllResponsibilities)}
+                                  >
+                                    {showAllResponsibilities 
+                                      ? '- Show less' 
+                                      : `+ ${filteredJobs[0].responsibilities.length - 4} more`
+                                    }
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            
+                            {/* Compact Job Information Grid */}
+                            <div className="grid grid-cols-2 gap-3 pt-2">
+                              {filteredJobs[0].job_type && (
+                                <div className="bg-gray-50 p-3 rounded">
+                                  <div className="text-xs text-gray-600 mb-0.5">Position Type</div>
+                                  <div className="font-semibold text-gray-800 text-sm capitalize">{filteredJobs[0].job_type.replace(/_/g, ' ')}</div>
+                                </div>
+                              )}
+                              {filteredJobs[0].duration && (
+                                <div className="bg-gray-50 p-3 rounded">
+                                  <div className="text-xs text-gray-600 mb-0.5">Duration</div>
+                                  <div className="font-semibold text-gray-800 text-sm">{filteredJobs[0].duration}</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      jobCardElements
+                    )}
+                  </div>
                 )}
               </div>
             </section>
@@ -2718,11 +2841,9 @@ const formatDateForInput = (dateString) => {
             {showProfileIncompleteModal && (
               <div
                 className="fixed inset-0 transparent bg-opacity-50 flex items-center justify-center z-50"
-                onClick={() => setShowProfileIncompleteModal(false)}
               >
                 <div
                   className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border border-black"
-                  onClick={(e) => e.stopPropagation()}
                 >
                   <div className="p-4 border-b bg-red-50">
                     <h3 className="text-lg font-semibold text-red-800 flex items-center gap-2">
@@ -2734,26 +2855,7 @@ const formatDateForInput = (dateString) => {
                   </div>
                   <div className="p-4">
                     <p className="text-sm text-gray-700 mb-4">{profileIncompleteMessage}</p>
-                    <p className="text-xs text-gray-600 italic">You will be redirected to your profile to complete the required information.</p>
-                  </div>
-                  <div className="p-4 border-t flex justify-end gap-2">
-                    <button
-                      type="button"
-                      className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      onClick={() => setShowProfileIncompleteModal(false)}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-                      onClick={() => {
-                        setShowProfileIncompleteModal(false);
-                        setActiveTab('Profile');
-                      }}
-                    >
-                      Go to Profile
-                    </button>
+                    <p className="text-xs text-gray-600 italic">Redirecting you to your profile...</p>
                   </div>
                 </div>
               </div>

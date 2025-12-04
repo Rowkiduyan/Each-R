@@ -64,11 +64,11 @@ function ApplicantGHome() {
   const proceedToApply = () => {
     if (!selectedJob) return;
     setMessage('Please log in to apply for this position.');
-    const job = selectedJob;
+    const jobId = selectedJob.id;
     setTimeout(() => {
       navigate('/applicant/login', {
         replace: false,
-        state: { redirectTo: '/applicantl/home', jobFromGuest: job },
+        state: { redirectTo: '/applicantl/home', jobId: jobId },
       });
     }, 2000);
   };
