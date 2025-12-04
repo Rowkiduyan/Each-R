@@ -7,10 +7,14 @@ function EmployeeLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [showErrorModal, setShowErrorModal] = useState(false);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+    e?.preventDefault(); // Add optional chaining in case called without event
     setError("");
+    setLoading(true);
 
     // Step 1: Try to log in using Supabase
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -20,6 +24,8 @@ function EmployeeLogin() {
 
     if (error) {
       setError("Invalid email or password.");
+      setShowErrorModal(true);
+      setLoading(false);
       console.error(error);
       return;
     }
@@ -69,6 +75,8 @@ function EmployeeLogin() {
         if (fetchError || !fetchedProfile) {
           console.error("Error fetching profile:", fetchError);
           setError("Profile setup failed. Please contact support.");
+          setShowErrorModal(true);
+          setLoading(false);
           return;
         }
         profile = fetchedProfile;
@@ -147,6 +155,8 @@ function EmployeeLogin() {
     else {
       console.error("❌ Unknown role:", profile.role);
       setError(`Unknown role: ${profile.role}. Please contact support.`);
+      setShowErrorModal(true);
+      setLoading(false);
     }
   };
 
@@ -168,38 +178,70 @@ function EmployeeLogin() {
           Employee Log In
         </h2>
 
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-3/4 p-2 mb-3 border border-gray-300 rounded bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-red-400"
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-3/4 p-2 mb-4 border border-gray-300 rounded bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-red-400"
-        />
+        <form onSubmit={handleLogin} className="flex flex-col items-center w-full">
+          <input
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-3/4 p-2 mb-3 border border-gray-300 rounded bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-red-400"
+            required
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-3/4 p-2 mb-4 border border-gray-300 rounded bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-red-400"
+            required
+          />
 
-        <button
-          onClick={handleLogin}
-          className="w-1/3 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700 flex justify-center items-center"
-        >
-          LOGIN
-        </button>
-
-        {error && (
-          <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded w-full text-center">
-            {error}
-          </div>
-        )}
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-1/3 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700 flex justify-center items-center disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {loading ? "Logging in..." : "LOGIN"}
+          </button>
+        </form>
 
         <p className="mt-3 text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
           Forgot Password?
         </p>
       </div>
+
+      {/* Error Modal */}
+      {showErrorModal && (
+        <div
+          className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+          onClick={() => setShowErrorModal(false)}
+        >
+          <div
+            className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border border-black"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-red-50 p-4 border-b border-red-200">
+              <h3 className="text-lg font-semibold text-red-800 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                  <path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clipRule="evenodd" />
+                </svg>
+                Login Error
+              </h3>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-700">{error}</p>
+            </div>
+            <div className="p-4 border-t flex justify-end">
+              <button
+                onClick={() => setShowErrorModal(false)}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

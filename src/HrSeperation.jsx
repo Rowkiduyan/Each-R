@@ -138,14 +138,60 @@ function HrSeperation() {
           exitInterviewFile: sep.signed_exit_interview_url,
           isResignationApproved: sep.resignation_status === 'validated',
           hrExitFormsUploaded: sep.exit_clearance_form_url && sep.exit_interview_form_url,
-          finalDocs: Array.isArray(sep.additional_files_urls) 
-            ? sep.additional_files_urls.map(f => {
-                if (typeof f === 'object' && f !== null) {
-                  return f.name || 'Unknown File';
+          finalDocs: (() => {
+            try {
+              let files = sep.additional_files_urls;
+              
+              // Debug: log the raw value
+              console.log('Raw additional_files_urls:', files);
+              console.log('Type:', typeof files);
+              
+              // If it's null or undefined, return empty array
+              if (!files) {
+                return [];
+              }
+              
+              // If it's a string, try to parse it as JSON
+              if (typeof files === 'string') {
+                // Handle case where database stores array of JSON strings
+                files = JSON.parse(files);
+                console.log('Parsed files:', files);
+              }
+              
+              // If it's not an array, return empty array
+              if (!Array.isArray(files)) {
+                return [];
+              }
+              
+              // Map to extract name and url
+              return files.map(f => {
+                console.log('Processing file:', f, 'Type:', typeof f);
+                
+                // If f is a string that looks like JSON, parse it
+                if (typeof f === 'string' && (f.startsWith('{') || f.startsWith('['))) {
+                  try {
+                    f = JSON.parse(f);
+                  } catch (e) {
+                    console.error('Failed to parse file JSON:', e);
+                  }
                 }
-                return f || 'Unknown File';
-              })
-            : [],
+                
+                if (typeof f === 'object' && f !== null) {
+                  return {
+                    name: f.name || 'Unknown File',
+                    url: f.url || ''
+                  };
+                }
+                return {
+                  name: f || 'Unknown File',
+                  url: ''
+                };
+              });
+            } catch (err) {
+              console.error('Error parsing additional_files_urls:', err);
+              return [];
+            }
+          })(),
           isCompleted: sep.status === 'completed',
           isTerminated: sep.is_terminated || false,
           terminationDate: sep.terminated_at,
@@ -1370,13 +1416,27 @@ function HrSeperation() {
                   {selectedEmployee.finalDocs && selectedEmployee.finalDocs.length > 0 && (
                     <div className="p-3 bg-gray-50 rounded-lg">
                       <p className="text-sm font-medium text-gray-700 mb-2">Uploaded Final Documents:</p>
-                      {selectedEmployee.finalDocs.map((doc, index) => {
-                        // Handle both object format {url, name} and string format
-                        const fileName = typeof doc === 'object' ? doc.name : doc;
-                        return (
-                          <p key={index} className="text-sm text-gray-600">• {fileName}</p>
-                        );
-                      })}
+                      <div className="space-y-2">
+                        {selectedEmployee.finalDocs.map((doc, index) => {
+                          // Handle both object format {url, name} and string format
+                          let fileName = '';
+                          
+                          if (typeof doc === 'object') {
+                            fileName = doc.name || 'Unnamed file';
+                          } else {
+                            fileName = doc;
+                          }
+                          
+                          return (
+                            <div key={index} className="flex items-center gap-2 p-2 bg-white rounded border border-gray-200">
+                              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              </svg>
+                              <span className="text-sm text-gray-700">{fileName}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
 

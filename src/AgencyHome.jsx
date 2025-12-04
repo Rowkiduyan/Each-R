@@ -101,7 +101,7 @@ function AgencyHome() {
     try {
       const { data, error } = await supabase
         .from("job_posts")
-        .select("id, title, depot, description, created_at, responsibilities")
+        .select("id, title, depot, description, created_at, responsibilities, job_type")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -127,6 +127,7 @@ function AgencyHome() {
             description: row.description || "",
             responsibilities,
             posted,
+            jobType: row.job_type,
             raw: row,
           };
         });

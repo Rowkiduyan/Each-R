@@ -15,6 +15,7 @@ function ApplicantGHome() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [showDetails, setShowDetails] = useState(false);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
 
   // Helper to check if job is expired based on duration
   const isJobExpired = (job) => {
@@ -38,7 +39,7 @@ function ApplicantGHome() {
     const fetchJobs = async () => {
       const { data, error } = await supabase
         .from('job_posts')
-        .select('id, title, depot, description, responsibilities, urgent, created_at, duration')
+        .select('id, title, depot, description, responsibilities, urgent, created_at, duration, job_type')
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 
@@ -46,8 +47,12 @@ function ApplicantGHome() {
         console.error('Failed to load job posts:', error);
         setJobs([]);
       } else {
-        // Filter out expired jobs for applicants
-        const activeJobs = (data || []).filter(job => !isJobExpired(job));
+        // Filter out expired jobs and only show office_employee jobs for applicants
+        const activeJobs = (data || []).filter(job => {
+          const isExpired = isJobExpired(job);
+          const isOfficeJob = job.job_type?.toLowerCase() === 'office_employee';
+          return !isExpired && isOfficeJob;
+        });
         setJobs(activeJobs);
       }
       setLoading(false);
@@ -101,6 +106,20 @@ function ApplicantGHome() {
   const filteredLocationSuggestions = locationSuggestions.filter((loc) =>
     loc.toLowerCase().includes(locationInput.toLowerCase())
   );
+
+  const searchSuggestions = Array.from(
+    new Set(
+      jobs
+        .map((job) => job.title)
+        .filter((title) => typeof title === 'string' && title.trim().length > 0)
+    )
+  );
+
+  const filteredSearchSuggestions = searchInput.trim() === ''
+    ? searchSuggestions
+    : searchSuggestions.filter((title) =>
+        title.toLowerCase().includes(searchInput.toLowerCase())
+      );
 
   const formatPostedLabel = (job) => {
     const createdAt = job?.created_at ? new Date(job.created_at) : null;
@@ -195,27 +214,48 @@ function ApplicantGHome() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6">
-        <div className="relative overflow-hidden">
-          <img
-            src={Roadwise}
-            alt="Delivery trucks on the road"
-            className="w-full h-[200px] object-cover"
-          />
-          <div className="absolute inset-0 bg-black/30" />
-          <div className="absolute inset-0 flex items-center justify-center px-4">
-            <form className="w-full max-w-4xl" onSubmit={handleSearchSubmit}>
-              <div className="flex flex-col gap-3">
-                <div className="flex items-stretch bg-white rounded-2xl shadow-xl border border-gray-200 overflow-hidden">
-                  <div className="flex-1 flex items-center px-5 py-4">
-                    <input
-                      type="text"
-                      value={searchInput}
-                      onChange={(e) => setSearchInput(e.target.value)}
-                      className="w-full bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none"
-                      placeholder=" Job title, keywords, or company"
-                    />
-                  </div>
-                  <div className="w-px bg-gray-200" />
+        <div className="relative">
+          <div className="overflow-hidden">
+            <img
+              src={Roadwise}
+              alt="Delivery trucks on the road"
+              className="w-full h-[200px] object-cover"
+            />
+          </div>
+          <div className="absolute inset-0 bg-black/30 pointer-events-none" />
+          <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+            <div className="w-full max-w-4xl pointer-events-auto">
+              <form onSubmit={handleSearchSubmit}>
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-stretch bg-white rounded-2xl shadow-xl border border-gray-200 overflow-visible relative">
+                    <div className="flex-1 flex items-center px-5 py-4 relative">
+                      <input
+                        type="text"
+                        value={searchInput}
+                        onChange={(e) => setSearchInput(e.target.value)}
+                        onFocus={() => setShowSearchSuggestions(true)}
+                        onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
+                        className="w-full bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none"
+                        placeholder=" Job title, keywords, or company"
+                      />
+                      {showSearchSuggestions && filteredSearchSuggestions.length > 0 && (
+                        <ul className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                          {filteredSearchSuggestions.map((title) => (
+                            <li
+                              key={title}
+                              className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
+                              onMouseDown={() => {
+                                setSearchInput(title);
+                                setShowSearchSuggestions(false);
+                              }}
+                            >
+                              {title}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                    <div className="w-px bg-gray-200" />
                   <div className="flex-1 flex items-center px-6 py-3 relative">
                     <input
                       type="text"
@@ -263,7 +303,44 @@ function ApplicantGHome() {
                 </div>
               </div>
             </form>
+            </div>
           </div>
+        </div>
+
+        {/* Depot Filter */}
+        <div className="mt-6 flex items-center gap-3 flex-wrap">
+          <span className="text-sm font-medium text-gray-700">Filter by Depot:</span>
+          <button
+            type="button"
+            onClick={() => {
+              setLocationFilter('');
+              setLocationInput('');
+            }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              locationFilter === ''
+                ? 'bg-red-600 text-white'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            All Depots
+          </button>
+          {locationSuggestions.map((depot) => (
+            <button
+              key={depot}
+              type="button"
+              onClick={() => {
+                setLocationFilter(depot);
+                setLocationInput(depot);
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                locationFilter === depot
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+              }`}
+            >
+              {depot}
+            </button>
+          ))}
         </div>
       </div>
 
