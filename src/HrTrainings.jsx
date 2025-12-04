@@ -22,6 +22,7 @@ function HrTrainings() {
     venue: "",
     date: "",
     time: "",
+    end_time: "",
     description: ""
   });
   
@@ -30,6 +31,7 @@ function HrTrainings() {
     venue: "",
     date: "",
     time: "",
+    end_time: "",
     description: ""
   });
   
@@ -238,6 +240,7 @@ function HrTrainings() {
 
       (data || []).forEach((training) => {
         const start = training.start_at ? new Date(training.start_at) : null;
+        const end = training.end_at ? new Date(training.end_at) : null;
         const normalized = {
           ...training,
           date: start ? start.toISOString().slice(0, 10) : "",
@@ -245,16 +248,16 @@ function HrTrainings() {
         };
 
         if (start) {
-          // Get the end of the training day (23:59:59.999)
-          const trainingDayEnd = new Date(
+          // Use end_at if available, otherwise default to end of training day
+          const trainingEnd = end || new Date(
             start.getFullYear(),
             start.getMonth(),
             start.getDate(),
             23, 59, 59, 999
           );
 
-          // Training is in the past day
-          if (trainingDayEnd < now) {
+          // Training has ended
+          if (trainingEnd < now) {
             const hasAttendance =
               training.attendance &&
               Object.keys(training.attendance || {}).length > 0;
@@ -267,7 +270,7 @@ function HrTrainings() {
               pendingAttendanceTrainings.push(normalized);
             }
           } else {
-            // Training is happening today or in the future → Upcoming
+            // Training is happening now or in the future → Upcoming
             upcomingTrainings.push(normalized);
           }
         } else {
@@ -381,8 +384,8 @@ function HrTrainings() {
       alert("Title is required.");
       return;
     }
-    if (!form.date || !form.time) {
-      alert("Please provide both date and time.");
+    if (!form.date || !form.time || !form.end_time) {
+      alert("Please provide date, start time, and end time.");
       return;
     }
     if (!form.venue) {
@@ -399,14 +402,15 @@ function HrTrainings() {
     }
 
     const startAt = new Date(`${form.date}T${form.time}:00`);
+    const endAt = new Date(`${form.date}T${form.end_time}:00`);
+    
+    if (endAt <= startAt) {
+      alert("End time must be after start time.");
+      return;
+    }
+    
     const now = new Date();
-    const trainingDayEnd = new Date(
-      startAt.getFullYear(),
-      startAt.getMonth(),
-      startAt.getDate(),
-      23, 59, 59, 999
-    );
-    const isActiveFlag = trainingDayEnd >= now;
+    const isActiveFlag = endAt >= now;
 
     try {
       const { data, error } = await supabase
@@ -416,6 +420,7 @@ function HrTrainings() {
             title: form.title,
             venue: form.venue || null,
             start_at: startAt.toISOString(),
+            end_at: endAt.toISOString(),
             description: form.description || null,
             // store attendees as plain names only
             attendees: attendees || [],
@@ -434,7 +439,7 @@ function HrTrainings() {
       }
 
       // Reset form
-      setForm({ title: "", venue: "", date: "", time: "", description: "" });
+      setForm({ title: "", venue: "", date: "", time: "", end_time: "", description: "" });
       setAttendees([]);
       setEmployeeSearchQuery("");
       setSelectedPositions([]);
@@ -670,17 +675,61 @@ function HrTrainings() {
     }
   };
 
+  // Format end time from end_at timestamp
+  const formatEndTime = (endAtTimestamp) => {
+    if (!endAtTimestamp) return "N/A";
+    try {
+      const date = new Date(endAtTimestamp);
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const displayHour = hours % 12 || 12;
+      const displayMinutes = minutes.toString().padStart(2, '0');
+      return `${displayHour}:${displayMinutes} ${ampm}`;
+    } catch {
+      return "N/A";
+    }
+  };
+
+  // Calculate duration between start and end time
+  const calculateDuration = (startAt, endAt) => {
+    if (!startAt || !endAt) return "N/A";
+    try {
+      const start = new Date(startAt);
+      const end = new Date(endAt);
+      const diffMs = end - start;
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      
+      if (hours > 0 && minutes > 0) {
+        return `${hours} hour${hours > 1 ? 's' : ''} ${minutes} minute${minutes > 1 ? 's' : ''}`;
+      } else if (hours > 0) {
+        return `${hours} hour${hours > 1 ? 's' : ''}`;
+      } else {
+        return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+      }
+    } catch {
+      return "N/A";
+    }
+  };
+
   // Check if training is happening today
   const isHappeningToday = (training) => {
     if (!training.start_at) return false;
     try {
-      const trainingDate = new Date(training.start_at);
       const now = new Date();
+      const start = new Date(training.start_at);
+      const end = training.end_at ? new Date(training.end_at) : null;
       
-      // Check if same date (year, month, day)
-      const isSameDate = trainingDate.getFullYear() === now.getFullYear() &&
-                       trainingDate.getMonth() === now.getMonth() &&
-                       trainingDate.getDate() === now.getDate();
+      // Check if current time is within the training duration
+      if (end) {
+        return now >= start && now <= end;
+      }
+      
+      // Fallback: check if same date (year, month, day)
+      const isSameDate = start.getFullYear() === now.getFullYear() &&
+                       start.getMonth() === now.getMonth() &&
+                       start.getDate() === now.getDate();
       
       return isSameDate;
     } catch {
@@ -727,7 +776,7 @@ function HrTrainings() {
         {/* Page Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
-          <p className="text-gray-500 mt-1">Manage training schedules and track employee participation</p>
+          <p className="text-gray-500 mt-1">Manage schedules and track employee participation</p>
         </div>
 
         {/* Stats Cards */}
@@ -1253,8 +1302,8 @@ function HrTrainings() {
             <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Training Details</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">Complete information about this training session</p>
+                  <h2 className="text-lg font-bold text-gray-900">Schedule Details</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">Complete information about this schedule</p>
                 </div>
                 <button 
                   onClick={() => setShowDetails(false)} 
@@ -1282,33 +1331,35 @@ function HrTrainings() {
                 </div>
 
                 {/* Basic Info */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-2">
-                    <div className="w-7 h-7 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <p className="text-xs font-bold text-blue-900">{formatDate(selectedTraining.date)}</p>
+                <div className="space-y-3">
+                  {/* Date */}
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Date</p>
+                    <p className="text-sm font-semibold text-gray-900">{formatDate(selectedTraining.date)}</p>
                   </div>
                   
-                  <div className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-2">
-                    <div className="w-7 h-7 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
+                  {/* Time Row - Start and End Side by Side */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">Start Time</p>
+                      <p className="text-sm font-semibold text-gray-900">{formatTime(selectedTraining.time)}</p>
                     </div>
-                    <p className="text-xs font-bold text-purple-900">{formatTime(selectedTraining.time)}</p>
+                    <div>
+                      <p className="text-xs text-gray-500 mb-1">End Time</p>
+                      <p className="text-sm font-semibold text-gray-900">{formatEndTime(selectedTraining.end_at)}</p>
+                    </div>
                   </div>
                   
-                  <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-2.5 py-2">
-                    <div className="w-7 h-7 bg-orange-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                      <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                    </div>
-                    <p className="text-xs font-bold text-orange-900">{selectedTraining.venue || 'Not set'}</p>
+                  {/* Duration */}
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Duration</p>
+                    <p className="text-sm font-semibold text-gray-900">{calculateDuration(selectedTraining.start_at, selectedTraining.end_at)}</p>
+                  </div>
+                  
+                  {/* Location */}
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Location</p>
+                    <p className="text-sm font-semibold text-gray-900">{selectedTraining.venue || 'Not set'}</p>
                   </div>
                 </div>
               </div>
@@ -1398,7 +1449,7 @@ function HrTrainings() {
           <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col h-[660px]">
             {/* Header - Fixed */}
             <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-white">
-              <h2 className="text-center font-semibold text-xl text-gray-800">Add Training/Seminar Schedule</h2>
+              <h2 className="text-center font-semibold text-xl text-gray-800">Add Schedule</h2>
             </div>
             
             {/* Content - Two Column Layout */}
@@ -1420,28 +1471,41 @@ function HrTrainings() {
                         placeholder="Personal Development"
                       />
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Date <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        name="date"
+                        value={form.date}
+                        onChange={onChange}
+                        type="date"
+                        required
+                        min={new Date().toISOString().split('T')[0]}
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                      />
+                    </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Date <span className="text-red-500">*</span>
+                          Start Time <span className="text-red-500">*</span>
                         </label>
                         <input
-                          name="date"
-                          value={form.date}
+                          name="time"
+                          value={form.time}
                           onChange={onChange}
-                          type="date"
+                          type="time"
                           required
-                          min={new Date().toISOString().split('T')[0]}
                           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Time <span className="text-red-500">*</span>
+                          End Time <span className="text-red-500">*</span>
                         </label>
                         <input
-                          name="time"
-                          value={form.time}
+                          name="end_time"
+                          value={form.end_time}
                           onChange={onChange}
                           type="time"
                           required

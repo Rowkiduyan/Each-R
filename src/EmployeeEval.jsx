@@ -188,28 +188,6 @@ function EmployeeEval() {
                         <p className="text-gray-500 mt-1">View your evaluation history and upcoming assessment schedule</p>
                     </div>
 
-                    {/* Employee Info Card */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
-                                    {employeeUser ? `${employeeUser.fname[0]}${employeeUser.lname[0]}` : 'EM'}
-                                </div>
-                                <div>
-                                    <h2 className="text-xl font-bold text-gray-800">{employeeData.name}</h2>
-                                    <p className="text-sm text-gray-500">{employeeData.position} • {employeeData.depot}</p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-xs text-gray-500">Hired: {formatDate(employeeData.hireDate)}</span>
-                                        <span className="text-xs text-gray-400">•</span>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full ${employeeData.employmentType === 'regular' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                                            {employeeData.employmentType === 'regular' ? 'Regular Employee' : 'Probationary'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     {/* Stats Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                         {/* Next Evaluation */}
