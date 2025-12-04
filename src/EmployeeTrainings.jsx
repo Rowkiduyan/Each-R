@@ -18,7 +18,8 @@ function EmployeeTrainings() {
     
     // External training upload state
     const [externalTrainings, setExternalTrainings] = useState([]);
-    const [newTraining, setNewTraining] = useState({ title: "", date: "", certification: null });
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [uploadError, setUploadError] = useState(null);
 
     // Get employee's possible name formats for matching
     const getEmployeeNameVariations = () => {
@@ -328,15 +329,68 @@ function EmployeeTrainings() {
     });
 
     // Handle upload training
-    const handleUploadTraining = () => {
-        if (!newTraining.title || !newTraining.date) {
-            alert("Title and date are required.");
+    const handleUploadTraining = async () => {
+        if (selectedFiles.length === 0) {
+            alert("Please select at least one file to upload.");
             return;
         }
 
-        setExternalTrainings([...externalTrainings, { ...newTraining, id: Date.now() }]);
-        setNewTraining({ title: "", date: "", certification: null });
+        // TODO: Implement file upload to Supabase storage and database
+        console.log('Files to upload:', selectedFiles);
+        
+        // For now, just add to local state
+        const newTrainings = selectedFiles.map((file, idx) => ({
+            id: Date.now() + idx,
+            name: file.name,
+            uploaded_at: new Date().toISOString()
+        }));
+        
+        setExternalTrainings([...externalTrainings, ...newTrainings]);
+        setSelectedFiles([]);
         setShowUpload(false);
+        alert('Files uploaded successfully! (Demo mode)');
+    };
+
+    const handleFileChange = (e) => {
+        const files = Array.from(e.target.files);
+        const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+        const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+        
+        const validFiles = [];
+        const invalidFiles = [];
+        
+        files.forEach(file => {
+            const isValidType = allowedTypes.includes(file.type);
+            const isValidSize = file.size <= maxSize;
+            
+            if (isValidType && isValidSize) {
+                validFiles.push(file);
+            } else {
+                let reason;
+                if (!isValidType && !isValidSize) {
+                    reason = 'invalid format and file size exceeds 10MB limit';
+                } else if (!isValidType) {
+                    reason = 'invalid format';
+                } else {
+                    reason = 'file size exceeds 10MB limit';
+                }
+                invalidFiles.push({ name: file.name, reason });
+            }
+        });
+        
+        if (validFiles.length > 0) {
+            setSelectedFiles(prev => [...prev, ...validFiles]);
+        }
+        
+        if (invalidFiles.length > 0) {
+            setUploadError(invalidFiles);
+        } else {
+            setUploadError(null);
+        }
+    };
+
+    const removeFile = (index) => {
+        setSelectedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
     return (
@@ -478,6 +532,22 @@ function EmployeeTrainings() {
                                     </svg>
                                     History
                                     <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">{completed.length}</span>
+                                </div>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('certificates')}
+                                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                                    activeTab === 'certificates'
+                                        ? 'border-red-600 text-red-600 bg-red-50/50'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                }`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Other Certificates
+                                    <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">{externalTrainings.length}</span>
                                 </div>
                             </button>
                         </div>
@@ -633,6 +703,50 @@ function EmployeeTrainings() {
                                                         <span className="text-gray-300">•</span>
                                                         <div className="flex items-center gap-1.5">
                                                             <span className="text-xs font-semibold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">Pending HR Confirmation</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )
+                    ) : activeTab === 'certificates' ? (
+                        externalTrainings.length === 0 ? (
+                            <div className="px-6 py-12 text-center text-gray-500 h-[500px] flex flex-col items-center justify-center">
+                                <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <p className="font-medium">No uploaded certificates</p>
+                                <p className="text-sm mt-1">Your uploaded training certificates will appear here.</p>
+                            </div>
+                        ) : (
+                            <div className="relative h-[500px] overflow-y-auto no-scrollbar p-4 space-y-3">
+                                {externalTrainings.map((training) => (
+                                    <div
+                                        key={training.id}
+                                        className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md hover:border-purple-300 transition-all group"
+                                    >
+                                        <div className="flex items-start justify-between gap-4">
+                                            <div className="flex items-start gap-4 flex-1">
+                                                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center text-white shadow-md flex-shrink-0">
+                                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                    </svg>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-purple-600 transition-colors">{training.name}</h3>
+                                                    <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                            </svg>
+                                                            <span className="font-medium">{formatDate(training.uploaded_at)}</span>
+                                                        </div>
+                                                        <span className="text-gray-300">•</span>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-xs font-semibold text-purple-600 bg-purple-100 px-2 py-0.5 rounded-full">Uploaded</span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -845,60 +959,126 @@ function EmployeeTrainings() {
 
             {/* Upload Training Modal */}
             {showUpload && (
-                <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-                    <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl">
-                        <div className="text-center font-semibold text-xl mb-6">Upload Past Training</div>
-                        <div className="grid grid-cols-1 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Title <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={newTraining.title}
-                                    onChange={(e) => setNewTraining({...newTraining, title: e.target.value})}
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                                    placeholder="Training title"
-                                />
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowUpload(false)}>
+                    <div className="bg-white rounded-xl w-full max-w-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-gray-200">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900">Upload Certificates</h2>
+                                    <p className="text-sm text-gray-500 mt-1">Upload your external certificate/s</p>
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        setShowUpload(false);
+                                        setSelectedFiles([]);
+                                        setUploadError(null);
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Date <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="date"
-                                    value={newTraining.date}
-                                    onChange={(e) => setNewTraining({...newTraining, date: e.target.value})}
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                                />
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6">
+                            {/* Instructions */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                                <div className="flex items-start gap-3">
+                                    <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-blue-900 mb-1">Upload Guidelines</h3>
+                                        <ul className="text-sm text-blue-800 space-y-1">
+                                            <li>• Accepted formats: <span className="font-medium">PDF, JPG, JPEG, PNG</span></li>
+                                            <li>• Maximum file size: <span className="font-medium">10 MB per file</span></li>
+                                            <li>• You can upload multiple files at once</li>
+                                        </ul>
+                                    </div>
+                                </div>
                             </div>
+
+                            {/* File Upload Area */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Certification
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Certificates <span className="text-red-500">*</span>
                                 </label>
                                 <input
                                     type="file"
-                                    onChange={(e) => setNewTraining({...newTraining, certification: e.target.files[0]})}
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    multiple
+                                    onChange={handleFileChange}
+                                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                                     accept=".pdf,.jpg,.jpeg,.png"
                                 />
                             </div>
+
+                            {/* Error Message */}
+                            {uploadError && Array.isArray(uploadError) && uploadError.length > 0 && (
+                                <div className="mt-3 space-y-1">
+                                    {uploadError.map((error, index) => (
+                                        <div key={index} className="flex items-start gap-2 text-xs text-red-600">
+                                            <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <span><span className="font-medium">{error.name}:</span> {error.reason}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Selected Files List */}
+                            {selectedFiles.length > 0 && (
+                                <div className="mt-4">
+                                    <h3 className="text-sm font-medium text-gray-700 mb-2">Selected Files ({selectedFiles.length})</h3>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                                        {selectedFiles.map((file, index) => (
+                                            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                    <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                                    </svg>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                                                        <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => removeFile(index)}
+                                                    className="ml-3 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full p-1 transition-colors flex-shrink-0"
+                                                >
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                        <div className="flex justify-end gap-3 mt-6">
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
                             <button
                                 onClick={() => {
                                     setShowUpload(false);
-                                    setNewTraining({ title: "", date: "", certification: null });
+                                    setSelectedFiles([]);
+                                    setUploadError(null);
                                 }}
-                                className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
+                                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleUploadTraining}
-                                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium"
+                                disabled={selectedFiles.length === 0}
+                                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
                             >
-                                Upload Training
+                                Upload {selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}
                             </button>
                         </div>
                     </div>
