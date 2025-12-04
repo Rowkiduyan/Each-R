@@ -1446,20 +1446,20 @@ function HrTrainings() {
       {/* Add Training Modal */}
       {showAdd && (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col h-[660px]">
+          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col h-[600px]">
             {/* Header - Fixed */}
-            <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-white">
-              <h2 className="text-center font-semibold text-xl text-gray-800">Add Schedule</h2>
+            <div className="px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-white">
+              <h2 className="text-center font-semibold text-lg text-gray-800">Add Schedule</h2>
             </div>
             
             {/* Content - Two Column Layout */}
             <div className="flex-1 overflow-hidden flex">
-              {/* Left Side - Form Fields */}
-              <div className="flex-1 px-6 py-4 border-r border-gray-200 overflow-hidden">
+              {/* Left Side - Form Fields (40% width) */}
+              <div className="w-[40%] px-5 py-4 border-r border-gray-200 overflow-hidden">
                 <form onSubmit={onSubmit} className="h-full">
-                  <div className="grid grid-cols-1 gap-3">
+                  <div className="grid grid-cols-1 gap-2">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
                         Title <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -1467,27 +1467,42 @@ function HrTrainings() {
                         value={form.title}
                         onChange={onChange}
                         required
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         placeholder="Personal Development"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Date <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        name="date"
-                        value={form.date}
-                        onChange={onChange}
-                        type="date"
-                        required
-                        min={new Date().toISOString().split('T')[0]}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-2 gap-2">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          Date <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="date"
+                          value={form.date}
+                          onChange={onChange}
+                          type="date"
+                          required
+                          min={new Date().toISOString().split('T')[0]}
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          Venue <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="venue"
+                          value={form.venue}
+                          onChange={onChange}
+                          required
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          placeholder="Google Meet"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
                           Start Time <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -1496,11 +1511,11 @@ function HrTrainings() {
                           onChange={onChange}
                           type="time"
                           required
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
                           End Time <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -1509,25 +1524,12 @@ function HrTrainings() {
                           onChange={onChange}
                           type="time"
                           required
-                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Venue <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        name="venue"
-                        value={form.venue}
-                        onChange={onChange}
-                        required
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-                        placeholder="Google Meet (Online)"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
                         Description <span className="text-red-500">*</span>
                       </label>
                       <textarea
@@ -1536,21 +1538,21 @@ function HrTrainings() {
                         onChange={onChange}
                         rows="2"
                         required
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none transition-colors"
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none transition-colors"
                         placeholder="Gmeet link: https://..."
                       />
                     </div>
                     
-                    {/* Attendees Label */}
-                    <div className="pt-1">
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                    {/* Attendees Section */}
+                    <div className="pt-0.5">
+                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
                         Attendees <span className="text-red-500">*</span>
                       </label>
                     </div>
                     
                     {/* Position Selection */}
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
                         Select Positions
                       </label>
                       <select
@@ -1561,7 +1563,7 @@ function HrTrainings() {
                             e.target.value = "";
                           }
                         }}
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
                       >
                         <option value="">Add a position...</option>
                         {positions
@@ -1575,16 +1577,16 @@ function HrTrainings() {
                       
                       {/* Selected Positions Chips */}
                       {selectedPositions.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                        <div className="mt-1.5 flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
                           {selectedPositions.map((pos) => {
                             const empCount = employeesByPositionMap[pos]?.length || 0;
                             return (
                               <div
                                 key={pos}
-                                className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-2 py-1 group hover:bg-blue-100 transition-colors"
+                                className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-md px-2 py-0.5 group hover:bg-blue-100 transition-colors"
                               >
                                 <span className="text-xs font-medium text-blue-800">{pos}</span>
-                                <span className="text-xs text-blue-700 bg-blue-200 px-1.5 py-0.5 rounded-full font-medium">
+                                <span className="text-[10px] text-blue-700 bg-blue-200 px-1 py-0.5 rounded-full font-medium">
                                   {empCount}
                                 </span>
                                 <button
@@ -1593,7 +1595,7 @@ function HrTrainings() {
                                   className="text-blue-600 hover:text-red-600 hover:bg-red-100 rounded-full p-0.5 transition-colors"
                                   title={`Remove ${pos} and its employees`}
                                 >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                   </svg>
                                 </button>
@@ -1607,12 +1609,12 @@ function HrTrainings() {
                 </form>
               </div>
 
-              {/* Right Side - Others Search and Selected Attendees List */}
-              <div className="flex-1 px-6 py-4 bg-gray-50 overflow-hidden">
+              {/* Right Side - Others Search and Selected Attendees List (60% width) */}
+              <div className="w-[60%] px-5 py-4 bg-gray-50 overflow-hidden">
                 <div className="h-full flex flex-col">
                   {/* Search Input - Optional for additional employees */}
-                  <div className="mb-3 relative">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <div className="mb-2.5 relative">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
                       Others
                     </label>
                     <input
@@ -1626,7 +1628,7 @@ function HrTrainings() {
                       onFocus={() => {
                         if (employeeSearchQuery) setShowEmployeeSuggestions(true);
                       }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
+                      className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
                       placeholder="Search employee name..."
                     />
                     {showEmployeeSuggestions && filteredEmployees.length > 0 && (
@@ -1658,8 +1660,8 @@ function HrTrainings() {
                   {/* Attendees List - Scrollable */}
                   <div className="flex-1 flex flex-col min-h-0">
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm font-medium text-gray-700">
-                        Selected Attendees <span className="text-gray-500">({attendees.length})</span>
+                      <span className="text-xs font-medium text-gray-700">
+                        Selected Depots <span className="text-gray-500">({attendees.length})</span>
                       </span>
                       {attendees.length > 0 && (
                         <button
@@ -1679,12 +1681,12 @@ function HrTrainings() {
                       {attendees.length > 0 ? (
                         <div className="space-y-1">
                           {attendees.map((name, i) => (
-                            <div key={i} className="flex items-center justify-between px-2 py-1.5 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors">
+                            <div key={i} className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors">
                               <span className="text-xs text-gray-700 truncate flex-1">{name}</span>
                               <button
                                 type="button"
                                 onClick={() => removeAttendee(i)}
-                                className="text-red-600 hover:text-red-700 text-base font-bold ml-2 flex-shrink-0 transition-colors"
+                                className="text-red-600 hover:text-red-700 text-sm font-bold ml-2 flex-shrink-0 transition-colors"
                                 title="Remove"
                               >
                                 ×
@@ -1693,7 +1695,7 @@ function HrTrainings() {
                           ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-400 text-center py-8">No attendees added yet. Select positions or search for employees.</p>
+                        <p className="text-xs text-gray-400 text-center py-8">No attendees added yet. Select positions or search for employees.</p>
                       )}
                     </div>
                   </div>
@@ -1702,7 +1704,7 @@ function HrTrainings() {
             </div>
             
             {/* Footer - Fixed */}
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0 bg-white">
+            <div className="px-5 py-3 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0 bg-white">
               <button
                 type="button"
                 onClick={() => {
@@ -1712,14 +1714,14 @@ function HrTrainings() {
                   setEmployeesByPositionMap({});
                   setShowEmployeeSuggestions(false);
                 }}
-                className="px-5 py-2.5 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors font-medium text-sm border border-gray-300"
+                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors font-medium text-sm border border-gray-300"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={onSubmit}
-                className="px-5 py-2.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm shadow-sm"
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm shadow-sm"
               >
                 Add Schedule
               </button>
