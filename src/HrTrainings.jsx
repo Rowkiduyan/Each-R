@@ -230,7 +230,6 @@ function HrTrainings() {
 
       // Normalize and separate upcoming, pending attendance, and completed trainings
       const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // Start of today (no time)
       const upcomingTrainings = [];
       const pendingAttendanceTrainings = [];
       const completedTrainings = [];
@@ -243,25 +242,35 @@ function HrTrainings() {
           time: start ? start.toISOString().slice(11, 16) : "",
         };
 
-        if (training.is_active === false) {
-          // Attendance has been marked
-          completedTrainings.push(normalized);
-        } else {
-          // Still active, check if date has passed
-          if (start) {
-            // Compare dates only (ignore time) to determine if it's a past date
-            const trainingDate = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-            if (trainingDate < today) {
-              // Past date but no attendance marked yet
-              pendingAttendanceTrainings.push(normalized);
+        if (start) {
+          // Get the end of the training day (23:59:59.999)
+          const trainingDayEnd = new Date(
+            start.getFullYear(),
+            start.getMonth(),
+            start.getDate(),
+            23, 59, 59, 999
+          );
+
+          // Training is in the past day
+          if (trainingDayEnd < now) {
+            const hasAttendance =
+              training.attendance &&
+              Object.keys(training.attendance || {}).length > 0;
+
+            if (hasAttendance) {
+              // Past training with recorded attendance → History
+              completedTrainings.push(normalized);
             } else {
-              // Today or future date
-              upcomingTrainings.push(normalized);
+              // Past training without attendance yet → Pending Attendance
+              pendingAttendanceTrainings.push(normalized);
             }
           } else {
-            // No start date, treat as upcoming
+            // Training is happening today or in the future → Upcoming
             upcomingTrainings.push(normalized);
           }
+        } else {
+          // No start date, treat as upcoming
+          upcomingTrainings.push(normalized);
         }
       });
 
@@ -388,6 +397,14 @@ function HrTrainings() {
     }
 
     const startAt = new Date(`${form.date}T${form.time}:00`);
+    const now = new Date();
+    const trainingDayEnd = new Date(
+      startAt.getFullYear(),
+      startAt.getMonth(),
+      startAt.getDate(),
+      23, 59, 59, 999
+    );
+    const isActiveFlag = trainingDayEnd >= now;
 
     try {
       const { data, error } = await supabase
@@ -400,7 +417,8 @@ function HrTrainings() {
             description: form.description || null,
             // store attendees as plain names only
             attendees: attendees || [],
-            is_active: true,
+            // is_active is true only for present/future trainings
+            is_active: isActiveFlag,
             created_by: currentUserId || null,
           }
         ])
@@ -455,6 +473,14 @@ function HrTrainings() {
     }
 
     const startAt = new Date(`${editForm.date}T${editForm.time}:00`);
+    const now = new Date();
+    const trainingDayEnd = new Date(
+      startAt.getFullYear(),
+      startAt.getMonth(),
+      startAt.getDate(),
+      23, 59, 59, 999
+    );
+    const isActiveFlag = trainingDayEnd >= now;
 
     try {
       const { data, error } = await supabase
@@ -466,6 +492,8 @@ function HrTrainings() {
           description: editForm.description || null,
           // keep attendees as plain names only
           attendees: attendeesEdit || [],
+          // keep is_active in sync with whether the training day is in the past
+          is_active: isActiveFlag,
         })
         .eq('id', selectedTraining.id)
         .select()
