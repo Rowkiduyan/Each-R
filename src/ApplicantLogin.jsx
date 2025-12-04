@@ -1,10 +1,11 @@
 import Logo from './Logo.png';
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 
 function ApplicantLogin() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -45,7 +46,9 @@ function ApplicantLogin() {
 
   // 3️⃣ Redirect based on role
   if (applicantData.role.toLowerCase() === "applicant") {
-    navigate("/applicantl/home");
+    const redirectTo = location.state?.redirectTo || "/applicantl/home";
+    const jobId = location.state?.jobId;
+    navigate(redirectTo, { state: { jobId } });
   } else if (applicantData.role.toLowerCase() === "hr") {
     navigate("/hr/home");
   } else {
