@@ -14,6 +14,8 @@ function HrTrainings() {
   const [showAttendance, setShowAttendance] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [trainingToDelete, setTrainingToDelete] = useState(null);
   
   const [form, setForm] = useState({
     title: "",
@@ -517,27 +519,40 @@ function HrTrainings() {
     }
   };
 
-  // Delete training
-  const onDelete = async (trainingId) => {
-    if (!window.confirm("Are you sure you want to delete this training schedule?")) return;
+  // Delete training - show confirmation modal
+  const onDelete = (training) => {
+    setTrainingToDelete(training);
+    setShowDeleteModal(true);
+    setActionMenuOpen(null);
+  };
+
+  // Confirm delete training
+  const confirmDelete = async () => {
+    if (!trainingToDelete) return;
 
     try {
       const { error } = await supabase
         .from('trainings')
         .delete()
-        .eq('id', trainingId);
+        .eq('id', trainingToDelete.id);
 
       if (error) {
         console.error('Error deleting training:', error);
         alert('Failed to delete training schedule');
+        setShowDeleteModal(false);
+        setTrainingToDelete(null);
         return;
       }
 
-      setActionMenuOpen(null);
+      setShowDeleteModal(false);
+      setTrainingToDelete(null);
       fetchTrainings();
+      alert('Training schedule deleted successfully!');
     } catch (error) {
       console.error('Error deleting training:', error);
       alert('Failed to delete training schedule');
+      setShowDeleteModal(false);
+      setTrainingToDelete(null);
     }
   };
 
@@ -706,39 +721,9 @@ function HrTrainings() {
   });
 
   return (
-    <div className="min-h-screen bg-white">
-      <style>{`
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        
-        ::-webkit-scrollbar {
-          width: 6px;
-          height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-          background: #d1d5db;
-          border-radius: 3px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-          background: #9ca3af;
-        }
-        
-        * {
-          scrollbar-width: thin;
-          scrollbar-color: #d1d5db transparent;
-        }
-      `}</style>
-
+    <>
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-6 py-0">
+      <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Page Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
@@ -1006,7 +991,7 @@ function HrTrainings() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onDelete(training.id);
+                                onDelete(training);
                               }}
                               className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
                             >
@@ -1122,7 +1107,7 @@ function HrTrainings() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                onDelete(training.id);
+                                onDelete(training);
                               }}
                               className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
                             >
@@ -1240,7 +1225,7 @@ function HrTrainings() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              onDelete(training.id);
+                              onDelete(training);
                             }}
                             className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
                           >
@@ -1922,9 +1907,55 @@ function HrTrainings() {
           </div>
         </div>
       )}
-      
-    </div>
-    
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && trainingToDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowDeleteModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Delete Training</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">This action cannot be undone</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="px-6 py-4">
+              <p className="text-sm text-gray-700">
+                Are you sure you want to delete <span className="font-semibold text-gray-900">"{trainingToDelete.title}"</span>? This will permanently remove the training schedule and all associated data.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setTrainingToDelete(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

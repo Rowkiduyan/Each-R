@@ -7,10 +7,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.26.0";
 // Reuse the same SendGrid configuration used for employee credentials
 const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY");
 const SENDGRID_FROM_EMAIL = Deno.env.get("SENDGRID_FROM_EMAIL") || "noreply@roadwise.com";
-// Public logo used in email headers
-// Use URL-encoded filename to avoid issues in some email clients with parentheses
-const LOGO_URL =
-  "https://nokbftmzugwyfgyprcwh.supabase.co/storage/v1/object/public/assets/logo%28cropped%29.png";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -191,15 +187,25 @@ serve(async (req) => {
       margin-bottom: 28px;
     }
     .logo {
-      margin-bottom: 8px;
+      margin-bottom: 16px;
+      text-align: center;
     }
-    .logo img {
-      max-height: 56px;
-      width: auto;
+    .logo-brand {
+      font-size: 28px;
+      font-weight: 700;
+      color: #dc2626;
+      letter-spacing: -0.5px;
+      margin: 0;
+      font-style: italic;
+      font-family: Georgia, 'Times New Roman', serif;
     }
-    .subtitle {
-      font-size: 14px;
-      color: #6b7280;
+    .logo-tagline {
+      font-size: 11px;
+      color: #4b5563;
+      margin-top: 4px;
+      font-weight: 400;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
     }
     h1 {
       font-size: 22px;
@@ -262,7 +268,8 @@ serve(async (req) => {
   <div class="container">
     <div class="header">
       <div class="logo">
-        <img src="${LOGO_URL}" alt="Each-R - Each Record for Roadwise" />
+        <div class="logo-brand">Each-R</div>
+        <div class="logo-tagline">Each Record for Roadwise</div>
       </div>
       <div class="pill">${isReschedule ? 'Interview Rescheduled' : 'Interview Scheduled'}</div>
       <h1>${jobTitle}</h1>

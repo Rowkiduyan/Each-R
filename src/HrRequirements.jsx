@@ -65,17 +65,36 @@ function HrRequirements() {
     { key: 'philhealth', name: 'PhilHealth', type: 'id_with_copy' },
   ];
 
-  // Direct applicant requirements (from ApplicantApplications.jsx)
-  const directApplicantDocuments = [
-    { name: 'PSA Birth Certificate *', key: 'psa_birth_certificate', hasDate: false },
-    { name: "Photocopy of Driver's License (Front and Back) *", key: 'drivers_license', hasDate: false },
-    { name: 'Photocopy of SSS ID', key: 'sss_id', hasDate: false },
-    { name: 'Photocopy of TIN ID', key: 'tin_id', hasDate: false },
-    { name: 'Photocopy of Philhealth MDR', key: 'philhealth_mdr', hasDate: false },
-    { name: 'Photocopy of HDMF or Proof of HDMF No. (Pag-IBIG)', key: 'pagibig', hasDate: false },
-    { name: 'Medical Examination Results *', key: 'medical_exam', hasDate: true },
-    { name: 'NBI Clearance', key: 'nbi_clearance', hasDate: true },
-    { name: 'Police Clearance', key: 'police_clearance', hasDate: true },
+  // Medical examination tests (matching EmployeeRequirements.jsx)
+  const medicalExams = [
+    { name: "X-ray", key: "xray" },
+    { name: "Stool", key: "stool" },
+    { name: "Urine", key: "urine" },
+    { name: "HEPA", key: "hepa" },
+    { name: "CBC", key: "cbc" },
+    { name: "Drug Test", key: "drug_test" },
+  ];
+
+  // Personal documents (matching EmployeeRequirements.jsx)
+  const personalDocuments = [
+    { name: "2x2 Picture w/ White Background", key: "photo_2x2", required: true },
+    { name: "PSA Birth Certificate Photocopy", key: "psa_birth_certificate", required: true },
+    { name: "Marriage Contract Photocopy", key: "marriage_contract", required: false, note: "If applicable" },
+    { name: "PSA Birth Certificate of Dependents", key: "dependents_birth_certificate", required: false, note: "If applicable" },
+    { name: "Direction of Residence (House to Depot Sketch)", key: "residence_sketch", required: true },
+  ];
+
+  // Clearances (matching EmployeeRequirements.jsx)
+  const clearances = [
+    { name: "NBI Clearance", key: "nbi_clearance", hasDate: true },
+    { name: "Police Clearance", key: "police_clearance", hasDate: true },
+    { name: "Barangay Clearance", key: "barangay_clearance", hasDate: true },
+  ];
+
+  // Educational documents (matching EmployeeRequirements.jsx)
+  const educationalDocuments = [
+    { name: "Diploma", key: "diploma" },
+    { name: "Transcript of Records", key: "transcript_of_records" },
   ];
 
   // Load all employees and their requirements
@@ -112,9 +131,9 @@ function HrRequirements() {
             }
 
             // Map requirements to expected structure
-            // For agency employees: use ID numbers structure
-            // For direct applicants: use documents structure
-            const isAgency = emp.is_agency || !!emp.agency_profile_id;
+            // If employee has "Agency" tag (is_agency = true), they are agency employee
+            // Otherwise, they are a direct employee
+            const isAgency = emp.is_agency === true;
             
             const requirements = isAgency ? {
               sss: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null, remarks: null },
@@ -122,14 +141,20 @@ function HrRequirements() {
               pagibig: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null, remarks: null },
               philhealth: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null, remarks: null },
             } : {
-              // Direct applicant: initialize with ID numbers and documents
+              // Direct applicant: initialize with ID numbers and all document sections
               id_numbers: {
                 sss: { value: '', status: 'missing' },
                 tin: { value: '', status: 'missing' },
                 pagibig: { value: '', status: 'missing' },
                 philhealth: { value: '', status: 'missing' },
               },
-              documents: [],
+              license: {},
+              medicalExams: {},
+              personalDocuments: {},
+              clearances: {},
+              educationalDocuments: {},
+              hr_requests: [],
+              documents: [], // Legacy documents array
             };
 
             if (isAgency) {
@@ -227,11 +252,37 @@ function HrRequirements() {
                 });
               }
             } else {
-              // Direct applicants: map ID numbers and all documents
+              // Direct applicants: map ID numbers and all document sections
               if (requirementsData?.id_numbers) {
                 requirements.id_numbers = requirementsData.id_numbers;
               }
               
+              // Map license information
+              if (requirementsData?.license) {
+                requirements.license = requirementsData.license;
+              }
+              
+              // Map medical exams
+              if (requirementsData?.medicalExams) {
+                requirements.medicalExams = requirementsData.medicalExams;
+              }
+              
+              // Map personal documents
+              if (requirementsData?.personalDocuments) {
+                requirements.personalDocuments = requirementsData.personalDocuments;
+              }
+              
+              // Map clearances
+              if (requirementsData?.clearances) {
+                requirements.clearances = requirementsData.clearances;
+              }
+              
+              // Map educational documents
+              if (requirementsData?.educationalDocuments) {
+                requirements.educationalDocuments = requirementsData.educationalDocuments;
+              }
+              
+              // Legacy documents array (for backward compatibility)
               if (requirementsData?.documents && Array.isArray(requirementsData.documents)) {
                 requirements.documents = requirementsData.documents;
               }
@@ -249,7 +300,7 @@ function HrRequirements() {
               requirements: requirements,
               employeeId: emp.id,
               email: emp.email,
-              isAgency: emp.is_agency || !!emp.agency_profile_id,
+              isAgency: emp.is_agency === true,
             };
           });
 
@@ -286,9 +337,21 @@ function HrRequirements() {
       if (allApproved) return 'complete';
       return 'pending';
     } else {
-      // Direct applicants: check documents
+      // Direct applicants: check all document sections
       const idNums = reqs.id_numbers || {};
-      const documents = reqs.documents || [];
+      const license = reqs.license || {};
+      const medicalExams = reqs.medicalExams || {};
+      const personalDocs = reqs.personalDocuments || {};
+      const clearances = reqs.clearances || {};
+      const educationalDocs = reqs.educationalDocuments || {};
+      const documents = reqs.documents || []; // Legacy documents array
+      
+      // Helper function to get status from a document object
+      const getDocStatus = (doc) => {
+        if (!doc) return 'missing';
+        if (typeof doc === 'string') return doc;
+        return doc.status || 'missing';
+      };
       
       // Check ID numbers status
       const idStatuses = Object.values(idNums).map(id => id?.status || 'missing');
@@ -297,17 +360,58 @@ function HrRequirements() {
       const hasIdPending = idStatuses.some(s => s === 'Submitted' || s === 'pending');
       const allIdsValidated = idStatuses.every(s => s === 'Validated');
       
-      // Check documents status
+      // Check license status
+      const licenseStatus = getDocStatus(license);
+      const hasLicenseResubmit = licenseStatus === 'resubmit' || licenseStatus === 'Re-submit';
+      const hasLicenseMissing = licenseStatus === 'missing';
+      const hasLicensePending = licenseStatus === 'pending' || licenseStatus === 'Submitted';
+      const licenseValidated = licenseStatus === 'approved' || licenseStatus === 'Validated';
+      
+      // Check medical exams status
+      const medicalStatuses = Object.values(medicalExams).map(getDocStatus);
+      const hasMedicalResubmit = medicalStatuses.some(s => s === 'resubmit' || s === 'Re-submit');
+      const hasMedicalMissing = medicalStatuses.some(s => s === 'missing');
+      const hasMedicalPending = medicalStatuses.some(s => s === 'pending' || s === 'Submitted');
+      const allMedicalValidated = medicalStatuses.length > 0 && medicalStatuses.every(s => s === 'approved' || s === 'Validated');
+      
+      // Check personal documents status
+      const personalStatuses = Object.values(personalDocs).map(getDocStatus);
+      const hasPersonalResubmit = personalStatuses.some(s => s === 'resubmit' || s === 'Re-submit');
+      const hasPersonalMissing = personalStatuses.some(s => s === 'missing');
+      const hasPersonalPending = personalStatuses.some(s => s === 'pending' || s === 'Submitted');
+      const allPersonalValidated = personalStatuses.length > 0 && personalStatuses.every(s => s === 'approved' || s === 'Validated');
+      
+      // Check clearances status
+      const clearanceStatuses = Object.values(clearances).map(getDocStatus);
+      const hasClearanceResubmit = clearanceStatuses.some(s => s === 'resubmit' || s === 'Re-submit');
+      const hasClearanceMissing = clearanceStatuses.some(s => s === 'missing');
+      const hasClearancePending = clearanceStatuses.some(s => s === 'pending' || s === 'Submitted');
+      const allClearanceValidated = clearanceStatuses.length > 0 && clearanceStatuses.every(s => s === 'approved' || s === 'Validated');
+      
+      // Check educational documents status
+      const educationalStatuses = Object.values(educationalDocs).map(getDocStatus);
+      const hasEducationalResubmit = educationalStatuses.some(s => s === 'resubmit' || s === 'Re-submit');
+      const hasEducationalMissing = educationalStatuses.some(s => s === 'missing');
+      const hasEducationalPending = educationalStatuses.some(s => s === 'pending' || s === 'Submitted');
+      const allEducationalValidated = educationalStatuses.length > 0 && educationalStatuses.every(s => s === 'approved' || s === 'Validated');
+      
+      // Check legacy documents status
       const docStatuses = documents.map(doc => doc?.status || 'No File');
       const hasDocResubmit = docStatuses.some(s => s === 'Re-submit');
       const hasDocMissing = docStatuses.some(s => s === 'No File' || s === 'missing');
       const hasDocPending = docStatuses.some(s => s === 'Submitted' || s === 'pending');
-      const allDocsValidated = docStatuses.every(s => s === 'Validated');
+      const allDocsValidated = docStatuses.length > 0 && docStatuses.every(s => s === 'Validated');
       
-      if (hasIdResubmit || hasDocResubmit) return 'action_required';
-      if (hasIdMissing || hasDocMissing) return 'incomplete';
-      if (hasIdPending || hasDocPending) return 'pending';
-      if (allIdsValidated && allDocsValidated) return 'complete';
+      // Aggregate all statuses
+      const hasResubmit = hasIdResubmit || hasLicenseResubmit || hasMedicalResubmit || hasPersonalResubmit || hasClearanceResubmit || hasEducationalResubmit || hasDocResubmit;
+      const hasMissing = hasIdMissing || hasLicenseMissing || hasMedicalMissing || hasPersonalMissing || hasClearanceMissing || hasEducationalMissing || hasDocMissing;
+      const hasPending = hasIdPending || hasLicensePending || hasMedicalPending || hasPersonalPending || hasClearancePending || hasEducationalPending || hasDocPending;
+      const allValidated = allIdsValidated && licenseValidated && allMedicalValidated && allPersonalValidated && allClearanceValidated && allEducationalValidated && allDocsValidated;
+      
+      if (hasResubmit) return 'action_required';
+      if (hasMissing) return 'incomplete';
+      if (hasPending) return 'pending';
+      if (allValidated) return 'complete';
       return 'pending';
     }
   };
@@ -498,17 +602,55 @@ function HrRequirements() {
       const approved = reqs.filter(r => r.status === 'approved').length;
       return { approved, total: reqs.length || 4 }; // Default to 4 if empty
     } else {
-      // Direct applicants: count ID numbers + documents
+      // Direct applicants: count all sections
       const idNums = employee.requirements.id_numbers || {};
-      const documents = employee.requirements.documents || [];
+      const license = employee.requirements.license || {};
+      const medicalExams = employee.requirements.medicalExams || {};
+      const personalDocs = employee.requirements.personalDocuments || {};
+      const clearances = employee.requirements.clearances || {};
+      const educationalDocs = employee.requirements.educationalDocuments || {};
+      const documents = employee.requirements.documents || []; // Legacy documents
       
+      // Helper to get status
+      const getDocStatus = (doc) => {
+        if (!doc) return 'missing';
+        if (typeof doc === 'string') return doc;
+        return doc.status || 'missing';
+      };
+      
+      // Count totals
       const idCount = Object.keys(idNums).length || 4; // SSS, TIN, PAG-IBIG, PhilHealth
-      const docCount = directApplicantDocuments.length; // 9 documents
-      const total = idCount + docCount;
+      const licenseCount = license ? 1 : 0; // Driver's License
+      const medicalCount = Object.keys(medicalExams).length || medicalExams.length || 6; // 6 medical exams
+      const personalCount = Object.keys(personalDocs).length || personalDocs.length || 5; // 5 personal documents
+      const clearanceCount = Object.keys(clearances).length || clearances.length || 3; // 3 clearances
+      const educationalCount = Object.keys(educationalDocs).length || educationalDocs.length || 2; // 2 educational docs
+      const legacyDocCount = Array.isArray(documents) ? documents.length : 0;
       
+      const total = idCount + licenseCount + medicalCount + personalCount + clearanceCount + educationalCount + legacyDocCount;
+      
+      // Count approved
       const approvedIds = Object.values(idNums).filter(id => id?.status === 'Validated').length;
-      const approvedDocs = documents.filter(doc => doc?.status === 'Validated').length;
-      const approved = approvedIds + approvedDocs;
+      const licenseApproved = (license && (getDocStatus(license) === 'approved' || getDocStatus(license) === 'Validated')) ? 1 : 0;
+      const medicalApproved = Object.values(medicalExams).filter(doc => {
+        const status = getDocStatus(doc);
+        return status === 'approved' || status === 'Validated';
+      }).length;
+      const personalApproved = Object.values(personalDocs).filter(doc => {
+        const status = getDocStatus(doc);
+        return status === 'approved' || status === 'Validated';
+      }).length;
+      const clearanceApproved = Object.values(clearances).filter(doc => {
+        const status = getDocStatus(doc);
+        return status === 'approved' || status === 'Validated';
+      }).length;
+      const educationalApproved = Object.values(educationalDocs).filter(doc => {
+        const status = getDocStatus(doc);
+        return status === 'approved' || status === 'Validated';
+      }).length;
+      const legacyDocsApproved = Array.isArray(documents) ? documents.filter(doc => doc?.status === 'Validated').length : 0;
+      
+      const approved = approvedIds + licenseApproved + medicalApproved + personalApproved + clearanceApproved + educationalApproved + legacyDocsApproved;
       
       return { approved, total };
     }
@@ -548,7 +690,7 @@ function HrRequirements() {
 
       if (empError) throw empError;
 
-      const isAgency = employeeData.is_agency || !!employeeData.agency_profile_id;
+      const isAgency = employeeData.is_agency === true;
 
       // Parse current requirements
       let currentRequirements = null;
@@ -567,6 +709,11 @@ function HrRequirements() {
       if (!currentRequirements) {
         currentRequirements = isAgency ? {} : {
           id_numbers: {},
+          license: {},
+          medicalExams: {},
+          personalDocuments: {},
+          clearances: {},
+          educationalDocuments: {},
           documents: [],
         };
       }
@@ -589,7 +736,7 @@ function HrRequirements() {
           validated_at: validationForm.status === 'Validated' ? new Date().toISOString() : null,
         };
       } else {
-        // Direct applicants: update ID numbers or documents
+        // Direct applicants: update based on document type
         if (validationTarget.type === 'id') {
           // Update ID number
           if (!currentRequirements.id_numbers) {
@@ -607,8 +754,83 @@ function HrRequirements() {
             remarks: validationForm.remarks.trim() || null,
             validated_at: validationForm.status === 'Validated' ? new Date().toISOString() : null,
           };
+        } else if (validationTarget.type === 'license') {
+          // Update license
+          if (!currentRequirements.license) {
+            currentRequirements.license = {};
+          }
+
+          currentRequirements.license = {
+            ...currentRequirements.license,
+            status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
+            remarks: validationForm.remarks.trim() || null,
+          };
+        } else if (validationTarget.type === 'medical') {
+          // Update medical exam
+          if (!currentRequirements.medicalExams) {
+            currentRequirements.medicalExams = {};
+          }
+
+          const medicalKey = validationTarget.key;
+          if (!currentRequirements.medicalExams[medicalKey]) {
+            currentRequirements.medicalExams[medicalKey] = {};
+          }
+
+          currentRequirements.medicalExams[medicalKey] = {
+            ...currentRequirements.medicalExams[medicalKey],
+            status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
+            remarks: validationForm.remarks.trim() || null,
+          };
+        } else if (validationTarget.type === 'personal') {
+          // Update personal document
+          if (!currentRequirements.personalDocuments) {
+            currentRequirements.personalDocuments = {};
+          }
+
+          const personalKey = validationTarget.key;
+          if (!currentRequirements.personalDocuments[personalKey]) {
+            currentRequirements.personalDocuments[personalKey] = {};
+          }
+
+          currentRequirements.personalDocuments[personalKey] = {
+            ...currentRequirements.personalDocuments[personalKey],
+            status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
+            remarks: validationForm.remarks.trim() || null,
+          };
+        } else if (validationTarget.type === 'clearance') {
+          // Update clearance
+          if (!currentRequirements.clearances) {
+            currentRequirements.clearances = {};
+          }
+
+          const clearanceKey = validationTarget.key;
+          if (!currentRequirements.clearances[clearanceKey]) {
+            currentRequirements.clearances[clearanceKey] = {};
+          }
+
+          currentRequirements.clearances[clearanceKey] = {
+            ...currentRequirements.clearances[clearanceKey],
+            status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
+            remarks: validationForm.remarks.trim() || null,
+          };
+        } else if (validationTarget.type === 'educational') {
+          // Update educational document
+          if (!currentRequirements.educationalDocuments) {
+            currentRequirements.educationalDocuments = {};
+          }
+
+          const educationalKey = validationTarget.key;
+          if (!currentRequirements.educationalDocuments[educationalKey]) {
+            currentRequirements.educationalDocuments[educationalKey] = {};
+          }
+
+          currentRequirements.educationalDocuments[educationalKey] = {
+            ...currentRequirements.educationalDocuments[educationalKey],
+            status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
+            remarks: validationForm.remarks.trim() || null,
+          };
         } else if (validationTarget.type === 'doc') {
-          // Update document
+          // Legacy documents array (for backward compatibility)
           if (!Array.isArray(currentRequirements.documents)) {
             currentRequirements.documents = [];
           }
@@ -1436,136 +1658,649 @@ function HrRequirements() {
                                       </div>
                                     </div>
 
-                                    {/* Documents Section */}
-                                    <div>
-                                      <div className="flex items-center gap-2 mb-4">
-                                        <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
-                                          <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                          </svg>
+                                    {/* Driver's License Information Section */}
+                                    {!employee.isAgency && employee.requirements.license !== undefined && (
+                                      <div>
+                                        <div className="flex items-center gap-2 mb-4">
+                                          <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
+                                            <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                          </div>
+                                          <p className="text-sm font-semibold text-gray-800">Driver's License Information</p>
                                         </div>
-                                        <p className="text-sm font-semibold text-gray-800">Documents</p>
-                                      </div>
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                        {directApplicantDocuments.map((doc) => {
-                                          const docData = employee.requirements.documents?.find(d => 
-                                            d.key === doc.key || d.name === doc.name
-                                          );
-                                          const docStatus = docData?.status || 'No File';
-                                          const statusStyle = getStatusStyle(
-                                            docStatus === 'Validated' ? 'approved' :
-                                            docStatus === 'Re-submit' ? 'resubmit' :
-                                            docStatus === 'Submitted' ? 'pending' : 'missing'
-                                          );
-
-                                          const needsAction = docStatus === 'No File' || docStatus === 'Re-submit' || docStatus === 'missing';
-                                          
-                                          return (
-                                            <div 
-                                              key={doc.key} 
-                                              className={`p-4 rounded-xl border-2 transition-all ${
-                                                docStatus === 'Re-submit' 
-                                                  ? 'bg-red-50 border-red-200 shadow-sm' 
-                                                  : docStatus === 'No File' || docStatus === 'missing'
-                                                    ? 'bg-orange-50/50 border-orange-200 border-dashed' 
-                                                    : docStatus === 'Validated'
-                                                      ? 'bg-green-50/50 border-green-200'
-                                                      : 'bg-white border-gray-200'
-                                              }`}
-                                            >
-                                              <div className="flex items-start justify-between gap-3">
-                                                <div className="flex-1 min-w-0">
-                                                  <div className="flex items-center gap-2 mb-1">
-                                                    <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          {(() => {
+                                            const licenseData = employee.requirements.license;
+                                            const licenseStatus = typeof licenseData === 'object' ? (licenseData.status || 'missing') : 'missing';
+                                            const statusStyle = getStatusStyle(
+                                              licenseStatus === 'approved' || licenseStatus === 'Validated' ? 'approved' :
+                                              licenseStatus === 'resubmit' || licenseStatus === 'Re-submit' ? 'resubmit' :
+                                              licenseStatus === 'pending' || licenseStatus === 'Submitted' ? 'pending' : 'missing'
+                                            );
+                                            const needsAction = licenseStatus === 'missing' || licenseStatus === 'resubmit' || licenseStatus === 'Re-submit';
+                                            
+                                            return (
+                                              <div 
+                                                className={`p-4 rounded-xl border-2 transition-all ${
+                                                  licenseStatus === 'resubmit' || licenseStatus === 'Re-submit'
+                                                    ? 'bg-red-50 border-red-200 shadow-sm' 
+                                                    : licenseStatus === 'missing' 
+                                                      ? 'bg-orange-50/50 border-orange-200 border-dashed' 
+                                                      : licenseStatus === 'approved' || licenseStatus === 'Validated'
+                                                        ? 'bg-green-50/50 border-green-200'
+                                                        : 'bg-white border-gray-200'
+                                                }`}
+                                              >
+                                                <div className="flex items-start justify-between gap-3">
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                      <p className="text-sm font-semibold text-gray-800">Driver's License</p>
+                                                    </div>
+                                                    {licenseData.licenseNumber && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                                                        </svg>
+                                                        <p className="text-xs text-gray-600 font-mono">{licenseData.licenseNumber}</p>
+                                                      </div>
+                                                    )}
+                                                    {licenseData.licenseExpiry && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                        </svg>
+                                                        <p className="text-xs text-gray-500">Expires: <span className="font-medium">{formatDate(licenseData.licenseExpiry)}</span></p>
+                                                      </div>
+                                                    )}
+                                                    {licenseData.submittedDate && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                        <p className="text-xs text-gray-500">Submitted {formatDate(licenseData.submittedDate)}</p>
+                                                      </div>
+                                                    )}
+                                                    {(licenseData.frontFilePath || licenseData.backFilePath) && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                        </svg>
+                                                        {getDocumentUrl(licenseData.frontFilePath || licenseData.backFilePath) ? (
+                                                          <a
+                                                            href={getDocumentUrl(licenseData.frontFilePath || licenseData.backFilePath)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                                                          >
+                                                            View File
+                                                          </a>
+                                                        ) : (
+                                                          <span className="text-xs text-gray-500">File uploaded</span>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                    {licenseData.remarks && (
+                                                      <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
+                                                        <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                        </svg>
+                                                        <span>{licenseData.remarks}</span>
+                                                      </div>
+                                                    )}
                                                   </div>
-                                                  {docData?.date_validity && (
-                                                    <div className="flex items-center gap-1.5 mt-1">
-                                                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                      </svg>
-                                                      <p className="text-xs text-gray-500">Valid until: <span className="font-medium">{formatDate(docData.date_validity)}</span></p>
-                                                    </div>
-                                                  )}
-                                                  {docData?.submitted_at && (
-                                                    <div className="flex items-center gap-1.5 mt-1">
-                                                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                      </svg>
-                                                      <p className="text-xs text-gray-500">Submitted {formatDate(docData.submitted_at)}</p>
-                                                    </div>
-                                                  )}
-                                                  {docData?.file_path && (
-                                                    <div className="flex items-center gap-1.5 mt-1">
-                                                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                                      </svg>
-                                                      {getDocumentUrl(docData.file_path) ? (
-                                                        <a
-                                                          href={getDocumentUrl(docData.file_path)}
-                                                          target="_blank"
-                                                          rel="noopener noreferrer"
-                                                          onClick={(e) => e.stopPropagation()}
-                                                          className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
-                                                        >
-                                                          View File
-                                                        </a>
-                                                      ) : (
-                                                        <span className="text-xs text-gray-500">File uploaded</span>
-                                                      )}
-                                                    </div>
-                                                  )}
-                                                  {docData?.remarks && (
-                                                    <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
-                                                      <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                                      </svg>
-                                                      <span>{docData.remarks}</span>
-                                                    </div>
-                                                  )}
-                                                </div>
-                                                <div className="flex flex-col items-end gap-2">
-                                                  <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
-                                                    {statusStyle.label}
-                                                  </span>
-                                                  {(needsAction || docStatus === 'Submitted') && (
-                                                    <button 
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        openValidationModal(
-                                                          employee.employeeId,
-                                                          'doc',
-                                                          doc.key,
-                                                          doc.name,
-                                                          docStatus === 'Validated' ? 'approved' :
-                                                          docStatus === 'Re-submit' ? 'resubmit' :
-                                                          docStatus === 'Submitted' ? 'pending' : 'missing',
-                                                          docData?.remarks || ''
-                                                        );
-                                                      }}
-                                                      disabled={!docData?.file_path}
-                                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                                        !docData?.file_path
-                                                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                          : 'bg-red-600 text-white hover:bg-red-700'
-                                                      }`}
-                                                    >
-                                                      Validate
-                                                    </button>
-                                                  )}
-                                                  {docStatus === 'Validated' && (
-                                                    <div className="flex items-center gap-1 text-green-600">
-                                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                      </svg>
-                                                    </div>
-                                                  )}
+                                                  <div className="flex flex-col items-end gap-2">
+                                                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
+                                                      {statusStyle.label}
+                                                    </span>
+                                                    {(needsAction || licenseStatus === 'pending' || licenseStatus === 'Submitted') && (
+                                                      <button 
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          openValidationModal(
+                                                            employee.employeeId,
+                                                            'license',
+                                                            'license',
+                                                            'Driver\'s License',
+                                                            licenseStatus === 'approved' || licenseStatus === 'Validated' ? 'approved' :
+                                                            licenseStatus === 'resubmit' || licenseStatus === 'Re-submit' ? 'resubmit' :
+                                                            licenseStatus === 'pending' || licenseStatus === 'Submitted' ? 'pending' : 'missing',
+                                                            licenseData.remarks || ''
+                                                          );
+                                                        }}
+                                                        disabled={!licenseData.frontFilePath && !licenseData.backFilePath}
+                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                                          !licenseData.frontFilePath && !licenseData.backFilePath
+                                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                            : 'bg-red-600 text-white hover:bg-red-700'
+                                                        }`}
+                                                      >
+                                                        Validate
+                                                      </button>
+                                                    )}
+                                                    {(licenseStatus === 'approved' || licenseStatus === 'Validated') && (
+                                                      <div className="flex items-center gap-1 text-green-600">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                      </div>
+                                                    )}
+                                                  </div>
                                                 </div>
                                               </div>
-                                            </div>
-                                          );
-                                        })}
+                                            );
+                                          })()}
+                                        </div>
                                       </div>
-                                    </div>
+                                    )}
+
+                                    {/* Medical Examination Results Section */}
+                                    {!employee.isAgency && employee.requirements.medicalExams !== undefined && (
+                                      <div>
+                                        <div className="flex items-center gap-2 mb-4">
+                                          <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center">
+                                            <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                          </div>
+                                          <p className="text-sm font-semibold text-gray-800">Medical Examination Results</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                          {medicalExams.map((exam) => {
+                                            const examData = employee.requirements.medicalExams?.[exam.key] || {};
+                                            const examStatus = typeof examData === 'object' && examData !== null ? (examData.status || 'missing') : 'missing';
+                                            const statusStyle = getStatusStyle(
+                                              examStatus === 'approved' || examStatus === 'Validated' ? 'approved' :
+                                              examStatus === 'resubmit' || examStatus === 'Re-submit' ? 'resubmit' :
+                                              examStatus === 'pending' || examStatus === 'Submitted' ? 'pending' : 'missing'
+                                            );
+                                            const needsAction = examStatus === 'missing' || examStatus === 'resubmit' || examStatus === 'Re-submit';
+                                            
+                                            return (
+                                              <div 
+                                                key={exam.key}
+                                                className={`p-4 rounded-xl border-2 transition-all ${
+                                                  examStatus === 'resubmit' || examStatus === 'Re-submit'
+                                                    ? 'bg-red-50 border-red-200 shadow-sm' 
+                                                    : examStatus === 'missing' 
+                                                      ? 'bg-orange-50/50 border-orange-200 border-dashed' 
+                                                      : examStatus === 'approved' || examStatus === 'Validated'
+                                                        ? 'bg-green-50/50 border-green-200'
+                                                        : 'bg-white border-gray-200'
+                                                }`}
+                                              >
+                                                <div className="flex items-start justify-between gap-3">
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                      <p className="text-sm font-semibold text-gray-800">{exam.name}</p>
+                                                    </div>
+                                                    {examData.validUntil && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                        </svg>
+                                                        <p className="text-xs text-gray-500">Valid until: <span className="font-medium">{formatDate(examData.validUntil)}</span></p>
+                                                      </div>
+                                                    )}
+                                                    {examData.submittedDate && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                        <p className="text-xs text-gray-500">Submitted {formatDate(examData.submittedDate)}</p>
+                                                      </div>
+                                                    )}
+                                                    {examData.filePath && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                        </svg>
+                                                        {getDocumentUrl(examData.filePath) ? (
+                                                          <a
+                                                            href={getDocumentUrl(examData.filePath)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                                                          >
+                                                            View File
+                                                          </a>
+                                                        ) : (
+                                                          <span className="text-xs text-gray-500">File uploaded</span>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                    {examData.remarks && (
+                                                      <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
+                                                        <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                        </svg>
+                                                        <span>{examData.remarks}</span>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                  <div className="flex flex-col items-end gap-2">
+                                                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
+                                                      {statusStyle.label}
+                                                    </span>
+                                                    {(needsAction || examStatus === 'pending' || examStatus === 'Submitted') && (
+                                                      <button 
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          openValidationModal(
+                                                            employee.employeeId,
+                                                            'medical',
+                                                            exam.key,
+                                                            exam.name,
+                                                            examStatus === 'approved' || examStatus === 'Validated' ? 'approved' :
+                                                            examStatus === 'resubmit' || examStatus === 'Re-submit' ? 'resubmit' :
+                                                            examStatus === 'pending' || examStatus === 'Submitted' ? 'pending' : 'missing',
+                                                            examData.remarks || ''
+                                                          );
+                                                        }}
+                                                        disabled={!examData.filePath}
+                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                                          !examData.filePath
+                                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                            : 'bg-red-600 text-white hover:bg-red-700'
+                                                        }`}
+                                                      >
+                                                        Validate
+                                                      </button>
+                                                    )}
+                                                    {(examStatus === 'approved' || examStatus === 'Validated') && (
+                                                      <div className="flex items-center gap-1 text-green-600">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Personal Documents Section */}
+                                    {!employee.isAgency && employee.requirements.personalDocuments !== undefined && (
+                                      <div>
+                                        <div className="flex items-center gap-2 mb-4">
+                                          <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                                            <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                            </svg>
+                                          </div>
+                                          <p className="text-sm font-semibold text-gray-800">Personal Documents</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          {personalDocuments.map((doc) => {
+                                            const docData = employee.requirements.personalDocuments?.[doc.key] || {};
+                                            const docStatus = typeof docData === 'object' && docData !== null ? (docData.status || 'missing') : 'missing';
+                                            const statusStyle = getStatusStyle(
+                                              docStatus === 'approved' || docStatus === 'Validated' ? 'approved' :
+                                              docStatus === 'resubmit' || docStatus === 'Re-submit' ? 'resubmit' :
+                                              docStatus === 'pending' || docStatus === 'Submitted' ? 'pending' : 'missing'
+                                            );
+                                            const needsAction = docStatus === 'missing' || docStatus === 'resubmit' || docStatus === 'Re-submit';
+                                            
+                                            return (
+                                              <div 
+                                                key={doc.key}
+                                                className={`p-4 rounded-xl border-2 transition-all ${
+                                                  docStatus === 'resubmit' || docStatus === 'Re-submit'
+                                                    ? 'bg-red-50 border-red-200 shadow-sm' 
+                                                    : docStatus === 'missing' 
+                                                      ? 'bg-orange-50/50 border-orange-200 border-dashed' 
+                                                      : docStatus === 'approved' || docStatus === 'Validated'
+                                                        ? 'bg-green-50/50 border-green-200'
+                                                        : 'bg-white border-gray-200'
+                                                }`}
+                                              >
+                                                <div className="flex items-start justify-between gap-3">
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                      <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
+                                                      {doc.note && (
+                                                        <span className="text-xs text-gray-500 italic">({doc.note})</span>
+                                                      )}
+                                                    </div>
+                                                    {docData.submittedDate && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                        <p className="text-xs text-gray-500">Submitted {formatDate(docData.submittedDate)}</p>
+                                                      </div>
+                                                    )}
+                                                    {docData.filePath && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                        </svg>
+                                                        {getDocumentUrl(docData.filePath) ? (
+                                                          <a
+                                                            href={getDocumentUrl(docData.filePath)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                                                          >
+                                                            View File
+                                                          </a>
+                                                        ) : (
+                                                          <span className="text-xs text-gray-500">File uploaded</span>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                    {docData.remarks && (
+                                                      <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
+                                                        <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                        </svg>
+                                                        <span>{docData.remarks}</span>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                  <div className="flex flex-col items-end gap-2">
+                                                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
+                                                      {statusStyle.label}
+                                                    </span>
+                                                    {(needsAction || docStatus === 'pending' || docStatus === 'Submitted') && (
+                                                      <button 
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          openValidationModal(
+                                                            employee.employeeId,
+                                                            'personal',
+                                                            doc.key,
+                                                            doc.name,
+                                                            docStatus === 'approved' || docStatus === 'Validated' ? 'approved' :
+                                                            docStatus === 'resubmit' || docStatus === 'Re-submit' ? 'resubmit' :
+                                                            docStatus === 'pending' || docStatus === 'Submitted' ? 'pending' : 'missing',
+                                                            docData.remarks || ''
+                                                          );
+                                                        }}
+                                                        disabled={!docData.filePath}
+                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                                          !docData.filePath
+                                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                            : 'bg-red-600 text-white hover:bg-red-700'
+                                                        }`}
+                                                      >
+                                                        Validate
+                                                      </button>
+                                                    )}
+                                                    {(docStatus === 'approved' || docStatus === 'Validated') && (
+                                                      <div className="flex items-center gap-1 text-green-600">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Clearances Section */}
+                                    {!employee.isAgency && employee.requirements.clearances !== undefined && (
+                                      <div>
+                                        <div className="flex items-center gap-2 mb-4">
+                                          <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                                            <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                                            </svg>
+                                          </div>
+                                          <p className="text-sm font-semibold text-gray-800">Clearances</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                          {clearances.map((clearance) => {
+                                            const clearanceData = employee.requirements.clearances?.[clearance.key] || {};
+                                            const clearanceStatus = typeof clearanceData === 'object' && clearanceData !== null ? (clearanceData.status || 'missing') : 'missing';
+                                            const statusStyle = getStatusStyle(
+                                              clearanceStatus === 'approved' || clearanceStatus === 'Validated' ? 'approved' :
+                                              clearanceStatus === 'resubmit' || clearanceStatus === 'Re-submit' ? 'resubmit' :
+                                              clearanceStatus === 'pending' || clearanceStatus === 'Submitted' ? 'pending' : 'missing'
+                                            );
+                                            const needsAction = clearanceStatus === 'missing' || clearanceStatus === 'resubmit' || clearanceStatus === 'Re-submit';
+                                            
+                                            return (
+                                              <div 
+                                                key={clearance.key}
+                                                className={`p-4 rounded-xl border-2 transition-all ${
+                                                  clearanceStatus === 'resubmit' || clearanceStatus === 'Re-submit'
+                                                    ? 'bg-red-50 border-red-200 shadow-sm' 
+                                                    : clearanceStatus === 'missing' 
+                                                      ? 'bg-orange-50/50 border-orange-200 border-dashed' 
+                                                      : clearanceStatus === 'approved' || clearanceStatus === 'Validated'
+                                                        ? 'bg-green-50/50 border-green-200'
+                                                        : 'bg-white border-gray-200'
+                                                }`}
+                                              >
+                                                <div className="flex items-start justify-between gap-3">
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                      <p className="text-sm font-semibold text-gray-800">{clearance.name}</p>
+                                                    </div>
+                                                    {clearanceData.dateValidity && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                        </svg>
+                                                        <p className="text-xs text-gray-500">Valid until: <span className="font-medium">{formatDate(clearanceData.dateValidity)}</span></p>
+                                                      </div>
+                                                    )}
+                                                    {clearanceData.submittedDate && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                        <p className="text-xs text-gray-500">Submitted {formatDate(clearanceData.submittedDate)}</p>
+                                                      </div>
+                                                    )}
+                                                    {clearanceData.filePath && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                        </svg>
+                                                        {getDocumentUrl(clearanceData.filePath) ? (
+                                                          <a
+                                                            href={getDocumentUrl(clearanceData.filePath)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                                                          >
+                                                            View File
+                                                          </a>
+                                                        ) : (
+                                                          <span className="text-xs text-gray-500">File uploaded</span>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                    {clearanceData.remarks && (
+                                                      <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
+                                                        <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                        </svg>
+                                                        <span>{clearanceData.remarks}</span>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                  <div className="flex flex-col items-end gap-2">
+                                                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
+                                                      {statusStyle.label}
+                                                    </span>
+                                                    {(needsAction || clearanceStatus === 'pending' || clearanceStatus === 'Submitted') && (
+                                                      <button 
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          openValidationModal(
+                                                            employee.employeeId,
+                                                            'clearance',
+                                                            clearance.key,
+                                                            clearance.name,
+                                                            clearanceStatus === 'approved' || clearanceStatus === 'Validated' ? 'approved' :
+                                                            clearanceStatus === 'resubmit' || clearanceStatus === 'Re-submit' ? 'resubmit' :
+                                                            clearanceStatus === 'pending' || clearanceStatus === 'Submitted' ? 'pending' : 'missing',
+                                                            clearanceData.remarks || ''
+                                                          );
+                                                        }}
+                                                        disabled={!clearanceData.filePath}
+                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                                          !clearanceData.filePath
+                                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                            : 'bg-red-600 text-white hover:bg-red-700'
+                                                        }`}
+                                                      >
+                                                        Validate
+                                                      </button>
+                                                    )}
+                                                    {(clearanceStatus === 'approved' || clearanceStatus === 'Validated') && (
+                                                      <div className="flex items-center gap-1 text-green-600">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Educational Documents Section */}
+                                    {!employee.isAgency && employee.requirements.educationalDocuments !== undefined && (
+                                      <div>
+                                        <div className="flex items-center gap-2 mb-4">
+                                          <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
+                                            <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                            </svg>
+                                          </div>
+                                          <p className="text-sm font-semibold text-gray-800">Educational Documents</p>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          {educationalDocuments.map((doc) => {
+                                            const docData = employee.requirements.educationalDocuments?.[doc.key] || {};
+                                            const docStatus = typeof docData === 'object' && docData !== null ? (docData.status || 'missing') : 'missing';
+                                            const statusStyle = getStatusStyle(
+                                              docStatus === 'approved' || docStatus === 'Validated' ? 'approved' :
+                                              docStatus === 'resubmit' || docStatus === 'Re-submit' ? 'resubmit' :
+                                              docStatus === 'pending' || docStatus === 'Submitted' ? 'pending' : 'missing'
+                                            );
+                                            const needsAction = docStatus === 'missing' || docStatus === 'resubmit' || docStatus === 'Re-submit';
+                                            
+                                            return (
+                                              <div 
+                                                key={doc.key}
+                                                className={`p-4 rounded-xl border-2 transition-all ${
+                                                  docStatus === 'resubmit' || docStatus === 'Re-submit'
+                                                    ? 'bg-red-50 border-red-200 shadow-sm' 
+                                                    : docStatus === 'missing' 
+                                                      ? 'bg-orange-50/50 border-orange-200 border-dashed' 
+                                                      : docStatus === 'approved' || docStatus === 'Validated'
+                                                        ? 'bg-green-50/50 border-green-200'
+                                                        : 'bg-white border-gray-200'
+                                                }`}
+                                              >
+                                                <div className="flex items-start justify-between gap-3">
+                                                  <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                      <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
+                                                    </div>
+                                                    {docData.submittedDate && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                        <p className="text-xs text-gray-500">Submitted {formatDate(docData.submittedDate)}</p>
+                                                      </div>
+                                                    )}
+                                                    {docData.filePath && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                        </svg>
+                                                        {getDocumentUrl(docData.filePath) ? (
+                                                          <a
+                                                            href={getDocumentUrl(docData.filePath)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                                                          >
+                                                            View File
+                                                          </a>
+                                                        ) : (
+                                                          <span className="text-xs text-gray-500">File uploaded</span>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                    {docData.remarks && (
+                                                      <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
+                                                        <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                        </svg>
+                                                        <span>{docData.remarks}</span>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                  <div className="flex flex-col items-end gap-2">
+                                                    <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
+                                                      {statusStyle.label}
+                                                    </span>
+                                                    {(needsAction || docStatus === 'pending' || docStatus === 'Submitted') && (
+                                                      <button 
+                                                        onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          openValidationModal(
+                                                            employee.employeeId,
+                                                            'educational',
+                                                            doc.key,
+                                                            doc.name,
+                                                            docStatus === 'approved' || docStatus === 'Validated' ? 'approved' :
+                                                            docStatus === 'resubmit' || docStatus === 'Re-submit' ? 'resubmit' :
+                                                            docStatus === 'pending' || docStatus === 'Submitted' ? 'pending' : 'missing',
+                                                            docData.remarks || ''
+                                                          );
+                                                        }}
+                                                        disabled={!docData.filePath}
+                                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                                          !docData.filePath
+                                                            ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                            : 'bg-red-600 text-white hover:bg-red-700'
+                                                        }`}
+                                                      >
+                                                        Validate
+                                                      </button>
+                                                    )}
+                                                    {(docStatus === 'approved' || docStatus === 'Validated') && (
+                                                      <div className="flex items-center gap-1 text-green-600">
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 )}
 

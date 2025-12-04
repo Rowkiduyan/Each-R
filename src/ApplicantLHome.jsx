@@ -1141,6 +1141,7 @@ const formatDateForInput = (dateString) => {
         const { data, error } = await supabase
           .from('job_posts')
           .select('id, title, depot, description, responsibilities, urgent, created_at, job_type, duration')
+          .eq('is_active', true)
           .order('created_at', { ascending: false });
 
         if (error) {

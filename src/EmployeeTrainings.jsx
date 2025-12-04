@@ -18,7 +18,12 @@ function EmployeeTrainings() {
     
     // External training upload state
     const [externalTrainings, setExternalTrainings] = useState([]);
-    const [newTraining, setNewTraining] = useState({ title: "", date: "", certification: null });
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [uploadError, setUploadError] = useState(null);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [certificateToDelete, setCertificateToDelete] = useState(null);
+    const [showSuccessModal, setShowSuccessModal] = useState(false);
+    const [successMessage, setSuccessMessage] = useState({ title: '', description: '' });
 
     // Get employee's possible name formats for matching
     const getEmployeeNameVariations = () => {
@@ -82,6 +87,34 @@ function EmployeeTrainings() {
 
         loadEmployeeData();
     }, [employeeUser, userEmail]);
+
+    // Fetch external trainings from database
+    useEffect(() => {
+        const fetchExternalTrainings = async () => {
+            if (!userId) return;
+
+            try {
+                const { data, error } = await supabase
+                    .from('external_trainings')
+                    .select('*')
+                    .eq('user_id', userId)
+                    .order('uploaded_at', { ascending: false });
+
+                if (error) {
+                    console.error('Error fetching external trainings:', error);
+                    return;
+                }
+
+                if (data) {
+                    setExternalTrainings(data);
+                }
+            } catch (err) {
+                console.error('Error in fetchExternalTrainings:', err);
+            }
+        };
+
+        fetchExternalTrainings();
+    }, [userId]);
 
     const fetchTrainings = async () => {
         // Get employee data - either from context or fetch it
@@ -328,51 +361,184 @@ function EmployeeTrainings() {
     });
 
     // Handle upload training
-    const handleUploadTraining = () => {
-        if (!newTraining.title || !newTraining.date) {
-            alert("Title and date are required.");
+    const handleUploadTraining = async () => {
+        if (selectedFiles.length === 0) {
+            alert("Please select at least one file to upload.");
             return;
         }
 
-        setExternalTrainings([...externalTrainings, { ...newTraining, id: Date.now() }]);
-        setNewTraining({ title: "", date: "", certification: null });
-        setShowUpload(false);
+        if (!userId) {
+            alert('User ID not available. Please try again.');
+            return;
+        }
+
+        try {
+            const uploadPromises = selectedFiles.map(async (file) => {
+                // Generate unique filename
+                const timestamp = Date.now();
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${userId}_${timestamp}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const filePath = `${userId}/${fileName}`;
+
+                // Upload file to Supabase storage
+                const { data: uploadData, error: uploadError } = await supabase.storage
+                    .from('external-trainings')
+                    .upload(filePath, file);
+
+                if (uploadError) {
+                    console.error('Upload error:', uploadError);
+                    throw new Error(`Failed to upload ${file.name}`);
+                }
+
+                // Get public URL
+                const { data: { publicUrl } } = supabase.storage
+                    .from('external-trainings')
+                    .getPublicUrl(filePath);
+
+                // Insert record into database
+                const { data: dbData, error: dbError } = await supabase
+                    .from('external_trainings')
+                    .insert({
+                        user_id: userId,
+                        name: file.name,
+                        certificate_url: publicUrl,
+                        uploaded_at: new Date().toISOString()
+                    })
+                    .select()
+                    .single();
+
+                if (dbError) {
+                    console.error('Database error:', dbError);
+                    throw new Error(`Failed to save ${file.name} to database`);
+                }
+
+                return dbData;
+            });
+
+            // Wait for all uploads to complete
+            const uploadedTrainings = await Promise.all(uploadPromises);
+
+            // Update local state with newly uploaded trainings
+            setExternalTrainings([...uploadedTrainings, ...externalTrainings]);
+            setSelectedFiles([]);
+            setUploadError(null);
+            setShowUpload(false);
+            setSuccessMessage({
+                title: 'Upload Successful',
+                description: 'Your certificates have been successfully uploaded and are now visible in your profile.'
+            });
+            setShowSuccessModal(true);
+        } catch (error) {
+            console.error('Error uploading files:', error);
+            alert(`Error uploading files: ${error.message}`);
+        }
+    };
+
+    const handleFileChange = (e) => {
+        const files = Array.from(e.target.files);
+        const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+        const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+        
+        const validFiles = [];
+        const invalidFiles = [];
+        
+        files.forEach(file => {
+            const isValidType = allowedTypes.includes(file.type);
+            const isValidSize = file.size <= maxSize;
+            
+            if (isValidType && isValidSize) {
+                validFiles.push(file);
+            } else {
+                let reason;
+                if (!isValidType && !isValidSize) {
+                    reason = 'invalid format and file size exceeds 10MB limit';
+                } else if (!isValidType) {
+                    reason = 'invalid format';
+                } else {
+                    reason = 'file size exceeds 10MB limit';
+                }
+                invalidFiles.push({ name: file.name, reason });
+            }
+        });
+        
+        if (validFiles.length > 0) {
+            setSelectedFiles(prev => [...prev, ...validFiles]);
+        }
+        
+        if (invalidFiles.length > 0) {
+            setUploadError(invalidFiles);
+        } else {
+            setUploadError(null);
+        }
+    };
+
+    const removeFile = (index) => {
+        setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Delete certificate - show confirmation modal
+    const handleDeleteCertificate = (certificate, e) => {
+        e.stopPropagation();
+        setCertificateToDelete(certificate);
+        setShowDeleteModal(true);
+    };
+
+    // Confirm delete certificate
+    const confirmDeleteCertificate = async () => {
+        if (!certificateToDelete) return;
+
+        try {
+            // Extract file path from URL
+            const url = new URL(certificateToDelete.certificate_url);
+            const pathParts = url.pathname.split('/storage/v1/object/public/external-trainings/');
+            const filePath = pathParts[1];
+
+            // Delete from storage
+            const { error: storageError } = await supabase.storage
+                .from('external-trainings')
+                .remove([filePath]);
+
+            if (storageError) {
+                console.error('Storage deletion error:', storageError);
+            }
+
+            // Delete from database
+            const { error: dbError } = await supabase
+                .from('external_trainings')
+                .delete()
+                .eq('id', certificateToDelete.id);
+
+            if (dbError) {
+                throw new Error('Failed to delete certificate from database');
+            }
+
+            // Update local state
+            setExternalTrainings(prev => prev.filter(t => t.id !== certificateToDelete.id));
+            setShowDeleteModal(false);
+            setCertificateToDelete(null);
+            setSuccessMessage({
+                title: 'Delete Successful',
+                description: 'The certificate has been permanently removed from your records.'
+            });
+            setShowSuccessModal(true);
+        } catch (error) {
+            console.error('Error deleting certificate:', error);
+            alert(`Error deleting certificate: ${error.message}`);
+            setShowDeleteModal(false);
+            setCertificateToDelete(null);
+        }
+    };
+
+    // View certificate
+    const handleViewCertificate = (certificate, e) => {
+        e.stopPropagation();
+        window.open(certificate.certificate_url, '_blank');
     };
 
     return (
-        <div className="min-h-screen bg-white">
-            <style>{`
-                .no-scrollbar {
-                    -ms-overflow-style: none;
-                    scrollbar-width: none;
-                }
-                .no-scrollbar::-webkit-scrollbar {
-                    display: none;
-                }
-                
-                ::-webkit-scrollbar {
-                    width: 6px;
-                    height: 6px;
-                }
-                ::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                ::-webkit-scrollbar-thumb {
-                    background: #d1d5db;
-                    border-radius: 3px;
-                }
-                ::-webkit-scrollbar-thumb:hover {
-                    background: #9ca3af;
-                }
-                
-                * {
-                    scrollbar-width: thin;
-                    scrollbar-color: #d1d5db transparent;
-                }
-            `}</style>
-
+        <>
             {/* Content */}
-            <div className="max-w-7xl mx-auto px-6 py-0">
+            <div className="max-w-7xl mx-auto px-6 py-8">
                 {/* Page Header */}
                 <div className="mb-8">
                     <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
@@ -480,6 +646,22 @@ function EmployeeTrainings() {
                                     <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">{completed.length}</span>
                                 </div>
                             </button>
+                            <button
+                                onClick={() => setActiveTab('certificates')}
+                                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                                    activeTab === 'certificates'
+                                        ? 'border-red-600 text-red-600 bg-red-50/50'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                }`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Other Certificates
+                                    <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">{externalTrainings.length}</span>
+                                </div>
+                            </button>
                         </div>
                     </div>
 
@@ -502,15 +684,17 @@ function EmployeeTrainings() {
                                 className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
                             />
                         </div>
-                        <button
-                            onClick={() => setShowUpload(true)}
-                            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 text-sm font-medium self-start sm:self-auto"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                            </svg>
-                            Upload Training
-                        </button>
+                        {activeTab === 'certificates' && (
+                            <button
+                                onClick={() => setShowUpload(true)}
+                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 text-sm font-medium self-start sm:self-auto"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                </svg>
+                                Upload Certificate
+                            </button>
+                        )}
                     </div>
 
                     {/* Tab content */}
@@ -640,6 +824,72 @@ function EmployeeTrainings() {
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        )
+                    ) : activeTab === 'certificates' ? (
+                        externalTrainings.length === 0 ? (
+                            <div className="px-6 py-12 text-center text-gray-500 h-[500px] flex flex-col items-center justify-center">
+                                <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <p className="font-medium">No uploaded certificates</p>
+                                <p className="text-sm mt-1">Your uploaded training certificates will appear here.</p>
+                            </div>
+                        ) : (
+                            <div className="relative h-[500px] overflow-y-auto no-scrollbar p-6">
+                                <div className="space-y-2">
+                                    {externalTrainings.map((training) => (
+                                        <div
+                                            key={training.id}
+                                            onClick={(e) => handleViewCertificate(training, e)}
+                                            className="group bg-white border border-gray-200 rounded-lg p-3 hover:border-purple-300 hover:bg-purple-50/30 transition-all cursor-pointer"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                {/* File Icon */}
+                                                <div className="flex-shrink-0">
+                                                    <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center group-hover:bg-purple-200 transition-colors">
+                                                        <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                        </svg>
+                                                    </div>
+                                                </div>
+
+                                                {/* File Info */}
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-semibold text-gray-900 truncate group-hover:text-purple-700 transition-colors">
+                                                        {training.name}
+                                                    </p>
+                                                    <p className="text-xs text-gray-500 mt-0.5">
+                                                        Uploaded {formatDate(training.uploaded_at)}
+                                                    </p>
+                                                </div>
+
+                                                {/* Action Buttons */}
+                                                <div className="flex items-center gap-1 flex-shrink-0">
+                                                    <button
+                                                        onClick={(e) => handleViewCertificate(training, e)}
+                                                        className="p-2 text-purple-600 hover:bg-purple-100 rounded-lg transition-colors"
+                                                        title="View certificate"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleDeleteCertificate(training, e)}
+                                                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Delete certificate"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )
                     ) : filteredCompleted.length === 0 ? (
@@ -845,66 +1095,219 @@ function EmployeeTrainings() {
 
             {/* Upload Training Modal */}
             {showUpload && (
-                <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-                    <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl">
-                        <div className="text-center font-semibold text-xl mb-6">Upload Past Training</div>
-                        <div className="grid grid-cols-1 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Title <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={newTraining.title}
-                                    onChange={(e) => setNewTraining({...newTraining, title: e.target.value})}
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                                    placeholder="Training title"
-                                />
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowUpload(false)}>
+                    <div className="bg-white rounded-xl w-full max-w-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-gray-200">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900">Upload Certificates</h2>
+                                    <p className="text-sm text-gray-500 mt-1">Upload your external certificate/s</p>
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        setShowUpload(false);
+                                        setSelectedFiles([]);
+                                        setUploadError(null);
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Date <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="date"
-                                    value={newTraining.date}
-                                    onChange={(e) => setNewTraining({...newTraining, date: e.target.value})}
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                                />
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6">
+                            {/* Instructions */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                                <div className="flex items-start gap-3">
+                                    <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-blue-900 mb-1">Upload Guidelines</h3>
+                                        <ul className="text-sm text-blue-800 space-y-1">
+                                            <li>• Accepted formats: <span className="font-medium">PDF, JPG, JPEG, PNG</span></li>
+                                            <li>• Maximum file size: <span className="font-medium">10 MB per file</span></li>
+                                            <li>• You can upload multiple files at once</li>
+                                        </ul>
+                                    </div>
+                                </div>
                             </div>
+
+                            {/* File Upload Area */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Certification
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Certificates <span className="text-red-500">*</span>
                                 </label>
                                 <input
                                     type="file"
-                                    onChange={(e) => setNewTraining({...newTraining, certification: e.target.files[0]})}
-                                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    multiple
+                                    onChange={handleFileChange}
+                                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                                     accept=".pdf,.jpg,.jpeg,.png"
                                 />
                             </div>
+
+                            {/* Error Message */}
+                            {uploadError && Array.isArray(uploadError) && uploadError.length > 0 && (
+                                <div className="mt-3 space-y-1">
+                                    {uploadError.map((error, index) => (
+                                        <div key={index} className="flex items-start gap-2 text-xs text-red-600">
+                                            <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <span><span className="font-medium">{error.name}:</span> {error.reason}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Selected Files List */}
+                            {selectedFiles.length > 0 && (
+                                <div className="mt-4">
+                                    <h3 className="text-sm font-medium text-gray-700 mb-2">Selected Files ({selectedFiles.length})</h3>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                                        {selectedFiles.map((file, index) => (
+                                            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                                                <div className="flex items-center gap-3 flex-1 min-w-0">
+                                                    <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                                    </svg>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                                                        <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => removeFile(index)}
+                                                    className="ml-3 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full p-1 transition-colors flex-shrink-0"
+                                                >
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                        <div className="flex justify-end gap-3 mt-6">
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
                             <button
                                 onClick={() => {
                                     setShowUpload(false);
-                                    setNewTraining({ title: "", date: "", certification: null });
+                                    setSelectedFiles([]);
+                                    setUploadError(null);
                                 }}
-                                className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
+                                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleUploadTraining}
-                                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium"
+                                disabled={selectedFiles.length === 0}
+                                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
                             >
-                                Upload Training
+                                Upload {selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
-        </div>
+
+            {/* Delete Confirmation Modal */}
+            {showDeleteModal && certificateToDelete && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowDeleteModal(false)}>
+                    <div className="bg-white rounded-xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-gray-200">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-gray-900">Delete Certificate</h2>
+                                    <p className="text-sm text-gray-500 mt-0.5">This action cannot be undone</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="px-6 py-4">
+                            <p className="text-sm text-gray-700">
+                                Are you sure you want to delete <span className="font-semibold text-gray-900">"{certificateToDelete.name}"</span>? This will permanently remove the certificate from your records.
+                            </p>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowDeleteModal(false);
+                                    setCertificateToDelete(null);
+                                }}
+                                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDeleteCertificate}
+                                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm"
+                            >
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Success Modal */}
+            {showSuccessModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowSuccessModal(false)}>
+                    <div className="bg-white rounded-xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-gray-200">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-gray-900">{successMessage.title}</h2>
+                                    <p className="text-sm text-gray-500 mt-0.5">Operation completed</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="px-6 py-4">
+                            <p className="text-sm text-gray-700">
+                                {successMessage.description}
+                            </p>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end">
+                            <button
+                                onClick={() => setShowSuccessModal(false)}
+                                className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium text-sm"
+                            >
+                                OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </>
     );
 }
 

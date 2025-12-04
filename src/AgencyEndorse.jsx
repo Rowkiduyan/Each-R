@@ -16,6 +16,16 @@ function AgencyEndorse() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const profileDropdownRef = useRef(null);
 
+  // Custom alert / confirm state (match site-wide design)
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [showErrorAlert, setShowErrorAlert] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [confirmMessage, setConfirmMessage] = useState("");
+  const [confirmCallback, setConfirmCallback] = useState(null);
+  const [successNavigatePath, setSuccessNavigatePath] = useState(null);
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -313,8 +323,11 @@ function AgencyEndorse() {
       setCsvFile(null);
       setCsvPreview([]);
       setCsvError('');
-      
-      alert(`Successfully imported ${data.length} employee(s). Please review and complete their information.`);
+
+      // Custom success alert (site-wide design)
+      setSuccessMessage(`Successfully imported ${data.length} employee(s). Please review and complete their information.`);
+      setSuccessNavigatePath(null);
+      setShowSuccessAlert(true);
     };
     reader.readAsText(csvFile);
   };
@@ -331,109 +344,113 @@ function AgencyEndorse() {
 
   // --- Endorse implementation (no blocking auth alert) ---
   // Endorse handler (AgencyEndorse.jsx)
-const handleEndorse = async () => {
-  const vals = formValues[activeApplicant] || makeEmptyValues();
-  const fname = vals.firstName?.trim() || "";
-  const lname = vals.lastName?.trim() || "";
-  const mname = vals.middleName?.trim() || "";
-  const email = (vals.email || "").trim().toLowerCase();
-  const contact = vals.contactNumber || "";
-  const position = vals.position || null;
-  const depot = vals.depot || null;
+  const handleEndorse = async () => {
+    const vals = formValues[activeApplicant] || makeEmptyValues();
+    const fname = vals.firstName?.trim() || "";
+    const lname = vals.lastName?.trim() || "";
+    const mname = vals.middleName?.trim() || "";
+    const email = (vals.email || "").trim().toLowerCase();
+    const contact = vals.contactNumber || "";
+    const position = vals.position || null;
+    const depot = vals.depot || null;
 
-  // required fields
-  if (!fname || !lname || !email) {
-    alert("Please fill required fields before endorsing: First Name, Last Name, Email.");
-    return;
-  }
-  if (!confirm(`Endorse ${fname} ${lname} to HR?`)) return;
+    // required fields
+    if (!fname || !lname || !email) {
+      setErrorMessage("Please fill required fields before endorsing: First Name, Last Name, Email.");
+      setShowErrorAlert(true);
+      return;
+    }
 
-  try {
-    // get current auth user (best-effort). If not found, continue with null.
-    const { data: authData, error: authErr } = await supabase.auth.getUser();
-    if (authErr) console.warn("auth.getUser error (continuing):", authErr);
-    const authUserId = authData?.user?.id ?? null;
-
-    // try to find a profiles row for the agency profile id (best-effort)
-    let agencyProfileId = null;
     try {
-      const { data: profileRow, error: profileErr } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("id", authUserId)
-        .maybeSingle();
-      if (profileErr) console.warn("profiles lookup error (continuing):", profileErr);
-      agencyProfileId = profileRow?.id ?? null;
-    } catch (e) {
-      console.warn("profiles lookup unexpected error (continuing):", e);
-      agencyProfileId = null;
-    }
+      // get current auth user (best-effort). If not found, continue with null.
+      const { data: authData, error: authErr } = await supabase.auth.getUser();
+      if (authErr) console.warn("auth.getUser error (continuing):", authErr);
+      const authUserId = authData?.user?.id ?? null;
 
-    // ensure job id is a UUID before sending; otherwise set null
-    const jobIdToSend = isValidUuid(job?.id) ? job.id : null;
-    if (job?.id && !jobIdToSend) {
-      console.warn("job.id present but not a valid UUID; sending null for job_id to avoid DB error", job);
-    }
+      // try to find a profiles row for the agency profile id (best-effort)
+      let agencyProfileId = null;
+      try {
+        const { data: profileRow, error: profileErr } = await supabase
+          .from("profiles")
+          .select("id")
+          .eq("id", authUserId)
+          .maybeSingle();
+        if (profileErr) console.warn("profiles lookup error (continuing):", profileErr);
+        agencyProfileId = profileRow?.id ?? null;
+      } catch (e) {
+        console.warn("profiles lookup unexpected error (continuing):", e);
+        agencyProfileId = null;
+      }
 
-    // prepare payload
-    const payload = {
-      applicant: vals,
-      workExperiences,
-      meta: {
-        source: "agency",
-        endorsed_by_profile_id: agencyProfileId,
-        endorsed_by_auth_user_id: authUserId,
-        endorsed_at: new Date().toISOString(),
-        job_id: jobIdToSend,
-      },
-    };
+      // ensure job id is a UUID before sending; otherwise set null
+      const jobIdToSend = isValidUuid(job?.id) ? job.id : null;
+      if (job?.id && !jobIdToSend) {
+        console.warn("job.id present but not a valid UUID; sending null for job_id to avoid DB error", job);
+      }
 
-    // ---------- PRE-CHECK: avoid duplicates ----------
-    // Check applications for same job + applicant email
-    const { data: existingApps, error: errAppCheck } = await supabase
-      .from("applications")
-      .select("id, created_at, endorsed")
-      .eq("job_id", jobIdToSend)
-      .or(`payload->applicant->>email.eq.${email}, payload->form->applicant->>email.eq.${email}, payload->>email.eq.${email}`)
-      .limit(1);
-
-    if (errAppCheck) {
-      console.warn("applications pre-check warning:", errAppCheck);
-      // continue anyway
-    } else if (existingApps && existingApps.length > 0) {
-      alert("This application already exists (someone else endorsed it). Endorsement skipped.");
-      return;
-    }
-
-    // ---------- INSERT: directly into applications table with endorsed=true ----------
-    // For agency endorsements, we no longer tie applications.user_id to the agency auth user.
-    // Insert with NULL user_id to avoid foreign key issues; HR/Employees modules will use payload/meta.
-
-    const { error: errAppInsert } = await supabase
-      .from("applications")
-      .insert([
-        {
+      // prepare payload
+      const payload = {
+        applicant: vals,
+        workExperiences,
+        meta: {
+          source: "agency",
+          endorsed_by_profile_id: agencyProfileId,
+          endorsed_by_auth_user_id: authUserId,
+          endorsed_at: new Date().toISOString(),
           job_id: jobIdToSend,
-          payload,
-          status: "submitted",
-          endorsed: true, // Mark as endorsed by agency
         },
-      ]);
+      };
 
-    if (errAppInsert) {
-      console.error("Failed to create application:", errAppInsert);
-      alert("Failed to create endorsement. See console for details.");
-      return;
+      // ---------- PRE-CHECK: avoid duplicates ----------
+      // Check applications for same job + applicant email
+      const { data: existingApps, error: errAppCheck } = await supabase
+        .from("applications")
+        .select("id, created_at, endorsed")
+        .eq("job_id", jobIdToSend)
+        .or(`payload->applicant->>email.eq.${email}, payload->form->applicant->>email.eq.${email}, payload->>email.eq.${email}`)
+        .limit(1);
+
+      if (errAppCheck) {
+        console.warn("applications pre-check warning:", errAppCheck);
+        // continue anyway
+      } else if (existingApps && existingApps.length > 0) {
+        setErrorMessage("This application already exists (someone else endorsed it). Endorsement skipped.");
+        setShowErrorAlert(true);
+        return;
+      }
+
+      // ---------- INSERT: directly into applications table with endorsed=true ----------
+      // For agency endorsements, we no longer tie applications.user_id to the agency auth user.
+      // Insert with NULL user_id to avoid foreign key issues; HR/Employees modules will use payload/meta.
+
+      const { error: errAppInsert } = await supabase
+        .from("applications")
+        .insert([
+          {
+            job_id: jobIdToSend,
+            payload,
+            status: "submitted",
+            endorsed: true, // Mark as endorsed by agency
+          },
+        ]);
+
+      if (errAppInsert) {
+        console.error("Failed to create application:", errAppInsert);
+        setErrorMessage("Failed to create endorsement. See console for details.");
+        setShowErrorAlert(true);
+        return;
+      }
+
+      // Success: application created directly with endorsed=true
+      setSuccessMessage("Successfully endorsed. ✅");
+      setSuccessNavigatePath("/agency/endorsements");
+      setShowSuccessAlert(true);
+    } catch (err) {
+      console.error("unexpected endorse error:", err);
+      setErrorMessage("An unexpected error occurred. Check console.");
+      setShowErrorAlert(true);
     }
-
-    // Success: application created directly with endorsed=true
-    alert("Successfully endorsed. ✅ ");
-    navigate("/agency/endorsements"); // Navigate to endorsements page
-  } catch (err) {
-    console.error("unexpected endorse error:", err);
-    alert("An unexpected error occurred. Check console.");
-  }
-};
+  };
 
 
   const fv = formValues[activeApplicant] || makeEmptyValues();
@@ -907,7 +924,8 @@ const handleEndorse = async () => {
                             const file = e.target.files[0];
                             if (file) {
                               if (file.size > 5 * 1024 * 1024) {
-                                alert('File size must be less than 5MB');
+                                setErrorMessage('File size must be less than 5MB');
+                                setShowErrorAlert(true);
                                 return;
                               }
                               handleChange(activeApplicant, "trainingCertFile", file);
@@ -994,7 +1012,8 @@ const handleEndorse = async () => {
                             const file = e.target.files[0];
                             if (file) {
                               if (file.size > 5 * 1024 * 1024) {
-                                alert('File size must be less than 5MB');
+                                setErrorMessage('File size must be less than 5MB');
+                                setShowErrorAlert(true);
                                 return;
                               }
                               handleChange(activeApplicant, "licenseFile", file);
@@ -1390,8 +1409,20 @@ const handleEndorse = async () => {
               <button 
                 onClick={() => {
                   if (termsAccepted && privacyAccepted) {
+                    const vals = formValues[activeApplicant] || makeEmptyValues();
+                    const fname = vals.firstName?.trim() || "";
+                    const lname = vals.lastName?.trim() || "";
+                    const displayName = `${fname} ${lname}`.trim() || "this applicant";
+
                     setShowConfirmModal(false);
-                    handleEndorse();
+                    setTermsAccepted(false);
+                    setPrivacyAccepted(false);
+
+                    setConfirmMessage(`Endorse ${displayName} to HR?`);
+                    setConfirmCallback(() => async () => {
+                      await handleEndorse();
+                    });
+                    setShowConfirmDialog(true);
                   }
                 }}
                 disabled={!termsAccepted || !privacyAccepted}
@@ -1631,6 +1662,111 @@ const handleEndorse = async () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
                 Import Employees
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Alert Modal */}
+      {showSuccessAlert && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => {
+          setShowSuccessAlert(false);
+          if (successNavigatePath) {
+            const path = successNavigatePath;
+            setSuccessNavigatePath(null);
+            navigate(path);
+          }
+        }}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-green-600">
+                    <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">{successMessage}</div>
+              <div className="mt-4">
+                <button 
+                  type="button" 
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  onClick={() => {
+                    setShowSuccessAlert(false);
+                    if (successNavigatePath) {
+                      const path = successNavigatePath;
+                      setSuccessNavigatePath(null);
+                      navigate(path);
+                    }
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Alert Modal */}
+      {showErrorAlert && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowErrorAlert(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-red-600">
+                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">{errorMessage}</div>
+              <div className="mt-4">
+                <button 
+                  type="button" 
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  onClick={() => setShowErrorAlert(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Dialog Modal */}
+      {showConfirmDialog && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={() => {
+          setShowConfirmDialog(false);
+          setConfirmCallback(null);
+        }}>
+          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold mb-4">{confirmMessage}</h3>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                onClick={() => {
+                  setShowConfirmDialog(false);
+                  setConfirmCallback(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                onClick={async () => {
+                  if (confirmCallback) {
+                    await confirmCallback();
+                  }
+                  setShowConfirmDialog(false);
+                  setConfirmCallback(null);
+                }}
+              >
+                OK
               </button>
             </div>
           </div>

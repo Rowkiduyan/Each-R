@@ -102,6 +102,7 @@ function AgencyHome() {
       const { data, error } = await supabase
         .from("job_posts")
         .select("id, title, depot, description, created_at, responsibilities, job_type")
+        .eq("is_active", true)
         .order("created_at", { ascending: false });
 
       if (error) {
