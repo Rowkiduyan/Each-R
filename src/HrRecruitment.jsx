@@ -868,6 +868,15 @@ function HrRecruitment() {
           // Set source based on whether applicant is from agency or direct
           const employeeSource = isAgencyApplicant ? "recruitment" : "internal";
           
+          // Extract additional fields from application payload
+          const contactNumber = source.contact || source.contact_number || source.phone || null;
+          const sex = source.sex || source.gender || null;
+          const address = source.address || 
+            (source.street || source.barangay || source.city ? 
+              `${source.street || ''}, ${source.barangay || ''}, ${source.city || ''}, ${source.zip || ''}`.replace(/,\s*,/g, ',').trim() : 
+              null);
+          const depot = applicationData.job_posts?.depot || source.depot || source.preferred_depot || null;
+          
           const { error: empUpsertErr } = await supabase
             .from("employees")
             .upsert(
@@ -876,6 +885,11 @@ function HrRecruitment() {
                 fname: firstName,
                 lname: lastName,
                 mname: middleName || null,
+                contact_number: contactNumber,
+                birthday: birthday,
+                sex: sex,
+                address: address,
+                depot: depot,
                 position: position || null,
                 role: "Employee",
                 hired_at: new Date().toISOString(),

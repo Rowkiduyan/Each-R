@@ -11,7 +11,7 @@
     const newJob = location.state?.newJob;
     const jobIdFromGuest = location.state?.jobId;
 
-    const [activeTab, setActiveTab] = useState('Home');
+    const [activeTab, setActiveTab] = useState(location.state?.activeTab || 'Home');
     const [showModal, setShowModal] = useState(false);
     const [showSummary, setShowSummary] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
@@ -514,7 +514,7 @@ const handleSave = async () => {
         character_references: profileForm.character_references,
         preferred_depot: profileForm.preferred_depot
       })
-      .eq('email', user.email);
+      .ilike('email', user.email);
 
     if (error) {
       console.error('Error updating profile:', error);
@@ -526,7 +526,7 @@ const handleSave = async () => {
     const { data: updatedData, error: fetchError } = await supabase
       .from('applicants')
       .select('*')
-      .eq('email', user.email)
+      .ilike('email', user.email)
       .maybeSingle();
 
 

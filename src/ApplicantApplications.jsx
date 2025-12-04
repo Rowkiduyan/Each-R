@@ -241,7 +241,7 @@ function ApplicantApplications() {
         const { data: profile, error: profileError } = await supabase
           .from('applicants')
           .select('*')
-          .eq('email', user.email)
+          .ilike('email', user.email)
           .maybeSingle();
 
         if (!profileError && profile) {
@@ -398,7 +398,7 @@ function ApplicantApplications() {
                       <button
                         onClick={() => {
                           setShowProfileDropdown(false);
-                          navigate('/applicantl/home');
+                          navigate('/applicantl/home', { state: { activeTab: 'Profile' } });
                         }}
                         className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                       >
