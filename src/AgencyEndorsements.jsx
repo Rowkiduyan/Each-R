@@ -46,6 +46,9 @@ function AgencyEndorsements() {
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [confirmMessage, setConfirmMessage] = useState('');
+  const [confirmCallback, setConfirmCallback] = useState(null);
   
   // Document requests state (for deployed employees)
   const [documentRequests, setDocumentRequests] = useState([]);
@@ -1056,7 +1059,7 @@ function AgencyEndorsements() {
                             <div className="w-12 h-12 bg-blue-100 rounded flex items-center justify-center text-blue-600 font-bold">
                               {selectedEmployee.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
                             </div>
-                            <div className="flex-1">
+                      <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <h4 className="font-semibold text-gray-800">{selectedEmployee.name}</h4>
                                 {isDeployed ? (
@@ -1067,7 +1070,50 @@ function AgencyEndorsements() {
                               </div>
                               <p className="text-xs text-gray-500">#{selectedEmployee.id}</p>
                               <p className="text-sm text-gray-600">{selectedEmployee.position} | {selectedEmployee.depot}</p>
-                              {!isDeployed && <p className="text-xs text-blue-600 hover:underline cursor-pointer mt-1">Retract Endorsement</p>}
+                              {!isDeployed && (
+                                <button
+                                  type="button"
+                                  className="text-xs text-blue-600 hover:underline cursor-pointer mt-1"
+                                  onClick={() => {
+                                    setConfirmMessage(`Retract the endorsement for ${selectedEmployee.name}? HR will no longer see this under agency endorsements.`);
+                                    setConfirmCallback(() => async () => {
+                                      if (!selectedEmployee.id) {
+                                        setAlertMessage('Error: Application ID not found');
+                                        setShowErrorAlert(true);
+                                        return;
+                                      }
+
+                                      try {
+                                        const { error } = await supabase
+                                          .from('applications')
+                                          .update({ endorsed: false })
+                                          .eq('id', selectedEmployee.id);
+
+                                        if (error) {
+                                          console.error('Error retracting endorsement:', error);
+                                          setAlertMessage('Failed to retract endorsement. Please try again.');
+                                          setShowErrorAlert(true);
+                                          return;
+                                        }
+
+                                        // Reload list and clear selected employee
+                                        await loadEndorsed();
+                                        setSelectedEmployee(null);
+
+                                        setAlertMessage('Endorsement retracted successfully.');
+                                        setShowSuccessAlert(true);
+                                      } catch (err) {
+                                        console.error('Error retracting endorsement:', err);
+                                        setAlertMessage('Failed to retract endorsement. Please try again.');
+                                        setShowErrorAlert(true);
+                                      }
+                                    });
+                                    setShowConfirmDialog(true);
+                                  }}
+                                >
+                                  Retract Endorsement
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -2029,6 +2075,49 @@ function AgencyEndorsements() {
                 }}
               >
                 Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Generic Confirm Dialog Modal (for actions like retract endorsement) */}
+      {showConfirmDialog && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={() => {
+            setShowConfirmDialog(false);
+            setConfirmCallback(null);
+          }}
+        >
+          <div
+            className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold mb-4">{confirmMessage}</h3>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                onClick={() => {
+                  setShowConfirmDialog(false);
+                  setConfirmCallback(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                onClick={async () => {
+                  if (confirmCallback) {
+                    await confirmCallback();
+                  }
+                  setShowConfirmDialog(false);
+                  setConfirmCallback(null);
+                }}
+              >
+                OK
               </button>
             </div>
           </div>

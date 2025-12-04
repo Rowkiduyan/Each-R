@@ -533,11 +533,9 @@ useEffect(() => {
 
   return (
     <>
-      {/* Welcome Message and View Job Posts Button Side by Side */}
+      {/* Welcome Message */}
       <div className="max-w-7xl mx-auto px-4 mb-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Welcome Message */}
-          <div className="bg-white rounded-lg shadow-md p-6">
+        <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-2xl font-bold text-black-600 mb-2">
               Welcome to your Homepage!
             </h2>
@@ -548,19 +546,6 @@ useEffect(() => {
               Signed in as: <strong>{hrUser?.email}</strong>
             </p>
           </div>
-
-          {/* View Job Posts Button */}
-          <div className="bg-white rounded-lg shadow-md p-6">
-            <div className="flex flex-col items-center justify-center h-full">
-              <Link
-                to="/hr/recruitment/job/all"
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-              >
-                📋 View Job Posts
-              </Link>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Interview Schedules Calendar */}

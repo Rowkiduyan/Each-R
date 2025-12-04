@@ -69,6 +69,7 @@ function App() {
         <Route path="trainings" element={<HrTrainings />} />
         <Route path="recruitment" element={<HrRecruitment />} />
         <Route path="recruitment/job/:id" element={<HrPost />} />
+        <Route path="recruitment/job/all" element={<HrPost />} />
         <Route path="requirements" element={<HrRequirements />} />
         <Route path="eval" element={<HrEval />} />
         <Route path="seperation" element={<HrSeperation />} />

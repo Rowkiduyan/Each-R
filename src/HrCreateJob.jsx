@@ -64,6 +64,14 @@ function HrCreateJob() {
   const removeOther = (i) =>
     setForm(prev => ({ ...prev, others: prev.others.filter((_, idx) => idx !== i) }));
 
+  // Check if form is complete (all required fields filled)
+  const isFormComplete = () => {
+    const hasTitle = form.title && form.title.trim() !== "";
+    const hasDepot = form.depot && form.depot.trim() !== "";
+    const hasResponsibilities = form.responsibilities.some(r => r && r.trim() !== "");
+    return hasTitle && hasDepot && hasResponsibilities;
+  };
+
   // safe create + debug function
   // call: await createJobPost({ title, depot, description, responsibilities, urgent, job_type, duration })
   const createJobPost = async ({ title, depot, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", duration = null }) => {
@@ -115,6 +123,58 @@ function HrCreateJob() {
     return data;
   };
 
+  const handleSaveDraft = async () => {
+    setError(null);
+    setSuccess("");
+    setSaving(true);
+    
+    // Validate minimum required fields for draft
+    if (!form.title || !form.title.trim()) {
+      setError("Job title is required to save as draft.");
+      setSaving(false);
+      return;
+    }
+    if (!form.depot || !form.depot.trim()) {
+      setError("Depot is required to save as draft.");
+      setSaving(false);
+      return;
+    }
+    
+    const combinedResponsibilities = [
+      ...form.responsibilities,
+      ...form.others,
+    ].filter(Boolean);
+    
+    // Format duration if both hours and minutes are provided
+    let duration = null;
+    if (form.durationHours || form.durationMinutes) {
+      const hours = form.durationHours ? parseInt(form.durationHours) : 0;
+      const minutes = form.durationMinutes ? parseInt(form.durationMinutes) : 0;
+      duration = `${hours}h ${minutes}m`;
+    }
+    
+    try {
+      // Save as draft (is_active = false)
+      await createJobPost({
+        title: form.title,
+        depot: form.depot,
+        description: form.description || null,
+        responsibilities: combinedResponsibilities,
+        urgent: form.urgent,
+        is_active: false, // Draft
+        job_type: form.jobType,
+        duration: duration,
+      });
+
+      // Redirect to recruitment page
+      navigate("/hr/recruitment", { state: { activeSubTab: "JobPosts" } });
+    } catch (err) {
+      const msg = err?.message || "Failed to save draft. Check console for details.";
+      setError(msg);
+      setSaving(false);
+    }
+  };
+
   const handlePost = async () => {
     setError(null);
     setSuccess("");
@@ -140,30 +200,17 @@ function HrCreateJob() {
         description: form.description || null,
         responsibilities: combinedResponsibilities,
         urgent: form.urgent,
-        is_active: true,
+        is_active: true, // Active
         job_type: form.jobType, // Add job_type to the payload
         duration: duration, // Add duration to the payload
       });
 
-      setSuccess("Job post created successfully.");
-      setForm({
-        title: "",
-        depot: "",
-        posted: "Just now",
-        description: "",
-        responsibilities: [""],
-        others: [""],
-        urgent: true,
-        jobType: "delivery_crew",
-        durationHours: "",
-        durationMinutes: "",
-      });
-      setShowConfirm(false);
+      // Redirect to recruitment page after successful post
+      navigate("/hr/recruitment", { state: { activeSubTab: "JobPosts" } });
     } catch (err) {
       // show user-friendly message, but console contains full details
       const msg = err?.message || "Failed to create job post. Check console for details.";
       setError(msg);
-    } finally {
       setSaving(false);
     }
   };
@@ -171,9 +218,9 @@ function HrCreateJob() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-3xl mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-4">
           <h1 className="text-2xl font-bold">Create Job Post</h1>
-          <Link to="/hr/home" className="text-blue-600 hover:underline">← Back to HR Home</Link>
+          <Link to="/hr/recruitment" className="text-blue-600 hover:underline">← Back to Recruitment</Link>
         </div>
 
         <div className="bg-white rounded-lg shadow p-6 space-y-4">
@@ -348,11 +395,19 @@ function HrCreateJob() {
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t">
-            <button onClick={() => navigate("/hr/home")} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+            <button onClick={() => navigate("/hr/recruitment")} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
+            <button
+              onClick={handleSaveDraft}
+              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-60"
+              disabled={saving || !form.title || !form.depot}
+            >
+              {saving ? "Saving..." : "Save as Draft"}
+            </button>
             <button
               onClick={() => setShowConfirm(true)}
               className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
-              disabled={saving}
+              disabled={saving || !isFormComplete()}
+              title={!isFormComplete() ? "Please complete all required fields (Title, Depot, and at least one Responsibility)" : ""}
             >
               {saving ? "Posting..." : "Post"}
             </button>
@@ -363,7 +418,7 @@ function HrCreateJob() {
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Post Job?</h2>
-            <p className="text-sm text-gray-600">Please confirm you want to publish this job posting.</p>
+            <p className="text-sm text-gray-600">Please confirm you want to publish this job posting. It will be marked as Active and visible to applicants.</p>
             <div className="flex justify-end gap-3">
               <button
                 className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"

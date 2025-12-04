@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import Roadwise from './Roadwise.png';
 
 function HrPost() {
+  const { id } = useParams();
+  const location = useLocation();
+  const isViewOnly = location.pathname === '/hr/recruitment/job/all' || id === 'all';
   const [jobPosts, setJobPosts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedJob, setSelectedJob] = useState(null);
@@ -71,6 +74,7 @@ function HrPost() {
       const { data, error } = await supabase
         .from('job_posts')
         .select('*')
+        .eq('is_active', true)
         .order('created_at', { ascending: false });
       
       console.log('Fetched job posts:', data);
@@ -341,60 +345,62 @@ function HrPost() {
           </div>
         )}
         
-        {/* 3-dot menu */}
-        <div className={`absolute ${isJobExpired(job) ? 'top-8' : 'top-2'} right-2`}>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowMenuId(showMenuId === job.id ? null : job.id);
-            }}
-            className="p-2 hover:bg-gray-200 rounded-full transition-colors"
-          >
-            <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
-              <circle cx="8" cy="2" r="1.5"/>
-              <circle cx="8" cy="8" r="1.5"/>
-              <circle cx="8" cy="14" r="1.5"/>
-            </svg>
-          </button>
-          
-          {showMenuId === job.id && (
-            <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditJob(job);
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-t-lg"
-              >
-                ✏️ Edit
-              </button>
-              {isJobExpired(job) && (
+        {/* 3-dot menu - hidden in view-only mode */}
+        {!isViewOnly && (
+          <div className={`absolute ${isJobExpired(job) ? 'top-8' : 'top-2'} right-2`}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowMenuId(showMenuId === job.id ? null : job.id);
+              }}
+              className="p-2 hover:bg-gray-200 rounded-full transition-colors"
+            >
+              <svg className="w-5 h-5 text-gray-600" fill="currentColor" viewBox="0 0 16 16">
+                <circle cx="8" cy="2" r="1.5"/>
+                <circle cx="8" cy="8" r="1.5"/>
+                <circle cx="8" cy="14" r="1.5"/>
+              </svg>
+            </button>
+            
+            {showMenuId === job.id && (
+              <div className="absolute right-0 mt-1 w-40 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setReopeningJob(job);
-                    setShowReopenModal(true);
+                    handleEditJob(job);
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-t-lg"
+                >
+                  ✏️ Edit
+                </button>
+                {isJobExpired(job) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setReopeningJob(job);
+                      setShowReopenModal(true);
+                      setShowMenuId(null);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    🔄 Reopen
+                  </button>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeletingJob(job);
+                    setShowConfirmDelete(true);
                     setShowMenuId(null);
                   }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-b-lg"
                 >
-                  🔄 Reopen
+                  🗑️ Delete
                 </button>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDeletingJob(job);
-                  setShowConfirmDelete(true);
-                  setShowMenuId(null);
-                }}
-                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-b-lg"
-              >
-                🗑️ Delete
-              </button>
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div 
           className="mt-4 flex flex-col flex-grow cursor-pointer"
@@ -490,15 +496,17 @@ function HrPost() {
         </div>
       </div>
 
-      {/* Create Job Post Button */}
-      <div className="max-w-7xl mx-auto px-6 pt-6">
-        <Link
-          to="/hr/create/job"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-        >
-          + Create Job Post
-        </Link>
-      </div>
+      {/* Create Job Post Button - hidden in view-only mode */}
+      {!isViewOnly && (
+        <div className="max-w-7xl mx-auto px-6 pt-6">
+          <Link
+            to="/hr/create/job"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+          >
+            + Create Job Post
+          </Link>
+        </div>
+      )}
 
       <div className="flex flex-col items-center min-h-screen">
         <div className="max-w-7xl mx-auto px-6 py-8">
