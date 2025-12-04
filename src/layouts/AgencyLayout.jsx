@@ -57,8 +57,8 @@ function AgencyLayout() {
       `}</style>
 
       {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+      <div className="bg-white shadow-sm sticky top-0 z-50 w-full">
+        <div className="w-full px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <img
@@ -174,8 +174,8 @@ function AgencyLayout() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 py-4 mt-auto">
-        <div className="max-w-7xl mx-auto px-6">
+      <footer className="bg-white border-t border-gray-200 py-4 mt-auto w-full">
+        <div className="w-full px-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
             <div className="flex items-center gap-1 hover:text-gray-700 cursor-pointer">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

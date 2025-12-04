@@ -536,39 +536,9 @@ function EmployeeTrainings() {
     };
 
     return (
-        <div className="min-h-screen bg-white">
-            <style>{`
-                .no-scrollbar {
-                    -ms-overflow-style: none;
-                    scrollbar-width: none;
-                }
-                .no-scrollbar::-webkit-scrollbar {
-                    display: none;
-                }
-                
-                ::-webkit-scrollbar {
-                    width: 6px;
-                    height: 6px;
-                }
-                ::-webkit-scrollbar-track {
-                    background: transparent;
-                }
-                ::-webkit-scrollbar-thumb {
-                    background: #d1d5db;
-                    border-radius: 3px;
-                }
-                ::-webkit-scrollbar-thumb:hover {
-                    background: #9ca3af;
-                }
-                
-                * {
-                    scrollbar-width: thin;
-                    scrollbar-color: #d1d5db transparent;
-                }
-            `}</style>
-
+        <>
             {/* Content */}
-            <div className="max-w-7xl mx-auto px-6 py-0">
+            <div className="max-w-7xl mx-auto px-6 py-8">
                 {/* Page Header */}
                 <div className="mb-8">
                     <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
@@ -1337,7 +1307,7 @@ function EmployeeTrainings() {
                     </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }
 

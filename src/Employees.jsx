@@ -588,13 +588,13 @@ function Employees() {
                     Filters
                   </button>
                   {showFilterMenu && (
-                    <div className="absolute right-0 mt-2 w-64 bg-white border rounded-lg shadow-lg z-10 p-4">
+                    <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-4">
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1.5">Sort by Name</label>
                           <button
                             onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                            className="w-full px-3 py-2 bg-gray-100 rounded-lg text-left hover:bg-gray-200 text-sm"
+                            className="w-full px-3 py-2 bg-gray-100 rounded-lg text-left hover:bg-gray-200 text-sm transition-colors"
                           >
                             {sortOrder === "asc" ? "A → Z" : "Z → A"}
                           </button>
@@ -604,7 +604,7 @@ function Employees() {
                           <select
                             value={employmentStatusFilter}
                             onChange={(e) => setEmploymentStatusFilter(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
                           >
                             {employmentStatuses.map((status) => (
                               <option key={status} value={status}>{status}</option>
