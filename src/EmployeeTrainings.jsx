@@ -305,6 +305,44 @@ function EmployeeTrainings() {
         }
     };
 
+    // Format end time from end_at timestamp
+    const formatEndTime = (endAtTimestamp) => {
+        if (!endAtTimestamp) return "N/A";
+        try {
+            const date = new Date(endAtTimestamp);
+            const hours = date.getHours();
+            const minutes = date.getMinutes();
+            const ampm = hours >= 12 ? 'PM' : 'AM';
+            const displayHour = hours % 12 || 12;
+            const displayMinutes = minutes.toString().padStart(2, '0');
+            return `${displayHour}:${displayMinutes} ${ampm}`;
+        } catch {
+            return "N/A";
+        }
+    };
+
+    // Calculate duration between start and end time
+    const calculateDuration = (startAt, endAt) => {
+        if (!startAt || !endAt) return "N/A";
+        try {
+            const start = new Date(startAt);
+            const end = new Date(endAt);
+            const diffMs = end - start;
+            const hours = Math.floor(diffMs / (1000 * 60 * 60));
+            const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+            
+            if (hours > 0 && minutes > 0) {
+                return `${hours} hour${hours > 1 ? 's' : ''} ${minutes} minute${minutes > 1 ? 's' : ''}`;
+            } else if (hours > 0) {
+                return `${hours} hour${hours > 1 ? 's' : ''}`;
+            } else {
+                return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+            }
+        } catch {
+            return "N/A";
+        }
+    };
+
     // Check if training is happening today
     const isHappeningToday = (training) => {
         if (!training.start_at) return false;
@@ -329,11 +367,59 @@ function EmployeeTrainings() {
         setShowDetails(true);
     };
 
+    // Calculate completion rate
+    const getCompletionRate = () => {
+        const total = completed.length + upcoming.length + pendingAttendance.length;
+        if (total === 0) return 0;
+        return Math.round((completed.length / total) * 100);
+    };
+
+    // Calculate training hours this month
+    const getHoursThisMonth = () => {
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+        
+        let totalMinutes = 0;
+        completed.forEach(training => {
+            if (training.start_at && training.end_at) {
+                const start = new Date(training.start_at);
+                if (start.getMonth() === currentMonth && start.getFullYear() === currentYear) {
+                    const end = new Date(training.end_at);
+                    const minutes = (end - start) / (1000 * 60);
+                    if (minutes > 0) totalMinutes += minutes;
+                }
+            }
+        });
+        return Math.round(totalMinutes / 60 * 10) / 10;
+    };
+
+    // Calculate days until next training
+    const getDaysUntilNext = () => {
+        if (upcoming.length === 0) return null;
+        const sortedUpcoming = [...upcoming].sort((a, b) => {
+            const dateA = new Date(a.start_at || a.date);
+            const dateB = new Date(b.start_at || b.date);
+            return dateA - dateB;
+        });
+        const nextTraining = sortedUpcoming[0];
+        const nextDate = new Date(nextTraining.start_at || nextTraining.date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        nextDate.setHours(0, 0, 0, 0);
+        const diffTime = nextDate - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        return { days: diffDays, training: nextTraining };
+    };
+
     // Stats
+    const completionRate = getCompletionRate();
+    const hoursThisMonth = getHoursThisMonth();
+    const nextTrainingInfo = getDaysUntilNext();
     const stats = {
-        upcoming: upcoming.length,
-        pendingAttendance: pendingAttendance.length,
-        completed: completed.length,
+        completionRate,
+        hoursThisMonth,
+        nextTrainingInfo,
     };
 
     // Search-filtered lists
@@ -542,55 +628,7 @@ function EmployeeTrainings() {
                 {/* Page Header */}
                 <div className="mb-8">
                     <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
-                    <p className="text-gray-500 mt-1">View your assigned training schedules and upload external trainings</p>
-                </div>
-
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-500 font-medium">Upcoming</p>
-                                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.upcoming}</p>
-                            </div>
-                            <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
-                                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                                </svg>
-                            </div>
-                        </div>
-                        <p className="text-xs text-blue-600 mt-3 font-medium">Scheduled sessions</p>
-                    </div>
-
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-500 font-medium">Pending Attendance</p>
-                                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.pendingAttendance}</p>
-                            </div>
-                            <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center">
-                                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                        </div>
-                        <p className="text-xs text-orange-600 mt-3 font-medium">Awaiting HR confirmation</p>
-                    </div>
-
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-gray-500 font-medium">Completed Schedules</p>
-                                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.completed}</p>
-                            </div>
-                            <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-                                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                        </div>
-                        <p className="text-xs text-green-600 mt-3 font-medium">Finished sessions</p>
-                    </div>
+                    <p className="text-gray-500 mt-1">View your assigned schedules and upload external certificates</p>
                 </div>
 
                 {/* Main Content Card with Tabs (Upcoming / History) */}
@@ -975,7 +1013,7 @@ function EmployeeTrainings() {
                         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <h2 className="text-lg font-bold text-gray-900">Training Details</h2>
+                                    <h2 className="text-lg font-bold text-gray-900">Schedule Details</h2>
                                     <p className="text-xs text-gray-500 mt-0.5">Complete information about this training session</p>
                                 </div>
                                 <button 
@@ -1004,33 +1042,35 @@ function EmployeeTrainings() {
                                 </div>
 
                                 {/* Basic Info */}
-                                <div className="space-y-1.5">
-                                    <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-2">
-                                        <div className="w-7 h-7 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                                            <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                            </svg>
-                                        </div>
-                                        <p className="text-xs font-bold text-blue-900">{formatDate(selectedTraining.date)}</p>
+                                <div className="space-y-3">
+                                    {/* Date */}
+                                    <div>
+                                        <p className="text-xs text-gray-500 mb-1">Date</p>
+                                        <p className="text-sm font-semibold text-gray-900">{formatDate(selectedTraining.date)}</p>
                                     </div>
                                     
-                                    <div className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-lg px-2.5 py-2">
-                                        <div className="w-7 h-7 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                                            <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
+                                    {/* Time Row - Start and End Side by Side */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-1">Start Time</p>
+                                            <p className="text-sm font-semibold text-gray-900">{formatTime(selectedTraining.time)}</p>
                                         </div>
-                                        <p className="text-xs font-bold text-purple-900">{formatTime(selectedTraining.time)}</p>
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-1">End Time</p>
+                                            <p className="text-sm font-semibold text-gray-900">{formatEndTime(selectedTraining.end_at)}</p>
+                                        </div>
                                     </div>
                                     
-                                    <div className="flex items-center gap-2 bg-orange-50 border border-orange-200 rounded-lg px-2.5 py-2">
-                                        <div className="w-7 h-7 bg-orange-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                                            <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            </svg>
-                                        </div>
-                                        <p className="text-xs font-bold text-orange-900">{selectedTraining.venue || 'Not set'}</p>
+                                    {/* Duration */}
+                                    <div>
+                                        <p className="text-xs text-gray-500 mb-1">Duration</p>
+                                        <p className="text-sm font-semibold text-gray-900">{calculateDuration(selectedTraining.start_at, selectedTraining.end_at)}</p>
+                                    </div>
+                                    
+                                    {/* Location */}
+                                    <div>
+                                        <p className="text-xs text-gray-500 mb-1">Location</p>
+                                        <p className="text-sm font-semibold text-gray-900">{selectedTraining.venue || 'Not set'}</p>
                                     </div>
                                 </div>
                             </div>
