@@ -53,6 +53,9 @@
     const [birthdayError, setBirthdayError] = useState('');
     const [formBirthdayError, setFormBirthdayError] = useState('');
     const [startDateError, setStartDateError] = useState('');
+    const [yearErrors, setYearErrors] = useState({ edu1Year: '', edu2Year: '' });
+    const [employmentPeriodErrors, setEmploymentPeriodErrors] = useState([]);
+    const [referenceContactErrors, setReferenceContactErrors] = useState([]);
     const [showAllResponsibilities, setShowAllResponsibilities] = useState(false);
     const [selectedJobFromGuest, setSelectedJobFromGuest] = useState(null);
     const [profileForm, setProfileForm] = useState({
@@ -159,7 +162,7 @@
           const { data, error } = await supabase
           .from('applicants')
           .select('*')
-          .eq('email', user.email)
+          .ilike('email', user.email)
           .maybeSingle();
 
 
@@ -170,8 +173,12 @@
           }
 
           if (data) {
+            console.log('Profile data found:', data);
             const addressParts = parseAddressParts(data);
             const mergedProfile = { ...data, ...addressParts };
+
+            // Calculate age if birthday exists
+            const calculatedAge = data.birthday ? calculateAge(data.birthday) : '';
 
             setProfileData(mergedProfile);
             setProfileForm({
@@ -182,7 +189,7 @@
               zip: mergedProfile.zip || '',
               sex: mergedProfile.sex || '',
               birthday: mergedProfile.birthday || '',
-              age: mergedProfile.age || '',
+              age: calculatedAge || mergedProfile.age || '',
               marital_status: mergedProfile.marital_status || '',
               educational_attainment: mergedProfile.educational_attainment || '',
               institution_name: mergedProfile.institution_name || '',
@@ -378,6 +385,40 @@ useEffect(() => {
 
       setStartDateError('');
       return true;
+    };
+
+    // Validate year format (4 digits, reasonable range)
+    const validateYear = (year) => {
+      if (!year || year.trim() === '') return ''; // Allow empty
+      const yearNum = parseInt(year, 10);
+      const currentYear = new Date().getFullYear();
+      if (!/^\d{4}$/.test(year)) {
+        return 'Please enter a valid 4-digit year (e.g., 2023)';
+      }
+      if (yearNum < 1950 || yearNum > currentYear) {
+        return `Year must be between 1950 and ${currentYear}`;
+      }
+      return '';
+    };
+
+    // Validate employment period format (e.g., 2015-2020 or 2015-Present)
+    const validateEmploymentPeriod = (period) => {
+      if (!period || period.trim() === '') return ''; // Allow empty
+      const periodPattern = /^\d{4}(-\d{4}|-Present)?$/i;
+      if (!periodPattern.test(period.trim())) {
+        return 'Please use format: yyyy-yyyy or yyyy-Present (e.g., 2015-2020 or 2015-Present)';
+      }
+      return '';
+    };
+
+    // Validate Philippine mobile number format (09XXXXXXXXX)
+    const validatePhoneNumber = (phone) => {
+      if (!phone || phone.trim() === '') return ''; // Allow empty
+      const phonePattern = /^09\d{9}$/;
+      if (!phonePattern.test(phone)) {
+        return 'Please enter a valid Philippine mobile number (09XXXXXXXXX)';
+      }
+      return '';
     };
 
     // Handle form input change
@@ -733,38 +774,90 @@ const formatDateForInput = (dateString) => {
     const onSubmitApplication = (e) => {
       e.preventDefault();
       setErrorMessage('');
-      const missingRequired = requiredFormFields.find(({ key }) => {
-        const value = form[key];
-        return String(value ?? '').trim() === '';
-      });
-
-      if (missingRequired) {
-        setApplicationTab(missingRequired.tab);
-        setErrorMessage(`Please complete the ${missingRequired.label} field before proceeding.`);
-        return;
-      }
-
-      if (!selectedJob && !newJob) {
-        setErrorMessage('Please choose a job first (click View on a job card).');
-        return;
-      }
       
-      // Validate birthday before proceeding
-      if (form.birthday && !validateFormBirthday(form.birthday)) {
-        setErrorMessage('Please fix the birthday field before submitting.');
-        return;
-      }
-
-      if (!validateStartDate(form.startDate)) {
-        setErrorMessage('Please fix the available start date before submitting.');
-        return;
-      }
-      
-      // Find current tab index
+      // Find current tab index first
       const currentTabIndex = formTabs.findIndex(tab => tab.key === applicationTab);
+      const isLastTab = currentTabIndex === formTabs.length - 1;
       
-      // If on the last tab (references), validate references for office workers
-      if (currentTabIndex === formTabs.length - 1) {
+      // Only check required fields on personal tab or last tab
+      if (applicationTab === 'personal' || isLastTab) {
+        const missingRequired = requiredFormFields.find(({ key }) => {
+          const value = form[key];
+          return String(value ?? '').trim() === '';
+        });
+
+        if (missingRequired) {
+          setApplicationTab(missingRequired.tab);
+          setErrorMessage(`Please complete the ${missingRequired.label} field before proceeding.`);
+          return;
+        }
+
+        if (!selectedJob && !newJob) {
+          setErrorMessage('Please choose a job first (click View on a job card).');
+          return;
+        }
+        
+        // Validate birthday before proceeding
+        if (form.birthday && !validateFormBirthday(form.birthday)) {
+          setErrorMessage('Please fix the birthday field before submitting.');
+          return;
+        }
+
+        if (form.startDate && !validateStartDate(form.startDate)) {
+          setErrorMessage('Please fix the available start date before submitting.');
+          return;
+        }
+      }
+      
+      // Validate current tab fields based on which tab we're on
+      if (applicationTab === 'education' || isLastTab) {
+        // Validate year fields only if they have values
+        if (form.edu1Year && form.edu1Year.trim() !== '') {
+          const edu1YearError = validateYear(form.edu1Year);
+          if (edu1YearError) {
+            setErrorMessage('Education: ' + edu1YearError);
+            return;
+          }
+        }
+        if (form.edu2Year && form.edu2Year.trim() !== '') {
+          const edu2YearError = validateYear(form.edu2Year);
+          if (edu2YearError) {
+            setErrorMessage('Education: ' + edu2YearError);
+            return;
+          }
+        }
+      }
+
+      if (applicationTab === 'experience' || isLastTab) {
+        // Validate employment periods only if they have values
+        for (let i = 0; i < workExperiences.length; i++) {
+          const exp = workExperiences[i];
+          if (exp.period && exp.period.trim() !== '') {
+            const periodError = validateEmploymentPeriod(exp.period);
+            if (periodError) {
+              setErrorMessage(`Work Experience #${i + 1}: ${periodError}`);
+              return;
+            }
+          }
+        }
+      }
+
+      if (applicationTab === 'references' || isLastTab) {
+        // Validate reference contact numbers only if they have values
+        for (let i = 0; i < characterReferences.length; i++) {
+          const ref = characterReferences[i];
+          if (ref.contact && ref.contact.trim() !== '') {
+            const contactError = validatePhoneNumber(ref.contact);
+            if (contactError) {
+              setErrorMessage(`Character Reference #${i + 1}: ${contactError}`);
+              return;
+            }
+          }
+        }
+      }
+      
+      // If on the last tab (references), validate references for office workers and submit
+      if (isLastTab) {
         const jobType = (selectedJob || newJob)?.job_type?.toLowerCase();
         
         // Require at least one complete reference for office employees
@@ -914,12 +1007,34 @@ const formatDateForInput = (dateString) => {
         // Verify user is an applicant
         const { data: applicantData, error: roleError } = await supabase
           .from('applicants')
-          .select('role')
-          .eq('email', session.user.email)
+          .select('*')
+          .ilike('email', session.user.email)
           .maybeSingle();
 
-        if (roleError || !applicantData || applicantData.role?.toLowerCase() !== 'applicant') {
-          // Not an applicant - redirect to login
+        if (roleError) {
+          console.error("Error checking applicant role:", roleError);
+          await supabase.auth.signOut();
+          navigate('/applicant/login', {
+            replace: true,
+            state: { redirectTo: '/applicantl/home' },
+          });
+          return;
+        }
+
+        if (!applicantData) {
+          console.log("No applicant data found for user:", session.user.email);
+          await supabase.auth.signOut();
+          navigate('/applicant/login', {
+            replace: true,
+            state: { redirectTo: '/applicantl/home' },
+          });
+          return;
+        }
+
+        // Default to applicant role if not specified
+        const userRole = applicantData.role?.toLowerCase() || 'applicant';
+        if (userRole !== 'applicant') {
+          console.log("User is not an applicant, role:", userRole);
           await supabase.auth.signOut();
           navigate('/applicant/login', {
             replace: true,
@@ -1411,36 +1526,14 @@ const formatDateForInput = (dateString) => {
                 </div>
               </div>
             </div>
-
-            {/* Depot Filter */}
-            <div className="mt-6 flex items-center gap-3">
-              <label htmlFor="depot-filter" className="text-sm font-medium text-gray-700">Filter by Depot:</label>
-              <select
-                id="depot-filter"
-                value={locationFilter}
-                onChange={(e) => {
-                  setLocationFilter(e.target.value);
-                  setLocationInput(e.target.value);
-                }}
-                className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-300 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-              >
-                <option value="">All Depots</option>
-                {locationSuggestions.map((depot) => (
-                  <option key={depot} value={depot}>
-                    {depot}
-                  </option>
-                ))}
-              </select>
-            </div>
           </div>
         )}
 
-        <div className="flex flex-col items-center  min-h-screen">
-          <div className="w-full px-6 py-8">
-            <section className={`p-4 ${activeTab === 'Home' ? '' : 'hidden'}`}>
-              <div className="w-full px-6 py-8">
-                {/* Profile Incomplete Warning */}
-                {!isProfileComplete && (
+        <div className="flex flex-col items-center min-h-screen">
+          <section className={`w-full ${activeTab === 'Home' ? '' : 'hidden'}`}>
+            <div className="max-w-7xl mx-auto px-6 py-8">
+              {/* Profile Incomplete Warning */}
+              {!isProfileComplete && (
                   <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
                     <div className="flex items-start">
                       <div className="flex-shrink-0">
@@ -1651,10 +1744,19 @@ const formatDateForInput = (dateString) => {
               </div>
             </section>
 
-            <section className={`p-4 ${activeTab === 'Applications' ? '' : 'hidden'}`}></section>
-            <section className={`p-4 ${activeTab === 'Notifications' ? '' : 'hidden'}`}></section>
+            <section className={`w-full ${activeTab === 'Applications' ? '' : 'hidden'}`}>
+              <div className="max-w-7xl mx-auto px-6 py-8">
+                {/* Applications content */}
+              </div>
+            </section>
+            
+            <section className={`w-full ${activeTab === 'Notifications' ? '' : 'hidden'}`}>
+              <div className="max-w-7xl mx-auto px-6 py-8">
+                {/* Notifications content */}
+              </div>
+            </section>
 
-            <section className={`p-4 ${activeTab === 'Profile' ? '' : 'hidden'}`}>
+            <section className={`w-full ${activeTab === 'Profile' ? '' : 'hidden'}`}>
               {/* your profile panel stays identical (unchanged) */}
               {/* ... omitted for brevity – keep your original Profile section code ... */}
                   <div className="max-w-7xl mx-auto px-6 py-8">
@@ -2419,14 +2521,24 @@ const formatDateForInput = (dateString) => {
                               onChange={handleInput}
                               className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
                             />
-                            <input
-                              type="text"
-                              placeholder="Year Finished (yyyy)"
-                              name="edu1Year"
-                              value={form.edu1Year}
-                              onChange={handleInput}
-                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                            />
+                            <div className="flex-1">
+                              <input
+                                type="text"
+                                placeholder="Year Finished (yyyy)"
+                                name="edu1Year"
+                                value={form.edu1Year}
+                                onChange={(e) => {
+                                  handleInput(e);
+                                  const error = validateYear(e.target.value);
+                                  setYearErrors(prev => ({ ...prev, edu1Year: error }));
+                                }}
+                                maxLength="4"
+                                className="w-full mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                              />
+                              {yearErrors.edu1Year && (
+                                <p className="text-xs text-red-600 mt-1">{yearErrors.edu1Year}</p>
+                              )}
+                            </div>
                           </div>
 
                           {/* Row 2 */}
@@ -2439,14 +2551,24 @@ const formatDateForInput = (dateString) => {
                               onChange={handleInput}
                               className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
                             />
-                            <input
-                              type="text"
-                              placeholder="Year Finished (yyyy)"
-                              name="edu2Year"
-                              value={form.edu2Year}
-                              onChange={handleInput}
-                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                            />
+                            <div className="flex-1">
+                              <input
+                                type="text"
+                                placeholder="Year Finished (yyyy)"
+                                name="edu2Year"
+                                value={form.edu2Year}
+                                onChange={(e) => {
+                                  handleInput(e);
+                                  const error = validateYear(e.target.value);
+                                  setYearErrors(prev => ({ ...prev, edu2Year: error }));
+                                }}
+                                maxLength="4"
+                                className="w-full mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                              />
+                              {yearErrors.edu2Year && (
+                                <p className="text-xs text-red-600 mt-1">{yearErrors.edu2Year}</p>
+                              )}
+                            </div>
                           </div>
                         </div>
 
@@ -2538,15 +2660,26 @@ const formatDateForInput = (dateString) => {
                               </div>
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Date Employed (period)
+                                  Year Employed (period)
                                 </label>
                                 <input
                                   type="text"
-                                  placeholder="e.g., 2015-2020"
+                                  placeholder="e.g., 2015-2020 or 2015-Present"
                                   value={exp.period || ''}
-                                  onChange={(e) => updateWork(index, 'period', e.target.value)}
+                                  onChange={(e) => {
+                                    updateWork(index, 'period', e.target.value);
+                                    const error = validateEmploymentPeriod(e.target.value);
+                                    setEmploymentPeriodErrors(prev => {
+                                      const newErrors = [...prev];
+                                      newErrors[index] = error;
+                                      return newErrors;
+                                    });
+                                  }}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                                 />
+                                {employmentPeriodErrors[index] && (
+                                  <p className="text-xs text-red-600 mt-1">{employmentPeriodErrors[index]}</p>
+                                )}
                               </div>
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -2605,10 +2738,23 @@ const formatDateForInput = (dateString) => {
                                   </label>
                                   <input
                                     type="text"
+                                    placeholder="09XXXXXXXXX"
                                     value={ref.contact || ''}
-                                    onChange={(e) => updateRef(index, 'contact', e.target.value)}
+                                    onChange={(e) => {
+                                      updateRef(index, 'contact', e.target.value);
+                                      const error = validatePhoneNumber(e.target.value);
+                                      setReferenceContactErrors(prev => {
+                                        const newErrors = [...prev];
+                                        newErrors[index] = error;
+                                        return newErrors;
+                                      });
+                                    }}
+                                    maxLength="11"
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                                   />
+                                  {referenceContactErrors[index] && (
+                                    <p className="text-xs text-red-600 mt-1">{referenceContactErrors[index]}</p>
+                                  )}
                                 </div>
                                 <div>
                                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -3022,7 +3168,6 @@ const formatDateForInput = (dateString) => {
               </div>
             )}
           </div>
-        </div>
       </div>
     );
   }

@@ -16,6 +16,8 @@ function ApplicantRegister() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [birthday, setBirthday] = useState('');
+  const [sex, setSex] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -39,7 +41,7 @@ const handleRegister = async (e) => {
     return;
   }
 
-  if (!lname || !fname || !email || !password || !contact) {
+  if (!lname || !fname || !email || !password || !contact || !birthday || !sex) {
     setErrorMessage("Please fill in all required fields.");
     setIsSubmitting(false);
     return;
@@ -78,6 +80,8 @@ const handleRegister = async (e) => {
           contact_number: contact,
           email,
           password,  // consider hashing this
+          birthday,
+          sex,
           verification_code: verificationCode
         }
       ]);
@@ -129,40 +133,107 @@ const handleRegister = async (e) => {
           </div>
         )}
 
-        <input className="border p-3 rounded w-full" placeholder="Last Name *" 
-        value ={lname}
-        onChange={(e) => setLname(e.target.value)}/>
-        <input className="border p-3 rounded w-full" placeholder="First Name *"
-        value ={fname}
-        onChange={(e) => setFname(e.target.value)} />
-        <input className="border p-3 rounded w-full" placeholder="Middle Name"
-        value={mname}
-        onChange={(e) => setMname(e.target.value)} />
-        <input className="border p-3 rounded w-full" placeholder="Contact Number * (09XXXXXXXXX)"
-        value={contact}
-        onChange={(e) => {
-          const value = e.target.value;
-          // Only allow digits
-          if (value === '' || /^\d+$/.test(value)) {
-            // Allow empty, single '0', or values starting with '09'
-            if (value === '' || value === '0' || value.startsWith('09')) {
-              // Limit to 11 digits
-              if (value.length <= 11) {
-                setContact(value);
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Last Name *</label>
+          <input 
+            className="border p-3 rounded w-full" 
+            value={lname}
+            onChange={(e) => setLname(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">First Name *</label>
+          <input 
+            className="border p-3 rounded w-full" 
+            value={fname}
+            onChange={(e) => setFname(e.target.value)} 
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Middle Name</label>
+          <input 
+            className="border p-3 rounded w-full" 
+            value={mname}
+            onChange={(e) => setMname(e.target.value)} 
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Birthday *</label>
+          <input 
+            className="border p-3 rounded w-full" 
+            type="date" 
+            value={birthday}
+            onChange={(e) => setBirthday(e.target.value)} 
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Sex *</label>
+          <select 
+            className="border p-3 rounded w-full text-gray-700"
+            value={sex}
+            onChange={(e) => setSex(e.target.value)}
+          >
+            <option value="">Select Sex</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Contact Number * (09XXXXXXXXX)</label>
+          <input 
+            className="border p-3 rounded w-full" 
+            value={contact}
+            onChange={(e) => {
+              const value = e.target.value;
+              // Only allow digits
+              if (value === '' || /^\d+$/.test(value)) {
+                // Allow empty, single '0', or values starting with '09'
+                if (value === '' || value === '0' || value.startsWith('09')) {
+                  // Limit to 11 digits
+                  if (value.length <= 11) {
+                    setContact(value);
+                  }
+                }
               }
-            }
-          }
-        }}
-        maxLength={11} />
-        <input className="border p-3 rounded w-full" type="email" placeholder="Email *"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)} />
-        <input className="border p-3 rounded w-full" type="password" placeholder="Password *"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)} />
-        <input className="border p-3 rounded w-full" type="password" placeholder="Confirm Password *"
-        value={confirmPassword}
-        onChange={(e) => setConfirmPassword(e.target.value)} />
+            }}
+            maxLength={11} 
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
+          <input 
+            className="border p-3 rounded w-full" 
+            type="email" 
+            value={email}
+            onChange={(e) => setEmail(e.target.value)} 
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
+          <input 
+            className="border p-3 rounded w-full" 
+            type="password" 
+            value={password}
+            onChange={(e) => setPassword(e.target.value)} 
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
+          <input 
+            className="border p-3 rounded w-full" 
+            type="password" 
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)} 
+          />
+        </div>
 
         <p className="text-xs text-gray-500 text-center">
           By proceeding, you consent to Roadwise collecting and storing your personal

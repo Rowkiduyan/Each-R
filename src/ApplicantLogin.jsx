@@ -33,26 +33,39 @@ function ApplicantLogin() {
 
   const { user } = data;
 
-  // 2️⃣ Fetch the user's record from applicants table by email
+  // 2️⃣ Fetch the user's record from applicants table by email (case-insensitive)
   const { data: applicantData, error: applicantError } = await supabase
     .from("applicants")
-    .select("role")
-    .eq("email", user.email)
-    .single();
+    .select("*")
+    .ilike("email", user.email)
+    .maybeSingle();
 
-  if (applicantError || !applicantData) {
+  if (applicantError) {
+    console.error("Error fetching applicant data:", applicantError);
+    setError("Error accessing account data. Please try again or contact support.");
+    setShowErrorModal(true);
+    setLoading(false);
+    return;
+  }
+
+  if (!applicantData) {
+    console.log("No applicant data found for email:", user.email);
     setError("Account not registered. Please create an account first.");
     setShowErrorModal(true);
     setLoading(false);
     return;
   }
 
-  // 3️⃣ Redirect based on role
-  if (applicantData.role.toLowerCase() === "applicant") {
+  console.log("Applicant data found:", applicantData);
+
+  // 3️⃣ Redirect based on role (default to applicant if role doesn't exist)
+  const userRole = applicantData.role?.toLowerCase() || "applicant";
+  
+  if (userRole === "applicant") {
     const redirectTo = location.state?.redirectTo || "/applicantl/home";
     const jobId = location.state?.jobId;
     navigate(redirectTo, { state: { jobId } });
-  } else if (applicantData.role.toLowerCase() === "hr") {
+  } else if (userRole === "hr") {
     navigate("/hr/home");
   } else {
     setError("Unknown role or access not allowed");

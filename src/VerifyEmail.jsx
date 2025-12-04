@@ -76,7 +76,7 @@ function VerifyEmail() {
         .from("profiles")
         .select("id")
         .eq("id", authUserId)
-        .single();
+        .maybeSingle();
 
       if (!existingProfile) {
         const { error: profileError } = await supabase.from("profiles").insert([
@@ -105,7 +105,7 @@ function VerifyEmail() {
         .from("applicants")
         .select("id")
         .eq("id", authUserId)
-        .single();
+        .maybeSingle();
 
       if (!existingApplicant) {
         const { error: insertError } = await supabase.from("applicants").insert([
@@ -116,6 +116,8 @@ function VerifyEmail() {
             mname: pendingUser.mname,
             contact_number: pendingUser.contact_number,
             email: pendingUser.email,
+            birthday: pendingUser.birthday,
+            sex: pendingUser.sex,
             role: "Applicant",
           },
         ]);
