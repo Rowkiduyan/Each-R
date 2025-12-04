@@ -188,6 +188,31 @@ function AdminEnableDisable() {
 
       if (error) throw error;
 
+      // If enabling account and user was terminated, also update employee_separations
+      if (!isDisabling && selectedAccount.is_terminated) {
+        // Find employee record by email
+        const { data: empData } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('email', selectedAccount.email)
+          .maybeSingle();
+
+        if (empData) {
+          // Update separation record to un-terminate
+          const { error: sepError } = await supabase
+            .from('employee_separations')
+            .update({ 
+              is_terminated: false,
+              terminated_at: null
+            })
+            .eq('employee_id', empData.id);
+
+          if (sepError) {
+            console.error('Error updating separation status:', sepError);
+          }
+        }
+      }
+
       // Refresh the accounts list
       await fetchAccounts();
       
@@ -448,7 +473,7 @@ function AdminEnableDisable() {
 
       {/* Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
           <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">
               {actionType === 'disable' ? 'Disable Account?' : 'Enable Account?'}
@@ -491,7 +516,7 @@ function AdminEnableDisable() {
 
       {/* Success Modal */}
       {showSuccessModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
           <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
             <div className="flex items-center mb-4">
               <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4">
