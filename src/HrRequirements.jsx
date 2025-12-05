@@ -1003,11 +1003,6 @@ function HrRequirements() {
   };
 
   // View Document Functions
-  const openViewDocument = (filePath, documentName) => {
-    setViewDocumentTarget({ filePath, documentName });
-    setShowViewDocumentModal(true);
-  };
-
   const closeViewDocument = () => {
     setShowViewDocumentModal(false);
     setViewDocumentTarget(null);
@@ -1760,23 +1755,43 @@ function HrRequirements() {
                                                         <p className="text-xs text-gray-500">Submitted {formatDate(licenseData.submittedDate)}</p>
                                                       </div>
                                                     )}
-                                                    {(licenseData.frontFilePath || licenseData.backFilePath) && (
+                                                    {licenseData.frontFilePath && (
                                                       <div className="flex items-center gap-1.5 mt-1">
                                                         <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                                         </svg>
-                                                        {getDocumentUrl(licenseData.frontFilePath || licenseData.backFilePath) ? (
+                                                        {getDocumentUrl(licenseData.frontFilePath) ? (
                                                           <a
-                                                            href={getDocumentUrl(licenseData.frontFilePath || licenseData.backFilePath)}
+                                                            href={getDocumentUrl(licenseData.frontFilePath)}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             onClick={(e) => e.stopPropagation()}
                                                             className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
                                                           >
-                                                            View File
+                                                            View Front
                                                           </a>
                                                         ) : (
-                                                          <span className="text-xs text-gray-500">File uploaded</span>
+                                                          <span className="text-xs text-gray-500">Front file uploaded</span>
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                    {licenseData.backFilePath && (
+                                                      <div className="flex items-center gap-1.5 mt-1">
+                                                        <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                        </svg>
+                                                        {getDocumentUrl(licenseData.backFilePath) ? (
+                                                          <a
+                                                            href={getDocumentUrl(licenseData.backFilePath)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                                                          >
+                                                            View Back
+                                                          </a>
+                                                        ) : (
+                                                          <span className="text-xs text-gray-500">Back file uploaded</span>
                                                         )}
                                                       </div>
                                                     )}
@@ -1808,9 +1823,9 @@ function HrRequirements() {
                                                             licenseData.remarks || ''
                                                           );
                                                         }}
-                                                        disabled={!licenseData.frontFilePath && !licenseData.backFilePath}
+                                                        disabled={!licenseData.frontFilePath || !licenseData.backFilePath}
                                                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                                          !licenseData.frontFilePath && !licenseData.backFilePath
+                                                          !licenseData.frontFilePath || !licenseData.backFilePath
                                                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                             : 'bg-red-600 text-white hover:bg-red-700'
                                                         }`}

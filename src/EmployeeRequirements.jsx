@@ -1034,17 +1034,37 @@ function EmployeeRequirements() {
             currentLicense.versions = [...(currentLicense.versions || []), versionToSave];
           }
 
+          // Upload front file if provided
+          let frontFilePath = currentLicense.frontFilePath;
+          if (uploadForm.frontFile) {
+            frontFilePath = await uploadFileToStorage(
+              uploadForm.frontFile,
+              'employee-requirements',
+              'license_front'
+            );
+          }
+
+          // Upload back file if provided
+          let backFilePath = currentLicense.backFilePath;
+          if (uploadForm.backFile) {
+            backFilePath = await uploadFileToStorage(
+              uploadForm.backFile,
+              'employee-requirements',
+              'license_back'
+            );
+          }
+
           updated.license = {
             ...currentLicense,
             licenseNumber: uploadForm.licenseNumber.trim(),
             licenseExpiry: uploadForm.licenseExpiry.trim(),
             frontFile: uploadForm.frontFile,
-            frontFilePath: uploadForm.frontFile ? "local-file-path-front" : currentLicense.frontFilePath,
+            frontFilePath: frontFilePath,
             backFile: uploadForm.backFile,
-            backFilePath: uploadForm.backFile ? "local-file-path-back" : currentLicense.backFilePath,
+            backFilePath: backFilePath,
             status: "pending", // Always set to pending for HR review (whether renewal, resubmit, or new upload)
             submittedDate: new Date().toISOString(),
-            hasFile: uploadForm.frontFile && uploadForm.backFile,
+            hasFile: !!(frontFilePath && backFilePath),
             currentVersion: uploadTarget.isRenewal ? (currentLicense.versions?.length || 0) : currentLicense.currentVersion,
             remarks: null, // Clear any previous remarks when submitting a renewal
           };
