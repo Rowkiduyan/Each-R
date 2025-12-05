@@ -23,8 +23,12 @@ function HrTrainings() {
     date: "",
     time: "",
     end_time: "",
-    description: ""
+    description: "",
+    schedule_type: "onsite", // onsite or online
+    image_url: ""
   });
+  
+  const [imageFile, setImageFile] = useState(null);
   
   const [editForm, setEditForm] = useState({
     title: "",
@@ -413,6 +417,35 @@ function HrTrainings() {
     const isActiveFlag = endAt >= now;
 
     try {
+      let uploadedImageUrl = null;
+
+      // Upload image if file is selected
+      if (imageFile) {
+        const fileExt = imageFile.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('schedule-trainings')
+          .upload(filePath, imageFile, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (uploadError) {
+          console.error('Error uploading image:', uploadError);
+          alert(`Failed to upload image: ${uploadError.message}`);
+          return;
+        }
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('schedule-trainings')
+          .getPublicUrl(filePath);
+        
+        uploadedImageUrl = publicUrl;
+      }
+
       const { data, error } = await supabase
         .from('trainings')
         .insert([
@@ -427,6 +460,8 @@ function HrTrainings() {
             // is_active is true only for present/future trainings
             is_active: isActiveFlag,
             created_by: currentUserId || null,
+            schedule_type: form.schedule_type || 'onsite',
+            image_url: uploadedImageUrl
           }
         ])
         .select()
@@ -439,7 +474,8 @@ function HrTrainings() {
       }
 
       // Reset form
-      setForm({ title: "", venue: "", date: "", time: "", end_time: "", description: "" });
+      setForm({ title: "", venue: "", date: "", time: "", end_time: "", description: "", schedule_type: "onsite", image_url: "" });
+      setImageFile(null);
       setAttendees([]);
       setEmployeeSearchQuery("");
       setSelectedPositions([]);
@@ -1446,7 +1482,7 @@ function HrTrainings() {
       {/* Add Training Modal */}
       {showAdd && (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col h-[600px]">
+          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col h-[650px]">
             {/* Header - Fixed */}
             <div className="px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-white">
               <h2 className="text-center font-semibold text-lg text-gray-800">Add Schedule</h2>
@@ -1454,24 +1490,92 @@ function HrTrainings() {
             
             {/* Content - Two Column Layout */}
             <div className="flex-1 overflow-hidden flex">
-              {/* Left Side - Form Fields (40% width) */}
-              <div className="w-[40%] px-5 py-4 border-r border-gray-200 overflow-hidden">
+              {/* Left Side - Form Fields (50% width) */}
+              <div className="w-[50%] px-5 py-4 border-r border-gray-200 overflow-y-auto">
                 <form onSubmit={onSubmit} className="h-full">
-                  <div className="grid grid-cols-1 gap-2">
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          Title <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="title"
+                          value={form.title}
+                          onChange={onChange}
+                          required
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          placeholder="Personal Development"
+                        />
+                      </div>
+                      
+                      {/* Schedule Type Selection */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          Schedule Type <span className="text-red-500">*</span>
+                        </label>
+                        <div className="flex gap-4 mt-1.5">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="schedule_type"
+                              value="onsite"
+                              checked={form.schedule_type === "onsite"}
+                              onChange={onChange}
+                              className="w-4 h-4 text-red-600 focus:ring-red-500"
+                            />
+                            <span className="text-sm text-gray-700 font-medium">Onsite</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="schedule_type"
+                              value="online"
+                              checked={form.schedule_type === "online"}
+                              onChange={onChange}
+                              className="w-4 h-4 text-red-600 focus:ring-red-500"
+                            />
+                            <span className="text-sm text-gray-700 font-medium">Online</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Image Upload */}
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                        Title <span className="text-red-500">*</span>
+                        Training Image <span className="text-gray-500 font-normal">(PNG, JPG, max 10MB)</span>
                       </label>
-                      <input
-                        name="title"
-                        value={form.title}
-                        onChange={onChange}
-                        required
-                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-                        placeholder="Personal Development"
-                      />
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/jpg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              // Check file size (10MB = 10 * 1024 * 1024 bytes)
+                              if (file.size > 10 * 1024 * 1024) {
+                                alert('File size must be less than 10MB');
+                                e.target.value = '';
+                                return;
+                              }
+                              // Check file type
+                              if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
+                                alert('Only PNG and JPG files are allowed');
+                                e.target.value = '';
+                                return;
+                              }
+                              setImageFile(file);
+                            }
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100"
+                        />
+                        {imageFile && (
+                          <p className="text-xs text-gray-500 mt-1 truncate">{imageFile.name}</p>
+                        )}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
                           Date <span className="text-red-500">*</span>
@@ -1483,24 +1587,24 @@ function HrTrainings() {
                           type="date"
                           required
                           min={new Date().toISOString().split('T')[0]}
-                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                          Venue <span className="text-red-500">*</span>
+                          {form.schedule_type === 'online' ? 'Meeting Link' : 'Venue'} <span className="text-red-500">*</span>
                         </label>
                         <input
                           name="venue"
                           value={form.venue}
                           onChange={onChange}
                           required
-                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-                          placeholder="Google Meet"
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          placeholder={form.schedule_type === 'online' ? 'Google Meet, Zoom, etc.' : 'Location address'}
                         />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
                           Start Time <span className="text-red-500">*</span>
@@ -1511,7 +1615,7 @@ function HrTrainings() {
                           onChange={onChange}
                           type="time"
                           required
-                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>
                       <div>
@@ -1524,10 +1628,13 @@ function HrTrainings() {
                           onChange={onChange}
                           type="time"
                           required
-                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>
                     </div>
+                    {form.time && form.end_time && form.end_time <= form.time && (
+                      <p className="text-red-600 text-xs font-medium -mt-2">End time must be after start time</p>
+                    )}
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-0.5">
                         Description <span className="text-red-500">*</span>
@@ -1538,23 +1645,56 @@ function HrTrainings() {
                         onChange={onChange}
                         rows="2"
                         required
-                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none transition-colors"
-                        placeholder="Gmeet link: https://..."
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none transition-colors"
+                        placeholder="Training details..."
                       />
                     </div>
                     
-                    {/* Attendees Section */}
-                    <div className="pt-0.5">
-                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                        Attendees <span className="text-red-500">*</span>
-                      </label>
+                    {/* Attendees Section Header */}
+                    <div className="pt-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-medium text-gray-700">
+                          Attendees <span className="text-red-500">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Toggle: if all are selected, deselect all. Otherwise, select all
+                            if (attendees.length === employeeOptions.length) {
+                              setAttendees([]);
+                              setSelectedPositions([]);
+                              setEmployeesByPositionMap({});
+                            } else {
+                              setAttendees(employeeOptions);
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center gap-1.5 text-xs font-semibold group ${
+                            attendees.length === employeeOptions.length
+                              ? 'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700'
+                              : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
+                          }`}
+                        >
+                          {attendees.length === employeeOptions.length ? (
+                            <>
+                              <svg className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                              <span>Deselect All</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>Select All ({employeeOptions.length})</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     </div>
                     
                     {/* Position Selection */}
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                        Select Positions
-                      </label>
                       <select
                         value=""
                         onChange={(e) => {
@@ -1563,9 +1703,9 @@ function HrTrainings() {
                             e.target.value = "";
                           }
                         }}
-                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
                       >
-                        <option value="">Add a position...</option>
+                        <option value="">Select by Position</option>
                         {positions
                           .filter(pos => !selectedPositions.includes(pos))
                           .map((pos, idx) => (
@@ -1577,7 +1717,7 @@ function HrTrainings() {
                       
                       {/* Selected Positions Chips */}
                       {selectedPositions.length > 0 && (
-                        <div className="mt-1.5 flex flex-wrap gap-1.5 max-h-20 overflow-y-auto">
+                        <div className="mt-2 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-gray-50 rounded-lg border border-gray-200">
                           {selectedPositions.map((pos) => {
                             const empCount = employeesByPositionMap[pos]?.length || 0;
                             return (
@@ -1609,8 +1749,8 @@ function HrTrainings() {
                 </form>
               </div>
 
-              {/* Right Side - Others Search and Selected Attendees List (60% width) */}
-              <div className="w-[60%] px-5 py-4 bg-gray-50 overflow-hidden">
+              {/* Right Side - Others Search and Selected Attendees List (50% width) */}
+              <div className="w-[50%] px-5 py-4 bg-gray-50 overflow-hidden">
                 <div className="h-full flex flex-col">
                   {/* Search Input - Optional for additional employees */}
                   <div className="mb-2.5 relative">
@@ -1798,7 +1938,23 @@ function HrTrainings() {
                 </label>
                 <label className="text-sm font-medium text-gray-700">
                   Attendees: *
-                  <div className="mt-1 relative">
+                  <div className="flex items-center justify-between mb-1 mt-1">
+                    <span className="text-xs text-gray-500">Add employees to this training</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Select all employees
+                        setAttendeesEdit(employeeOptions);
+                      }}
+                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline transition-colors flex items-center gap-1"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                      </svg>
+                      Select All Employees
+                    </button>
+                  </div>
+                  <div className="relative">
                     <input
                       type="text"
                       value={employeeSearchQueryEdit}
