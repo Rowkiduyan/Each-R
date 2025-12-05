@@ -194,6 +194,7 @@ function HrRecruitment() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmCallback, setConfirmCallback] = useState(null);
+  const [isProcessingConfirm, setIsProcessingConfirm] = useState(false);
   
   // Filters for unified applications table
   const [positionFilter, setPositionFilter] = useState("All");
@@ -423,6 +424,27 @@ function HrRecruitment() {
       }
     }
   }, [location.state, applicants, navigate, location.pathname]);
+
+  // Sync selectedApplicant with fresh data from applicants list when it updates
+  useEffect(() => {
+    if (selectedApplicant?.id && applicants.length > 0) {
+      const updatedApplicant = applicants.find(a => a.id === selectedApplicant.id);
+      if (updatedApplicant) {
+        // Only update if the applicant data has actually changed (to avoid infinite loops)
+        const hasChanges = 
+          updatedApplicant.status !== selectedApplicant.status ||
+          updatedApplicant.interview_date !== selectedApplicant.interview_date ||
+          updatedApplicant.interview_confirmed !== selectedApplicant.interview_confirmed ||
+          updatedApplicant.interview_time !== selectedApplicant.interview_time ||
+          updatedApplicant.interview_location !== selectedApplicant.interview_location;
+        
+        if (hasChanges) {
+          setSelectedApplicant(updatedApplicant);
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applicants]);
 
   // Handle navigation from create job post - switch to JobPosts tab
   useEffect(() => {
@@ -817,6 +839,9 @@ function HrRecruitment() {
       `Mark ${applicantName} as Employee? This will create or update their employee record and mark the application as hired.`
     );
     setConfirmCallback(async () => {
+      // Guard against duplicate execution
+      let emailSent = false;
+      
       try {
         // First, get the application data to extract applicant information
         const { data: applicationData, error: appError } = await supabase
@@ -827,6 +852,13 @@ function HrRecruitment() {
 
         if (appError || !applicationData) {
           setErrorMessage("Failed to load application data.");
+          setShowErrorAlert(true);
+          return;
+        }
+
+        // Check if application is already marked as hired to prevent duplicate processing
+        if (applicationData.status === "hired") {
+          setErrorMessage("This applicant has already been marked as hired.");
           setShowErrorAlert(true);
           return;
         }
@@ -996,59 +1028,137 @@ function HrRecruitment() {
         }
 
         // Ensure there's a matching row in employees table (for HR/Agency modules)
+        let employeeCreated = false;
         try {
           // Set source based on whether applicant is from agency or direct
           const employeeSource = isAgencyApplicant ? "recruitment" : "internal";
           
           // Extract additional fields from application payload
           const contactNumber = source.contact || source.contact_number || source.phone || null;
-          const sex = source.sex || source.gender || null;
-          const address = source.address || 
-            (source.street || source.barangay || source.city ? 
-              `${source.street || ''}, ${source.barangay || ''}, ${source.city || ''}, ${source.zip || ''}`.replace(/,\s*,/g, ',').trim() : 
-              null);
           const depot = applicationData.job_posts?.depot || source.depot || source.preferred_depot || null;
           
-          const { error: empUpsertErr } = await supabase
+          // Build employee data with only fields that exist in the employees table
+          // Based on Employees.jsx, the table has: id, email, fname, lname, mname, contact_number, 
+          // position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id
+          const employeeData = {
+            email: employeeEmail,
+            fname: firstName,
+            lname: lastName,
+            mname: middleName || null,
+            contact_number: contactNumber,
+            depot: depot,
+            position: position || null,
+            role: "Employee",
+            hired_at: new Date().toISOString(),
+            source: employeeSource,
+            // For agency applicants, preserve agency metadata
+            ...(isAgencyApplicant && {
+              is_agency: true,
+              agency_profile_id: meta.endorsed_by_profile_id || null,
+              endorsed_by_agency_id: meta.endorsed_by_profile_id || null,
+              endorsed_at: meta.endorsed_at || new Date().toISOString(),
+            }),
+          };
+
+          // Try upsert, handling potential column errors gracefully
+          let upsertData = null;
+          let empUpsertErr = null;
+          
+          const { data, error } = await supabase
             .from("employees")
             .upsert(
-              {
-                email: employeeEmail,
-                fname: firstName,
-                lname: lastName,
-                mname: middleName || null,
-                contact_number: contactNumber,
-                birthday: birthday,
-                sex: sex,
-                address: address,
-                depot: depot,
-                position: position || null,
-                role: "Employee",
-                hired_at: new Date().toISOString(),
-                source: employeeSource,
-                // For agency applicants, preserve agency metadata
-                ...(isAgencyApplicant && {
-                  is_agency: true,
-                  agency_profile_id: meta.endorsed_by_profile_id || null,
-                  endorsed_by_agency_id: meta.endorsed_by_profile_id || null,
-                  endorsed_at: meta.endorsed_at || new Date().toISOString(),
-                }),
-              },
+              employeeData,
               // De‑duplicate by email so we only keep one employee row per email
               { onConflict: "email" }
-            );
+            )
+            .select();
+
+          upsertData = data;
+          empUpsertErr = error;
+
+          // If error is about missing columns, try without optional fields
+          if (empUpsertErr && empUpsertErr.code === "PGRST204") {
+            console.warn("First upsert attempt failed due to missing columns, retrying with minimal fields:", empUpsertErr.message);
+            
+            // Retry with only essential fields
+            const minimalEmployeeData = {
+              email: employeeEmail,
+              fname: firstName,
+              lname: lastName,
+              mname: middleName || null,
+              contact_number: contactNumber,
+              depot: depot,
+              position: position || null,
+              role: "Employee",
+              hired_at: new Date().toISOString(),
+              source: employeeSource,
+            };
+
+            const { data: retryData, error: retryError } = await supabase
+              .from("employees")
+              .upsert(
+                minimalEmployeeData,
+                { onConflict: "email" }
+              )
+              .select();
+
+            if (!retryError) {
+              upsertData = retryData;
+              empUpsertErr = null;
+              console.log("Employee record created with minimal fields");
+            } else {
+              empUpsertErr = retryError;
+            }
+          }
 
           if (empUpsertErr) {
             console.error("Error upserting employees row:", empUpsertErr);
+            setErrorMessage(`Failed to create employee record: ${empUpsertErr.message || 'Unknown error'}. Please check the console for details.`);
+            setShowErrorAlert(true);
+            return;
+          }
+
+          // Verify employee was created/updated
+          if (upsertData && upsertData.length > 0) {
+            employeeCreated = true;
+            console.log("Employee record created/updated successfully:", upsertData[0]);
+          } else {
+            // Double-check by querying the employee
+            const { data: verifyData, error: verifyErr } = await supabase
+              .from("employees")
+              .select("id, email, fname, lname")
+              .eq("email", employeeEmail)
+              .single();
+
+            if (verifyErr || !verifyData) {
+              console.error("Employee verification failed:", verifyErr);
+              setErrorMessage(`Employee account was created but could not be verified in employees table. Please check manually.`);
+              setShowErrorAlert(true);
+              return;
+            } else {
+              employeeCreated = true;
+              console.log("Employee verified in database:", verifyData);
+            }
           }
         } catch (empErr) {
           console.error("Unexpected error upserting employees row:", empErr);
+          setErrorMessage(`Unexpected error creating employee record: ${empErr.message || 'Unknown error'}. Please check the console.`);
+          setShowErrorAlert(true);
+          return;
+        }
+
+        if (!employeeCreated) {
+          setErrorMessage("Failed to create employee record. Please try again or check the console for details.");
+          setShowErrorAlert(true);
+          return;
         }
 
         // Send email with credentials
         // Send email with credentials only for direct hires who got an account
-        if (!isAgencyApplicant && employeePassword) {
+        // Only send once - guard against duplicate sends
+        if (!isAgencyApplicant && employeePassword && !emailSent) {
           try {
+            emailSent = true; // Set flag before sending to prevent duplicates
             const emailResult = await sendEmployeeAccountEmail({
               toEmail: applicantEmail, // Send to the email they used for application
               employeeEmail: employeeEmail,
@@ -1061,10 +1171,13 @@ function HrRecruitment() {
             if (!emailResult.ok) {
               console.warn("Failed to send email, but employee account was created:", emailResult.error);
               // Don't fail the whole process if email fails
+            } else {
+              console.log("Employee account email sent successfully to:", applicantEmail);
             }
           } catch (emailErr) {
             console.error("Error sending email:", emailErr);
             // Don't fail the whole process if email fails
+            emailSent = false; // Reset flag on error so it can be retried if needed
           }
         }
 
@@ -1175,6 +1288,17 @@ function HrRecruitment() {
         return;
       }
       
+      // Update selectedApplicant immediately with interview data
+      if (selectedApplicant && selectedApplicant.id === selectedApplicationForInterview.id) {
+        setSelectedApplicant((prev) => ({
+          ...prev,
+          interview_date: interviewForm.date,
+          interview_time: interviewForm.time,
+          interview_location: interviewForm.location,
+          interviewer: interviewForm.interviewer || prev.interviewer,
+        }));
+      }
+
       // success -> reload applications so updated interview fields show
       await loadApplications();
       setShowInterviewModal(false);
@@ -1242,6 +1366,60 @@ function HrRecruitment() {
         throw updateError;
       }
 
+      // Also update employees table if this applicant is now an employee
+      // Find employee by email from the application
+      const applicantEmail = selectedApplicant.email || 
+        (selectedApplicant.raw?.payload ? 
+          (() => {
+            try {
+              const payload = typeof selectedApplicant.raw.payload === 'string' 
+                ? JSON.parse(selectedApplicant.raw.payload) 
+                : selectedApplicant.raw.payload;
+              return payload.form?.email || payload.applicant?.email || payload.email;
+            } catch {
+              return null;
+            }
+          })() : null);
+      
+      if (applicantEmail) {
+        // Get current employee requirements
+        const { data: employeeRecord } = await supabase
+          .from('employees')
+          .select('requirements')
+          .eq('email', applicantEmail)
+          .single();
+
+        if (employeeRecord) {
+          let empRequirements = employeeRecord.requirements;
+          if (typeof empRequirements === 'string') {
+            try {
+              empRequirements = JSON.parse(empRequirements);
+            } catch {
+              empRequirements = {};
+            }
+          }
+
+          // Update the same ID number in employees table
+          if (!empRequirements.id_numbers) empRequirements.id_numbers = {};
+          if (!empRequirements.id_numbers[idKey]) {
+            empRequirements.id_numbers[idKey] = {};
+          }
+
+          empRequirements.id_numbers[idKey] = {
+            ...empRequirements.id_numbers[idKey],
+            status: status,
+            remarks: remarks,
+            validated_at: status === "Validated" ? new Date().toISOString() : null,
+          };
+
+          // Save to employees table
+          await supabase
+            .from('employees')
+            .update({ requirements: empRequirements })
+            .eq('email', applicantEmail);
+        }
+      }
+
       // Reload applications to reflect changes
       await loadApplications();
     } catch (err) {
@@ -1304,6 +1482,59 @@ function HrRecruitment() {
         throw updateError;
       }
 
+      // Also update employees table if this applicant is now an employee
+      const applicantEmail = selectedApplicant.email || 
+        (selectedApplicant.raw?.payload ? 
+          (() => {
+            try {
+              const payload = typeof selectedApplicant.raw.payload === 'string' 
+                ? JSON.parse(selectedApplicant.raw.payload) 
+                : selectedApplicant.raw.payload;
+              return payload.form?.email || payload.applicant?.email || payload.email;
+            } catch {
+              return null;
+            }
+          })() : null);
+      
+      if (applicantEmail) {
+        // Get current employee requirements
+        const { data: employeeRecord } = await supabase
+          .from('employees')
+          .select('requirements')
+          .eq('email', applicantEmail)
+          .single();
+
+        if (employeeRecord) {
+          let empRequirements = employeeRecord.requirements;
+          if (typeof empRequirements === 'string') {
+            try {
+              empRequirements = JSON.parse(empRequirements);
+            } catch {
+              empRequirements = {};
+            }
+          }
+
+          // Update the same document in employees table
+          if (!empRequirements.documents) empRequirements.documents = [];
+          
+          const docIndex = empRequirements.documents.findIndex(d => d.key === docKey);
+          if (docIndex >= 0) {
+            empRequirements.documents[docIndex] = {
+              ...empRequirements.documents[docIndex],
+              status: status,
+              remarks: remarks,
+              validated_at: status === "Validated" ? new Date().toISOString() : null,
+            };
+          }
+
+          // Save to employees table
+          await supabase
+            .from('employees')
+            .update({ requirements: empRequirements })
+            .eq('email', applicantEmail);
+        }
+      }
+
       // Reload applications to reflect changes
       await loadApplications();
     } catch (err) {
@@ -1338,16 +1569,24 @@ function HrRecruitment() {
           return;
         }
 
+        // Update selected applicant immediately with new status
+        setSelectedApplicant((prev) => {
+          if (prev && prev.id === applicant.id) {
+            return { ...prev, status: "screening" };
+          }
+          return prev;
+        });
+
+        // Move UI to Assessment step (do this before loadApplications so step turns green immediately)
+        setActiveDetailTab("Assessment");
+
         // Refresh list so buckets & stats update
         await loadApplications();
 
-        // Keep the selected applicant and reflect new status locally
-        setSelectedApplicant((prev) =>
-          prev && prev.id === applicant.id ? { ...prev, status: "screening" } : prev
-        );
-
-        // Move UI to Assessment step
-        setActiveDetailTab("Assessment");
+        // After loadApplications completes, we need to update selectedApplicant with fresh data
+        // Since setState is async, we use a callback approach with setApplicants
+        // But we can't access the new applicants here, so we'll use a useEffect instead
+        // For now, the immediate update above should be enough for the step to turn green
 
         setSuccessMessage(`${applicant.name} has been approved to proceed to assessment.`);
         setShowSuccessAlert(true);
@@ -2119,9 +2358,20 @@ function HrRecruitment() {
                       { key: "Agreements", label: "Agreements", description: "Step 3 · Final agreements & hire" },
                     ].map((step, index, arr) => {
                       const isActive = activeDetailTab === step.key;
+                      // Check applicant status to determine if step is completed
+                      const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
+                      const hasInterview = !!selectedApplicant?.interview_date;
+                      
+                      // Application step is completed if:
+                      // - We're on Assessment or Agreements tab AND
+                      // - (Status is screening+ OR an interview has been set)
                       const isCompleted =
-                        (step.key === "Application" && ["Assessment", "Agreements"].includes(activeDetailTab)) ||
-                        (step.key === "Assessment" && activeDetailTab === "Agreements");
+                        (step.key === "Application" && 
+                         ["Assessment", "Agreements"].includes(activeDetailTab) &&
+                         (["screening", "requirements", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus) || hasInterview)) ||
+                        (step.key === "Assessment" && 
+                         activeDetailTab === "Agreements" &&
+                         ["agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus));
 
                       return (
                         <button
@@ -2224,7 +2474,7 @@ function HrRecruitment() {
                         onClick={() => proceedToAssessment(selectedApplicant)}
                         className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 transition-colors"
                       >
-                        <span>Approve &amp; Proceed to Assessment</span>
+                        <span>Proceed to Assessment</span>
                         <svg
                           className="w-4 h-4"
                           fill="none"
@@ -2851,9 +3101,16 @@ function HrRecruitment() {
 
                     <div className="flex justify-end mt-6">
                       <button
+                        type="button"
                         className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-                        onClick={async () => {
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           await handleMarkAsEmployee(selectedApplicant.id, selectedApplicant.name);
+                        }}
+                        onMouseDown={(e) => {
+                          // Prevent accidental triggers
+                          e.preventDefault();
                         }}
                       >
                         Mark as Hired
@@ -3282,8 +3539,13 @@ function HrRecruitment() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isProcessingConfirm}
                 onClick={async () => {
+                  // Prevent multiple clicks
+                  if (isProcessingConfirm) return;
+                  
+                  setIsProcessingConfirm(true);
                   try {
                     if (typeof confirmCallback === "function") {
                       await confirmCallback();
@@ -3291,10 +3553,11 @@ function HrRecruitment() {
                   } finally {
                     setShowConfirmDialog(false);
                     setConfirmCallback(null);
+                    setIsProcessingConfirm(false);
                   }
                 }}
               >
-                OK
+                {isProcessingConfirm ? "Processing..." : "OK"}
               </button>
             </div>
           </div>
