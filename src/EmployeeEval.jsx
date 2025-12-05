@@ -1,74 +1,86 @@
 import React, { useState, useEffect } from "react";
 import { useEmployeeUser } from "./layouts/EmployeeLayout";
+import { supabase } from "./supabaseClient";
 
 function EmployeeEval() {
     const { userId, userEmail, employeeUser } = useEmployeeUser();
     const [loading, setLoading] = useState(true);
     const [expandedEval, setExpandedEval] = useState(null);
+    const [evaluations, setEvaluations] = useState([]);
+    const [employeeInfo, setEmployeeInfo] = useState(null);
 
-    // Mock employee evaluation data (will be replaced with real data from Supabase)
+    useEffect(() => {
+        if (userEmail) {
+            fetchEmployeeData();
+        }
+    }, [userEmail]);
+
+    const fetchEmployeeData = async () => {
+        try {
+            setLoading(true);
+
+            // Fetch employee info
+            const { data: empData, error: empError } = await supabase
+                .from('employees')
+                .select('id, fname, lname, position, depot, hired_at')
+                .eq('email', userEmail)
+                .single();
+
+            if (empError) {
+                console.error('Error fetching employee data:', empError);
+                setLoading(false);
+                return;
+            }
+
+            setEmployeeInfo(empData);
+
+            // Fetch evaluations for this employee
+            const { data: evalData, error: evalError } = await supabase
+                .from('evaluations')
+                .select('*')
+                .eq('employee_id', empData.id)
+                .order('date_evaluated', { ascending: false });
+
+            if (evalError) {
+                console.error('Error fetching evaluations:', evalError);
+            } else {
+                setEvaluations(evalData || []);
+            }
+
+        } catch (error) {
+            console.error('Error in fetchEmployeeData:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Calculate employment type and next evaluation based on evaluations
+    const getMostRecentEvaluation = () => {
+        if (evaluations.length === 0) return null;
+        return evaluations[0];
+    };
+
+    const getEmploymentType = () => {
+        const mostRecent = getMostRecentEvaluation();
+        return mostRecent?.type?.toLowerCase() || 'regular';
+    };
+
+    const getNextEvaluationDate = () => {
+        const mostRecent = getMostRecentEvaluation();
+        return mostRecent?.next_due || null;
+    };
+
+    // Prepare employee data object
     const employeeData = {
-        id: 'EMP-001',
-        name: employeeUser ? `${employeeUser.fname} ${employeeUser.lname}` : 'Loading...',
-        position: employeeUser?.position || 'Driver',
-        depot: 'Makati Depot',
-        employmentType: 'regular', // regular or probationary
-        hireDate: '2022-03-15',
-        lastEvaluation: '2024-03-18',
-        nextEvaluation: '2025-03-15',
-        evaluations: [
-            {
-                id: 1,
-                period: '2024',
-                type: 'Annual Performance Review',
-                date: '2024-03-18',
-                rating: 'Exceeds Expectations',
-                score: '4.5/5',
-                evaluator: 'Maria Santos (HR Manager)',
-                remarks: 'Excellent attendance and performance throughout the year. Demonstrates strong commitment to safety protocols and customer service. Recommended for salary increase.',
-                categories: [
-                    { name: 'Job Knowledge', score: 4.5, description: 'Demonstrates excellent understanding of job requirements' },
-                    { name: 'Quality of Work', score: 4.8, description: 'Consistently delivers high-quality work' },
-                    { name: 'Attendance', score: 5.0, description: 'Perfect attendance record' },
-                    { name: 'Teamwork', score: 4.2, description: 'Works well with colleagues' },
-                    { name: 'Communication', score: 4.3, description: 'Clear and effective communication' },
-                ]
-            },
-            {
-                id: 2,
-                period: '2023',
-                type: 'Annual Performance Review',
-                date: '2023-03-16',
-                rating: 'Meets Expectations',
-                score: '3.8/5',
-                evaluator: 'Maria Santos (HR Manager)',
-                remarks: 'Good overall performance. Maintains punctuality and follows company policies. Needs improvement in documentation and reporting procedures.',
-                categories: [
-                    { name: 'Job Knowledge', score: 4.0, description: 'Good understanding of responsibilities' },
-                    { name: 'Quality of Work', score: 3.8, description: 'Meets quality standards' },
-                    { name: 'Attendance', score: 4.5, description: 'Excellent attendance' },
-                    { name: 'Teamwork', score: 3.5, description: 'Adequate collaboration with team' },
-                    { name: 'Communication', score: 3.2, description: 'Needs improvement in documentation' },
-                ]
-            },
-            {
-                id: 3,
-                period: '2022',
-                type: 'Annual Performance Review',
-                date: '2022-03-20',
-                rating: 'Meets Expectations',
-                score: '3.5/5',
-                evaluator: 'Roberto Cruz (HR)',
-                remarks: 'Solid first year performance. Shows promise and willingness to learn. Continue developing skills in route planning and customer relations.',
-                categories: [
-                    { name: 'Job Knowledge', score: 3.5, description: 'Learning job requirements' },
-                    { name: 'Quality of Work', score: 3.8, description: 'Satisfactory work quality' },
-                    { name: 'Attendance', score: 4.0, description: 'Good attendance' },
-                    { name: 'Teamwork', score: 3.5, description: 'Works well with team' },
-                    { name: 'Communication', score: 3.0, description: 'Basic communication skills' },
-                ]
-            },
-        ]
+        id: employeeInfo?.id || 'N/A',
+        name: employeeInfo ? `${employeeInfo.fname} ${employeeInfo.lname}` : 'Loading...',
+        position: employeeInfo?.position || 'N/A',
+        depot: employeeInfo?.depot || 'N/A',
+        employmentType: getEmploymentType(),
+        hireDate: employeeInfo?.hired_at || null,
+        lastEvaluation: evaluations.length > 0 ? evaluations[0].date_evaluated : null,
+        nextEvaluation: getNextEvaluationDate(),
+        evaluations: evaluations
     };
 
     // Calculate status dynamically
@@ -119,6 +131,7 @@ function EmployeeEval() {
     };
 
     const getRatingColor = (rating) => {
+        if (!rating || typeof rating !== 'string') return 'text-gray-600';
         if (rating.includes('Outstanding') || rating.includes('Exceeds')) return 'text-green-600';
         if (rating.includes('Meets') || rating.includes('On Track')) return 'text-blue-600';
         if (rating.includes('Needs')) return 'text-orange-600';
@@ -126,6 +139,7 @@ function EmployeeEval() {
     };
 
     const getRatingBadgeStyle = (rating) => {
+        if (!rating || typeof rating !== 'string') return 'bg-gray-100 text-gray-700 border-gray-200';
         if (rating.includes('Outstanding') || rating.includes('Exceeds')) return 'bg-green-100 text-green-700 border-green-200';
         if (rating.includes('Meets') || rating.includes('On Track')) return 'bg-blue-100 text-blue-700 border-blue-200';
         if (rating.includes('Needs')) return 'bg-orange-100 text-orange-700 border-orange-200';
@@ -143,10 +157,16 @@ function EmployeeEval() {
     const statusStyle = getStatusBadge(status);
     const daysUntilDue = getDaysUntilDue(employeeData.nextEvaluation);
 
-    useEffect(() => {
-        // Simulate loading
-        setTimeout(() => setLoading(false), 500);
-    }, []);
+    if (loading) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="text-center">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto mb-4"></div>
+                    <p className="text-gray-600">Loading evaluations...</p>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <>
@@ -188,28 +208,6 @@ function EmployeeEval() {
                         <p className="text-gray-500 mt-1">View your evaluation history and upcoming assessment schedule</p>
                     </div>
 
-                    {/* Employee Info Card */}
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                            <div className="flex items-center gap-4">
-                                <div className="w-16 h-16 bg-gradient-to-br from-red-500 to-red-600 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0">
-                                    {employeeUser ? `${employeeUser.fname[0]}${employeeUser.lname[0]}` : 'EM'}
-                                </div>
-                                <div>
-                                    <h2 className="text-xl font-bold text-gray-800">{employeeData.name}</h2>
-                                    <p className="text-sm text-gray-500">{employeeData.position} • {employeeData.depot}</p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-xs text-gray-500">Hired: {formatDate(employeeData.hireDate)}</span>
-                                        <span className="text-xs text-gray-400">•</span>
-                                        <span className={`text-xs px-2 py-0.5 rounded-full ${employeeData.employmentType === 'regular' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
-                                            {employeeData.employmentType === 'regular' ? 'Regular Employee' : 'Probationary'}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     {/* Stats Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
                         {/* Next Evaluation */}
@@ -243,9 +241,14 @@ function EmployeeEval() {
                                         <p className="text-sm font-semibold text-gray-600">Last Evaluation</p>
                                     </div>
                                     <p className="text-2xl font-bold text-gray-800">{formatDate(employeeData.lastEvaluation)}</p>
-                                    {employeeData.evaluations[0] && (
-                                        <p className={`text-sm mt-1 font-medium ${getRatingColor(employeeData.evaluations[0].rating)}`}>
-                                            {employeeData.evaluations[0].rating}
+                                    {employeeData.evaluations[0]?.remarks && (
+                                        <p className={`text-sm mt-1 font-medium ${
+                                            employeeData.evaluations[0].remarks === 'Retained' ? 'text-green-600' :
+                                            employeeData.evaluations[0].remarks === 'Observe' ? 'text-orange-600' :
+                                            employeeData.evaluations[0].remarks === 'Dismissed' ? 'text-red-600' :
+                                            'text-gray-600'
+                                        }`}>
+                                            {employeeData.evaluations[0].remarks}
                                         </p>
                                     )}
                                 </div>
@@ -287,7 +290,9 @@ function EmployeeEval() {
                         {/* Evaluation List */}
                         <div className="divide-y divide-gray-100">
                             {employeeData.evaluations.length > 0 ? (
-                                employeeData.evaluations.map((evaluation) => (
+                                employeeData.evaluations.map((evaluation) => {
+                                    const evalYear = new Date(evaluation.date_evaluated).getFullYear();
+                                    return (
                                     <div key={evaluation.id} className="hover:bg-gray-50 transition-colors">
                                         {/* Collapsed View */}
                                         <div
@@ -297,29 +302,38 @@ function EmployeeEval() {
                                             <div className="flex items-center justify-between">
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-3 mb-2">
-                                                        <h4 className="font-semibold text-gray-800">{evaluation.period} {evaluation.type}</h4>
-                                                        <span className={`text-xs px-2 py-1 rounded-full border ${getRatingBadgeStyle(evaluation.rating)}`}>
-                                                            {evaluation.rating}
-                                                        </span>
+                                                        <h4 className="font-semibold text-gray-800">{evalYear} - {evaluation.reason || 'Performance Review'}</h4>
+                                                        {evaluation.remarks && (
+                                                            <span className={`text-xs px-2 py-1 rounded-full border ${
+                                                                evaluation.remarks === 'Retained' ? 'bg-green-100 text-green-700 border-green-200' :
+                                                                evaluation.remarks === 'Observe' ? 'bg-orange-100 text-orange-700 border-orange-200' :
+                                                                evaluation.remarks === 'Dismissed' ? 'bg-red-100 text-red-700 border-red-200' :
+                                                                'bg-gray-100 text-gray-700 border-gray-200'
+                                                            }`}>
+                                                                {evaluation.remarks}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="flex items-center gap-4 text-sm text-gray-500">
                                                         <div className="flex items-center gap-1">
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                                             </svg>
-                                                            {formatDate(evaluation.date)}
+                                                            {formatDate(evaluation.date_evaluated)}
                                                         </div>
                                                         <div className="flex items-center gap-1">
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                                             </svg>
-                                                            {evaluation.evaluator}
+                                                            {evaluation.evaluator_name}
                                                         </div>
                                                         <div className="flex items-center gap-1">
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
                                                             </svg>
-                                                            <span className={`font-semibold ${getScoreColor(evaluation.score)}`}>{evaluation.score}</span>
+                                                            <span className={`font-semibold ${getScoreColor(evaluation.total_score?.toString() || '0')}`}>
+                                                                {evaluation.total_score ? `${evaluation.total_score}%` : 'N/A'}
+                                                            </span>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -337,51 +351,45 @@ function EmployeeEval() {
                                         {/* Expanded View */}
                                         {expandedEval === evaluation.id && (
                                             <div className="px-6 pb-6 pt-2 bg-gray-50/50">
-                                                {/* Remarks */}
-                                                <div className="mb-4 p-4 bg-white rounded-lg border border-gray-200">
-                                                    <h5 className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                                                        </svg>
-                                                        Evaluator's Remarks
-                                                    </h5>
-                                                    <p className="text-sm text-gray-700">{evaluation.remarks}</p>
-                                                </div>
-
-                                                {/* Performance Categories */}
-                                                {evaluation.categories && evaluation.categories.length > 0 && (
-                                                    <div>
-                                                        <h5 className="text-sm font-semibold text-gray-700 mb-3">Performance Categories</h5>
-                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                            {evaluation.categories.map((category, idx) => (
-                                                                <div key={idx} className="p-3 bg-white rounded-lg border border-gray-200">
-                                                                    <div className="flex items-center justify-between mb-2">
-                                                                        <span className="text-sm font-medium text-gray-700">{category.name}</span>
-                                                                        <span className={`text-sm font-bold ${getScoreColor(category.score.toString())}`}>
-                                                                            {category.score}/5.0
-                                                                        </span>
-                                                                    </div>
-                                                                    {/* Progress Bar */}
-                                                                    <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
-                                                                        <div
-                                                                            className={`h-2 rounded-full ${
-                                                                                category.score >= 4.5 ? 'bg-green-600' :
-                                                                                category.score >= 4.0 ? 'bg-blue-600' :
-                                                                                category.score >= 3.0 ? 'bg-orange-600' : 'bg-red-600'
-                                                                            }`}
-                                                                            style={{ width: `${(category.score / 5) * 100}%` }}
-                                                                        />
-                                                                    </div>
-                                                                    <p className="text-xs text-gray-500">{category.description}</p>
-                                                                </div>
-                                                            ))}
-                                                        </div>
+                                                {/* Evaluation File Download */}
+                                                {evaluation.file_path && (
+                                                    <div className="mb-4">
+                                                        <a
+                                                            href={supabase.storage.from('evaluations').getPublicUrl(evaluation.file_path).data.publicUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                            </svg>
+                                                            View Evaluation Document
+                                                        </a>
                                                     </div>
                                                 )}
+
+                                                {/* Evaluation Details */}
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+                                                    <div className="p-3 bg-white rounded-lg border border-gray-200">
+                                                        <p className="text-xs text-gray-500 mb-1">Reason</p>
+                                                        <p className="text-sm font-medium text-gray-800">{evaluation.reason || 'N/A'}</p>
+                                                    </div>
+                                                    <div className="p-3 bg-white rounded-lg border border-gray-200">
+                                                        <p className="text-xs text-gray-500 mb-1">Score</p>
+                                                        <p className={`text-sm font-bold ${getScoreColor(evaluation.total_score?.toString() || '0')}`}>
+                                                            {evaluation.total_score ? `${evaluation.total_score}%` : 'N/A'}
+                                                        </p>
+                                                    </div>
+                                                    <div className="p-3 bg-white rounded-lg border border-gray-200">
+                                                        <p className="text-xs text-gray-500 mb-1">Remarks</p>
+                                                        <p className="text-sm font-medium text-gray-800">{evaluation.remarks || 'N/A'}</p>
+                                                    </div>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
-                                ))
+                                    );
+                                })
                             ) : (
                                 <div className="px-6 py-12 text-center text-gray-500">
                                     <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

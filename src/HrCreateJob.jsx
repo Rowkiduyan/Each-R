@@ -13,8 +13,8 @@ function HrCreateJob() {
     others: [""],
     urgent: true,
     jobType: "delivery_crew", // "delivery_crew" or "office_employee"
+    durationDays: "",
     durationHours: "",
-    durationMinutes: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -184,12 +184,12 @@ function HrCreateJob() {
       ...form.others,
     ];
     
-    // Format duration if both hours and minutes are provided
+    // Format duration if days or hours are provided
     let duration = null;
-    if (form.durationHours || form.durationMinutes) {
+    if (form.durationDays || form.durationHours) {
+      const days = form.durationDays ? parseInt(form.durationDays) : 0;
       const hours = form.durationHours ? parseInt(form.durationHours) : 0;
-      const minutes = form.durationMinutes ? parseInt(form.durationMinutes) : 0;
-      duration = `${hours}h ${minutes}m`;
+      duration = `${days}d ${hours}h`;
     }
     
     try {
@@ -207,6 +207,20 @@ function HrCreateJob() {
 
       // Redirect to recruitment page after successful post
       navigate("/hr/recruitment", { state: { activeSubTab: "JobPosts" } });
+      setSuccess("Job post created successfully.");
+      setForm({
+        title: "",
+        depot: "",
+        posted: "Just now",
+        description: "",
+        responsibilities: [""],
+        others: [""],
+        urgent: true,
+        jobType: "delivery_crew",
+        durationDays: "",
+        durationHours: "",
+      });
+      setShowConfirm(false);
     } catch (err) {
       // show user-friendly message, but console contains full details
       const msg = err?.message || "Failed to create job post. Check console for details.";
@@ -313,27 +327,27 @@ function HrCreateJob() {
             <label className="block text-sm font-medium mb-1">Duration (Optional)</label>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Hours</label>
+                <label className="block text-xs text-gray-600 mb-1">Days</label>
                 <input
                   type="number"
                   min="0"
                   className="w-full border rounded px-3 py-2"
-                  value={form.durationHours}
-                  onChange={(e) => setField("durationHours", e.target.value)}
-                  placeholder="e.g., 8"
+                  value={form.durationDays}
+                  onChange={(e) => setField("durationDays", e.target.value)}
+                  placeholder="e.g., 5"
                 />
                 
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Minutes (0-59)</label>
+                <label className="block text-xs text-gray-600 mb-1">Hours (0-23)</label>
                 <input
                   type="number"
                   min="0"
-                  max="59"
+                  max="23"
                   className="w-full border rounded px-3 py-2"
-                  value={form.durationMinutes}
-                  onChange={(e) => setField("durationMinutes", e.target.value)}
-                  placeholder="e.g., 30"
+                  value={form.durationHours}
+                  onChange={(e) => setField("durationHours", e.target.value)}
+                  placeholder="e.g., 8"
                 />
               </div>
             </div>

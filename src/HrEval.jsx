@@ -3,16 +3,43 @@ import { supabase } from "./supabaseClient";
 
 function HrEval() {
   // Tab and filter state
-  const [activeTab, setActiveTab] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [employmentFilter, setEmploymentFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedRow, setExpandedRow] = useState(null);
+  const [evalSearchQuery, setEvalSearchQuery] = useState("");
+  const [evalDateSort, setEvalDateSort] = useState("newest");
+  const [evalRemarksFilter, setEvalRemarksFilter] = useState("all");
+  const [evalReasonFilter, setEvalReasonFilter] = useState("all");
   const itemsPerPage = 8;
 
   // Data state
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [uploadRecords, setUploadRecords] = useState([
+    {
+      evaluatorName: "",
+      reason: "",
+      dateEvaluated: "",
+      totalScore: "",
+      remarks: "",
+      file: null,
+    },
+  ]);
+  const [showUploadConfirm, setShowUploadConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showTypeChangeConfirm, setShowTypeChangeConfirm] = useState(false);
+  const [typeChangeData, setTypeChangeData] = useState(null);
+  const [showNextDueConfirm, setShowNextDueConfirm] = useState(false);
+  const [nextDueChangeData, setNextDueChangeData] = useState(null);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertType, setAlertType] = useState("info"); // 'success', 'error', 'info', 'warning'
 
   // Fetch employees from database (HR sees all employees)
   useEffect(() => {
@@ -21,7 +48,7 @@ function HrEval() {
         setLoading(true);
         const { data, error } = await supabase
           .from("employees")
-          .select("id, fname, lname, mname, position");
+          .select("id, fname, lname, mname, position, depot, hired_at");
 
         if (error) {
           console.error("Error loading employees for evaluations:", error);
@@ -34,12 +61,12 @@ function HrEval() {
           const fullName = [lastFirst, emp.mname].filter(Boolean).join(" ");
 
           return {
-            id: emp.id || "",
+            id: emp.id,
             name: fullName || "Unnamed employee",
             position: emp.position || "Not set",
-            depot: "-", // Placeholder, adjust if you have depot/location in your schema
-            employmentType: "regular", // Default; adjust if you have an employment type field
-            hireDate: null,
+            depot: emp.depot || "-",
+            employmentType: "regular",
+            hireDate: emp.hired_at || null,
             lastEvaluation: null,
             nextEvaluation: null,
             evaluations: [],
@@ -47,6 +74,9 @@ function HrEval() {
         });
 
         setEmployees(mapped);
+        
+        // Fetch evaluations for each employee
+        await fetchAllEvaluations(mapped);
       } catch (err) {
         console.error("Unexpected error loading employees for evaluations:", err);
         setEmployees([]);
@@ -57,6 +87,387 @@ function HrEval() {
 
     fetchEmployees();
   }, []);
+
+  // Helper function to show alert modal
+  const showAlert = (message, type = "info") => {
+    setAlertMessage(message);
+    setAlertType(type);
+    setShowAlertModal(true);
+  };
+
+  // Fetch all evaluations for employees
+  const fetchAllEvaluations = async (employeeList) => {
+    try {
+      const { data: evaluationsData, error } = await supabase
+        .from("evaluations")
+        .select("*")
+        .order("date_evaluated", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching evaluations:", error);
+        return;
+      }
+
+      // Group evaluations by employee_id
+      const evaluationsByEmployee = {};
+      evaluationsData?.forEach((evaluation) => {
+        if (!evaluationsByEmployee[evaluation.employee_id]) {
+          evaluationsByEmployee[evaluation.employee_id] = [];
+        }
+        evaluationsByEmployee[evaluation.employee_id].push(evaluation);
+      });
+
+      // Update employees with their evaluations and get type/next_due from most recent evaluation
+      const updatedEmployees = employeeList.map((emp) => {
+        const empEvaluations = evaluationsByEmployee[emp.id] || [];
+        const mostRecent = empEvaluations[0];
+        
+        // Find the latest Annual evaluation date for next_due calculation
+        let nextEvaluation = mostRecent?.next_due || null;
+        const annualEvals = empEvaluations.filter(e => e.reason === 'Annual');
+        if (annualEvals.length > 0) {
+          // Get the latest Annual evaluation date
+          const latestAnnualDate = annualEvals[0].date_evaluated; // Already sorted by date_evaluated desc
+          const nextDueDate = new Date(latestAnnualDate);
+          nextDueDate.setFullYear(nextDueDate.getFullYear() + 1);
+          nextEvaluation = nextDueDate.toISOString().split('T')[0];
+        }
+        
+        return {
+          ...emp,
+          evaluations: empEvaluations,
+          lastEvaluation: mostRecent?.date_evaluated || null,
+          employmentType: mostRecent?.type || "regular",
+          nextEvaluation: nextEvaluation,
+        };
+      });
+
+      setEmployees(updatedEmployees);
+    } catch (err) {
+      console.error("Error fetching evaluations:", err);
+    }
+  };
+
+  // Handle file upload
+  const handleUploadEvaluation = async () => {
+    // Validate all records
+    for (let i = 0; i < uploadRecords.length; i++) {
+      const record = uploadRecords[i];
+      if (!record.file || !record.evaluatorName || !record.reason || !record.dateEvaluated || !record.totalScore || !record.remarks) {
+        showAlert(`Please fill in all required fields for Record ${i + 1}.`, "warning");
+        return;
+      }
+    }
+
+    try {
+      setUploading(true);
+      let successCount = 0;
+      let failCount = 0;
+
+      // Process each record
+      for (const record of uploadRecords) {
+        try {
+          // Calculate next_due based on reason and date_evaluated
+          let nextDueDate = null;
+          if (record.reason === 'Annual' && record.dateEvaluated) {
+            const evalDate = new Date(record.dateEvaluated);
+            evalDate.setFullYear(evalDate.getFullYear() + 1);
+            nextDueDate = evalDate.toISOString().split('T')[0];
+          }
+
+          // Upload file to Supabase storage
+          const fileExt = record.file.name.split(".").pop();
+          const fileName = `${selectedEmployee.id}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+          const filePath = `${selectedEmployee.id}/${fileName}`;
+
+          const { error: uploadError } = await supabase.storage
+            .from("evaluations")
+            .upload(filePath, record.file);
+
+          if (uploadError) {
+            console.error("Error uploading file:", uploadError);
+            failCount++;
+            continue;
+          }
+
+          // Insert evaluation record into database
+          const { error: insertError } = await supabase
+            .from("evaluations")
+            .insert([
+              {
+                employee_id: selectedEmployee.id,
+                evaluator_name: record.evaluatorName,
+                reason: record.reason || null,
+                date_evaluated: record.dateEvaluated,
+                total_score: parseFloat(record.totalScore),
+                remarks: record.remarks,
+                file_path: filePath,
+                next_due: nextDueDate,
+              },
+            ]);
+
+          if (insertError) {
+            console.error("Error inserting evaluation record:", insertError);
+            failCount++;
+            continue;
+          }
+
+          successCount++;
+        } catch (err) {
+          console.error("Error processing record:", err);
+          failCount++;
+        }
+      }
+
+      // Refresh evaluations for this employee
+      const { data: updatedEvals, error: fetchError } = await supabase
+        .from("evaluations")
+        .select("*")
+        .eq("employee_id", selectedEmployee.id)
+        .order("date_evaluated", { ascending: false });
+
+      if (!fetchError) {
+        const mostRecent = updatedEvals?.[0];
+        
+        // Find the latest Annual evaluation date for next_due calculation
+        let nextEvaluation = mostRecent?.next_due || null;
+        const annualEvals = updatedEvals?.filter(e => e.reason === 'Annual') || [];
+        if (annualEvals.length > 0) {
+          // Get the latest Annual evaluation date
+          const latestAnnualDate = annualEvals[0].date_evaluated;
+          const nextDueDate = new Date(latestAnnualDate);
+          nextDueDate.setFullYear(nextDueDate.getFullYear() + 1);
+          nextEvaluation = nextDueDate.toISOString().split('T')[0];
+        }
+        
+        setEmployees((prev) =>
+          prev.map((emp) =>
+            emp.id === selectedEmployee.id
+              ? {
+                  ...emp,
+                  evaluations: updatedEvals || [],
+                  lastEvaluation: mostRecent?.date_evaluated || null,
+                  employmentType: mostRecent?.type || emp.employmentType,
+                  nextEvaluation: nextEvaluation,
+                }
+              : emp
+          )
+        );
+      }
+
+      // Reset form and close modal
+      setUploadRecords([
+        {
+          evaluatorName: "",
+          reason: "",
+          dateEvaluated: "",
+          totalScore: "",
+          remarks: "",
+          file: null,
+        },
+      ]);
+      setShowUploadModal(false);
+      
+      if (failCount === 0) {
+        showAlert(`All ${successCount} evaluation(s) uploaded successfully!`, "success");
+      } else {
+        showAlert(`${successCount} evaluation(s) uploaded successfully. ${failCount} failed.`, "warning");
+      }
+    } catch (err) {
+      console.error("Error uploading evaluations:", err);
+      showAlert("An error occurred. Please try again.", "error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Handle delete evaluation
+  const handleDeleteEvaluation = async () => {
+    if (!deleteTarget) return;
+
+    try {
+      // Delete file from storage
+      if (deleteTarget.file_path) {
+        const { error: storageError } = await supabase.storage
+          .from("evaluations")
+          .remove([deleteTarget.file_path]);
+
+        if (storageError) {
+          console.error("Error deleting file from storage:", storageError);
+        }
+      }
+
+      // Delete record from database
+      const { error: dbError } = await supabase
+        .from("evaluations")
+        .delete()
+        .eq("id", deleteTarget.id);
+
+      if (dbError) {
+        console.error("Error deleting evaluation record:", dbError);
+        showAlert("Failed to delete evaluation. Please try again.", "error");
+        return;
+      }
+
+      // Refresh evaluations for this employee
+      const { data: updatedEvals, error: fetchError } = await supabase
+        .from("evaluations")
+        .select("*")
+        .eq("employee_id", deleteTarget.employee_id)
+        .order("date_evaluated", { ascending: false });
+
+      if (!fetchError) {
+        setEmployees((prev) =>
+          prev.map((emp) =>
+            emp.id === deleteTarget.employee_id
+              ? {
+                  ...emp,
+                  evaluations: updatedEvals || [],
+                  lastEvaluation: updatedEvals?.[0]?.date_evaluated || null,
+                }
+              : emp
+          )
+        );
+      }
+
+      setShowDeleteConfirm(false);
+      setDeleteTarget(null);
+      showAlert("Evaluation deleted successfully!", "success");
+    } catch (err) {
+      console.error("Error deleting evaluation:", err);
+      showAlert("An error occurred. Please try again.", "error");
+    }
+  };
+
+  // Handle update employee type (updates most recent evaluation)
+  const handleUpdateEmployeeType = async (employeeId, newType) => {
+    const employee = employees.find(emp => emp.id === employeeId);
+    let mostRecentEval = employee?.evaluations?.[0];
+
+    // Show confirmation modal regardless of whether evaluation exists
+    setTypeChangeData({ employeeId, newType, employee, evaluationId: mostRecentEval?.id || null });
+    setShowTypeChangeConfirm(true);
+  };
+
+  // Confirm type change
+  const confirmTypeChange = async () => {
+    if (!typeChangeData) return;
+
+    try {
+      // Calculate next_due based on employee type
+      let nextDueDate = null;
+      if (typeChangeData.newType === 'regular') {
+        // Regular: one year from today
+        const today = new Date();
+        const nextYear = new Date(today);
+        nextYear.setFullYear(today.getFullYear() + 1);
+        nextDueDate = nextYear.toISOString().split('T')[0];
+      } else if (typeChangeData.newType === 'probationary') {
+        // Probationary: 3 months from today
+        const today = new Date();
+        const threeMonthsLater = new Date(today);
+        threeMonthsLater.setMonth(today.getMonth() + 3);
+        nextDueDate = threeMonthsLater.toISOString().split('T')[0];
+      }
+
+      // Capitalize the type to match database constraint (Regular or Probationary)
+      const formattedType = typeChangeData.newType.charAt(0).toUpperCase() + typeChangeData.newType.slice(1);
+
+      // If evaluation exists, update it; otherwise, just update local state
+      if (typeChangeData.evaluationId) {
+        const { data, error } = await supabase
+          .from("evaluations")
+          .update({ 
+            type: formattedType,
+            next_due: nextDueDate 
+          })
+          .eq("id", typeChangeData.evaluationId)
+          .select();
+
+        if (error) {
+          console.error("Error updating employee type:", error);
+          console.error("Error details:", JSON.stringify(error, null, 2));
+          showAlert(`Failed to update employee type: ${error.message || 'Unknown error'}`, "error");
+          return;
+        }
+
+        console.log("Update successful:", data);
+      }
+
+      // Update local state
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          emp.id === typeChangeData.employeeId
+            ? { 
+                ...emp, 
+                employmentType: typeChangeData.newType,
+                nextEvaluation: nextDueDate 
+              }
+            : emp
+        )
+      );
+
+      setShowTypeChangeConfirm(false);
+      setTypeChangeData(null);
+      showAlert("Employee type updated successfully!", "success");
+    } catch (err) {
+      console.error("Error updating employee type:", err);
+      showAlert("An error occurred. Please try again.", "error");
+    }
+  };
+
+  // Handle update next due date (updates most recent evaluation)
+  const handleUpdateNextDue = (employeeId, nextDueDate) => {
+    // Find the most recent evaluation for this employee
+    const employee = employees.find(emp => emp.id === employeeId);
+    const mostRecentEval = employee?.evaluations?.[0];
+    
+    if (!mostRecentEval) {
+      showAlert("No evaluation found for this employee. Please upload an evaluation first.", "warning");
+      return;
+    }
+
+    // Show confirmation modal
+    setNextDueChangeData({ employeeId, nextDueDate, evaluationId: mostRecentEval.id, employee });
+    setShowNextDueConfirm(true);
+  };
+
+  // Confirm next due date change
+  const confirmNextDueChange = async () => {
+    if (!nextDueChangeData) return;
+
+    try {
+      // Handle empty string as null for database
+      const nextDueValue = nextDueChangeData.nextDueDate === "" ? null : nextDueChangeData.nextDueDate;
+      
+      const { error } = await supabase
+        .from("evaluations")
+        .update({ next_due: nextDueValue })
+        .eq("id", nextDueChangeData.evaluationId);
+
+      if (error) {
+        console.error("Error updating next due date:", error);
+        showAlert("Failed to update next due date. Please try again.", "error");
+        return;
+      }
+
+      // Update local state
+      setEmployees((prev) =>
+        prev.map((emp) =>
+          emp.id === nextDueChangeData.employeeId
+            ? { ...emp, nextEvaluation: nextDueValue }
+            : emp
+        )
+      );
+
+      setShowNextDueConfirm(false);
+      setNextDueChangeData(null);
+      showAlert(nextDueValue ? "Next due date updated successfully!" : "Next due date cleared successfully!", "success");
+    } catch (err) {
+      console.error("Error updating next due date:", err);
+      showAlert("An error occurred. Please try again.", "error");
+    }
+  };
 
   // Helper: calculate status based on nextEvaluation date
   const calculateStatus = (nextEvaluation) => {
@@ -91,23 +502,9 @@ function HrEval() {
     ).length,
   };
 
-  // Get current data based on active tab, filters, and search
+  // Get current data based on filters and search
   const getCurrentData = () => {
     let data = [...employeesWithStatus];
-
-    // Filter by tab
-    switch (activeTab) {
-      case "due":
-        data = data.filter((e) => e.status === "duetoday" || e.status === "overdue");
-        break;
-      case "all":
-        break;
-      case "history":
-        data = data.filter((e) => e.evaluations.length > 0);
-        break;
-      default:
-        break;
-    }
 
     // Search
     if (searchQuery) {
@@ -119,10 +516,21 @@ function HrEval() {
       );
     }
 
-    // Employment filter (placeholder; all are "regular" for now)
+    // Employment filter
     if (employmentFilter !== "all") {
       data = data.filter((item) => item.employmentType === employmentFilter);
     }
+
+    // Status filter
+    if (statusFilter !== "all") {
+      data = data.filter((item) => item.status === statusFilter);
+    }
+
+    // Sort by status priority: Due Today first, then Overdue, then Up to Date
+    data.sort((a, b) => {
+      const statusOrder = { duetoday: 0, overdue: 1, uptodate: 2 };
+      return statusOrder[a.status] - statusOrder[b.status];
+    });
 
     return data;
   };
@@ -340,103 +748,6 @@ function HrEval() {
 
         {/* Main Content Card */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          {/* Tabs */}
-          <div className="border-b border-gray-200">
-            <div className="flex">
-              <button
-                onClick={() => {
-                  setActiveTab("all");
-                  setCurrentPage(1);
-                  setExpandedRow(null);
-                }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === "all"
-                    ? "border-red-600 text-red-600 bg-red-50/50"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
-                    />
-                  </svg>
-                  All Employees
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab("due");
-                  setCurrentPage(1);
-                  setExpandedRow(null);
-                }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === "due"
-                    ? "border-red-600 text-red-600 bg-red-50/50"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
-                    />
-                  </svg>
-                  Due / Overdue
-                  {stats.dueForEval > 0 && (
-                    <span className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">
-                      {stats.dueForEval}
-                    </span>
-                  )}
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab("history");
-                  setCurrentPage(1);
-                  setExpandedRow(null);
-                }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === "history"
-                    ? "border-red-600 text-red-600 bg-red-50/50"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <svg
-                    className="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
-                    />
-                  </svg>
-                  Evaluation History
-                </div>
-              </button>
-            </div>
-          </div>
 
           {/* Search and Filters */}
           <div className="p-4 border-b border-gray-100 bg-gray-50/50">
@@ -481,6 +792,21 @@ function HrEval() {
                 <option value="regular">Regular</option>
                 <option value="probationary">Probationary</option>
               </select>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                  setExpandedRow(null);
+                }}
+                className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
+              >
+                <option value="all">All Statuses</option>
+                <option value="duetoday">Due Today</option>
+                <option value="overdue">Overdue</option>
+                <option value="uptodate">Up to Date</option>
+              </select>
             </div>
           </div>
 
@@ -494,22 +820,22 @@ function HrEval() {
               <table className="w-full">
                 <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Employee
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Position / Depot
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Type
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Last Evaluation
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Next Due
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                    <th className="px-6 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
                   </tr>
@@ -545,11 +871,6 @@ function HrEval() {
                                   <p className="text-sm font-medium text-gray-800">
                                     {employee.name}
                                   </p>
-                                  {employee.id && (
-                                    <p className="text-xs text-gray-500">
-                                      {employee.id}
-                                    </p>
-                                  )}
                                 </div>
                               </div>
                             </td>
@@ -561,60 +882,48 @@ function HrEval() {
                                 {employee.depot}
                               </p>
                             </td>
-                            <td className="px-6 py-4">
-                              <p
-                                className={`text-sm font-medium ${
-                                  employee.employmentType === "regular"
-                                    ? "text-blue-600"
-                                    : "text-purple-600"
-                                }`}
-                              >
-                                {employee.employmentType === "regular"
-                                  ? "Regular"
-                                  : "Probationary"}
-                              </p>
-                              <p className="text-xs text-gray-400">
-                                {employee.employmentType === "regular"
-                                  ? "Yearly eval"
-                                  : "Monthly eval"}
-                              </p>
+                            <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex flex-col items-center">
+                                <select
+                                  value={employee.employmentType}
+                                  onChange={(e) => handleUpdateEmployeeType(employee.id, e.target.value)}
+                                  className={`text-sm font-medium border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 ${
+                                    employee.employmentType === "regular"
+                                      ? "text-blue-600"
+                                      : "text-purple-600"
+                                  }`}
+                                >
+                                  <option value="regular">Regular</option>
+                                  <option value="probationary">Probationary</option>
+                                </select>
+                              </div>
                             </td>
                             <td className="px-6 py-4">
-                              <p className="text-sm text-gray-800">
-                                {formatDate(employee.lastEvaluation)}
-                              </p>
-                              {employee.evaluations.length > 0 && (
-                                <p className="text-xs text-gray-500">
-                                  {employee.evaluations.length} record
-                                  {employee.evaluations.length !== 1 ? "s" : ""}
+                              <div className="flex flex-col items-center">
+                                <p className="text-sm text-gray-800">
+                                  {formatDate(employee.lastEvaluation)}
                                 </p>
-                              )}
-                            </td>
-                            <td className="px-6 py-4">
-                              <p className="text-sm text-gray-800">
-                                {formatDate(employee.nextEvaluation)}
-                              </p>
-                              {daysUntilDue !== null &&
-                                employee.status !== "uptodate" && (
-                                  <p
-                                    className={`text-xs ${
-                                      daysUntilDue < 0
-                                        ? "text-red-600"
-                                        : daysUntilDue <= 7
-                                        ? "text-orange-600"
-                                        : "text-gray-500"
-                                    }`}
-                                  >
-                                    {daysUntilDue < 0
-                                      ? `${Math.abs(daysUntilDue)} days overdue`
-                                      : daysUntilDue === 0
-                                      ? "Due today"
-                                      : `${daysUntilDue} days left`}
+                                {employee.evaluations.length > 0 && (
+                                  <p className="text-xs text-gray-500">
+                                    {employee.evaluations.length} record
+                                    {employee.evaluations.length !== 1 ? "s" : ""}
                                   </p>
                                 )}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex flex-col items-center">
+                                <input
+                                  type="date"
+                                  value={employee.nextEvaluation || ""}
+                                  min={new Date().toISOString().split('T')[0]}
+                                  onChange={(e) => handleUpdateNextDue(employee.id, e.target.value)}
+                                  className="text-sm text-gray-800 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
+                                />
+                              </div>
                             </td>
                             <td className="px-6 py-4">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center justify-center gap-2">
                                 <span
                                   className={`text-sm font-semibold ${statusStyle.text}`}
                                 >
@@ -653,31 +962,257 @@ function HrEval() {
                                     <p className="text-sm font-semibold text-gray-700">
                                       Evaluation History
                                     </p>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedEmployee(employee);
+                                        setShowUploadModal(true);
+                                      }}
+                                      className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
+                                    >
+                                      <svg
+                                        className="w-4 h-4"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                                        />
+                                      </svg>
+                                      Upload Evaluation
+                                    </button>
                                   </div>
 
-                                  <div className="bg-white rounded-lg p-6 border border-gray-100 text-center">
-                                    <svg
-                                      className="w-10 h-10 text-gray-300 mx-auto mb-2"
-                                      fill="none"
-                                      stroke="currentColor"
-                                      viewBox="0 0 24 24"
-                                    >
-                                      <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={1.5}
-                                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                                  {/* Search and Filters */}
+                                  <div className="mb-4 space-y-2">
+                                    <div className="relative">
+                                      <svg
+                                        className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                                        />
+                                      </svg>
+                                      <input
+                                        type="text"
+                                        placeholder="Search by evaluator name..."
+                                        value={evalSearchQuery}
+                                        onChange={(e) => setEvalSearchQuery(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
                                       />
-                                    </svg>
-                                    <p className="text-sm text-gray-500">
-                                      No evaluation records yet
-                                    </p>
-                                    <p className="text-xs text-gray-400 mt-1">
-                                      Upload and manage evaluations for this
-                                      employee here once your evaluation module
-                                      is connected.
-                                    </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <select
+                                        value={evalDateSort}
+                                        onChange={(e) => setEvalDateSort(e.target.value)}
+                                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                                      >
+                                        <option value="newest">Date: Newest to Oldest</option>
+                                        <option value="oldest">Date: Oldest to Newest</option>
+                                      </select>
+                                      <select
+                                        value={evalRemarksFilter}
+                                        onChange={(e) => setEvalRemarksFilter(e.target.value)}
+                                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                                      >
+                                        <option value="all">All Remarks</option>
+                                        <option value="Retained">Retained</option>
+                                        <option value="Observe">Observe</option>
+                                        <option value="Dismissed">Dismissed</option>
+                                      </select>
+                                      <select
+                                        value={evalReasonFilter}
+                                        onChange={(e) => setEvalReasonFilter(e.target.value)}
+                                        className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                                      >
+                                        <option value="all">All Reasons</option>
+                                        <option value="Regularization">Regularization</option>
+                                        <option value="Annual">Annual</option>
+                                        <option value="Semi-Annual">Semi-Annual</option>
+                                      </select>
+                                    </div>
                                   </div>
+
+                                  {employee.evaluations && employee.evaluations.length > 0 ? (
+                                    <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+                                      {(() => {
+                                        // Filter and sort evaluations
+                                        let filteredEvals = employee.evaluations.filter(evaluation => {
+                                          // Search by evaluator name
+                                          const matchesSearch = evalSearchQuery === "" || 
+                                            evaluation.evaluator_name.toLowerCase().includes(evalSearchQuery.toLowerCase());
+                                          
+                                          // Filter by remarks
+                                          const matchesRemarks = evalRemarksFilter === "all" || 
+                                            evaluation.remarks === evalRemarksFilter;
+                                          
+                                          // Filter by reason
+                                          const matchesReason = evalReasonFilter === "all" || 
+                                            evaluation.reason === evalReasonFilter;
+                                          
+                                          return matchesSearch && matchesRemarks && matchesReason;
+                                        });
+
+                                        // Sort by date
+                                        filteredEvals.sort((a, b) => {
+                                          const dateA = new Date(a.date_evaluated);
+                                          const dateB = new Date(b.date_evaluated);
+                                          return evalDateSort === "newest" ? dateB - dateA : dateA - dateB;
+                                        });
+
+                                        return filteredEvals.length > 0 ? filteredEvals.map((evaluation) => (
+                                        <div
+                                          key={evaluation.id}
+                                          className="bg-white rounded-lg p-4 border border-gray-200 hover:border-gray-300 transition-colors"
+                                        >
+                                          <div className="flex items-center justify-between gap-4">
+                                            <div className="flex-1">
+                                              <div className="flex items-center gap-2 mb-2">
+                                                <svg
+                                                  className="w-4 h-4 text-blue-600"
+                                                  fill="none"
+                                                  stroke="currentColor"
+                                                  viewBox="0 0 24 24"
+                                                >
+                                                  <path
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    strokeWidth={2}
+                                                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                                  />
+                                                </svg>
+                                                <h4 className="text-sm font-semibold text-gray-800">
+                                                  Evaluation - {formatDate(evaluation.date_evaluated)}
+                                                </h4>
+                                              </div>
+                                              <div className="grid grid-cols-5 gap-x-4 gap-y-1 text-sm">
+                                                <div>
+                                                  <span className="text-gray-500 text-xs">Evaluator:</span>
+                                                  <p className="text-gray-800 font-medium">
+                                                    {evaluation.evaluator_name}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <span className="text-gray-500 text-xs">Date:</span>
+                                                  <p className="text-gray-800 font-medium">
+                                                    {formatDate(evaluation.date_evaluated)}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <span className="text-gray-500 text-xs">Score:</span>
+                                                  <p className="text-gray-800 font-medium">
+                                                    {evaluation.total_score ? `${evaluation.total_score}%` : "N/A"}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <span className="text-gray-500 text-xs">Remarks:</span>
+                                                  <p className="text-gray-800 font-medium">
+                                                    {evaluation.remarks || "N/A"}
+                                                  </p>
+                                                </div>
+                                                <div>
+                                                  <span className="text-gray-500 text-xs">Reason:</span>
+                                                  <p className="text-gray-800 font-medium">
+                                                    {evaluation.reason || "N/A"}
+                                                  </p>
+                                                </div>
+                                              </div>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                              {evaluation.file_path && (
+                                                <a
+                                                  href={
+                                                    supabase.storage
+                                                      .from("evaluations")
+                                                      .getPublicUrl(evaluation.file_path).data.publicUrl
+                                                  }
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  onClick={(e) => e.stopPropagation()}
+                                                  className="px-3 py-2 bg-blue-50 text-blue-600 text-sm rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-2 whitespace-nowrap"
+                                                >
+                                                  <svg
+                                                    className="w-4 h-4"
+                                                    fill="none"
+                                                    stroke="currentColor"
+                                                    viewBox="0 0 24 24"
+                                                  >
+                                                    <path
+                                                      strokeLinecap="round"
+                                                      strokeLinejoin="round"
+                                                      strokeWidth={2}
+                                                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                                    />
+                                                  </svg>
+                                                  View File
+                                                </a>
+                                              )}
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setDeleteTarget(evaluation);
+                                                  setShowDeleteConfirm(true);
+                                                }}
+                                                className="px-3 py-2 bg-red-50 text-red-600 text-sm rounded-lg hover:bg-red-100 transition-colors flex items-center gap-2 whitespace-nowrap"
+                                              >
+                                                <svg
+                                                  className="w-4 h-4"
+                                                  fill="none"
+                                                  stroke="currentColor"
+                                                  viewBox="0 0 24 24"
+                                                >
+                                                  <path
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    strokeWidth={2}
+                                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                                  />
+                                                </svg>
+                                                Delete
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      )) : (
+                                        <div className="text-center py-8 text-gray-500 text-sm">
+                                          No evaluations match your filters
+                                        </div>
+                                      );
+                                      })()}
+                                    </div>
+                                  ) : (
+                                    <div className="bg-white rounded-lg p-6 border border-gray-100 text-center">
+                                      <svg
+                                        className="w-10 h-10 text-gray-300 mx-auto mb-2"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={1.5}
+                                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                                        />
+                                      </svg>
+                                      <p className="text-sm text-gray-500">
+                                        No evaluation records yet
+                                      </p>
+                                      <p className="text-xs text-gray-400 mt-1">
+                                        Click "Upload Evaluation" to add the first evaluation for this employee.
+                                      </p>
+                                    </div>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -750,6 +1285,478 @@ function HrEval() {
           )}
         </div>
       </div>
+
+      {/* Upload Modal */}
+      {showUploadModal && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full p-6 border border-black max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-800">Upload Evaluation(s)</h2>
+              <button
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setUploadRecords([
+                    {
+                      evaluatorName: "",
+                      reason: "",
+                      dateEvaluated: "",
+                      totalScore: "",
+                      file: null,
+                    },
+                  ]);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <p className="text-sm text-gray-600">
+                Employee: <span className="font-semibold text-gray-800">{selectedEmployee?.name}</span>
+              </p>
+            </div>
+
+            <div className="space-y-6">
+              {uploadRecords.map((record, index) => (
+                <div key={index} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-gray-700">Record {index + 1}</h3>
+                    {uploadRecords.length > 1 && (
+                      <button
+                        onClick={() => {
+                          setUploadRecords(uploadRecords.filter((_, i) => i !== index));
+                        }}
+                        className="text-red-600 hover:text-red-800 text-sm"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Evaluator Name <span className="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={record.evaluatorName}
+                          onChange={(e) => {
+                            const newRecords = [...uploadRecords];
+                            newRecords[index].evaluatorName = e.target.value;
+                            setUploadRecords(newRecords);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                          placeholder="Enter evaluator name"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Reason <span className="text-red-600">*</span>
+                        </label>
+                        <select
+                          value={record.reason}
+                          onChange={(e) => {
+                            const newRecords = [...uploadRecords];
+                            newRecords[index].reason = e.target.value;
+                            setUploadRecords(newRecords);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                        >
+                          <option value="">Select reason</option>
+                          <option value="Regularization">Regularization</option>
+                          <option value="Annual">Annual</option>
+                          <option value="Semi-Annual">Semi-Annual</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Date Evaluated <span className="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={record.dateEvaluated}
+                          onChange={(e) => {
+                            const newRecords = [...uploadRecords];
+                            newRecords[index].dateEvaluated = e.target.value;
+                            setUploadRecords(newRecords);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Total Score (%) <span className="text-red-600">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="0.01"
+                          value={record.totalScore}
+                          onChange={(e) => {
+                            const newRecords = [...uploadRecords];
+                            newRecords[index].totalScore = e.target.value;
+                            setUploadRecords(newRecords);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                          placeholder="e.g., 85.5"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Remarks <span className="text-red-600">*</span>
+                        </label>
+                        <select
+                          value={record.remarks}
+                          onChange={(e) => {
+                            const newRecords = [...uploadRecords];
+                            newRecords[index].remarks = e.target.value;
+                            setUploadRecords(newRecords);
+                          }}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                        >
+                          <option value="">Select remarks</option>
+                          <option value="Retained">Retained</option>
+                          <option value="Observe">Observe</option>
+                          <option value="Dismissed">Dismissed</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Evaluation File <span className="text-red-600">*</span>
+                      </label>
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx"
+                        onChange={(e) => {
+                          const newRecords = [...uploadRecords];
+                          newRecords[index].file = e.target.files?.[0] || null;
+                          setUploadRecords(newRecords);
+                        }}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                      />
+                      {record.file && (
+                        <p className="text-xs text-gray-600 mt-1">
+                          Selected: {record.file.name}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <button
+                onClick={() => {
+                  setUploadRecords([
+                    ...uploadRecords,
+                    {
+                      evaluatorName: "",
+                      reason: "",
+                      dateEvaluated: "",
+                      totalScore: "",
+                      file: null,
+                    },
+                  ]);
+                }}
+                className="w-full px-4 py-2 border-2 border-dashed border-gray-300 text-gray-600 rounded-lg hover:border-red-500 hover:text-red-600 transition-colors flex items-center justify-center gap-2"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add Another Record
+              </button>
+            </div>
+
+            <div className="flex justify-between items-center mt-6 pt-4 border-t">
+              <p className="text-sm text-gray-600">
+                {uploadRecords.length} record{uploadRecords.length !== 1 ? 's' : ''} to upload
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setUploadRecords([
+                      {
+                        evaluatorName: "",
+                        reason: "",
+                        dateEvaluated: "",
+                        totalScore: "",
+                        file: null,
+                      },
+                    ]);
+                  }}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => setShowUploadConfirm(true)}
+                  disabled={uploading}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:bg-red-300 disabled:cursor-not-allowed"
+                >
+                  Upload {uploadRecords.length} Record{uploadRecords.length !== 1 ? 's' : ''}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Upload Confirmation Modal */}
+      {showUploadConfirm && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 border border-black">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Confirm Upload</h3>
+                <p className="text-sm text-gray-600">
+                  Are you sure you want to upload {uploadRecords.length} evaluation record{uploadRecords.length !== 1 ? 's' : ''} for <span className="font-semibold">{selectedEmployee?.name}</span>?
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowUploadConfirm(false)}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowUploadConfirm(false);
+                  handleUploadEvaluation();
+                }}
+                disabled={uploading}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:bg-red-300 disabled:cursor-not-allowed"
+              >
+                {uploading ? "Uploading..." : "Confirm Upload"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && deleteTarget && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 border border-black">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Delete Evaluation</h3>
+                <p className="text-sm text-gray-600 mb-3">
+                  Are you sure you want to delete this evaluation record?
+                </p>
+                <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                  <p><span className="font-medium">Evaluator:</span> {deleteTarget.evaluator_name}</p>
+                  <p><span className="font-medium">Date:</span> {formatDate(deleteTarget.date_evaluated)}</p>
+                  <p><span className="font-medium">Score:</span> {deleteTarget.total_score}%</p>
+                </div>
+                <p className="text-xs text-red-600 mt-3">
+                  This action cannot be undone. The file will also be permanently deleted.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDeleteTarget(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteEvaluation}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Delete Evaluation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Type Change Confirmation Modal */}
+      {showTypeChangeConfirm && typeChangeData && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 border border-black">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">Change Employee Type</h3>
+                <p className="text-sm text-gray-600 mb-3">
+                  Are you sure you want to change the employment type for <span className="font-semibold">{typeChangeData.employee?.name}</span>?
+                </p>
+                <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
+                  <p><span className="font-medium">Current Type:</span> <span className="capitalize">{typeChangeData.employee?.employmentType}</span></p>
+                  <p><span className="font-medium">New Type:</span> <span className="capitalize">{typeChangeData.newType}</span></p>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowTypeChangeConfirm(false);
+                  setTypeChangeData(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmTypeChange}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Confirm Change
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Next Due Date Change Confirmation Modal */}
+      {showNextDueConfirm && nextDueChangeData && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 border border-black">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                  {nextDueChangeData.nextDueDate === "" ? "Clear Next Due Date" : "Confirm Next Due Date"}
+                </h3>
+                <p className="text-sm text-gray-600 mb-3">
+                  {nextDueChangeData.nextDueDate === "" 
+                    ? <>Setting the next due date to none will not notify HR. Are you sure you want to clear the next evaluation date for <span className="font-semibold">{nextDueChangeData.employee?.name}</span>?</>
+                    : <>This will be the basis of Evaluation Due. Are you sure you want to set the next evaluation date for <span className="font-semibold">{nextDueChangeData.employee?.name}</span>?</>
+                  }
+                </p>
+                {nextDueChangeData.nextDueDate !== "" && (
+                  <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                    <p><span className="font-medium">New Next Due Date:</span> {new Date(nextDueChangeData.nextDueDate).toLocaleDateString()}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowNextDueConfirm(false);
+                  setNextDueChangeData(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmNextDueChange}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Alert Modal */}
+      {showAlertModal && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 border border-black">
+            <div className="flex items-start gap-3 mb-4">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                alertType === 'success' ? 'bg-green-100' :
+                alertType === 'error' ? 'bg-red-100' :
+                alertType === 'warning' ? 'bg-orange-100' :
+                'bg-blue-100'
+              }`}>
+                {alertType === 'success' && (
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {alertType === 'error' && (
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+                {alertType === 'warning' && (
+                  <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                )}
+                {alertType === 'info' && (
+                  <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className={`text-lg font-semibold mb-2 ${
+                  alertType === 'success' ? 'text-green-800' :
+                  alertType === 'error' ? 'text-red-800' :
+                  alertType === 'warning' ? 'text-orange-800' :
+                  'text-blue-800'
+                }`}>
+                  {alertType === 'success' ? 'Success' :
+                   alertType === 'error' ? 'Error' :
+                   alertType === 'warning' ? 'Warning' :
+                   'Information'}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  {alertMessage}
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowAlertModal(false)}
+                className={`px-4 py-2 rounded-lg text-white transition-colors ${
+                  alertType === 'success' ? 'bg-green-600 hover:bg-green-700' :
+                  alertType === 'error' ? 'bg-red-600 hover:bg-red-700' :
+                  alertType === 'warning' ? 'bg-orange-600 hover:bg-orange-700' :
+                  'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
