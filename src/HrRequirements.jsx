@@ -166,8 +166,8 @@ function HrRequirements() {
                 if (idNums.sss) {
                   requirements.sss = {
                     idNumber: idNums.sss.value || '',
-                    hasFile: false,
-                    filePath: null,
+                    hasFile: !!(idNums.sss.file_path || idNums.sss.filePath),
+                    filePath: idNums.sss.file_path || idNums.sss.filePath || null,
                     status: idNums.sss.status === 'Validated' ? 'approved' : 
                             idNums.sss.status === 'Re-submit' ? 'resubmit' :
                             idNums.sss.status === 'Submitted' ? 'pending' : 'missing',
@@ -180,8 +180,8 @@ function HrRequirements() {
                 if (idNums.tin) {
                   requirements.tin = {
                     idNumber: idNums.tin.value || '',
-                    hasFile: false,
-                    filePath: null,
+                    hasFile: !!(idNums.tin.file_path || idNums.tin.filePath),
+                    filePath: idNums.tin.file_path || idNums.tin.filePath || null,
                     status: idNums.tin.status === 'Validated' ? 'approved' : 
                             idNums.tin.status === 'Re-submit' ? 'resubmit' :
                             idNums.tin.status === 'Submitted' ? 'pending' : 'missing',
@@ -194,8 +194,8 @@ function HrRequirements() {
                 if (idNums.pagibig) {
                   requirements.pagibig = {
                     idNumber: idNums.pagibig.value || '',
-                    hasFile: false,
-                    filePath: null,
+                    hasFile: !!(idNums.pagibig.file_path || idNums.pagibig.filePath),
+                    filePath: idNums.pagibig.file_path || idNums.pagibig.filePath || null,
                     status: idNums.pagibig.status === 'Validated' ? 'approved' : 
                             idNums.pagibig.status === 'Re-submit' ? 'resubmit' :
                             idNums.pagibig.status === 'Submitted' ? 'pending' : 'missing',
@@ -208,8 +208,8 @@ function HrRequirements() {
                 if (idNums.philhealth) {
                   requirements.philhealth = {
                     idNumber: idNums.philhealth.value || '',
-                    hasFile: false,
-                    filePath: null,
+                    hasFile: !!(idNums.philhealth.file_path || idNums.philhealth.filePath),
+                    filePath: idNums.philhealth.file_path || idNums.philhealth.filePath || null,
                     status: idNums.philhealth.status === 'Validated' ? 'approved' : 
                             idNums.philhealth.status === 'Re-submit' ? 'resubmit' :
                             idNums.philhealth.status === 'Submitted' ? 'pending' : 'missing',
@@ -599,8 +599,10 @@ function HrRequirements() {
     if (isAgency) {
       // Agency employees: count ID number requirements
       const reqs = Object.values(employee.requirements).filter(r => r && typeof r === 'object');
+      // Count files that have been uploaded (hasFile) or are approved
+      const uploaded = reqs.filter(r => r.hasFile || r.status === 'approved' || r.status === 'pending').length;
       const approved = reqs.filter(r => r.status === 'approved').length;
-      return { approved, total: reqs.length || 4 }; // Default to 4 if empty
+      return { approved, uploaded, total: reqs.length || 4 }; // Default to 4 if empty
     } else {
       // Direct applicants: count all sections
       const idNums = employee.requirements.id_numbers || {};
@@ -629,6 +631,15 @@ function HrRequirements() {
       
       const total = idCount + licenseCount + medicalCount + personalCount + clearanceCount + educationalCount + legacyDocCount;
       
+      // Count uploaded files (have file_path or status is Submitted/Validated)
+      const uploadedIds = Object.values(idNums).filter(id => 
+        !!(id?.file_path || id?.filePath) || id?.status === 'Submitted' || id?.status === 'Validated'
+      ).length;
+      const uploadedDocs = documents.filter(doc => 
+        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
+      ).length;
+      const uploaded = uploadedIds + uploadedDocs;
+      
       // Count approved
       const approvedIds = Object.values(idNums).filter(id => id?.status === 'Validated').length;
       const licenseApproved = (license && (getDocStatus(license) === 'approved' || getDocStatus(license) === 'Validated')) ? 1 : 0;
@@ -652,7 +663,7 @@ function HrRequirements() {
       
       const approved = approvedIds + licenseApproved + medicalApproved + personalApproved + clearanceApproved + educationalApproved + legacyDocsApproved;
       
-      return { approved, total };
+      return { approved, uploaded, total };
     }
   };
 
@@ -1397,11 +1408,11 @@ function HrRequirements() {
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-2 bg-gray-200 rounded-full max-w-[80px]">
                                 <div 
-                                  className={`h-2 rounded-full ${progress.approved === progress.total ? 'bg-green-500' : 'bg-yellow-500'}`}
-                                  style={{ width: `${(progress.approved / progress.total) * 100}%` }}
+                                  className={`h-2 rounded-full ${progress.approved === progress.total ? 'bg-green-500' : (progress.uploaded || progress.approved) > 0 ? 'bg-yellow-500' : 'bg-gray-300'}`}
+                                  style={{ width: `${Math.max(((progress.uploaded || progress.approved) / progress.total) * 100, 0)}%` }}
                                 ></div>
                               </div>
-                              <span className="text-xs text-gray-600">{progress.approved}/{progress.total}</span>
+                              <span className="text-xs text-gray-600">{progress.uploaded || progress.approved}/{progress.total}</span>
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -1496,9 +1507,9 @@ function HrRequirements() {
                                                   </div>
                                                 )}
                                                 {reqData.remarks && (
-                                                  <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
-                                                    <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                  <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
+                                                    <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                                     </svg>
                                                     <span>{reqData.remarks}</span>
                                                   </div>
@@ -1605,10 +1616,38 @@ function HrRequirements() {
                                                   ) : (
                                                     <p className="text-xs text-gray-400 italic mt-1">No ID number</p>
                                                   )}
+                                                  {(idData?.file_path || idData?.filePath) && (
+                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                      </svg>
+                                                      {getDocumentUrl(idData.file_path || idData.filePath) ? (
+                                                        <a
+                                                          href={getDocumentUrl(idData.file_path || idData.filePath)}
+                                                          target="_blank"
+                                                          rel="noopener noreferrer"
+                                                          onClick={(e) => e.stopPropagation()}
+                                                          className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                                                        >
+                                                          View File
+                                                        </a>
+                                                      ) : (
+                                                        <span className="text-xs text-gray-500">File uploaded</span>
+                                                      )}
+                                                    </div>
+                                                  )}
+                                                  {idData?.submitted_at && (
+                                                    <div className="flex items-center gap-1.5 mt-1">
+                                                      <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                      </svg>
+                                                      <p className="text-xs text-gray-500">Submitted {formatDate(idData.submitted_at)}</p>
+                                                    </div>
+                                                  )}
                                                   {idRemarks && (
-                                                    <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
-                                                      <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                                    <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
+                                                      <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                                       </svg>
                                                       <span>{idRemarks}</span>
                                                     </div>
@@ -1633,9 +1672,9 @@ function HrRequirements() {
                                                           idRemarks
                                                         );
                                                       }}
-                                                      disabled={!idValue}
+                                                      disabled={!idValue || !(idData?.file_path || idData?.filePath)}
                                                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                                        !idValue
+                                                        !idValue || !(idData?.file_path || idData?.filePath)
                                                           ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                           : 'bg-red-600 text-white hover:bg-red-700'
                                                       }`}
