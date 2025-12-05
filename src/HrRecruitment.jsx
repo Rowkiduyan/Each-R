@@ -2365,13 +2365,17 @@ function HrRecruitment() {
                       // Application step is completed if:
                       // - We're on Assessment or Agreements tab AND
                       // - (Status is screening+ OR an interview has been set)
+                      // Assessment step is completed if:
+                      // - An interview has been scheduled, OR
+                      // - We're on Agreements tab AND status is agreement/hired
                       const isCompleted =
                         (step.key === "Application" && 
                          ["Assessment", "Agreements"].includes(activeDetailTab) &&
                          (["screening", "requirements", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus) || hasInterview)) ||
                         (step.key === "Assessment" && 
-                         activeDetailTab === "Agreements" &&
-                         ["agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus));
+                         (hasInterview || 
+                          (activeDetailTab === "Agreements" &&
+                           ["agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus))));
 
                       return (
                         <button
