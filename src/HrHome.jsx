@@ -30,6 +30,7 @@ function HrHome() {
   const [interviews, setInterviews] = useState([]);
   const [selectedDate, setSelectedDate] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('today'); // 'today', 'tomorrow', 'week'
   const [newInterview, setNewInterview] = useState({
     applicant_name: '',
     position: '',
@@ -144,13 +145,16 @@ function HrHome() {
       // Transform the data to match our component's expected format
       const transformedData = applicationsData.map(app => {
         console.log('Processing app:', app.id, 'payload:', app.payload);
+        // Randomly assign interview type for demo purposes (you can replace this with actual data from payload)
+        const interviewType = Math.random() > 0.5 ? 'online' : 'onsite';
         return {
           id: app.id,
           applicant_name: applicantMap[app.user_id] || 'Unknown Applicant',
           position: app.payload?.job?.title || app.payload?.title || app.payload?.job_title || 'N/A',
           date: app.interview_date,
           time: app.interview_time || 'Not set',
-          status: app.status || 'scheduled'
+          status: app.status || 'scheduled',
+          interview_type: app.payload?.interview_type || interviewType
         };
       });
       
@@ -531,21 +535,222 @@ useEffect(() => {
     ? depotCompliance
     : depotCompliance.slice(0, 5);
 
+  // Get today's interviews sorted by time
+  const getTodayInterviews = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayInterviews = interviews.filter(interview => interview.date === today);
+    
+    // Sort by time
+    return todayInterviews.sort((a, b) => {
+      const timeA = a.time || '00:00';
+      const timeB = b.time || '00:00';
+      return timeA.localeCompare(timeB);
+    });
+  };
+
+  // Get tomorrow's interviews sorted by time
+  const getTomorrowInterviews = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowDate = tomorrow.toISOString().split('T')[0];
+    const tomorrowInterviews = interviews.filter(interview => interview.date === tomorrowDate);
+    
+    // Sort by time
+    return tomorrowInterviews.sort((a, b) => {
+      const timeA = a.time || '00:00';
+      const timeB = b.time || '00:00';
+      return timeA.localeCompare(timeB);
+    });
+  };
+
+  // Get this week's interviews sorted by date and time
+  const getThisWeekInterviews = () => {
+    const today = new Date();
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+    
+    const weekInterviews = interviews.filter(interview => {
+      const interviewDate = new Date(interview.date);
+      return interviewDate >= today && interviewDate <= nextWeek;
+    });
+    
+    // Sort by date then time
+    return weekInterviews.sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) return dateCompare;
+      const timeA = a.time || '00:00';
+      const timeB = b.time || '00:00';
+      return timeA.localeCompare(timeB);
+    });
+  };
+
+  const formatTime = (time24) => {
+    if (!time24 || time24 === 'Not set') return 'Time not set';
+    const [hours, minutes] = time24.split(':');
+    const h = parseInt(hours);
+    const m = minutes || '00';
+    const period = h >= 12 ? 'PM' : 'AM';
+    const displayHour = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${displayHour}:${m} ${period}`;
+  };
+
+  const getActiveInterviews = () => {
+    switch (activeTab) {
+      case 'today':
+        return getTodayInterviews();
+      case 'tomorrow':
+        return getTomorrowInterviews();
+      case 'week':
+        return getThisWeekInterviews();
+      default:
+        return getTodayInterviews();
+    }
+  };
+
+  const getTabTitle = () => {
+    switch (activeTab) {
+      case 'today':
+        return "Today's Interviews";
+      case 'tomorrow':
+        return "Tomorrow's Interviews";
+      case 'week':
+        return "This Week's Interviews";
+      default:
+        return "Today's Interviews";
+    }
+  };
+
+  const getTabDate = () => {
+    const today = new Date();
+    switch (activeTab) {
+      case 'today':
+        return today.toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      case 'tomorrow':
+        const tomorrow = new Date(today);
+        tomorrow.setDate(today.getDate() + 1);
+        return tomorrow.toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        });
+      case 'week':
+        const nextWeek = new Date(today);
+        nextWeek.setDate(today.getDate() + 6);
+        return `${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${nextWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+      default:
+        return '';
+    }
+  };
+
   return (
     <>
-      {/* Welcome Message */}
-      <div className="max-w-7xl mx-auto px-4 mb-8">
-        <div className="bg-white rounded-lg shadow-md p-6">
-            <h2 className="text-2xl font-bold text-black-600 mb-2">
-              Welcome to your Homepage!
-            </h2>
-            <p className="text-gray-700">
-              Here you can manage your HR tasks and view important updates.
-            </p>
-            <p className="mt-3 text-sm text-gray-500">
-              Signed in as: <strong>{hrUser?.email}</strong>
-            </p>
+      {/* Interview Schedule Card - Compact Version */}
+      <div className="max-w-7xl mx-auto px-4 mb-8 mt-6">
+        <div className="max-w-sm ml-6">
+          {/* Interview Schedule */}
+          <div className="bg-white rounded-lg shadow-lg p-3 border-l-4 border-indigo-500 h-[450px] flex flex-col">
+            <h2 className="text-sm font-bold text-gray-800 mb-2">Interview Schedule</h2>
+            
+            {/* Stats Overview */}
+            <div className="grid grid-cols-3 gap-1.5 mb-2">
+              <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded p-1.5 text-white">
+                <p className="text-[10px] opacity-90">Total</p>
+                <p className="text-sm font-bold">{getActiveInterviews().length}</p>
+              </div>
+              <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded p-1.5 text-white">
+                <p className="text-[10px] opacity-90">Online</p>
+                <p className="text-sm font-bold">
+                  {getActiveInterviews().filter(i => i.interview_type === 'online').length}
+                </p>
+              </div>
+              <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded p-1.5 text-white">
+                <p className="text-[10px] opacity-90">Onsite</p>
+                <p className="text-sm font-bold">
+                  {getActiveInterviews().filter(i => i.interview_type === 'onsite').length}
+                </p>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-0.5 mb-2 bg-gray-100 p-0.5 rounded">
+              <button
+                onClick={() => setActiveTab('today')}
+                className={`flex-1 px-2 py-1 font-medium text-[11px] rounded transition-all ${
+                  activeTab === 'today'
+                    ? 'bg-white text-indigo-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setActiveTab('tomorrow')}
+                className={`flex-1 px-2 py-1 font-medium text-[11px] rounded transition-all ${
+                  activeTab === 'tomorrow'
+                    ? 'bg-white text-indigo-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                Tomorrow
+              </button>
+              <button
+                onClick={() => setActiveTab('week')}
+                className={`flex-1 px-2 py-1 font-medium text-[11px] rounded transition-all ${
+                  activeTab === 'week'
+                    ? 'bg-white text-indigo-600 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                Week
+              </button>
+            </div>
+
+            <div className="mb-1.5">
+              <h3 className="text-xs font-bold text-gray-800">{getTabTitle()}</h3>
+              <p className="text-[10px] text-gray-500">{getTabDate()}</p>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto space-y-1.5">
+              {getActiveInterviews().length === 0 ? (
+                <div className="text-center py-8 bg-gray-50 rounded">
+                  <p className="text-xs text-gray-500">No interviews scheduled</p>
+                </div>
+              ) : (
+                getActiveInterviews().map((interview) => (
+                  <div
+                    key={interview.id}
+                    className="bg-gradient-to-r from-gray-50 to-white rounded p-2 cursor-pointer hover:shadow-md transition-all border border-gray-200 hover:border-indigo-300"
+                    onClick={() => navigate('/hr/recruitment', { state: { applicationId: interview.id, openTab: 'Assessment' } })}
+                  >
+                    <div className="flex items-start justify-between mb-0.5">
+                      <div className="font-bold text-gray-900 text-xs">{formatTime(interview.time)}</div>
+                      <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${
+                        interview.interview_type === 'online'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {interview.interview_type === 'online' ? 'ONLINE' : 'ONSITE'}
+                      </span>
+                    </div>
+                    <h4 className="font-semibold text-gray-900 text-[11px] leading-tight">{interview.applicant_name}</h4>
+                    <p className="text-[10px] text-gray-600 truncate">{interview.position}</p>
+                    {activeTab === 'week' && (
+                      <p className="text-[10px] text-gray-500 mt-0.5">
+                        {new Date(interview.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
           </div>
+        </div>
       </div>
 
       {/* Interview Schedules Calendar */}
