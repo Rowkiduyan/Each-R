@@ -48,7 +48,7 @@ function HrEval() {
         setLoading(true);
         const { data, error } = await supabase
           .from("employees")
-          .select("id, fname, lname, mname, position, depot, hired_at");
+          .select("id, fname, lname, mname, position, depot, hired_at, status");
 
         if (error) {
           console.error("Error loading employees for evaluations:", error);
@@ -60,12 +60,20 @@ function HrEval() {
           const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
           const fullName = [lastFirst, emp.mname].filter(Boolean).join(" ");
 
+          // Map status from database to lowercase for UI
+          let employmentType = "regular"; // default
+          if (emp.status === "Probationary") {
+            employmentType = "probationary";
+          } else if (emp.status === "Regular") {
+            employmentType = "regular";
+          }
+
           return {
             id: emp.id,
             name: fullName || "Unnamed employee",
             position: emp.position || "Not set",
             depot: emp.depot || "-",
-            employmentType: "regular",
+            employmentType: employmentType,
             hireDate: emp.hired_at || null,
             lastEvaluation: null,
             nextEvaluation: null,
@@ -133,11 +141,27 @@ function HrEval() {
           nextEvaluation = nextDueDate.toISOString().split('T')[0];
         }
         
+        // Auto-set next_due for probationary employees with no evaluations
+        if (!nextEvaluation && emp.employmentType === "probationary") {
+          const baseDate = emp.hireDate ? new Date(emp.hireDate) : new Date();
+          const threeMonthsLater = new Date(baseDate);
+          threeMonthsLater.setMonth(baseDate.getMonth() + 3);
+          nextEvaluation = threeMonthsLater.toISOString().split('T')[0];
+        }
+        
+        // Auto-set next_due for regular employees with no evaluations
+        if (!nextEvaluation && emp.employmentType === "regular") {
+          const baseDate = emp.hireDate ? new Date(emp.hireDate) : new Date();
+          const oneYearLater = new Date(baseDate);
+          oneYearLater.setFullYear(baseDate.getFullYear() + 1);
+          nextEvaluation = oneYearLater.toISOString().split('T')[0];
+        }
+        
         return {
           ...emp,
           evaluations: empEvaluations,
           lastEvaluation: mostRecent?.date_evaluated || null,
-          employmentType: mostRecent?.type || "regular",
+          employmentType: emp.employmentType, // Keep the status from employees table
           nextEvaluation: nextEvaluation,
         };
       });
@@ -373,7 +397,19 @@ function HrEval() {
       // Capitalize the type to match database constraint (Regular or Probationary)
       const formattedType = typeChangeData.newType.charAt(0).toUpperCase() + typeChangeData.newType.slice(1);
 
-      // If evaluation exists, update it; otherwise, just update local state
+      // Update employees table status column (this is what Employees.jsx reads)
+      const { error: empError } = await supabase
+        .from("employees")
+        .update({ status: formattedType })
+        .eq("id", typeChangeData.employeeId);
+
+      if (empError) {
+        console.error("Error updating employee status:", empError);
+        showAlert(`Failed to update employee status: ${empError.message || 'Unknown error'}`, "error");
+        return;
+      }
+
+      // If evaluation exists, also update it for consistency
       if (typeChangeData.evaluationId) {
         const { data, error } = await supabase
           .from("evaluations")
@@ -385,13 +421,13 @@ function HrEval() {
           .select();
 
         if (error) {
-          console.error("Error updating employee type:", error);
+          console.error("Error updating evaluation type:", error);
           console.error("Error details:", JSON.stringify(error, null, 2));
-          showAlert(`Failed to update employee type: ${error.message || 'Unknown error'}`, "error");
+          showAlert(`Failed to update evaluation type: ${error.message || 'Unknown error'}`, "error");
           return;
         }
 
-        console.log("Update successful:", data);
+        console.log("Evaluation update successful:", data);
       }
 
       // Update local state
@@ -919,6 +955,7 @@ function HrEval() {
                                   min={new Date().toISOString().split('T')[0]}
                                   onChange={(e) => handleUpdateNextDue(employee.id, e.target.value)}
                                   className="text-sm text-gray-800 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
+                                  title={employee.employmentType === "probationary" ? "Automatically set to 90 days when TYPE is Probationary" : "Automatically set to 1 year when TYPE is Regular"}
                                 />
                               </div>
                             </td>
@@ -1620,6 +1657,16 @@ function HrEval() {
                 <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
                   <p><span className="font-medium">Current Type:</span> <span className="capitalize">{typeChangeData.employee?.employmentType}</span></p>
                   <p><span className="font-medium">New Type:</span> <span className="capitalize">{typeChangeData.newType}</span></p>
+                  {typeChangeData.newType === 'probationary' && (
+                    <p className="text-purple-600 mt-2 pt-2 border-t border-gray-200">
+                      <span className="font-medium">Next Due:</span> Will be set to 90 days (3 months) from today
+                    </p>
+                  )}
+                  {typeChangeData.newType === 'regular' && (
+                    <p className="text-blue-600 mt-2 pt-2 border-t border-gray-200">
+                      <span className="font-medium">Next Due:</span> Will be set to 1 year from today
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
