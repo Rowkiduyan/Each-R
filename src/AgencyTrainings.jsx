@@ -252,7 +252,7 @@ function AgencyTrainings() {
   // Generate consistent color based on name
   const getAvatarColor = (name) => {
     const colors = [
-      'from-red-500 to-red-600',
+      'from-[#800000] to-[#990000]',
       'from-blue-500 to-blue-600',
       'from-green-500 to-green-600',
       'from-purple-500 to-purple-600',
@@ -331,7 +331,7 @@ function AgencyTrainings() {
                 Endorsements
               </Link>
               <Link to="/agency/requirements" className="hover:text-gray-900 transition-colors pb-1">Requirements</Link>
-              <button className="pb-1 text-red-600 border-b-2 border-red-600">Trainings/Orientation</button>
+              <button className="pb-1 text-[#800000] border-b-2 border-[#800000]">Trainings/Orientation</button>
               <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
               <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>
             </nav>
@@ -344,7 +344,7 @@ function AgencyTrainings() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
                 </div>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                <span className="absolute -top-1 -right-1 bg-[#800000] text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </div>
               
               {/* User Profile with Dropdown */}
@@ -455,7 +455,7 @@ function AgencyTrainings() {
                 onClick={() => { setActiveTab('upcoming'); setCurrentPage(1); }}
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'upcoming'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -471,7 +471,7 @@ function AgencyTrainings() {
                 onClick={() => { setActiveTab('orientation'); setCurrentPage(1); }}
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'orientation'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -487,7 +487,7 @@ function AgencyTrainings() {
                 onClick={() => { setActiveTab('history'); setCurrentPage(1); }}
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'history'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -514,7 +514,7 @@ function AgencyTrainings() {
                   placeholder="Search by training, location, trainer, or employee name..."
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); setExpandedRow(null); }}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
                 />
               </div>
 
@@ -545,7 +545,7 @@ function AgencyTrainings() {
                   {paginatedData.length > 0 ? paginatedData.map((item) => (
                     <React.Fragment key={item.id}>
                       <tr 
-                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${expandedRow === item.id ? 'bg-red-50/30' : ''}`}
+                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${expandedRow === item.id ? 'bg-[#800000]/10/30' : ''}`}
                         onClick={() => setExpandedRow(expandedRow === item.id ? null : item.id)}
                       >
                         <td className="px-6 py-4">
@@ -784,7 +784,7 @@ function AgencyTrainings() {
                                     attendee.status === 'completed' 
                                       ? `bg-gradient-to-br ${getAvatarColor(attendee.name)}`
                                       : attendee.status === 'absent'
-                                      ? 'bg-red-400'
+                                      ? 'bg-[#990000]'
                                       : 'bg-yellow-400'
                                   }`}
                                   title={`${attendee.name}${attendee.status !== 'completed' ? ` (${attendee.status})` : ''}`}
@@ -805,7 +805,7 @@ function AgencyTrainings() {
                                 <span className="text-xs text-gray-400">
                                   {item.attendees.filter(a => a.status === 'completed').length} completed
                                   {item.attendees.filter(a => a.status === 'absent').length > 0 && (
-                                    <span className="text-red-500"> · {item.attendees.filter(a => a.status === 'absent').length} absent</span>
+                                    <span className="text-[#800000]"> · {item.attendees.filter(a => a.status === 'absent').length} absent</span>
                                   )}
                                   {item.attendees.filter(a => a.status === 'pending').length > 0 && (
                                     <span className="text-yellow-600"> · {item.attendees.filter(a => a.status === 'pending').length} pending</span>
@@ -832,7 +832,7 @@ function AgencyTrainings() {
                                     {item.attendees.filter(a => a.status === 'completed').length} Completed
                                   </span>
                                   {item.attendees.filter(a => a.status === 'absent').length > 0 && (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#800000]/20 text-[#800000]">
                                       {item.attendees.filter(a => a.status === 'absent').length} Absent
                                     </span>
                                   )}
@@ -851,7 +851,7 @@ function AgencyTrainings() {
                                       attendee.status === 'completed' 
                                         ? 'bg-white border-gray-100' 
                                         : attendee.status === 'absent'
-                                        ? 'bg-red-50 border-red-200'
+                                        ? 'bg-[#800000]/10 border-[#800000]/20'
                                         : 'bg-yellow-50 border-yellow-200'
                                     }`}
                                   >
@@ -860,7 +860,7 @@ function AgencyTrainings() {
                                         attendee.status === 'completed'
                                           ? `bg-gradient-to-br ${getAvatarColor(attendee.name)}`
                                           : attendee.status === 'absent'
-                                          ? 'bg-red-400'
+                                          ? 'bg-[#990000]'
                                           : 'bg-yellow-400'
                                       }`}>
                                         {attendee.status === 'absent' ? (
@@ -878,11 +878,11 @@ function AgencyTrainings() {
                                       <div className="min-w-0">
                                         <p className={`text-sm font-medium truncate ${
                                           attendee.status === 'completed' ? 'text-gray-800' : 
-                                          attendee.status === 'absent' ? 'text-red-800' : 'text-yellow-800'
+                                          attendee.status === 'absent' ? 'text-[#800000]' : 'text-yellow-800'
                                         }`}>{attendee.name}</p>
                                         <p className={`text-xs ${
                                           attendee.status === 'completed' ? 'text-gray-500' : 
-                                          attendee.status === 'absent' ? 'text-red-600' : 'text-yellow-600'
+                                          attendee.status === 'absent' ? 'text-[#800000]' : 'text-yellow-600'
                                         }`}>
                                           {attendee.status === 'absent' ? 'Did not attend' : 
                                            attendee.status === 'pending' ? 'Awaiting HR update' : 
@@ -904,7 +904,7 @@ function AgencyTrainings() {
                                         </>
                                       )}
                                       {attendee.status === 'absent' && (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-200">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#800000]/20 text-[#800000] border border-[#800000]/20">
                                           ABSENT
                                         </span>
                                       )}
@@ -965,7 +965,7 @@ function AgencyTrainings() {
                       onClick={() => setCurrentPage(page)}
                       className={`w-8 h-8 text-sm rounded-lg ${
                         currentPage === page
-                          ? 'bg-red-600 text-white'
+                          ? 'bg-[#800000] text-white'
                           : 'text-gray-600 hover:bg-gray-100'
                       }`}
                     >
@@ -1016,7 +1016,7 @@ function AgencyTrainings() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] text-sm font-medium"
                 onClick={handleLogout}
               >
                 Logout

@@ -503,7 +503,7 @@ function AgencyRequirements() {
 
   const getAvatarColor = (name) => {
     const colors = [
-      'from-red-500 to-red-600',
+      'from-[#800000] to-[#990000]',
       'from-blue-500 to-blue-600',
       'from-green-500 to-green-600',
       'from-purple-500 to-purple-600',
@@ -534,7 +534,7 @@ function AgencyRequirements() {
       approved: { bg: 'bg-green-100', text: 'text-green-700', label: 'Approved' },
       pending: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pending' },
       submitted: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Submitted' },
-      resubmit: { bg: 'bg-red-100', text: 'text-red-700', label: 'Re-submit' },
+      resubmit: { bg: 'bg-[#800000]/20', text: 'text-[#800000]', label: 'Re-submit' },
       missing: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Missing' },
     };
     return styles[status] || styles.pending;
@@ -545,7 +545,7 @@ function AgencyRequirements() {
       complete: { text: 'text-green-600', label: 'Complete' },
       pending: { text: 'text-yellow-600', label: 'Pending Review' },
       incomplete: { text: 'text-orange-600', label: 'Incomplete' },
-      action_required: { text: 'text-red-600', label: 'Action Required' },
+      action_required: { text: 'text-[#800000]', label: 'Action Required' },
     };
     return styles[status] || styles.pending;
   };
@@ -838,7 +838,7 @@ function AgencyRequirements() {
               >
                 Endorsements
               </Link>
-              <button className="pb-1 text-red-600 border-b-2 border-red-600">Requirements</button>
+              <button className="pb-1 text-[#800000] border-b-2 border-[#800000]">Requirements</button>
               <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
               <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
               <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>
@@ -852,7 +852,7 @@ function AgencyRequirements() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
                 </div>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                <span className="absolute -top-1 -right-1 bg-[#800000] text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </div>
               
               {/* User Profile with Dropdown */}
@@ -928,13 +928,13 @@ function AgencyRequirements() {
                 <p className="text-sm text-gray-500 font-medium">Action Required</p>
                 <p className="text-2xl font-bold text-gray-800 mt-1">{stats.actionRequired}</p>
               </div>
-              <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-12 h-12 bg-[#800000]/10 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-[#800000]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
             </div>
-            <p className="text-xs text-red-600 mt-3 font-medium">Re-submit required</p>
+            <p className="text-xs text-[#800000] mt-3 font-medium">Re-submit required</p>
           </div>
 
           {/* Incomplete */}
@@ -979,7 +979,7 @@ function AgencyRequirements() {
                 onClick={() => { setActiveTab('all'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'all'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -989,52 +989,52 @@ function AgencyRequirements() {
                 onClick={() => { setActiveTab('action_required'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'action_required'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Action Required
                 {unviewedCounts.action_required > 0 && (
-                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
               </button>
               <button
                 onClick={() => { setActiveTab('incomplete'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'incomplete'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Incomplete
                 {unviewedCounts.incomplete > 0 && (
-                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
               </button>
               <button
                 onClick={() => { setActiveTab('pending'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'pending'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Pending Review
                 {unviewedCounts.pending > 0 && (
-                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
               </button>
               <button
                 onClick={() => { setActiveTab('complete'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'complete'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Complete
                 {unviewedCounts.complete > 0 && (
-                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
               </button>
             </div>
@@ -1053,7 +1053,7 @@ function AgencyRequirements() {
                   placeholder="Search by employee name, position, or depot..."
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); setExpandedRow(null); }}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
                 />
               </div>
 
@@ -1070,7 +1070,7 @@ function AgencyRequirements() {
           {/* Loading State */}
           {loading && (
             <div className="px-6 py-12 text-center">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-[#800000]"></div>
               <p className="text-sm text-gray-500 mt-3">Loading employees...</p>
             </div>
           )}
@@ -1078,10 +1078,10 @@ function AgencyRequirements() {
           {/* Error State */}
           {error && !loading && (
             <div className="px-6 py-12 text-center">
-              <svg className="w-12 h-12 text-red-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-12 h-12 text-[#800000]/30 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
-              <p className="font-medium text-red-600">Error loading employees</p>
+              <p className="font-medium text-[#800000]">Error loading employees</p>
               <p className="text-sm text-gray-500 mt-1">{error}</p>
             </div>
           )}
@@ -1112,7 +1112,7 @@ function AgencyRequirements() {
                       <tr 
                         className={`transition-colors cursor-pointer ${
                           expandedRow === employee.id 
-                            ? 'bg-red-50/30' 
+                            ? 'bg-[#800000]/10/30' 
                             : isUnviewed 
                               ? 'bg-blue-50/60 hover:bg-blue-100/60' 
                               : 'hover:bg-gray-50/50'
@@ -1131,7 +1131,7 @@ function AgencyRequirements() {
                                 {getInitials(employee.name)}
                               </div>
                               {isUnviewed && (
-                                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
+                                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[#800000] rounded-full border-2 border-white"></span>
                               )}
                             </div>
                             <div>
@@ -1165,7 +1165,7 @@ function AgencyRequirements() {
                             <div className="flex items-center gap-2">
                               <span className="text-sm text-gray-800">{employee.hrRequests.length}</span>
                               {pendingHrRequests > 0 && (
-                                <span className="text-xs px-1.5 py-0.5 bg-red-100 text-red-700 rounded-full font-medium">{pendingHrRequests} pending</span>
+                                <span className="text-xs px-1.5 py-0.5 bg-[#800000]/20 text-[#800000] rounded-full font-medium">{pendingHrRequests} pending</span>
                               )}
                             </div>
                           ) : (
@@ -1213,7 +1213,7 @@ function AgencyRequirements() {
                                         key={req.key} 
                                         className={`p-4 rounded-xl border-2 transition-all ${
                                           data.status === 'resubmit' 
-                                            ? 'bg-red-50 border-red-200 shadow-sm' 
+                                            ? 'bg-[#800000]/10 border-[#800000]/20 shadow-sm' 
                                             : data.status === 'missing' 
                                               ? 'bg-orange-50/50 border-orange-200 border-dashed' 
                                               : data.status === 'approved'
@@ -1264,7 +1264,7 @@ function AgencyRequirements() {
                                               </div>
                                             )}
                                             {data.remarks && (
-                                              <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
+                                              <div className="mt-2 p-2 bg-[#800000]/20/80 rounded-lg text-xs text-[#800000] flex items-start gap-1.5">
                                                 <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                                 </svg>
@@ -1284,7 +1284,7 @@ function AgencyRequirements() {
                                                 }}
                                                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                                   data.status === 'resubmit'
-                                                    ? 'bg-red-600 text-white hover:bg-red-700'
+                                                    ? 'bg-[#800000] text-white hover:bg-[#990000]'
                                                     : 'bg-blue-600 text-white hover:bg-blue-700'
                                                 }`}
                                               >
@@ -1330,7 +1330,7 @@ function AgencyRequirements() {
                                           key={req.id} 
                                           className={`p-4 rounded-xl border-2 transition-all ${
                                             req.status === 'resubmit' 
-                                              ? 'bg-red-50 border-red-200 shadow-sm' 
+                                              ? 'bg-[#800000]/10 border-[#800000]/20 shadow-sm' 
                                               : req.status === 'pending'
                                                 ? 'bg-orange-50/50 border-orange-200 border-dashed'
                                                 : req.status === 'approved'
@@ -1343,7 +1343,7 @@ function AgencyRequirements() {
                                               <div className="flex items-center gap-2 mb-1">
                                                 <p className="text-sm font-semibold text-gray-800">{req.document}</p>
                                                 {req.priority === 'high' && (
-                                                  <span className="text-xs px-2 py-0.5 bg-red-100 text-red-700 rounded-full font-semibold">Urgent</span>
+                                                  <span className="text-xs px-2 py-0.5 bg-[#800000]/20 text-[#800000] rounded-full font-semibold">Urgent</span>
                                                 )}
                                               </div>
                                               <div className="flex items-center gap-1.5 mt-1">
@@ -1353,7 +1353,7 @@ function AgencyRequirements() {
                                                 <p className="text-xs text-gray-500">Deadline: <span className="font-medium">{formatDate(req.deadline)}</span></p>
                                               </div>
                                               {req.remarks && (
-                                                <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
+                                                <div className="mt-2 p-2 bg-[#800000]/20/80 rounded-lg text-xs text-[#800000] flex items-start gap-1.5">
                                                   <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                                   </svg>
@@ -1373,7 +1373,7 @@ function AgencyRequirements() {
                                                   }}
                                                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                                     req.status === 'resubmit'
-                                                      ? 'bg-red-600 text-white hover:bg-red-700'
+                                                      ? 'bg-[#800000] text-white hover:bg-[#990000]'
                                                       : 'bg-blue-600 text-white hover:bg-blue-700'
                                                   }`}
                                                 >
@@ -1510,7 +1510,7 @@ function AgencyRequirements() {
               <div className="mt-4">
                 <button 
                   type="button" 
-                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]" 
                   onClick={() => setShowSuccessAlert(false)}
                 >
                   Close
@@ -1527,8 +1527,8 @@ function AgencyRequirements() {
           <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
             <div className="p-6 text-center">
               <div className="flex items-center justify-center mb-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-red-600">
+                <div className="w-10 h-10 rounded-full bg-[#800000]/20 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-[#800000]">
                     <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
                   </svg>
                 </div>
@@ -1537,7 +1537,7 @@ function AgencyRequirements() {
               <div className="mt-4">
                 <button 
                   type="button" 
-                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]" 
                   onClick={() => setShowErrorAlert(false)}
                 >
                   Close
@@ -1574,7 +1574,7 @@ function AgencyRequirements() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] text-sm font-medium"
                 onClick={handleLogout}
               >
                 Logout
@@ -1595,7 +1595,7 @@ function AgencyRequirements() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className={`p-5 ${uploadTarget.isResubmit ? 'bg-gradient-to-r from-red-500 to-red-600' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
+            <div className={`p-5 ${uploadTarget.isResubmit ? 'bg-gradient-to-r from-[#800000] to-[#990000]' : 'bg-gradient-to-r from-blue-500 to-blue-600'}`}>
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${uploadTarget.isResubmit ? 'bg-red-400/30' : 'bg-blue-400/30'}`}>
@@ -1752,7 +1752,7 @@ function AgencyRequirements() {
                 className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
                   !uploading && uploadForm.file && (uploadTarget.type !== 'default' || uploadForm.idNumber.trim())
                     ? uploadTarget.isResubmit
-                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      ? 'bg-[#800000] text-white hover:bg-[#990000]'
                       : 'bg-blue-600 text-white hover:bg-blue-700'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}

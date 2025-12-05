@@ -279,7 +279,7 @@ function AgencyHome() {
               <button
                 type="button"
                 onClick={() => navigate("/agency/home")}
-                className="pb-1 text-red-600 border-b-2 border-red-600"
+                className="pb-1 text-[#800000] border-b-2 border-[#800000]"
               >
                 Home
               </button>
@@ -329,7 +329,7 @@ function AgencyHome() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
                 </div>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                <span className="absolute -top-1 -right-1 bg-[#800000] text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </div>
               
               {/* User Profile with Dropdown */}
@@ -426,7 +426,7 @@ function AgencyHome() {
                     <div className="flex items-center pr-4">
                       <button
                         type="submit"
-                        className="bg-red-600 text-white px-5 py-2 text-base font-semibold rounded-xl hover:bg-red-700 transition-colors"
+                        className="bg-[#800000] text-white px-5 py-2 text-base font-semibold rounded-xl hover:bg-[#990000] transition-colors"
                         aria-label="Find jobs"
                       >
                         Find Jobs
@@ -457,7 +457,7 @@ function AgencyHome() {
               {jobsLoading ? (
                 <div className="text-gray-600">Loading job postings…</div>
               ) : jobsError ? (
-                <div className="text-red-600">Error loading job posts: {jobsError}</div>
+                <div className="text-[#800000]">Error loading job posts: {jobsError}</div>
               ) : jobCards.length === 0 ? (
                 <div className="text-gray-600">No job postings available.</div>
               ) : filteredJobs.length === 0 ? (
@@ -480,12 +480,12 @@ function AgencyHome() {
                             <div
                               key={job.id}
                               className={`bg-white rounded-lg shadow-md p-6 flex flex-col relative overflow-hidden cursor-pointer transition-colors ${
-                                isSelected ? 'border-2 border-red-600' : 'border border-transparent'
+                                isSelected ? 'border-2 border-[#800000]' : 'border border-transparent'
                               } hover:bg-gray-100`}
                               onClick={() => handleCardSelect(job)}
                             >
                               {job.urgent !== false && (
-                                <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1">
+                                <div className="absolute top-0 left-0 bg-[#800000] text-white text-xs font-bold px-4 py-1">
                                   URGENT HIRING!
                                 </div>
                               )}
@@ -506,14 +506,14 @@ function AgencyHome() {
                       <div className="bg-white rounded-lg shadow-md p-6 space-y-4 max-h-[70vh] overflow-y-auto">
                         <div className="space-y-3">
                           {selectedJob.urgent !== false && (
-                            <div className="inline-block px-4 py-1 rounded bg-red-100 text-red-700 text-2xl font-semibold">
+                            <div className="inline-block px-4 py-1 rounded bg-[#800000]/20 text-[#800000] text-2xl font-semibold">
                               Urgent Hiring
                             </div>
                           )}
                           <div className="flex items-start justify-between gap-4">
                             <h2 className="text-2xl font-bold text-gray-800">{selectedJob.title}</h2>
                             <button
-                              className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+                              className="px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors"
                               onClick={() => handleEndorseNavigate(selectedJob)}
                             >
                               Endorse
@@ -521,7 +521,7 @@ function AgencyHome() {
                           </div>
                           <div className="text-sm text-gray-600 flex flex-col gap-1">
                             <div className="flex items-center gap-2">
-                              <span className="inline-flex items-center justify-center w-5 h-5 text-red-600">
+                              <span className="inline-flex items-center justify-center w-5 h-5 text-[#800000]">
                                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
                                   <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5s2.5 1.12 2.5 2.5S13.38 11.5 12 11.5z" />
                                 </svg>
@@ -557,7 +557,7 @@ function AgencyHome() {
                       onClick={() => handleCardSelect(job)}
                     >
                       {job.urgent !== false && (
-                        <div className="absolute top-0 left-0 bg-red-600 text-white text-xs font-bold px-4 py-1">
+                        <div className="absolute top-0 left-0 bg-[#800000] text-white text-xs font-bold px-4 py-1">
                           URGENT HIRING!
                         </div>
                       )}
@@ -584,7 +584,7 @@ function AgencyHome() {
             {hiredLoading ? (
               <div className="p-6 text-gray-600">Loading hired employees…</div>
             ) : hiredError ? (
-              <div className="p-4 bg-red-50 text-red-700 rounded">{hiredError}</div>
+              <div className="p-4 bg-[#800000]/10 text-[#800000] rounded">{hiredError}</div>
             ) : hiredEmployees.length === 0 ? (
               <div className="p-6 text-gray-600">No hired employees yet.</div>
             ) : (
@@ -650,7 +650,7 @@ function AgencyHome() {
 
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <button onClick={() => setShowJobModal(false)} className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors">Close</button>
-                <button onClick={() => { setShowJobModal(false); navigate("/agency/endorse", { state: { job: selectedJob } }); }} className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors">
+                <button onClick={() => { setShowJobModal(false); navigate("/agency/endorse", { state: { job: selectedJob } }); }} className="px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors">
                   Endorse Employee
                 </button>
               </div>
@@ -673,7 +673,7 @@ function AgencyHome() {
                 <div className="flex items-center gap-3">
                   <h2 className="text-2xl font-bold">{selectedHiredEmployee.name}</h2>
                   <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 align-middle">
-                    <span className="text-red-500">⚑</span> Agency
+                    <span className="text-[#800000]">⚑</span> Agency
                   </span>
                 </div>
                 <span className="text-gray-500">ID: {selectedHiredEmployee.id}</span>
@@ -717,7 +717,7 @@ function AgencyHome() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]"
                 onClick={handleLogout}
               >
                 Logout

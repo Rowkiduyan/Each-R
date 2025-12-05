@@ -1,6 +1,7 @@
 // src/EmployeeRequirements.jsx
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useEmployeeUser } from "./layouts/EmployeeLayout";
+import { supabase } from "./supabaseClient";
 
 function EmployeeRequirements() {
   const { employeeData } = useEmployeeUser();
@@ -195,10 +196,18 @@ function EmployeeRequirements() {
     };
   });
 
-  // UI-only helper: fake public URL (we won't really open anything)
+  // Get public URL for uploaded files
   const getFileUrl = (filePath) => {
     if (!filePath) return null;
-    return "#";
+    try {
+      const { data } = supabase.storage
+        .from('application-files')
+        .getPublicUrl(filePath);
+      return data?.publicUrl || null;
+    } catch (err) {
+      console.error('Error getting file URL:', err);
+      return null;
+    }
   };
 
   const formatDate = (dateStr) => {
@@ -244,6 +253,196 @@ function EmployeeRequirements() {
     date.setHours(0, 0, 0, 0);
     return date < today;
   };
+
+  // Load employee requirements from database on mount and when employeeData changes
+  useEffect(() => {
+    const loadEmployeeRequirements = async () => {
+      if (!employeeData?.email) return;
+
+      try {
+        // Get employee record with requirements
+        const { data: employeeRecord, error } = await supabase
+          .from('employees')
+          .select('requirements, position, depot, hired_at')
+          .eq('email', employeeData.email)
+          .single();
+
+        if (error && error.code !== 'PGRST116') { // PGRST116 = no rows returned
+          console.error('Error loading employee requirements:', error);
+          return;
+        }
+
+        if (!employeeRecord?.requirements) return;
+
+        // Parse requirements
+        let requirementsData = employeeRecord.requirements;
+        if (typeof requirementsData === 'string') {
+          try {
+            requirementsData = JSON.parse(requirementsData);
+          } catch {
+            return;
+          }
+        }
+
+        // Map database structure to local state structure
+        setEmployee((prev) => {
+          const updated = { ...prev };
+          
+          // Update position and depot if available
+          if (employeeRecord.position) updated.position = employeeRecord.position;
+          if (employeeRecord.depot) updated.depot = employeeRecord.depot;
+          if (employeeRecord.hired_at) updated.deployedDate = employeeRecord.hired_at;
+
+          // Map ID numbers
+          if (requirementsData.id_numbers) {
+            const idNums = requirementsData.id_numbers;
+            
+            ['sss', 'tin', 'pagibig', 'philhealth'].forEach(key => {
+              if (idNums[key]) {
+                const idData = idNums[key];
+                updated.requirements[key] = {
+                  idNumber: idData.value || '',
+                  hasFile: !!(idData.file_path || idData.filePath),
+                  filePath: idData.file_path || idData.filePath || null,
+                  status: idData.status === 'Validated' ? 'approved' :
+                          idData.status === 'Re-submit' ? 'resubmit' :
+                          idData.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: idData.submitted_at || idData.validated_at || null,
+                  remarks: idData.remarks || null,
+                };
+              }
+            });
+          }
+
+          // Map documents
+          if (requirementsData.documents && Array.isArray(requirementsData.documents)) {
+            requirementsData.documents.forEach(doc => {
+              if (doc.key && updated.documents[doc.key]) {
+                updated.documents[doc.key] = {
+                  hasFile: !!(doc.file_path || doc.filePath),
+                  filePath: doc.file_path || doc.filePath || null,
+                  status: doc.status === 'Validated' ? 'approved' :
+                          doc.status === 'Re-submit' ? 'resubmit' :
+                          doc.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: doc.submitted_at || doc.validated_at || null,
+                  dateValidity: doc.date_validity || null,
+                  remarks: doc.remarks || null,
+                };
+              }
+            });
+          }
+
+          // Map medical exams
+          if (requirementsData.medicalExams) {
+            Object.keys(requirementsData.medicalExams).forEach(key => {
+              if (updated.medicalExams[key]) {
+                const medData = requirementsData.medicalExams[key];
+                updated.medicalExams[key] = {
+                  ...updated.medicalExams[key],
+                  hasFile: !!(medData.file_path || medData.filePath),
+                  filePath: medData.file_path || medData.filePath || null,
+                  status: medData.status === 'Validated' ? 'approved' :
+                          medData.status === 'Re-submit' ? 'resubmit' :
+                          medData.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: medData.submitted_at || medData.validated_at || null,
+                  validUntil: medData.validUntil || medData.valid_until || null,
+                  remarks: medData.remarks || null,
+                  versions: medData.versions || [],
+                  currentVersion: medData.currentVersion || null,
+                };
+              }
+            });
+          }
+
+          // Map personal documents
+          if (requirementsData.personalDocuments) {
+            Object.keys(requirementsData.personalDocuments).forEach(key => {
+              if (updated.personalDocuments[key]) {
+                const docData = requirementsData.personalDocuments[key];
+                updated.personalDocuments[key] = {
+                  ...updated.personalDocuments[key],
+                  hasFile: !!(docData.file_path || docData.filePath),
+                  filePath: docData.file_path || docData.filePath || null,
+                  status: docData.status === 'Validated' ? 'approved' :
+                          docData.status === 'Re-submit' ? 'resubmit' :
+                          docData.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: docData.submitted_at || docData.validated_at || null,
+                  remarks: docData.remarks || null,
+                };
+              }
+            });
+          }
+
+          // Map clearances
+          if (requirementsData.clearances) {
+            Object.keys(requirementsData.clearances).forEach(key => {
+              if (updated.clearances[key]) {
+                const clearData = requirementsData.clearances[key];
+                updated.clearances[key] = {
+                  ...updated.clearances[key],
+                  hasFile: !!(clearData.file_path || clearData.filePath),
+                  filePath: clearData.file_path || clearData.filePath || null,
+                  status: clearData.status === 'Validated' ? 'approved' :
+                          clearData.status === 'Re-submit' ? 'resubmit' :
+                          clearData.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: clearData.submitted_at || clearData.validated_at || null,
+                  dateValidity: clearData.dateValidity || clearData.date_validity || null,
+                  remarks: clearData.remarks || null,
+                  versions: clearData.versions || [],
+                  currentVersion: clearData.currentVersion || null,
+                };
+              }
+            });
+          }
+
+          // Map educational documents
+          if (requirementsData.educationalDocuments) {
+            Object.keys(requirementsData.educationalDocuments).forEach(key => {
+              if (updated.educationalDocuments[key]) {
+                const eduData = requirementsData.educationalDocuments[key];
+                updated.educationalDocuments[key] = {
+                  ...updated.educationalDocuments[key],
+                  hasFile: !!(eduData.file_path || eduData.filePath),
+                  filePath: eduData.file_path || eduData.filePath || null,
+                  status: eduData.status === 'Validated' ? 'approved' :
+                          eduData.status === 'Re-submit' ? 'resubmit' :
+                          eduData.status === 'Submitted' ? 'pending' : 'missing',
+                  submittedDate: eduData.submitted_at || eduData.validated_at || null,
+                  remarks: eduData.remarks || null,
+                };
+              }
+            });
+          }
+
+          // Map license
+          if (requirementsData.license) {
+            const licenseData = requirementsData.license;
+            updated.license = {
+              ...updated.license,
+              licenseNumber: licenseData.licenseNumber || licenseData.license_number || '',
+              licenseExpiry: licenseData.licenseExpiry || licenseData.license_expiry || '',
+              frontFilePath: licenseData.frontFilePath || licenseData.front_file_path || null,
+              backFilePath: licenseData.backFilePath || licenseData.back_file_path || null,
+              hasFile: !!(licenseData.frontFilePath || licenseData.front_file_path) && !!(licenseData.backFilePath || licenseData.back_file_path),
+              status: licenseData.status === 'Validated' ? 'approved' :
+                      licenseData.status === 'Re-submit' ? 'resubmit' :
+                      licenseData.status === 'Submitted' ? 'pending' : 'missing',
+              submittedDate: licenseData.submitted_at || licenseData.validated_at || null,
+              remarks: licenseData.remarks || null,
+              versions: licenseData.versions || [],
+              currentVersion: licenseData.currentVersion || null,
+            };
+          }
+
+          return updated;
+        });
+      } catch (err) {
+        console.error('Error loading employee requirements:', err);
+      }
+    };
+
+    loadEmployeeRequirements();
+  }, [employeeData?.email]);
 
   const getStatusStyle = (status) => {
     const styles = {
@@ -574,57 +773,134 @@ function EmployeeRequirements() {
 
     setUploading(true);
 
-    // Simulate a successful upload by updating local state only
-    setTimeout(() => {
-      setEmployee((prev) => {
-        if (!prev) return prev;
+    // Actually save to database
+    (async () => {
+      try {
+        if (!employeeData?.email) {
+          setAlertMessage("Employee email not found. Please refresh the page.");
+          setShowErrorAlert(true);
+          setUploading(false);
+          return;
+        }
+
+        // Get current employee requirements from database
+        const { data: employeeRecord, error: fetchError } = await supabase
+          .from('employees')
+          .select('requirements')
+          .eq('email', employeeData.email)
+          .single();
+
+        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 = no rows returned
+          console.error('Error fetching employee:', fetchError);
+          setAlertMessage("Failed to load employee data. Please try again.");
+          setShowErrorAlert(true);
+          setUploading(false);
+          return;
+        }
+
+        // Parse existing requirements
+        let currentRequirements = {};
+        if (employeeRecord?.requirements) {
+          if (typeof employeeRecord.requirements === 'string') {
+            try {
+              currentRequirements = JSON.parse(employeeRecord.requirements);
+            } catch {
+              currentRequirements = {};
+            }
+          } else {
+            currentRequirements = employeeRecord.requirements;
+          }
+        }
+
+        // Initialize structure if needed
+        if (!currentRequirements.id_numbers) currentRequirements.id_numbers = {};
+        if (!currentRequirements.documents) currentRequirements.documents = [];
+        if (!currentRequirements.medicalExams) currentRequirements.medicalExams = {};
+        if (!currentRequirements.personalDocuments) currentRequirements.personalDocuments = {};
+        if (!currentRequirements.clearances) currentRequirements.clearances = {};
+        if (!currentRequirements.educationalDocuments) currentRequirements.educationalDocuments = {};
+        if (!currentRequirements.license) currentRequirements.license = {};
+
+        // Prepare updated requirements structure
         const updated = {
-          ...prev,
-          requirements: { ...prev.requirements },
-          documents: { ...(prev.documents || {}) },
-          medicalExams: { ...(prev.medicalExams || {}) },
-          personalDocuments: { ...(prev.personalDocuments || {}) },
-          clearances: { ...(prev.clearances || {}) },
-          educationalDocuments: { ...(prev.educationalDocuments || {}) },
-          license: { ...(prev.license || {}) },
+          ...currentRequirements,
+          id_numbers: { ...currentRequirements.id_numbers },
+          documents: [...(currentRequirements.documents || [])],
+          medicalExams: { ...currentRequirements.medicalExams },
+          personalDocuments: { ...currentRequirements.personalDocuments },
+          clearances: { ...currentRequirements.clearances },
+          educationalDocuments: { ...currentRequirements.educationalDocuments },
+          license: { ...currentRequirements.license },
         };
 
+        // Helper function to upload file to storage
+        const uploadFileToStorage = async (file, folder, fileName) => {
+          if (!file) return null;
+          const fileExt = file.name.split('.').pop();
+          const filePath = `${folder}/${employeeData.email}/${fileName}_${Date.now()}.${fileExt}`;
+          
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('application-files')
+            .upload(filePath, file, { upsert: false });
+          
+          if (uploadError) {
+            console.error('File upload error:', uploadError);
+            throw new Error(`Failed to upload file: ${uploadError.message}`);
+          }
+          
+          return filePath;
+        };
+
+        // Upload files and update requirements based on type
         if (uploadTarget.type === "default") {
           const key = uploadTarget.key;
-          const current = updated.requirements[key] || {
-            idNumber: "",
-            hasFile: false,
-            filePath: null,
-            status: "missing",
-            submittedDate: null,
-          };
+          
+          // Upload file
+          const filePath = await uploadFileToStorage(
+            uploadForm.file,
+            'employee-requirements',
+            `${key}_id`
+          );
 
-          updated.requirements[key] = {
-            ...current,
-            idNumber: uploadForm.idNumber.trim(),
-            hasFile: true,
-            filePath: "local-file-path",
-            status: uploadTarget.isResubmit ? "pending" : "pending",
-            submittedDate: new Date().toISOString(),
+          // Update id_numbers structure (this is what HR reads)
+          if (!updated.id_numbers[key]) {
+            updated.id_numbers[key] = {};
+          }
+          
+          updated.id_numbers[key] = {
+            ...updated.id_numbers[key],
+            value: uploadForm.idNumber.trim(),
+            status: "Submitted", // Set to Submitted for HR to validate
+            submitted_at: new Date().toISOString(),
+            file_path: filePath,
           };
         } else if (uploadTarget.type === "document") {
           const key = uploadTarget.key;
-          const currentDoc = updated.documents[key] || {
-            hasFile: false,
-            filePath: null,
-            status: "missing",
-            submittedDate: null,
-            dateValidity: null,
+          
+          // Upload file
+          const filePath = await uploadFileToStorage(
+            uploadForm.file,
+            'employee-requirements',
+            `doc_${key}`
+          );
+
+          // Find or create document in documents array
+          const docIndex = updated.documents.findIndex(d => d.key === key);
+          const docData = {
+            key: key,
+            name: uploadTarget.name,
+            file_path: filePath,
+            status: "Submitted", // Set to Submitted for HR to validate
+            submitted_at: new Date().toISOString(),
+            date_validity: null,
             remarks: null,
           };
 
-          updated.documents[key] = {
-            ...currentDoc,
-            hasFile: true,
-            filePath: "local-file-path",
-            status: uploadTarget.isResubmit ? "pending" : "pending",
-            submittedDate: new Date().toISOString(),
-          };
+          if (docIndex >= 0) {
+            updated.documents[docIndex] = { ...updated.documents[docIndex], ...docData };
+          } else {
+            updated.documents.push(docData);
+          }
         } else if (uploadTarget.type === "medical") {
           const key = uploadTarget.key;
           const currentMedical = updated.medicalExams[key] || {
@@ -758,34 +1034,135 @@ function EmployeeRequirements() {
             currentLicense.versions = [...(currentLicense.versions || []), versionToSave];
           }
 
+          // Upload front file if provided
+          let frontFilePath = currentLicense.frontFilePath;
+          if (uploadForm.frontFile) {
+            frontFilePath = await uploadFileToStorage(
+              uploadForm.frontFile,
+              'employee-requirements',
+              'license_front'
+            );
+          }
+
+          // Upload back file if provided
+          let backFilePath = currentLicense.backFilePath;
+          if (uploadForm.backFile) {
+            backFilePath = await uploadFileToStorage(
+              uploadForm.backFile,
+              'employee-requirements',
+              'license_back'
+            );
+          }
+
           updated.license = {
             ...currentLicense,
             licenseNumber: uploadForm.licenseNumber.trim(),
             licenseExpiry: uploadForm.licenseExpiry.trim(),
             frontFile: uploadForm.frontFile,
-            frontFilePath: uploadForm.frontFile ? "local-file-path-front" : currentLicense.frontFilePath,
+            frontFilePath: frontFilePath,
             backFile: uploadForm.backFile,
-            backFilePath: uploadForm.backFile ? "local-file-path-back" : currentLicense.backFilePath,
+            backFilePath: backFilePath,
             status: "pending", // Always set to pending for HR review (whether renewal, resubmit, or new upload)
             submittedDate: new Date().toISOString(),
-            hasFile: uploadForm.frontFile && uploadForm.backFile,
+            hasFile: !!(frontFilePath && backFilePath),
             currentVersion: uploadTarget.isRenewal ? (currentLicense.versions?.length || 0) : currentLicense.currentVersion,
             remarks: null, // Clear any previous remarks when submitting a renewal
           };
         }
 
-        return updated;
-      });
+        // Save updated requirements to database
+        const { error: saveError } = await supabase
+          .from('employees')
+          .update({ requirements: updated })
+          .eq('email', employeeData.email);
 
-      setUploading(false);
-      closeUploadModal();
-      setAlertMessage(
-        uploadTarget.isRenewal 
-          ? `${uploadTarget.name} renewal submitted successfully! Previous version has been archived. The renewed document is now pending HR review and approval.`
-          : `${uploadTarget.name} ${uploadTarget.isResubmit ? "re-submitted" : "uploaded"} successfully! The document is now pending HR review.`
-      );
-      setShowSuccessAlert(true);
-    }, 600);
+        if (saveError) {
+          console.error('Error saving requirements:', saveError);
+          setAlertMessage("Failed to save requirements. Please try again.");
+          setShowErrorAlert(true);
+          setUploading(false);
+          return;
+        }
+
+        // Update local state to reflect changes
+        setEmployee((prev) => {
+          if (!prev) return prev;
+          // Reload from the updated structure
+          return {
+            ...prev,
+            requirements: updated.id_numbers ? {
+              sss: updated.id_numbers.sss ? {
+                idNumber: updated.id_numbers.sss.value || '',
+                hasFile: !!updated.id_numbers.sss.file_path,
+                filePath: updated.id_numbers.sss.file_path,
+                status: updated.id_numbers.sss.status === 'Validated' ? 'approved' : 
+                        updated.id_numbers.sss.status === 'Re-submit' ? 'resubmit' :
+                        updated.id_numbers.sss.status === 'Submitted' ? 'pending' : 'missing',
+                submittedDate: updated.id_numbers.sss.submitted_at,
+                remarks: updated.id_numbers.sss.remarks,
+              } : prev.requirements.sss,
+              tin: updated.id_numbers.tin ? {
+                idNumber: updated.id_numbers.tin.value || '',
+                hasFile: !!updated.id_numbers.tin.file_path,
+                filePath: updated.id_numbers.tin.file_path,
+                status: updated.id_numbers.tin.status === 'Validated' ? 'approved' : 
+                        updated.id_numbers.tin.status === 'Re-submit' ? 'resubmit' :
+                        updated.id_numbers.tin.status === 'Submitted' ? 'pending' : 'missing',
+                submittedDate: updated.id_numbers.tin.submitted_at,
+                remarks: updated.id_numbers.tin.remarks,
+              } : prev.requirements.tin,
+              pagibig: updated.id_numbers.pagibig ? {
+                idNumber: updated.id_numbers.pagibig.value || '',
+                hasFile: !!updated.id_numbers.pagibig.file_path,
+                filePath: updated.id_numbers.pagibig.file_path,
+                status: updated.id_numbers.pagibig.status === 'Validated' ? 'approved' : 
+                        updated.id_numbers.pagibig.status === 'Re-submit' ? 'resubmit' :
+                        updated.id_numbers.pagibig.status === 'Submitted' ? 'pending' : 'missing',
+                submittedDate: updated.id_numbers.pagibig.submitted_at,
+                remarks: updated.id_numbers.pagibig.remarks,
+              } : prev.requirements.pagibig,
+              philhealth: updated.id_numbers.philhealth ? {
+                idNumber: updated.id_numbers.philhealth.value || '',
+                hasFile: !!updated.id_numbers.philhealth.file_path,
+                filePath: updated.id_numbers.philhealth.file_path,
+                status: updated.id_numbers.philhealth.status === 'Validated' ? 'approved' : 
+                        updated.id_numbers.philhealth.status === 'Re-submit' ? 'resubmit' :
+                        updated.id_numbers.philhealth.status === 'Submitted' ? 'pending' : 'missing',
+                submittedDate: updated.id_numbers.philhealth.submitted_at,
+                remarks: updated.id_numbers.philhealth.remarks,
+              } : prev.requirements.philhealth,
+            } : prev.requirements,
+            documents: updated.documents ? updated.documents.reduce((acc, doc) => {
+              acc[doc.key] = {
+                hasFile: !!doc.file_path,
+                filePath: doc.file_path,
+                status: doc.status === 'Validated' ? 'approved' : 
+                        doc.status === 'Re-submit' ? 'resubmit' :
+                        doc.status === 'Submitted' ? 'pending' : 'missing',
+                submittedDate: doc.submitted_at,
+                dateValidity: doc.date_validity,
+                remarks: doc.remarks,
+              };
+              return acc;
+            }, {}) : prev.documents,
+          };
+        });
+
+        setUploading(false);
+        closeUploadModal();
+        setAlertMessage(
+          uploadTarget.isRenewal 
+            ? `${uploadTarget.name} renewal submitted successfully! Previous version has been archived. The renewed document is now pending HR review and approval.`
+            : `${uploadTarget.name} ${uploadTarget.isResubmit ? "re-submitted" : "uploaded"} successfully! The document is now pending HR review.`
+        );
+        setShowSuccessAlert(true);
+      } catch (err) {
+        console.error('Upload error:', err);
+        setAlertMessage(err.message || "Failed to upload file. Please try again.");
+        setShowErrorAlert(true);
+        setUploading(false);
+      }
+    })();
   };
 
   const formatFileSize = (bytes) => {
@@ -1021,9 +1398,9 @@ function EmployeeRequirements() {
                           </div>
                         )}
                         {data.remarks && (
-                          <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
-                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
+                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             <span>{data.remarks}</span>
                           </div>
@@ -1254,9 +1631,9 @@ function EmployeeRequirements() {
                     </div>
 
                     {licenseData.remarks && (
-                      <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
-                        <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
+                        <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         <span>{licenseData.remarks}</span>
                       </div>
@@ -1369,9 +1746,9 @@ function EmployeeRequirements() {
                           </div>
                         )}
                         {data.remarks && (
-                          <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
-                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
+                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             <span>{data.remarks}</span>
                           </div>
@@ -1550,9 +1927,9 @@ function EmployeeRequirements() {
                           </div>
                         )}
                         {data.remarks && (
-                          <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
-                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
+                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             <span>{data.remarks}</span>
                           </div>
@@ -1721,9 +2098,9 @@ function EmployeeRequirements() {
                           </div>
                         )}
                         {data.remarks && (
-                          <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
-                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
+                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             <span>{data.remarks}</span>
                           </div>
@@ -1897,9 +2274,9 @@ function EmployeeRequirements() {
                           </div>
                         )}
                         {data.remarks && (
-                          <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
-                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
+                            <svg className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             <span>{data.remarks}</span>
                           </div>
@@ -2030,9 +2407,9 @@ function EmployeeRequirements() {
                           </p>
                         </div>
                         {req.remarks && (
-                          <div className="mt-2 p-2 bg-red-100/80 rounded-lg text-xs text-red-700 flex items-start gap-1.5">
+                          <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
                             <svg
-                              className="w-3.5 h-3.5 flex-shrink-0 mt-0.5"
+                              className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-gray-500"
                               fill="none"
                               stroke="currentColor"
                               viewBox="0 0 24 24"
@@ -2041,7 +2418,7 @@ function EmployeeRequirements() {
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
                                 strokeWidth={2}
-                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                               />
                             </svg>
                             <span>{req.remarks}</span>

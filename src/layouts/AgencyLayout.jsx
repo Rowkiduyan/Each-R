@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Outlet, useNavigate, NavLink } from "react-router-dom";
 import { supabase } from "../supabaseClient";
-import LogoCropped from "../layouts/photos/logo(cropped).png";
+import LogoCropped from "../layouts/photos/logo(maroon).png";
 
 function AgencyLayout() {
   const navigate = useNavigate();
@@ -72,7 +72,7 @@ function AgencyLayout() {
               <NavLink
                 to="/agency/home"
                 className={({ isActive }) =>
-                  `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
+                  `pb-1 ${isActive ? "text-[#800000] border-b-2 border-[#800000]" : "hover:text-gray-900 transition-colors"}`
                 }
               >
                 Home
@@ -80,7 +80,7 @@ function AgencyLayout() {
               <NavLink
                 to="/agency/endorsements"
                 className={({ isActive }) =>
-                  `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
+                  `pb-1 ${isActive ? "text-[#800000] border-b-2 border-[#800000]" : "hover:text-gray-900 transition-colors"}`
                 }
               >
                 Endorsements
@@ -88,7 +88,7 @@ function AgencyLayout() {
               <NavLink
                 to="/agency/requirements"
                 className={({ isActive }) =>
-                  `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
+                  `pb-1 ${isActive ? "text-[#800000] border-b-2 border-[#800000]" : "hover:text-gray-900 transition-colors"}`
                 }
               >
                 Requirements
@@ -96,7 +96,7 @@ function AgencyLayout() {
               <NavLink
                 to="/agency/trainings"
                 className={({ isActive }) =>
-                  `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
+                  `pb-1 ${isActive ? "text-[#800000] border-b-2 border-[#800000]" : "hover:text-gray-900 transition-colors"}`
                 }
               >
                 Trainings/Orientation
@@ -104,7 +104,7 @@ function AgencyLayout() {
               <NavLink
                 to="/agency/evaluation"
                 className={({ isActive }) =>
-                  `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
+                  `pb-1 ${isActive ? "text-[#800000] border-b-2 border-[#800000]" : "hover:text-gray-900 transition-colors"}`
                 }
               >
                 Evaluation
@@ -112,7 +112,7 @@ function AgencyLayout() {
               <NavLink
                 to="/agency/separation"
                 className={({ isActive }) =>
-                  `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
+                  `pb-1 ${isActive ? "text-[#800000] border-b-2 border-[#800000]" : "hover:text-gray-900 transition-colors"}`
                 }
               >
                 Separation
@@ -127,7 +127,7 @@ function AgencyLayout() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
                 </div>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                <span className="absolute -top-1 -right-1 bg-[#800000] text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </div>
 
               {/* User Profile with Dropdown */}
@@ -224,7 +224,7 @@ function AgencyLayout() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] text-sm font-medium"
                 onClick={handleLogout}
               >
                 Logout

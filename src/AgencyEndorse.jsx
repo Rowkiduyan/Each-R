@@ -541,7 +541,7 @@ function AgencyEndorse() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
             </div>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                <span className="absolute -top-1 -right-1 bg-[#800000] text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </div>
               
               <div className="relative" ref={profileDropdownRef}>
@@ -571,7 +571,7 @@ function AgencyEndorse() {
           {/* Page Header */}
           <div className="mb-6">
             <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
-              <Link to="/agency/endorsements" className="hover:text-red-600">Endorsements</Link>
+              <Link to="/agency/endorsements" className="hover:text-[#800000]">Endorsements</Link>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
               <span className="text-gray-700">New Endorsement</span>
             </div>
@@ -587,7 +587,7 @@ function AgencyEndorse() {
                   <div className="flex flex-col items-center flex-shrink-0">
                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
                       step === s.num 
-                        ? 'bg-red-600 text-white ring-4 ring-red-100' 
+                        ? 'bg-[#800000] text-white ring-4 ring-[#800000]/10' 
                         : step > s.num 
                           ? 'bg-green-500 text-white' 
                           : 'bg-gray-200 text-gray-500'
@@ -598,7 +598,7 @@ function AgencyEndorse() {
                         </svg>
                       ) : s.num}
                     </div>
-                    <span className={`text-xs mt-2 font-medium ${step === s.num ? 'text-red-600' : step > s.num ? 'text-green-600' : 'text-gray-400'}`}>
+                    <span className={`text-xs mt-2 font-medium ${step === s.num ? 'text-[#800000]' : step > s.num ? 'text-green-600' : 'text-gray-400'}`}>
                       {s.label}
                     </span>
                   </div>
@@ -612,7 +612,7 @@ function AgencyEndorse() {
 
           {/* Employee Tabs */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6 overflow-hidden">
-            <div className="px-4 py-3 bg-gradient-to-r from-red-500 to-red-600 flex items-center justify-between">
+            <div className="px-4 py-3 bg-gradient-to-r from-[#800000] to-[#990000] flex items-center justify-between">
               <span className="text-white font-semibold flex items-center gap-2">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -627,8 +627,8 @@ function AgencyEndorse() {
                   <button 
                     className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                       activeApplicant === applicant.id 
-                        ? "bg-red-600 text-white shadow-md" 
-                        : "bg-white text-gray-600 border border-gray-200 hover:border-red-300 hover:bg-red-50"
+                        ? "bg-[#800000] text-white shadow-md" 
+                        : "bg-white text-gray-600 border border-gray-200 hover:border-[#800000]/30 hover:bg-[#800000]/10"
                     }`} 
                     onClick={() => setActiveApplicant(applicant.id)}
                   >
@@ -637,7 +637,7 @@ function AgencyEndorse() {
             {applicants.length > 1 && (
                     <button 
                       onClick={() => removeApplicant(applicant.id)} 
-                      className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center hover:bg-red-700 opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                      className="absolute -top-2 -right-2 bg-[#800000] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center hover:bg-[#990000] opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
                     >
                       ×
                     </button>
@@ -645,7 +645,7 @@ function AgencyEndorse() {
           </div>
         ))}
               <button 
-                className="px-4 py-2 rounded-lg text-sm font-medium text-red-600 border-2 border-dashed border-red-300 hover:bg-red-50 transition-colors flex items-center gap-1" 
+                className="px-4 py-2 rounded-lg text-sm font-medium text-[#800000] border-2 border-dashed border-[#800000]/30 hover:bg-[#800000]/10 transition-colors flex items-center gap-1" 
                 onClick={addApplicant}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -677,7 +677,7 @@ function AgencyEndorse() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.department} onChange={(e) => handleChange(activeApplicant, "department", e.target.value)}>
+                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.department} onChange={(e) => handleChange(activeApplicant, "department", e.target.value)}>
                 <option value="">Select Department</option>
                 <option>Operations</option>
                 <option>HR</option>
@@ -686,8 +686,8 @@ function AgencyEndorse() {
               </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Position <span className="text-red-500">*</span></label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.position} onChange={(e) => handleChange(activeApplicant, "position", e.target.value)}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Position <span className="text-[#800000]">*</span></label>
+                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.position} onChange={(e) => handleChange(activeApplicant, "position", e.target.value)}>
                 <option value="">Select Position</option>
                 <option>Delivery Driver</option>
                 <option>Delivery Helper</option>
@@ -696,8 +696,8 @@ function AgencyEndorse() {
               </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot Assignment <span className="text-red-500">*</span></label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.depot} onChange={(e) => handleChange(activeApplicant, "depot", e.target.value)}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot Assignment <span className="text-[#800000]">*</span></label>
+                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.depot} onChange={(e) => handleChange(activeApplicant, "depot", e.target.value)}>
                         <option value="">Select Depot</option>
                 <option>Pasig</option>
                 <option>Cebu</option>
@@ -709,17 +709,17 @@ function AgencyEndorse() {
             </div>
             <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Available</label>
-                      <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.dateAvailable || ""} onChange={(e) => handleChange(activeApplicant, "dateAvailable", e.target.value)} />
+                      <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.dateAvailable || ""} onChange={(e) => handleChange(activeApplicant, "dateAvailable", e.target.value)} />
                     </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">Currently Employed?</label>
                     <div className="flex gap-4">
-                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${fv.employed === "yes" ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}>
-                        <input type="radio" name={`employed-${activeApplicant}`} className="accent-red-600" checked={fv.employed === "yes"} onChange={() => handleChange(activeApplicant, "employed", "yes")} /> Yes
+                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${fv.employed === "yes" ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                        <input type="radio" name={`employed-${activeApplicant}`} className="accent-[#800000]" checked={fv.employed === "yes"} onChange={() => handleChange(activeApplicant, "employed", "yes")} /> Yes
               </label>
-                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${fv.employed !== "yes" ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}>
-                        <input type="radio" name={`employed-${activeApplicant}`} className="accent-red-600" checked={fv.employed !== "yes"} onChange={() => handleChange(activeApplicant, "employed", "no")} /> No
+                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${fv.employed !== "yes" ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                        <input type="radio" name={`employed-${activeApplicant}`} className="accent-[#800000]" checked={fv.employed !== "yes"} onChange={() => handleChange(activeApplicant, "employed", "no")} /> No
               </label>
                     </div>
                   </div>
@@ -734,26 +734,26 @@ function AgencyEndorse() {
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name <span className="text-red-500">*</span></label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="Enter last name" value={fv.lastName} onChange={(e) => handleChange(activeApplicant, "lastName", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name <span className="text-[#800000]">*</span></label>
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter last name" value={fv.lastName} onChange={(e) => handleChange(activeApplicant, "lastName", e.target.value)} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name <span className="text-red-500">*</span></label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="Enter first name" value={fv.firstName} onChange={(e) => handleChange(activeApplicant, "firstName", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name <span className="text-[#800000]">*</span></label>
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter first name" value={fv.firstName} onChange={(e) => handleChange(activeApplicant, "firstName", e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Middle Name</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="Enter middle name" value={fv.middleName} onChange={(e) => handleChange(activeApplicant, "middleName", e.target.value)} />
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter middle name" value={fv.middleName} onChange={(e) => handleChange(activeApplicant, "middleName", e.target.value)} />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Birthday</label>
-                      <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.birthday} onChange={(e) => handleChange(activeApplicant, "birthday", e.target.value)} />
+                      <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.birthday} onChange={(e) => handleChange(activeApplicant, "birthday", e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Marital Status</label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.maritalStatus} onChange={(e) => handleChange(activeApplicant, "maritalStatus", e.target.value)}>
+                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.maritalStatus} onChange={(e) => handleChange(activeApplicant, "maritalStatus", e.target.value)}>
                         <option value="">Select status</option>
                 <option value="Single">Single</option>
                 <option value="Married">Married</option>
@@ -764,11 +764,11 @@ function AgencyEndorse() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Sex</label>
                       <div className="flex gap-3">
-                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.sex === "Male" ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}>
-                          <input type="radio" name={`sex-${activeApplicant}`} className="accent-red-600" checked={fv.sex === "Male"} onChange={() => handleChange(activeApplicant, "sex", "Male")} /> Male
+                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.sex === "Male" ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                          <input type="radio" name={`sex-${activeApplicant}`} className="accent-[#800000]" checked={fv.sex === "Male"} onChange={() => handleChange(activeApplicant, "sex", "Male")} /> Male
                         </label>
-                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.sex === "Female" ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}>
-                          <input type="radio" name={`sex-${activeApplicant}`} className="accent-red-600" checked={fv.sex === "Female"} onChange={() => handleChange(activeApplicant, "sex", "Female")} /> Female
+                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.sex === "Female" ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                          <input type="radio" name={`sex-${activeApplicant}`} className="accent-[#800000]" checked={fv.sex === "Female"} onChange={() => handleChange(activeApplicant, "sex", "Female")} /> Female
                         </label>
             </div>
           </div>
@@ -785,19 +785,19 @@ function AgencyEndorse() {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">House/Unit No.</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 123" value={fv.residenceNo} onChange={(e) => handleChange(activeApplicant, "residenceNo", e.target.value)} />
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 123" value={fv.residenceNo} onChange={(e) => handleChange(activeApplicant, "residenceNo", e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Street/Village</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="Enter street" value={fv.street} onChange={(e) => handleChange(activeApplicant, "street", e.target.value)} />
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter street" value={fv.street} onChange={(e) => handleChange(activeApplicant, "street", e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">City/Municipality</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="Enter city" value={fv.city} onChange={(e) => handleChange(activeApplicant, "city", e.target.value)} />
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter city" value={fv.city} onChange={(e) => handleChange(activeApplicant, "city", e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Zip Code</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 1600" value={fv.zip} onChange={(e) => handleChange(activeApplicant, "zip", e.target.value)} />
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 1600" value={fv.zip} onChange={(e) => handleChange(activeApplicant, "zip", e.target.value)} />
                     </div>
                   </div>
             </div>
@@ -811,12 +811,12 @@ function AgencyEndorse() {
                 <div className="p-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-red-500">*</span></label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 09XX XXX XXXX" value={fv.contactNumber} onChange={(e) => handleChange(activeApplicant, "contactNumber", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-[#800000]">*</span></label>
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 09XX XXX XXXX" value={fv.contactNumber} onChange={(e) => handleChange(activeApplicant, "contactNumber", e.target.value)} />
           </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-red-500">*</span></label>
-                      <input type="email" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. employee@email.com" value={fv.email} onChange={(e) => handleChange(activeApplicant, "email", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-[#800000]">*</span></label>
+                      <input type="email" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. employee@email.com" value={fv.email} onChange={(e) => handleChange(activeApplicant, "email", e.target.value)} />
                     </div>
                   </div>
                 </div>
@@ -836,8 +836,8 @@ function AgencyEndorse() {
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Educational Level <span className="text-red-500">*</span></label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.education || ""} onChange={(e) => handleChange(activeApplicant, "education", e.target.value)}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Educational Level <span className="text-[#800000]">*</span></label>
+                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.education || ""} onChange={(e) => handleChange(activeApplicant, "education", e.target.value)}>
                         <option value="">Select highest education</option>
                         <option value="Elementary">Elementary Graduate</option>
                 <option value="High School">High School Graduate</option>
@@ -848,17 +848,17 @@ function AgencyEndorse() {
             </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Graduated</label>
-                      <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 2020" value={fv.tertiaryYear || ""} onChange={(e) => handleChange(activeApplicant, "tertiaryYear", e.target.value)} />
+                      <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 2020" value={fv.tertiaryYear || ""} onChange={(e) => handleChange(activeApplicant, "tertiaryYear", e.target.value)} />
           </div>
             </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">School/Institution Name</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="Enter school name" value={fv.tertiarySchool || ""} onChange={(e) => handleChange(activeApplicant, "tertiarySchool", e.target.value)} />
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter school name" value={fv.tertiarySchool || ""} onChange={(e) => handleChange(activeApplicant, "tertiarySchool", e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Course/Program (if applicable)</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. BS Mechanical Engineering" value={fv.tertiaryProgram || ""} onChange={(e) => handleChange(activeApplicant, "tertiaryProgram", e.target.value)} />
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. BS Mechanical Engineering" value={fv.tertiaryProgram || ""} onChange={(e) => handleChange(activeApplicant, "tertiaryProgram", e.target.value)} />
                     </div>
                   </div>
                 </div>
@@ -872,7 +872,7 @@ function AgencyEndorse() {
                 <div className="p-6">
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Areas of Expertise</label>
                   <textarea 
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 resize-none" 
+                    className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] resize-none" 
                     rows={4} 
                     placeholder="List the employee's skills and areas of proficiency (e.g., defensive driving, vehicle maintenance, customer service, route planning...)"
                     value={fv.skills || ""} 
@@ -894,11 +894,11 @@ function AgencyEndorse() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Training/Certification Name</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. Defensive Driving Course" value={fv.specializedTraining || ""} onChange={(e) => handleChange(activeApplicant, "specializedTraining", e.target.value)} />
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. Defensive Driving Course" value={fv.specializedTraining || ""} onChange={(e) => handleChange(activeApplicant, "specializedTraining", e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Completed</label>
-                      <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 2023" value={fv.specializedYear || ""} onChange={(e) => handleChange(activeApplicant, "specializedYear", e.target.value)} />
+                      <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 2023" value={fv.specializedYear || ""} onChange={(e) => handleChange(activeApplicant, "specializedYear", e.target.value)} />
             </div>
           </div>
 
@@ -908,7 +908,7 @@ function AgencyEndorse() {
                       Certificate <span className="text-gray-400 font-normal">(Photocopy)</span>
                     </label>
                     {!fv.trainingCertFile ? (
-                      <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-red-400 hover:bg-red-50/30 transition-colors">
+                      <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-[#800000]/40 hover:bg-[#800000]/10 transition-colors">
                         <div className="flex flex-col items-center justify-center py-3">
                           <svg className="w-7 h-7 text-gray-400 mb-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -949,7 +949,7 @@ function AgencyEndorse() {
                         <button 
                           type="button"
                           onClick={() => handleChange(activeApplicant, "trainingCertFile", null)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-1.5 text-gray-400 hover:text-[#800000] hover:bg-[#800000]/10 rounded-lg transition-colors"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -974,8 +974,8 @@ function AgencyEndorse() {
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">License Classification <span className="text-red-500">*</span></label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.licenseClassification || ""} onChange={(e) => handleChange(activeApplicant, "licenseClassification", e.target.value)}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">License Classification <span className="text-[#800000]">*</span></label>
+                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.licenseClassification || ""} onChange={(e) => handleChange(activeApplicant, "licenseClassification", e.target.value)}>
                         <option value="">Select classification</option>
                 <option>Non-Professional</option>
                 <option>Professional</option>
@@ -985,8 +985,8 @@ function AgencyEndorse() {
               </select>
             </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">License Expiry Date <span className="text-red-500">*</span></label>
-                      <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" value={fv.licenseExpiry || ""} onChange={(e) => handleChange(activeApplicant, "licenseExpiry", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">License Expiry Date <span className="text-[#800000]">*</span></label>
+                      <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.licenseExpiry || ""} onChange={(e) => handleChange(activeApplicant, "licenseExpiry", e.target.value)} />
                     </div>
           </div>
 
@@ -996,7 +996,7 @@ function AgencyEndorse() {
                       License Photocopy <span className="text-gray-400 font-normal">(Front & Back)</span>
                     </label>
                     {!fv.licenseFile ? (
-                      <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-red-400 hover:bg-red-50/30 transition-colors">
+                      <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-[#800000]/40 hover:bg-[#800000]/10 transition-colors">
                         <div className="flex flex-col items-center justify-center py-4">
                           <svg className="w-8 h-8 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1037,7 +1037,7 @@ function AgencyEndorse() {
                         <button 
                           type="button"
                           onClick={() => handleChange(activeApplicant, "licenseFile", null)}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          className="p-1.5 text-gray-400 hover:text-[#800000] hover:bg-[#800000]/10 rounded-lg transition-colors"
                         >
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1081,17 +1081,17 @@ function AgencyEndorse() {
                           key={code} 
                           className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
                             fv.restrictionCodes.includes(code) 
-                              ? 'border-red-500 bg-red-50' 
+                              ? 'border-[#800000] bg-[#800000]/10' 
                               : 'border-gray-200 hover:bg-gray-50'
                           }`}
                         >
                           <input 
                             type="checkbox" 
-                            className="w-4 h-4 accent-red-600 rounded" 
+                            className="w-4 h-4 accent-[#800000] rounded" 
                             checked={fv.restrictionCodes.includes(code)} 
                             onChange={() => toggleArrayValue(activeApplicant, "restrictionCodes", code)} 
                           />
-                          <span className={`text-sm ${fv.restrictionCodes.includes(code) ? 'text-red-700 font-medium' : 'text-gray-700'}`}>{code}</span>
+                          <span className={`text-sm ${fv.restrictionCodes.includes(code) ? 'text-[#800000] font-medium' : 'text-gray-700'}`}>{code}</span>
                 </label>
               ))}
                     </div>
@@ -1113,7 +1113,7 @@ function AgencyEndorse() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Years of Driving Experience</label>
-                      <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="e.g. 5" value={fv.yearsDriving || ""} onChange={(e) => handleChange(activeApplicant, "yearsDriving", e.target.value)} />
+                      <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 5" value={fv.yearsDriving || ""} onChange={(e) => handleChange(activeApplicant, "yearsDriving", e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">Has basic truck troubleshooting knowledge?</label>
@@ -1121,8 +1121,8 @@ function AgencyEndorse() {
                         <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.truckKnowledge === "yes" ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 hover:bg-gray-50'}`}>
                           <input type="radio" name={`truckKnowledge-${activeApplicant}`} className="accent-green-600" checked={fv.truckKnowledge === "yes"} onChange={() => handleChange(activeApplicant, "truckKnowledge", "yes")} /> Yes
                         </label>
-                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.truckKnowledge !== "yes" ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}>
-                          <input type="radio" name={`truckKnowledge-${activeApplicant}`} className="accent-red-600" checked={fv.truckKnowledge !== "yes"} onChange={() => handleChange(activeApplicant, "truckKnowledge", "no")} /> No
+                        <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.truckKnowledge !== "yes" ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                          <input type="radio" name={`truckKnowledge-${activeApplicant}`} className="accent-[#800000]" checked={fv.truckKnowledge !== "yes"} onChange={() => handleChange(activeApplicant, "truckKnowledge", "no")} /> No
                         </label>
                       </div>
                     </div>
@@ -1201,7 +1201,7 @@ function AgencyEndorse() {
                     <span className="text-sm text-gray-700">Currently taking any maintenance medications?</span>
                   </label>
                   {fv.takingMedications && (
-                    <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="Please specify the medication and reason..." value={fv.medicationReason || ""} onChange={(e) => handleChange(activeApplicant, "medicationReason", e.target.value)} />
+                    <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Please specify the medication and reason..." value={fv.medicationReason || ""} onChange={(e) => handleChange(activeApplicant, "medicationReason", e.target.value)} />
                   )}
 
                   <label className={`flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-all ${fv.tookMedicalTest ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:bg-gray-50'}`}>
@@ -1209,7 +1209,7 @@ function AgencyEndorse() {
                     <span className="text-sm text-gray-700">Has taken medical and drug test?</span>
                   </label>
                   {fv.tookMedicalTest && (
-                    <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500" placeholder="When was the last test taken? (e.g. November 2024)" value={fv.medicalTestDate || ""} onChange={(e) => handleChange(activeApplicant, "medicalTestDate", e.target.value)} />
+                    <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="When was the last test taken? (e.g. November 2024)" value={fv.medicalTestDate || ""} onChange={(e) => handleChange(activeApplicant, "medicalTestDate", e.target.value)} />
                   )}
                 </div>
           </div>
@@ -1239,7 +1239,7 @@ function AgencyEndorse() {
               {step < totalSteps ? (
                 <button 
                   onClick={nextStep} 
-                  className="flex items-center gap-2 px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+                  className="flex items-center gap-2 px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors"
                 >
                   Next Step
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1267,11 +1267,11 @@ function AgencyEndorse() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             {/* Modal Header */}
-            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-red-50 to-orange-50">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-[#800000]/10 to-orange-50">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
-                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-10 h-10 bg-[#800000]/20 rounded-xl flex items-center justify-center">
+                    <svg className="w-5 h-5 text-[#800000]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                     </svg>
                   </div>
@@ -1372,7 +1372,7 @@ function AgencyEndorse() {
                     type="checkbox" 
                     checked={privacyAccepted}
                     onChange={(e) => setPrivacyAccepted(e.target.checked)}
-                    className="mt-1 w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                    className="mt-1 w-5 h-5 rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer"
                   />
                   <span className="text-sm text-gray-700 group-hover:text-gray-900">
                     I have read and understood the <strong>Data Privacy Notice</strong>. I consent to the collection, processing, 
@@ -1384,7 +1384,7 @@ function AgencyEndorse() {
                     type="checkbox" 
                     checked={termsAccepted}
                     onChange={(e) => setTermsAccepted(e.target.checked)}
-                    className="mt-1 w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                    className="mt-1 w-5 h-5 rounded border-gray-300 text-[#800000] focus:ring-[#800000] cursor-pointer"
                   />
                   <span className="text-sm text-gray-700 group-hover:text-gray-900">
                     I agree to the <strong>Terms and Conditions</strong> and certify that all information provided is 
@@ -1563,11 +1563,11 @@ function AgencyEndorse() {
 
                 {/* Error Message */}
                 {csvError && (
-                  <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-                    <svg className="w-5 h-5 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="mt-3 p-3 bg-[#800000]/10 border border-[#800000]/20 rounded-lg flex items-start gap-2">
+                    <svg className="w-5 h-5 text-[#800000] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <p className="text-sm text-red-700">{csvError}</p>
+                    <p className="text-sm text-[#800000]">{csvError}</p>
                   </div>
                 )}
               </div>
@@ -1691,7 +1691,7 @@ function AgencyEndorse() {
               <div className="mt-4">
                 <button 
                   type="button" 
-                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]" 
                   onClick={() => {
                     setShowSuccessAlert(false);
                     if (successNavigatePath) {
@@ -1715,8 +1715,8 @@ function AgencyEndorse() {
           <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
             <div className="p-6 text-center">
               <div className="flex items-center justify-center mb-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-red-600">
+                <div className="w-10 h-10 rounded-full bg-[#800000]/20 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-[#800000]">
                     <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
                   </svg>
                 </div>
@@ -1725,7 +1725,7 @@ function AgencyEndorse() {
               <div className="mt-4">
                 <button 
                   type="button" 
-                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]" 
                   onClick={() => setShowErrorAlert(false)}
                 >
                   Close
@@ -1757,7 +1757,7 @@ function AgencyEndorse() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]"
                 onClick={async () => {
                   if (confirmCallback) {
                     await confirmCallback();
@@ -1808,7 +1808,7 @@ function AgencyEndorse() {
             <div className="p-5 text-sm text-gray-600">Are you sure you want to logout from your account?</div>
             <div className="p-5 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium" onClick={() => setShowLogoutConfirm(false)}>Cancel</button>
-              <button className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium" onClick={handleLogout}>Logout</button>
+              <button className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] text-sm font-medium" onClick={handleLogout}>Logout</button>
             </div>
           </div>
         </div>

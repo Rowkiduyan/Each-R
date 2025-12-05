@@ -271,7 +271,7 @@ function AgencySeparation() {
 
   const getAvatarColor = (name) => {
     const colors = [
-      'from-red-500 to-red-600',
+      'from-[#800000] to-[#990000]',
       'from-blue-500 to-blue-600',
       'from-green-500 to-green-600',
       'from-purple-500 to-purple-600',
@@ -296,7 +296,7 @@ function AgencySeparation() {
       reviewed: { text: 'text-blue-600', label: 'Reviewed' },
       processing: { text: 'text-purple-600', label: 'Processing' },
       completed: { text: 'text-green-600', label: 'Completed' },
-      rejected: { text: 'text-red-600', label: 'Rejected' },
+      rejected: { text: 'text-[#800000]', label: 'Rejected' },
       cancelled: { text: 'text-gray-500', label: 'Cancelled' },
     };
     return styles[status] || styles.pending_review;
@@ -479,7 +479,7 @@ function AgencySeparation() {
               <Link to="/agency/requirements" className="hover:text-gray-900 transition-colors pb-1">Requirements</Link>
               <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
               <Link to="/agency/evaluation" className="hover:text-gray-900 transition-colors pb-1">Evaluation</Link>
-              <button className="pb-1 text-red-600 border-b-2 border-red-600">Separation</button>
+              <button className="pb-1 text-[#800000] border-b-2 border-[#800000]">Separation</button>
             </nav>
 
             <div className="flex items-center space-x-4">
@@ -490,7 +490,7 @@ function AgencySeparation() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
                 </div>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                <span className="absolute -top-1 -right-1 bg-[#800000] text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </div>
               
               {/* User Profile with Dropdown */}
@@ -543,7 +543,7 @@ function AgencySeparation() {
           </div>
           <button
             onClick={openSubmitModal}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#800000] text-white rounded-lg text-sm font-medium hover:bg-[#990000] transition-colors"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -612,7 +612,7 @@ function AgencySeparation() {
                 onClick={() => { setActiveTab('all'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'all'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -622,39 +622,39 @@ function AgencySeparation() {
                 onClick={() => { setActiveTab('pending_review'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'pending_review'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Pending
                 {unviewedCounts.pending_review > 0 && (
-                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
               </button>
               <button
                 onClick={() => { setActiveTab('processing'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'processing'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Processing
                 {unviewedCounts.processing > 0 && (
-                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
               </button>
               <button
                 onClick={() => { setActiveTab('completed'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`relative px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'completed'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 Completed
                 {unviewedCounts.completed > 0 && (
-                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
               </button>
             </div>
@@ -673,7 +673,7 @@ function AgencySeparation() {
                   placeholder="Search by employee name, position, or depot..."
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); setExpandedRow(null); }}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
                 />
               </div>
 
@@ -709,7 +709,7 @@ function AgencySeparation() {
                       <tr 
                         className={`transition-colors cursor-pointer ${
                           expandedRow === request.id 
-                            ? 'bg-red-50/30' 
+                            ? 'bg-[#800000]/10/30' 
                             : isUnviewed 
                               ? 'bg-blue-50/60 hover:bg-blue-100/60' 
                               : 'hover:bg-gray-50/50'
@@ -728,7 +728,7 @@ function AgencySeparation() {
                                 {getInitials(request.employeeName)}
                               </div>
                               {isUnviewed && (
-                                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
+                                <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[#800000] rounded-full border-2 border-white"></span>
                               )}
                             </div>
                             <div>
@@ -889,14 +889,14 @@ function AgencySeparation() {
                                   <div className="mt-4 pt-4 border-t border-gray-100">
                                     {/* Resubmit Required Banner */}
                                     {request.clearanceResubmitRequired && request.status === 'processing' && (
-                                      <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                                      <div className="mb-4 p-3 bg-[#800000]/10 border border-[#800000]/20 rounded-lg">
                                         <div className="flex items-start gap-2">
-                                          <svg className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <svg className="w-5 h-5 text-[#800000] flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                                           </svg>
                                           <div>
-                                            <p className="text-sm font-semibold text-red-800">Re-submission Required</p>
-                                            <p className="text-xs text-red-700 mt-1">{request.clearanceResubmitRemarks}</p>
+                                            <p className="text-sm font-semibold text-[#800000]">Re-submission Required</p>
+                                            <p className="text-xs text-[#800000] mt-1">{request.clearanceResubmitRemarks}</p>
                                           </div>
                                         </div>
                                       </div>
@@ -910,7 +910,7 @@ function AgencySeparation() {
                                           <input type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" />
                                           <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                             request.clearanceResubmitRequired 
-                                              ? 'bg-red-600 text-white hover:bg-red-700' 
+                                              ? 'bg-[#800000] text-white hover:bg-[#990000]' 
                                               : 'bg-blue-600 text-white hover:bg-blue-700'
                                           }`}>
                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -940,7 +940,7 @@ function AgencySeparation() {
                                               doc.status === 'approved' 
                                                 ? 'bg-green-50 border-green-200' 
                                                 : doc.status === 'rejected'
-                                                ? 'bg-red-50 border-red-200'
+                                                ? 'bg-[#800000]/10 border-[#800000]/20'
                                                 : 'bg-gray-50 border-gray-200'
                                             }`}
                                           >
@@ -949,14 +949,14 @@ function AgencySeparation() {
                                                 doc.status === 'approved' 
                                                   ? 'bg-green-100' 
                                                   : doc.status === 'rejected'
-                                                  ? 'bg-red-100'
+                                                  ? 'bg-[#800000]/20'
                                                   : 'bg-gray-200'
                                               }`}>
                                                 <svg className={`w-4 h-4 ${
                                                   doc.status === 'approved' 
                                                     ? 'text-green-600' 
                                                     : doc.status === 'rejected'
-                                                    ? 'text-red-600'
+                                                    ? 'text-[#800000]'
                                                     : 'text-gray-500'
                                                 }`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -972,7 +972,7 @@ function AgencySeparation() {
                                                 doc.status === 'approved' 
                                                   ? 'bg-green-100 text-green-700' 
                                                   : doc.status === 'rejected'
-                                                  ? 'bg-red-100 text-red-700'
+                                                  ? 'bg-[#800000]/20 text-[#800000]'
                                                   : 'bg-yellow-100 text-yellow-700'
                                               }`}>
                                                 {doc.status === 'approved' ? 'Approved' : doc.status === 'rejected' ? 'Rejected' : 'Pending'}
@@ -1145,7 +1145,7 @@ function AgencySeparation() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] text-sm font-medium"
                 onClick={handleLogout}
               >
                 Logout
@@ -1166,10 +1166,10 @@ function AgencySeparation() {
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
-            <div className="p-5 bg-gradient-to-r from-red-500 to-red-600 flex-shrink-0">
+            <div className="p-5 bg-gradient-to-r from-[#800000] to-[#990000] flex-shrink-0">
               <div className="flex items-start justify-between">
                 <div className="flex items-start gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-red-400/30 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-xl bg-[#990000]/30 flex items-center justify-center">
                     <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                     </svg>
@@ -1195,7 +1195,7 @@ function AgencySeparation() {
               {/* Employee Selection */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Select Employee <span className="text-red-500">*</span>
+                  Select Employee <span className="text-[#800000]">*</span>
                 </label>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2">
@@ -1206,7 +1206,7 @@ function AgencySeparation() {
                   <select
                     value={submitForm.employeeId}
                     onChange={(e) => setSubmitForm(prev => ({ ...prev, employeeId: e.target.value }))}
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all appearance-none bg-white"
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#800000] focus:ring-4 focus:ring-[#800000]/10 transition-all appearance-none bg-white"
                   >
                     <option value="">Select an employee...</option>
                     {deployedEmployees.map((emp) => (
@@ -1237,7 +1237,7 @@ function AgencySeparation() {
               {/* Resignation Type */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Resignation Type <span className="text-red-500">*</span>
+                  Resignation Type <span className="text-[#800000]">*</span>
                 </label>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2">
@@ -1248,7 +1248,7 @@ function AgencySeparation() {
                   <select
                     value={submitForm.resignationType}
                     onChange={(e) => setSubmitForm(prev => ({ ...prev, resignationType: e.target.value, otherReason: '' }))}
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all appearance-none bg-white"
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#800000] focus:ring-4 focus:ring-[#800000]/10 transition-all appearance-none bg-white"
                   >
                     <option value="">Select resignation type...</option>
                     <option value="voluntary">Voluntary Resignation</option>
@@ -1267,14 +1267,14 @@ function AgencySeparation() {
                 {submitForm.resignationType === 'other' && (
                   <div className="mt-3">
                     <label className="block text-sm font-medium text-gray-600 mb-1.5">
-                      Please specify <span className="text-red-500">*</span>
+                      Please specify <span className="text-[#800000]">*</span>
                     </label>
                     <input
                       type="text"
                       value={submitForm.otherReason || ''}
                       onChange={(e) => setSubmitForm(prev => ({ ...prev, otherReason: e.target.value }))}
                       placeholder="Enter resignation type..."
-                      className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all"
+                      className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#800000] focus:ring-4 focus:ring-[#800000]/10 transition-all"
                     />
                   </div>
                 )}
@@ -1283,7 +1283,7 @@ function AgencySeparation() {
               {/* Last Working Day */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Last Working Day <span className="text-red-500">*</span>
+                  Last Working Day <span className="text-[#800000]">*</span>
                 </label>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2">
@@ -1296,7 +1296,7 @@ function AgencySeparation() {
                     value={submitForm.lastWorkingDay}
                     onChange={(e) => setSubmitForm(prev => ({ ...prev, lastWorkingDay: e.target.value }))}
                     min={new Date().toISOString().split('T')[0]}
-                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all"
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#800000] focus:ring-4 focus:ring-[#800000]/10 transition-all"
                   />
                 </div>
                 <p className="text-xs text-gray-500 mt-1.5">Select the employee's intended last day of work</p>
@@ -1305,14 +1305,14 @@ function AgencySeparation() {
               {/* Reason */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Reason for Resignation <span className="text-red-500">*</span>
+                  Reason for Resignation <span className="text-[#800000]">*</span>
                 </label>
                 <textarea
                   value={submitForm.reason}
                   onChange={(e) => setSubmitForm(prev => ({ ...prev, reason: e.target.value }))}
                   rows={4}
                   placeholder="Please provide the reason for resignation..."
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-red-500 focus:ring-4 focus:ring-red-500/10 transition-all resize-none"
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-[#800000] focus:ring-4 focus:ring-[#800000]/10 transition-all resize-none"
                 />
                 <p className="text-xs text-gray-500 mt-1.5">{submitForm.reason.length}/500 characters</p>
               </div>
@@ -1339,12 +1339,12 @@ function AgencySeparation() {
                     onClick={() => fileInputRef.current?.click()}
                     className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
                       isDragging 
-                        ? 'border-red-500 bg-red-50' 
+                        ? 'border-[#800000] bg-[#800000]/10' 
                         : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
                     }`}
                   >
-                    <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-2 ${isDragging ? 'bg-red-100' : 'bg-gray-100'}`}>
-                      <svg className={`w-6 h-6 ${isDragging ? 'text-red-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-2 ${isDragging ? 'bg-[#800000]/20' : 'bg-gray-100'}`}>
+                      <svg className={`w-6 h-6 ${isDragging ? 'text-[#800000]' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                       </svg>
                     </div>
@@ -1385,7 +1385,7 @@ function AgencySeparation() {
                     type="checkbox"
                     checked={submitForm.confirmSubmit}
                     onChange={(e) => setSubmitForm(prev => ({ ...prev, confirmSubmit: e.target.checked }))}
-                    className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500 mt-0.5"
+                    className="w-5 h-5 rounded border-gray-300 text-[#800000] focus:ring-red-500 mt-0.5"
                   />
                   <div>
                     <p className="text-sm font-medium text-amber-800">I confirm this resignation request</p>
@@ -1410,7 +1410,7 @@ function AgencySeparation() {
                 disabled={!submitForm.employeeId || !submitForm.resignationType || (submitForm.resignationType === 'other' && !submitForm.otherReason.trim()) || !submitForm.lastWorkingDay || !submitForm.reason.trim() || !submitForm.confirmSubmit}
                 className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
                   submitForm.employeeId && submitForm.resignationType && (submitForm.resignationType !== 'other' || submitForm.otherReason.trim()) && submitForm.lastWorkingDay && submitForm.reason.trim() && submitForm.confirmSubmit
-                    ? 'bg-red-600 text-white hover:bg-red-700'
+                    ? 'bg-[#800000] text-white hover:bg-[#990000]'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
               >
