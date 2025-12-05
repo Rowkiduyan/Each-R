@@ -1026,6 +1026,7 @@ function HrRecruitment() {
                 role: "Employee",
                 hired_at: new Date().toISOString(),
                 source: employeeSource,
+                type: "Probationary", // Set new employees as Probationary
                 // For agency applicants, preserve agency metadata
                 ...(isAgencyApplicant && {
                   is_agency: true,

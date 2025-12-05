@@ -13,8 +13,8 @@ function HrCreateJob() {
     others: [""],
     urgent: true,
     jobType: "delivery_crew", // "delivery_crew" or "office_employee"
+    durationMonths: "",
     durationDays: "",
-    durationHours: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -145,12 +145,12 @@ function HrCreateJob() {
       ...form.others,
     ].filter(Boolean);
     
-    // Format duration if both hours and minutes are provided
+    // Format duration if both months and days are provided
     let duration = null;
-    if (form.durationHours || form.durationMinutes) {
-      const hours = form.durationHours ? parseInt(form.durationHours) : 0;
-      const minutes = form.durationMinutes ? parseInt(form.durationMinutes) : 0;
-      duration = `${hours}h ${minutes}m`;
+    if (form.durationMonths || form.durationDays) {
+      const months = form.durationMonths ? parseInt(form.durationMonths) : 0;
+      const days = form.durationDays ? parseInt(form.durationDays) : 0;
+      duration = `${months}mo ${days}d`;
     }
     
     try {
@@ -184,12 +184,12 @@ function HrCreateJob() {
       ...form.others,
     ];
     
-    // Format duration if days or hours are provided
+    // Format duration if months or days are provided
     let duration = null;
-    if (form.durationDays || form.durationHours) {
+    if (form.durationMonths || form.durationDays) {
+      const months = form.durationMonths ? parseInt(form.durationMonths) : 0;
       const days = form.durationDays ? parseInt(form.durationDays) : 0;
-      const hours = form.durationHours ? parseInt(form.durationHours) : 0;
-      duration = `${days}d ${hours}h`;
+      duration = `${months}mo ${days}d`;
     }
     
     try {
@@ -217,8 +217,8 @@ function HrCreateJob() {
         others: [""],
         urgent: true,
         jobType: "delivery_crew",
+        durationMonths: "",
         durationDays: "",
-        durationHours: "",
       });
       setShowConfirm(false);
     } catch (err) {
@@ -327,27 +327,27 @@ function HrCreateJob() {
             <label className="block text-sm font-medium mb-1">Duration (Optional)</label>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Days</label>
+                <label className="block text-xs text-gray-600 mb-1">Months</label>
                 <input
                   type="number"
                   min="0"
                   className="w-full border rounded px-3 py-2"
-                  value={form.durationDays}
-                  onChange={(e) => setField("durationDays", e.target.value)}
-                  placeholder="e.g., 5"
+                  value={form.durationMonths}
+                  onChange={(e) => setField("durationMonths", e.target.value)}
+                  placeholder="e.g., 3"
                 />
                 
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Hours (0-23)</label>
+                <label className="block text-xs text-gray-600 mb-1">Days (0-30)</label>
                 <input
                   type="number"
                   min="0"
-                  max="23"
+                  max="30"
                   className="w-full border rounded px-3 py-2"
-                  value={form.durationHours}
-                  onChange={(e) => setField("durationHours", e.target.value)}
-                  placeholder="e.g., 8"
+                  value={form.durationDays}
+                  onChange={(e) => setField("durationDays", e.target.value)}
+                  placeholder="e.g., 15"
                 />
               </div>
             </div>
