@@ -19,10 +19,10 @@ function EmployeeEval() {
         try {
             setLoading(true);
 
-            // Fetch employee info
+            // Fetch employee info including status
             const { data: empData, error: empError } = await supabase
                 .from('employees')
-                .select('id, fname, lname, position, depot, hired_at')
+                .select('id, fname, lname, position, depot, hired_at, status')
                 .eq('email', userEmail)
                 .single();
 
@@ -43,6 +43,7 @@ function EmployeeEval() {
 
             if (evalError) {
                 console.error('Error fetching evaluations:', evalError);
+                setEvaluations([]);
             } else {
                 setEvaluations(evalData || []);
             }
@@ -54,20 +55,51 @@ function EmployeeEval() {
         }
     };
 
-    // Calculate employment type and next evaluation based on evaluations
-    const getMostRecentEvaluation = () => {
-        if (evaluations.length === 0) return null;
-        return evaluations[0];
-    };
-
+    // Calculate employment type from employees.status (same as HrEval.jsx)
     const getEmploymentType = () => {
-        const mostRecent = getMostRecentEvaluation();
-        return mostRecent?.type?.toLowerCase() || 'regular';
+        if (!employeeInfo) return 'regular';
+        
+        // Map status from database to lowercase for UI
+        if (employeeInfo.status === "Probationary") {
+            return "probationary";
+        } else if (employeeInfo.status === "Regular") {
+            return "regular";
+        }
+        return 'regular'; // default
     };
 
     const getNextEvaluationDate = () => {
-        const mostRecent = getMostRecentEvaluation();
-        return mostRecent?.next_due || null;
+        const mostRecent = evaluations.length > 0 ? evaluations[0] : null;
+        
+        // Find the latest Annual evaluation date for next_due calculation
+        let nextEvaluation = mostRecent?.next_due || null;
+        const annualEvals = evaluations.filter(e => e.reason === 'Annual');
+        if (annualEvals.length > 0) {
+            // Get the latest Annual evaluation date
+            const latestAnnualDate = annualEvals[0].date_evaluated;
+            const nextDueDate = new Date(latestAnnualDate);
+            nextDueDate.setFullYear(nextDueDate.getFullYear() + 1);
+            nextEvaluation = nextDueDate.toISOString().split('T')[0];
+        }
+        
+        // Auto-set next_due for probationary employees with no evaluations (same as HrEval.jsx)
+        const employmentType = getEmploymentType();
+        if (!nextEvaluation && employmentType === "probationary") {
+            const baseDate = employeeInfo?.hired_at ? new Date(employeeInfo.hired_at) : new Date();
+            const threeMonthsLater = new Date(baseDate);
+            threeMonthsLater.setMonth(baseDate.getMonth() + 3);
+            nextEvaluation = threeMonthsLater.toISOString().split('T')[0];
+        }
+        
+        // Auto-set next_due for regular employees with no evaluations (same as HrEval.jsx)
+        if (!nextEvaluation && employmentType === "regular") {
+            const baseDate = employeeInfo?.hired_at ? new Date(employeeInfo.hired_at) : new Date();
+            const oneYearLater = new Date(baseDate);
+            oneYearLater.setFullYear(baseDate.getFullYear() + 1);
+            nextEvaluation = oneYearLater.toISOString().split('T')[0];
+        }
+        
+        return nextEvaluation;
     };
 
     // Prepare employee data object

@@ -186,7 +186,7 @@ function Employees() {
         contact: row.contact_number || "",
         role: row.role || "Employee",
         hired_at: row.hired_at,
-        employmentStatus: "Regular", // Default, would come from DB in real implementation
+        employmentStatus: row.status === "Probationary" ? "Under Probation" : row.status === "Regular" ? "Regular" : "Regular", // Map status from DB to employment status
         agency: baseAgency,
         source: row.source || null,
         endorsed_by_agency_id: row.endorsed_by_agency_id || row.agency_profile_id || null,
@@ -200,7 +200,7 @@ function Employees() {
       try {
         const { data: empRows, error: empErr } = await supabase
           .from("employees")
-          .select("id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id")
+          .select("id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency")
           .order("hired_at", { ascending: false });
 
         if (empErr) throw empErr;
