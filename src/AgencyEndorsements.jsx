@@ -598,7 +598,7 @@ function AgencyEndorsements() {
   // Generate consistent color based on name
   const getAvatarColor = (name) => {
     const colors = [
-      'from-red-500 to-red-600',
+      'from-[#800000] to-[#990000]',
       'from-blue-500 to-blue-600',
       'from-green-500 to-green-600',
       'from-purple-500 to-purple-600',
@@ -675,7 +675,7 @@ function AgencyEndorsements() {
 
               <button
                 type="button"
-                className="pb-1 text-red-600 border-b-2 border-red-600"
+                className="pb-1 text-[#800000] border-b-2 border-red-600"
               >
                 Endorsements
               </button>
@@ -717,7 +717,7 @@ function AgencyEndorsements() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
                 </div>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                <span className="absolute -top-1 -right-1 bg-[#800000] text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </div>
               
               {/* User Profile with Dropdown */}
@@ -840,7 +840,7 @@ function AgencyEndorsements() {
                       setEndorsementsSearch(e.target.value);
                       setEndorsementsPage(1); // Reset to page 1 when searching
                     }}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
                   />
                 </div>
 
@@ -848,7 +848,7 @@ function AgencyEndorsements() {
                 <select
                   value={statusFilter}
                   onChange={(e) => { setStatusFilter(e.target.value); setEndorsementsPage(1); }}
-                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
+                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white min-w-[160px]"
                 >
                   <option value="all">All Status</option>
                   <option value="deployed">Deployed</option>
@@ -867,10 +867,10 @@ function AgencyEndorsements() {
 
             {/* Separation Prompt Banner */}
             {showSeparationPrompt && (
-              <div className="mx-4 mt-4 p-4 bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-lg flex items-center justify-between">
+              <div className="mx-4 mt-4 p-4 bg-gradient-to-r from-[#800000]/10 to-orange-50 border border-[#800000]/20 rounded-lg flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0">
-                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-10 h-10 bg-[#800000]/20 rounded-full flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5 text-[#800000]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                     </svg>
                   </div>
@@ -881,7 +881,7 @@ function AgencyEndorsements() {
                 </div>
                 <button 
                   onClick={() => setShowSeparationPrompt(false)}
-                  className="p-1.5 hover:bg-red-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
+                  className="p-1.5 hover:bg-[#800000]/20 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -894,7 +894,7 @@ function AgencyEndorsements() {
               {endorsedLoading ? (
                 <div className="p-6 text-gray-600">Loading endorsements…</div>
               ) : endorsedError ? (
-                <div className="p-4 bg-red-50 text-red-700 rounded">{endorsedError}</div>
+                <div className="p-4 bg-[#800000]/10 text-[#800000] rounded">{endorsedError}</div>
               ) : endorsedEmployees.length === 0 ? (
                 <div className="p-6 text-gray-600">No endorsements yet.</div>
               ) : (() => {
@@ -951,7 +951,7 @@ function AgencyEndorsements() {
                               return (
                                 <tr 
                                   key={emp.id} 
-                                  className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${isSelected ? 'bg-red-50/50' : ''}`} 
+                                  className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${isSelected ? 'bg-[#800000]/10/50' : ''}`} 
                                   onClick={() => {
                                     setSelectedEmployee(emp);
                                     // If coming from Separation page, auto-open the separation tab
@@ -1357,7 +1357,7 @@ function AgencyEndorsements() {
                                           if (reqData.status === 'approved') {
                                             statusBadge = <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">Approved</span>;
                                           } else if (reqData.status === 'resubmit') {
-                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded">Re-submit</span>;
+                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-[#800000]/20 text-[#800000] rounded">Re-submit</span>;
                                           } else if (reqData.status === 'pending') {
                                             statusBadge = <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded">Pending</span>;
                                           } else {
@@ -1436,20 +1436,20 @@ function AgencyEndorsements() {
                                           })
                                           .map((request) => (
                                           <tr key={request.id} className={`${
-                                            request.status === 'resubmit' ? 'bg-red-50/50' : 
+                                            request.status === 'resubmit' ? 'bg-[#800000]/10/50' : 
                                             request.status === 'pending' ? 'bg-orange-50/50' : 
                                             'hover:bg-gray-50/50'
                                           }`}>
                                             <td className="px-4 py-3">
                                               <p className="font-medium text-gray-800">{request.document}</p>
                                               {request.priority === 'high' && (
-                                                <span className="text-xs text-red-600 font-medium">High Priority</span>
+                                                <span className="text-xs text-[#800000] font-medium">High Priority</span>
                                               )}
                                             </td>
                                             <td className="px-4 py-3 text-gray-600">{formatDate(request.deadline)}</td>
                                             <td className="px-4 py-3">
                                               {request.status === 'resubmit' && (
-                                                <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded">Re-submit</span>
+                                                <span className="px-2 py-1 text-xs font-medium bg-[#800000]/20 text-[#800000] rounded">Re-submit</span>
                                               )}
                                               {request.status === 'pending' && (
                                                 <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded">Pending</span>
@@ -1463,7 +1463,7 @@ function AgencyEndorsements() {
                                             </td>
                                             <td className="px-4 py-3 text-gray-600 max-w-xs">
                                               {request.remarks ? (
-                                                <p className="text-xs text-red-600 truncate" title={request.remarks}>{request.remarks}</p>
+                                                <p className="text-xs text-[#800000] truncate" title={request.remarks}>{request.remarks}</p>
                                               ) : (
                                                 <span className="text-gray-400 italic text-xs">—</span>
                                               )}
@@ -1641,7 +1641,7 @@ function AgencyEndorsements() {
                                 <p className="text-sm text-gray-600">View employee's separation request status and history.</p>
                                 <Link 
                                   to="/agency/separation" 
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition-colors"
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#800000] text-white rounded-lg text-sm font-medium hover:bg-[#990000] transition-colors"
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1827,7 +1827,7 @@ function AgencyEndorsements() {
                                         <span className={`text-xs px-2 py-1 rounded font-medium ${
                                           isConfirmed
                                             ? 'bg-green-100 text-green-800 border border-green-300' 
-                                            : 'bg-red-100 text-red-800 border border-red-300'
+                                            : 'bg-[#800000]/20 text-[#800000] border border-red-300'
                                         }`}>
                                           {isConfirmed ? '✓ Interview Confirmed' : '✗ Interview Rejected'}
                                         </span>
@@ -1854,7 +1854,7 @@ function AgencyEndorsements() {
                                         <button
                                           type="button"
                                           onClick={() => setShowConfirmInterviewDialog(true)}
-                                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
+                                          className="px-4 py-2 bg-[#800000] text-white rounded-md hover:bg-[#990000] text-sm font-medium transition-colors"
                                         >
                                           Confirm Interview
                                         </button>
@@ -2020,7 +2020,7 @@ function AgencyEndorsements() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]"
                 onClick={async () => {
                   if (!selectedEmployee.id) {
                     setAlertMessage('Error: Application ID not found');
@@ -2108,7 +2108,7 @@ function AgencyEndorsements() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]"
                 onClick={async () => {
                   if (confirmCallback) {
                     await confirmCallback();
@@ -2140,7 +2140,7 @@ function AgencyEndorsements() {
               <div className="mt-4">
                 <button 
                   type="button" 
-                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]" 
                   onClick={() => setShowSuccessAlert(false)}
                 >
                   Close
@@ -2157,8 +2157,8 @@ function AgencyEndorsements() {
           <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
             <div className="p-6 text-center">
               <div className="flex items-center justify-center mb-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-red-600">
+                <div className="w-10 h-10 rounded-full bg-[#800000]/20 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-[#800000]">
                     <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
                   </svg>
                 </div>
@@ -2167,7 +2167,7 @@ function AgencyEndorsements() {
               <div className="mt-4">
                 <button 
                   type="button" 
-                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]" 
                   onClick={() => setShowErrorAlert(false)}
                 >
                   Close
@@ -2204,7 +2204,7 @@ function AgencyEndorsements() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] text-sm font-medium"
                 onClick={handleLogout}
               >
                 Logout

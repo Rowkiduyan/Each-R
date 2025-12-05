@@ -206,7 +206,7 @@ function AgencyEval() {
   // Generate consistent color based on name
   const getAvatarColor = (name) => {
     const colors = [
-      'from-red-500 to-red-600',
+      'from-[#800000] to-[#990000]',
       'from-blue-500 to-blue-600',
       'from-green-500 to-green-600',
       'from-purple-500 to-purple-600',
@@ -227,7 +227,7 @@ function AgencyEval() {
 
   const getStatusBadge = (status) => {
     const styles = {
-      overdue: { text: 'text-red-600', label: 'Overdue' },
+      overdue: { text: 'text-[#800000]', label: 'Overdue' },
       duetoday: { text: 'text-orange-600', label: 'Due Today' },
       uptodate: { text: 'text-green-600', label: 'Up to Date' },
     };
@@ -312,7 +312,7 @@ function AgencyEval() {
               </Link>
               <Link to="/agency/requirements" className="hover:text-gray-900 transition-colors pb-1">Requirements</Link>
               <Link to="/agency/trainings" className="hover:text-gray-900 transition-colors pb-1">Trainings/Orientation</Link>
-              <button className="pb-1 text-red-600 border-b-2 border-red-600">Evaluation</button>
+              <button className="pb-1 text-[#800000] border-b-2 border-[#800000]">Evaluation</button>
               <Link to="/agency/separation" className="hover:text-gray-900 transition-colors pb-1">Separation</Link>
             </nav>
 
@@ -324,7 +324,7 @@ function AgencyEval() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
                 </div>
-                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
+                <span className="absolute -top-1 -right-1 bg-[#800000] text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
               </div>
               
               {/* User Profile with Dropdown */}
@@ -400,13 +400,13 @@ function AgencyEval() {
                 <p className="text-sm text-gray-500 font-medium">Overdue</p>
                 <p className="text-2xl font-bold text-gray-800 mt-1">{stats.overdueCount}</p>
               </div>
-              <div className="w-12 h-12 bg-red-50 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-12 h-12 bg-[#800000]/10 rounded-lg flex items-center justify-center">
+                <svg className="w-6 h-6 text-[#800000]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                 </svg>
               </div>
             </div>
-            <p className="text-xs text-red-600 mt-3 font-medium">Past due date</p>
+            <p className="text-xs text-[#800000] mt-3 font-medium">Past due date</p>
           </div>
 
           {/* Probationary */}
@@ -435,7 +435,7 @@ function AgencyEval() {
                 onClick={() => { setActiveTab('due'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'due'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -453,7 +453,7 @@ function AgencyEval() {
                 onClick={() => { setActiveTab('all'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'all'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -468,7 +468,7 @@ function AgencyEval() {
                 onClick={() => { setActiveTab('history'); setCurrentPage(1); setExpandedRow(null); }}
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                   activeTab === 'history'
-                    ? 'border-red-600 text-red-600 bg-red-50/50'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
@@ -495,7 +495,7 @@ function AgencyEval() {
                   placeholder="Search by employee name, ID, position, or depot..."
                   value={searchQuery}
                   onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(1); setExpandedRow(null); }}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                  className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
                 />
               </div>
               
@@ -503,7 +503,7 @@ function AgencyEval() {
               <select
                 value={employmentFilter}
                 onChange={(e) => { setEmploymentFilter(e.target.value); setCurrentPage(1); setExpandedRow(null); }}
-                className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[180px]"
+                className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white min-w-[180px]"
               >
                 <option value="all">All Employment Types</option>
                 <option value="regular">Regular (Yearly)</option>
@@ -580,7 +580,7 @@ function AgencyEval() {
                         <td className="px-6 py-4">
                           <p className="text-sm text-gray-800">{formatDate(employee.nextEvaluation)}</p>
                           {daysUntilDue !== null && employee.status !== 'uptodate' && (
-                            <p className={`text-xs ${daysUntilDue < 0 ? 'text-red-600' : daysUntilDue <= 7 ? 'text-orange-600' : 'text-gray-500'}`}>
+                            <p className={`text-xs ${daysUntilDue < 0 ? 'text-[#800000]' : daysUntilDue <= 7 ? 'text-orange-600' : 'text-gray-500'}`}>
                               {daysUntilDue < 0 
                                 ? `${Math.abs(daysUntilDue)} days overdue`
                                 : daysUntilDue === 0 
@@ -770,7 +770,7 @@ function AgencyEval() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium"
+                className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] text-sm font-medium"
                 onClick={handleLogout}
               >
                 Logout
