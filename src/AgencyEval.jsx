@@ -10,125 +10,172 @@ function AgencyEval() {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const profileDropdownRef = useRef(null);
   
-  // Tab and filter state
-  const [activeTab, setActiveTab] = useState('due');
+  // Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [employmentFilter, setEmploymentFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedRow, setExpandedRow] = useState(null);
   const itemsPerPage = 8;
 
-  // Helper function to calculate status dynamically by comparing nextEvaluation date vs real today's date
-  // - "uptodate": nextEvaluation is in the future (after today)
-  // - "duetoday": nextEvaluation exactly matches today's date
-  // - "overdue": nextEvaluation is in the past (at least 1 day before today)
+  // Data state
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [agencyProfileId, setAgencyProfileId] = useState(null);
+
+  // Fetch agency profile and employees
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+
+        // Get current agency user
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          navigate("/employee/login");
+          return;
+        }
+
+        // Get agency profile ID
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', user.id)
+          .single();
+
+        if (!profile) {
+          console.error('Agency profile not found');
+          setLoading(false);
+          return;
+        }
+
+        setAgencyProfileId(profile.id);
+
+        // Fetch employees endorsed by this agency
+        const { data: employeesData, error: empError } = await supabase
+          .from('employees')
+          .select('id, fname, lname, mname, position, depot, hired_at, status')
+          .eq('endorsed_by_agency_id', profile.id)
+          .order('hired_at', { ascending: false });
+
+        if (empError) {
+          console.error('Error fetching employees:', empError);
+          setEmployees([]);
+          setLoading(false);
+          return;
+        }
+
+        // Map employees and fetch their evaluations
+        const mappedEmployees = await Promise.all((employeesData || []).map(async (emp) => {
+          const fullName = `${emp.fname || ''} ${emp.lname || ''}`.trim() || 'Unknown Employee';
+
+          // Map status to employment type
+          let employmentType = "regular";
+          if (emp.status === "Probationary") {
+            employmentType = "probationary";
+          } else if (emp.status === "Regular") {
+            employmentType = "regular";
+          }
+
+          // Fetch evaluations for this employee
+          const { data: evaluationsData, error: evalError } = await supabase
+            .from('evaluations')
+            .select('*')
+            .eq('employee_id', emp.id)
+            .order('date_evaluated', { ascending: false });
+
+          if (evalError) {
+            console.error('Error fetching evaluations for employee:', emp.id, evalError);
+          }
+
+          const evaluations = (evaluationsData || []).map(ev => ({
+            id: ev.id,
+            period: new Date(ev.date_evaluated).getFullYear().toString(),
+            type: ev.reason || 'Performance Review',
+            date: ev.date_evaluated,
+            rating: ev.type || 'N/A',
+            score: ev.total_score ? `${ev.total_score}%` : 'N/A',
+            evaluator: ev.evaluator_name || 'HR',
+            remarks: ev.remarks || '',
+            file_path: ev.file_path || null
+          }));
+
+          // Calculate next evaluation date (same logic as HrEval and EmployeeEval)
+          let nextEvaluation = null;
+          const mostRecent = evaluations[0];
+          
+          // Find the latest Annual evaluation
+          nextEvaluation = mostRecent?.next_due || null;
+          const annualEvals = evaluations.filter(e => e.type === 'Annual');
+          if (annualEvals.length > 0) {
+            const latestAnnualDate = annualEvals[0].date;
+            const nextDueDate = new Date(latestAnnualDate);
+            nextDueDate.setFullYear(nextDueDate.getFullYear() + 1);
+            nextEvaluation = nextDueDate.toISOString().split('T')[0];
+          }
+
+          // Auto-set next_due for probationary employees with no evaluations
+          if (!nextEvaluation && employmentType === "probationary") {
+            const baseDate = emp.hired_at ? new Date(emp.hired_at) : new Date();
+            const threeMonthsLater = new Date(baseDate);
+            threeMonthsLater.setMonth(baseDate.getMonth() + 3);
+            nextEvaluation = threeMonthsLater.toISOString().split('T')[0];
+          }
+
+          // Auto-set next_due for regular employees with no evaluations
+          if (!nextEvaluation && employmentType === "regular") {
+            const baseDate = emp.hired_at ? new Date(emp.hired_at) : new Date();
+            const oneYearLater = new Date(baseDate);
+            oneYearLater.setFullYear(baseDate.getFullYear() + 1);
+            nextEvaluation = oneYearLater.toISOString().split('T')[0];
+          }
+
+          return {
+            id: emp.id,
+            name: fullName,
+            position: emp.position || 'N/A',
+            depot: emp.depot || 'N/A',
+            employmentType: employmentType,
+            hireDate: emp.hired_at,
+            lastEvaluation: evaluations.length > 0 ? evaluations[0].date : null,
+            nextEvaluation: nextEvaluation,
+            evaluations: evaluations,
+            status: calculateStatus(nextEvaluation)
+          };
+        }));
+
+        setEmployees(mappedEmployees);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching data:', error);
+        setEmployees([]);
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [navigate]);
+
+  // Helper function to calculate status dynamically
   const calculateStatus = (nextEvaluation) => {
     if (!nextEvaluation) return 'uptodate';
     
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Reset time to start of day
+    today.setHours(0, 0, 0, 0);
     
     const dueDate = new Date(nextEvaluation);
-    dueDate.setHours(0, 0, 0, 0); // Reset time to start of day
+    dueDate.setHours(0, 0, 0, 0);
     
-    // Check if due date exactly matches today (same day, month, year)
     if (dueDate.getTime() === today.getTime()) {
       return 'duetoday';
     }
     
-    // Check if due date is in the past (overdue by 1+ days)
     if (dueDate < today) {
       return 'overdue';
     }
     
-    // Due date is in the future - up to date
     return 'uptodate';
   };
-
-  // Mock data - Employees with evaluation records
-  // nextEvaluation is based on hire date anniversary (+ 1 year after last evaluation year for regular, + 1 month for probationary)
-  // Status is calculated dynamically by comparing nextEvaluation vs real today's date
-  
-  const employeesRaw = [
-    // === UP TO DATE EXAMPLES ===
-    { 
-      id: 'EMP-001', 
-      name: 'Juan Dela Cruz', 
-      position: 'Driver',
-      depot: 'Makati',
-      employmentType: 'regular', // yearly evaluation on hire anniversary
-      hireDate: '2022-12-15',
-      lastEvaluation: '2024-12-18', // Completed 2024 eval (due was March 15)
-      nextEvaluation: '2025-12-15', // Next year's due date (future = uptodate)
-      evaluations: [
-        { id: 1, period: '2024', type: 'Annual Performance Review', date: '2024-03-18', rating: 'Exceeds Expectations', score: '4.5/5', evaluator: 'Maria Santos (HR)', remarks: 'Excellent attendance and performance. Recommended for salary increase.' },
-        { id: 2, period: '2023', type: 'Annual Performance Review', date: '2023-03-16', rating: 'Meets Expectations', score: '3.8/5', evaluator: 'Maria Santos (HR)', remarks: 'Good overall performance. Needs improvement in documentation.' },
-      ]
-    },
-    { 
-      id: 'EMP-002', 
-      name: 'Maria Santos', 
-      position: 'Dispatcher',
-      depot: 'BGC',
-      employmentType: 'regular',
-      hireDate: '2021-12-01',
-      lastEvaluation: '2024-12-01', // Completed 2024 eval
-      nextEvaluation: '2025-12-01', // Future = uptodate
-      evaluations: [
-        { id: 1, period: '2024', type: 'Annual Performance Review', date: '2024-06-05', rating: 'Exceeds Expectations', score: '4.7/5', evaluator: 'Roberto Cruz (HR Manager)', remarks: 'Outstanding leadership and coordination skills.' },
-        { id: 2, period: '2023', type: 'Annual Performance Review', date: '2023-06-02', rating: 'Exceeds Expectations', score: '4.5/5', evaluator: 'Roberto Cruz (HR Manager)', remarks: 'Consistently exceeds targets.' },
-      ]
-    },
-    
-  
-    
-    // === DUE TODAY EXAMPLES (nextEvaluation = Nov 27, 2024 - today's date) ===
-    { 
-      id: 'EMP-005', 
-      name: 'Carlos Mendoza', 
-      position: 'Senior Driver',
-      depot: 'Makati',
-      employmentType: 'regular',
-      hireDate: '2023-11-27', // Hired Nov 27, 2023
-      lastEvaluation: null, // First year - no previous eval
-      nextEvaluation: '2025-11-27', // Due on hire anniversary (1 year later)
-      evaluations: []
-    },
-    { 
-      id: 'EMP-012', 
-      name: 'Miguel Torres', 
-      position: 'Driver',
-      depot: 'BGC',
-      employmentType: 'probationary',
-      hireDate: '2024-11-27', // Hired Oct 27, 2024
-      lastEvaluation: null, // First month - due today
-      nextEvaluation: '2025-11-27', // Due 1 month after hire
-      evaluations: []
-    },
-    
-    // === OVERDUE EXAMPLES (past dates = overdue) ===
-    { 
-      id: 'EMP-011', 
-      name: 'Lucia Villanueva', 
-      position: 'Admin Staff',
-      depot: 'Makati',
-      employmentType: 'probationary',
-      hireDate: '2024-09-15',
-      lastEvaluation: '2024-10-16', // October eval done
-      nextEvaluation: '2024-11-15', // November eval was due Nov 15 - overdue!
-      evaluations: [
-        { id: 1, period: 'Oct 2024', type: 'Monthly Probation Review', date: '2024-10-16', rating: 'Meets Expectations', score: '3.8/5', evaluator: 'Pedro Garcia (Admin Head)', remarks: 'Good communication skills. Quick learner.' },
-        { id: 2, period: 'Sep 2024', type: 'Monthly Probation Review', date: '2024-09-18', rating: 'On Track', score: '3.5/5', evaluator: 'Pedro Garcia (Admin Head)', remarks: 'Good first month. Adapting well.' },
-      ]
-    },
-
-  ];
-
-  // Apply dynamic status calculation to employees based on real today's date
-  const employees = employeesRaw.map(emp => ({
-    ...emp,
-    status: calculateStatus(emp.nextEvaluation)
-  }));
 
   // Calculate stats
   const stats = {
@@ -154,26 +201,9 @@ function AgencyEval() {
     navigate("/employee/login");
   };
 
-  // Get current data based on active tab
+  // Get current data based on filters
   const getCurrentData = () => {
     let data = [...employees];
-    
-    // Filter by tab
-    switch (activeTab) {
-      case 'due':
-        // Show only employees that need attention (due today or overdue)
-        data = data.filter(e => e.status === 'duetoday' || e.status === 'overdue');
-        break;
-      case 'all':
-        // Show all employees
-        break;
-      case 'history':
-        // Show employees with evaluation history
-        data = data.filter(e => e.evaluations.length > 0);
-        break;
-      default:
-        break;
-    }
 
     // Filter by search
     if (searchQuery) {
@@ -191,11 +221,22 @@ function AgencyEval() {
       data = data.filter(item => item.employmentType === employmentFilter);
     }
 
+    // Filter by status
+    if (statusFilter !== 'all') {
+      data = data.filter(item => item.status === statusFilter);
+    }
+
+    // Sort by status priority: Due Today first, then Overdue, then Up to Date
+    data.sort((a, b) => {
+      const statusOrder = { duetoday: 0, overdue: 1, uptodate: 2 };
+      return statusOrder[a.status] - statusOrder[b.status];
+    });
+
     return data;
   };
 
   const filteredData = getCurrentData();
-  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage) || 1;
   const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // Get initials from name
@@ -428,60 +469,14 @@ function AgencyEval() {
 
         {/* Main Content Card */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          {/* Tabs */}
-          <div className="border-b border-gray-200">
-            <div className="flex">
-              <button
-                onClick={() => { setActiveTab('due'); setCurrentPage(1); setExpandedRow(null); }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'due'
-                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Due for Evaluation
-                  {stats.dueForEval > 0 && (
-                    <span className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">{stats.dueForEval}</span>
-                  )}
-                </div>
-              </button>
-              <button
-                onClick={() => { setActiveTab('all'); setCurrentPage(1); setExpandedRow(null); }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'all'
-                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                  All Employees
-                </div>
-              </button>
-              <button
-                onClick={() => { setActiveTab('history'); setCurrentPage(1); setExpandedRow(null); }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'history'
-                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-                  </svg>
-                  Evaluation History
-                </div>
-              </button>
+          {loading && (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800000]"></div>
             </div>
-          </div>
-
+          )}
+          
+          {!loading && (
+            <>
           {/* Search and Filters */}
           <div className="p-4 border-b border-gray-100 bg-gray-50/50">
             <div className="flex flex-col sm:flex-row gap-3">
@@ -509,14 +504,6 @@ function AgencyEval() {
                 <option value="regular">Regular (Yearly)</option>
                 <option value="probationary">Probationary (Monthly)</option>
               </select>
-
-              {/* Export Button */}
-              <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export
-              </button>
             </div>
           </div>
 
@@ -652,12 +639,22 @@ function AgencyEval() {
                                             </div>
                                           )}
                                         </div>
-                                        <button className="text-blue-600 hover:text-blue-700 p-2" title="View Full Report">
-                                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                          </svg>
-                                        </button>
+                                        {evaluation.file_path && (
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              const publicUrl = supabase.storage.from('evaluations').getPublicUrl(evaluation.file_path).data.publicUrl;
+                                              window.open(publicUrl, '_blank');
+                                            }}
+                                            className="text-blue-600 hover:text-blue-700 p-2"
+                                            title="View Evaluation File"
+                                          >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                          </button>
+                                        )}
                                       </div>
                                     </div>
                                   ))}
@@ -722,6 +719,8 @@ function AgencyEval() {
               </button>
             </div>
           )}
+          </>
+        )}
         </div>
 
         {/* Info Card */}

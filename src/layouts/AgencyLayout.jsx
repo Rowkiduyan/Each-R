@@ -3,12 +3,47 @@ import React, { useState, useRef, useEffect } from "react";
 import { Outlet, useNavigate, NavLink } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import LogoCropped from "../layouts/photos/logo(maroon).png";
+import AgencyNotificationBell from "../AgencyNotificationBell";
 
 function AgencyLayout() {
   const navigate = useNavigate();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const profileDropdownRef = useRef(null);
+  const [agencyUser, setAgencyUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch agency user profile
+  useEffect(() => {
+    const fetchAgencyProfile = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          navigate("/employee/login");
+          return;
+        }
+
+        // Fetch profile data from profiles table
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('id, email, first_name, last_name, role')
+          .eq('id', user.id)
+          .single();
+
+        if (error) {
+          console.error('Error fetching agency profile:', error);
+        } else {
+          setAgencyUser(profile);
+        }
+      } catch (error) {
+        console.error('Error fetching agency user:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAgencyProfile();
+  }, [navigate]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -25,6 +60,34 @@ function AgencyLayout() {
     await supabase.auth.signOut();
     navigate("/employee/login");
   };
+
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (agencyUser?.first_name && agencyUser?.last_name) {
+      return `${agencyUser.first_name[0]}${agencyUser.last_name[0]}`.toUpperCase();
+    } else if (agencyUser?.email) {
+      return agencyUser.email[0].toUpperCase();
+    }
+    return "A";
+  };
+
+  // Get user display name
+  const getUserDisplayName = () => {
+    if (agencyUser?.first_name && agencyUser?.last_name) {
+      return `${agencyUser.first_name} ${agencyUser.last_name}`;
+    } else if (agencyUser?.email) {
+      return agencyUser.email;
+    }
+    return "Agency User";
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800000]"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -121,14 +184,7 @@ function AgencyLayout() {
 
             <div className="flex items-center space-x-4">
               {/* Notification Bell */}
-              <div className="relative">
-                <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300 cursor-pointer">
-                  <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                  </svg>
-                </div>
-                <span className="absolute -top-1 -right-1 bg-[#800000] text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">3</span>
-              </div>
+              <AgencyNotificationBell />
 
               {/* User Profile with Dropdown */}
               <div className="relative" ref={profileDropdownRef}>
@@ -136,7 +192,7 @@ function AgencyLayout() {
                   onClick={() => setShowProfileDropdown(!showProfileDropdown)}
                   className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-semibold cursor-pointer hover:bg-gray-300"
                 >
-                  AU
+                  {getUserInitials()}
                 </div>
                 <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full border-2 border-white flex items-center justify-center pointer-events-none">
                   <svg className="w-2 h-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,18 +201,27 @@ function AgencyLayout() {
                 </div>
 
                 {showProfileDropdown && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-50">
+                  <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border z-50">
                     <div className="py-1">
-                      <div className="px-4 py-2 text-sm text-gray-700 border-b">
-                        Agency User
+                      <div className="px-4 py-3 border-b">
+                        <p className="text-sm font-semibold text-gray-800">{getUserDisplayName()}</p>
+                        <p className="text-xs text-gray-500 mt-1">{agencyUser?.email}</p>
+                        {agencyUser?.role && (
+                          <p className="text-xs text-[#800000] mt-1 font-medium">
+                            {agencyUser.role}
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={() => {
                           setShowProfileDropdown(false);
                           setShowLogoutConfirm(true);
                         }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
                       >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                        </svg>
                         Logout
                       </button>
                     </div>
