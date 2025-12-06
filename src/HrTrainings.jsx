@@ -58,6 +58,9 @@ function HrTrainings() {
   // Tab & search state for main table
   const [activeTab, setActiveTab] = useState("upcoming");
   const [searchQuery, setSearchQuery] = useState("");
+  
+  // Attendee search in details modal
+  const [attendeeSearchQuery, setAttendeeSearchQuery] = useState("");
 
   // Fetch trainings from Supabase
   useEffect(() => {
@@ -661,7 +664,10 @@ function HrTrainings() {
 
   // View training details
   const viewDetails = (training) => {
+    console.log('Training details:', training);
+    console.log('Image URL:', training.image_url);
     setSelectedTraining(training);
+    setAttendeeSearchQuery(""); // Reset search when opening modal
     setShowDetails(true);
   };
 
@@ -1355,7 +1361,7 @@ function HrTrainings() {
             {/* Content - Two Column Layout */}
             <div className="flex-1 overflow-hidden flex">
               {/* Left Side - Training Information */}
-              <div className="w-[40%] overflow-y-auto p-6 border-r border-gray-200">
+              <div className="w-[55%] overflow-y-auto p-6 border-r border-gray-200">
                 {/* Title Section */}
                 <div className="mb-4">
                   <h3 className="text-xl font-bold text-gray-900">{selectedTraining.title}</h3>
@@ -1366,47 +1372,171 @@ function HrTrainings() {
                   <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{selectedTraining.description || 'No description provided'}</p>
                 </div>
 
-                {/* Basic Info */}
-                <div className="space-y-3">
-                  {/* Date */}
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Date</p>
-                    <p className="text-sm font-semibold text-gray-900">{formatDate(selectedTraining.date)}</p>
+                {/* Training Image */}
+                {selectedTraining.image_url && (
+                  <div className="mb-4">
+                    <img 
+                      src={selectedTraining.image_url} 
+                      alt={selectedTraining.title}
+                      className="w-full h-auto object-contain rounded-lg shadow-md border border-gray-200 max-h-96"
+                      onError={(e) => {
+                        console.error('Failed to load image:', selectedTraining.image_url);
+                        e.target.style.display = 'none';
+                      }}
+                      onLoad={() => console.log('Image loaded successfully:', selectedTraining.image_url)}
+                    />
                   </div>
+                )}
+                {!selectedTraining.image_url && (
+                  <div className="mb-4 p-4 bg-gray-100 rounded-lg border border-gray-200 text-center">
+                    <svg className="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-xs text-gray-500">No image available</p>
+                  </div>
+                )}
+
+                {/* Divider */}
+                <div className="my-6 border-t border-gray-200"></div>
+
+                {/* Schedule Information Section */}
+                <div className="space-y-4">
+                  <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Schedule Information</h4>
                   
-                  {/* Time Row - Start and End Side by Side */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">Start Time</p>
-                      <p className="text-sm font-semibold text-gray-900">{formatTime(selectedTraining.time)}</p>
+                  {/* Schedule Type Badge */}
+                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
+                    {selectedTraining.schedule_type === 'online' ? (
+                      <>
+                        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-xs font-medium text-gray-600">Schedule Type</p>
+                          <p className="text-sm font-bold text-blue-700">Online Meeting</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-indigo-700">Onsite</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Date & Time Card */}
+                  <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3 shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs font-medium text-gray-500 mb-0.5">Date</p>
+                        <p className="text-sm font-bold text-gray-900">{formatDate(selectedTraining.date)}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-gray-500 mb-1">End Time</p>
-                      <p className="text-sm font-semibold text-gray-900">{formatEndTime(selectedTraining.end_at)}</p>
+                    
+                    <div className="border-t border-gray-100 pt-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="flex items-start gap-2">
+                          <svg className="w-4 h-4 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div>
+                            <p className="text-xs font-medium text-gray-500">Start</p>
+                            <p className="text-sm font-bold text-gray-900">{formatTime(selectedTraining.time)}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <svg className="w-4 h-4 text-orange-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div>
+                            <p className="text-xs font-medium text-gray-500">End</p>
+                            <p className="text-sm font-bold text-gray-900">{formatEndTime(selectedTraining.end_at)}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <div className="flex-1">
+                        <p className="text-xs font-medium text-gray-500 inline">Duration: </p>
+                        <span className="text-sm font-bold text-purple-700">{calculateDuration(selectedTraining.start_at, selectedTraining.end_at)}</span>
+                      </div>
                     </div>
                   </div>
                   
-                  {/* Duration */}
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Duration</p>
-                    <p className="text-sm font-semibold text-gray-900">{calculateDuration(selectedTraining.start_at, selectedTraining.end_at)}</p>
-                  </div>
-                  
-                  {/* Location */}
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Location</p>
-                    <p className="text-sm font-semibold text-gray-900">{selectedTraining.venue || 'Not set'}</p>
+                  {/* Location/Link Card */}
+                  <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      {selectedTraining.schedule_type === 'online' ? (
+                        <>
+                          <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                            </svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-gray-500 mb-1">Meeting Link</p>
+                            <a 
+                              href={selectedTraining.venue} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-sm font-semibold text-blue-600 hover:text-blue-700 hover:underline break-all inline-flex items-center gap-1 group"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span className="break-all">{selectedTraining.venue || 'Not set'}</span>
+                              <svg className="w-3 h-3 group-hover:translate-x-0.5 transition-transform flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                              </svg>
+                            </a>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-xs font-medium text-gray-500 mb-1">Location</p>
+                            <p className="text-sm font-semibold text-gray-900">{selectedTraining.venue || 'Not set'}</p>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Right Side - Attendees List */}
-              <div className="w-[60%] flex flex-col bg-gray-50">
+              <div className="w-[45%] flex flex-col bg-gray-50">
                 <div className="p-4 border-b border-gray-200 bg-white">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between mb-3">
                     <div>
                       <h3 className="text-sm font-bold text-gray-900">
-                        Attendees ({selectedTraining.attendees?.length || 0})
+                        Attendees ({(() => {
+                          const filtered = selectedTraining.attendees?.filter(attendee => {
+                            const name = typeof attendee === "string" ? attendee : attendee.name || "";
+                            return name.toLowerCase().includes(attendeeSearchQuery.toLowerCase());
+                          }) || [];
+                          return `${filtered.length}/${selectedTraining.attendees?.length || 0}`;
+                        })()})
                       </h3>
                     </div>
                     {!selectedTraining.is_active && selectedTraining.attendance && (
@@ -1427,40 +1557,80 @@ function HrTrainings() {
                       </div>
                     )}
                   </div>
+                  
+                  {/* Search Bar */}
+                  <div className="relative">
+                    <svg
+                      className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search attendees..."
+                      value={attendeeSearchQuery}
+                      onChange={(e) => setAttendeeSearchQuery(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                    />
+                  </div>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    {selectedTraining.attendees?.map((attendee, idx) => {
-                      const name = typeof attendee === "string" ? attendee : attendee.name || "";
-                      const attendedFlag = !!selectedTraining.attendance?.[name];
-                      return (
-                        <div 
-                          key={idx} 
-                          className="bg-white rounded-lg p-3 border border-gray-200 hover:shadow-sm transition-all"
-                        >
-                          <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center text-white text-xs font-semibold shadow-sm flex-shrink-0">
-                              {getInitials(name)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-xs font-medium text-gray-900 truncate">{name}</p>
-                              {!selectedTraining.is_active && (
-                                <span
-                                  className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-semibold mt-0.5 ${
-                                    attendedFlag
-                                      ? "bg-green-100 text-green-700"
-                                      : "bg-red-100 text-red-700"
-                                  }`}
-                                >
-                                  {attendedFlag ? "✓" : "✗"}
-                                </span>
-                              )}
+                  <div className="space-y-2">
+                    {(() => {
+                      const filteredAttendees = selectedTraining.attendees?.filter(attendee => {
+                        const name = typeof attendee === "string" ? attendee : attendee.name || "";
+                        return name.toLowerCase().includes(attendeeSearchQuery.toLowerCase());
+                      }) || [];
+                      
+                      if (filteredAttendees.length === 0) {
+                        return (
+                          <div className="text-center py-8 text-gray-500">
+                            <svg className="w-12 h-12 mx-auto text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                            </svg>
+                            <p className="text-sm font-medium">No attendees found</p>
+                            <p className="text-xs mt-1">Try adjusting your search</p>
+                          </div>
+                        );
+                      }
+                      
+                      return filteredAttendees.map((attendee, idx) => {
+                        const name = typeof attendee === "string" ? attendee : attendee.name || "";
+                        const attendedFlag = !!selectedTraining.attendance?.[name];
+                        return (
+                          <div 
+                            key={idx} 
+                            className="bg-white rounded-lg p-3 border border-gray-200 hover:shadow-sm transition-all"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-semibold shadow-sm flex-shrink-0">
+                                {getInitials(name)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900">{name}</p>
+                                {!selectedTraining.is_active && selectedTraining.attendance && (
+                                  <div className="flex items-center gap-1.5 mt-1">
+                                    <span
+                                      className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-semibold ${
+                                        attendedFlag
+                                          ? "bg-green-100 text-green-700"
+                                          : "bg-red-100 text-red-700"
+                                      }`}
+                                    >
+                                      {attendedFlag ? "✓ Present" : "✗ Absent"}
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               </div>
