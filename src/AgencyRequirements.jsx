@@ -53,29 +53,37 @@ function AgencyRequirements() {
       setLoading(true);
       setError(null);
       try {
-        // Get all deployed employees that are endorsed (came from agency)
-        // We treat an employee as agency-endorsed if:
-        // - is_agency = true OR
-        // - agency_profile_id is not null
-        // These are the same agency-sourced deployed employees you see in the Endorsements module.
+        // Get current agency user
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
+        if (userError || !user) {
+          console.error('Error getting user:', userError);
+          setError('Unable to verify agency');
+          setLoading(false);
+          return;
+        }
+
+        // Get all deployed employees that are endorsed by THIS AGENCY
+        // We treat an employee as endorsed by this agency if:
+        // - agency_profile_id matches the logged-in agency ID OR
+        // - endorsed_by_agency_id matches the logged-in agency ID
         // Include requirements column from employees table
         const { data: employeesData, error: empError } = await supabase
           .from('employees')
-          .select('id, email, fname, lname, mname, position, depot, hired_at, date_hired, source, is_agency, agency_profile_id, requirements')
-          .or('is_agency.eq.true,agency_profile_id.not.is.null')
+          .select('id, email, fname, lname, mname, position, depot, hired_at, date_hired, source, is_agency, agency_profile_id, endorsed_by_agency_id, requirements')
+          .or(`agency_profile_id.eq.${user.id},endorsed_by_agency_id.eq.${user.id}`)
           .not('hired_at', 'is', null) // Only deployed employees (have hired_at)
           .order('hired_at', { ascending: false });
 
         if (empError) {
-          // Fallback: query separately and combine
-          const [isAgency, hasAgencyId] = await Promise.all([
-            supabase.from('employees').select('*').eq('is_agency', true).not('hired_at', 'is', null),
-            supabase.from('employees').select('*').not('agency_profile_id', 'is', null).not('hired_at', 'is', null),
+          // Fallback: query separately and combine - filter by THIS AGENCY only
+          const [agencyProfileId, endorsedByAgencyId] = await Promise.all([
+            supabase.from('employees').select('*').eq('agency_profile_id', user.id).not('hired_at', 'is', null),
+            supabase.from('employees').select('*').eq('endorsed_by_agency_id', user.id).not('hired_at', 'is', null),
           ]);
           
           const allEmployees = [
-            ...(isAgency.data || []),
-            ...(hasAgencyId.data || []),
+            ...(agencyProfileId.data || []),
+            ...(endorsedByAgencyId.data || []),
           ];
           
           // Remove duplicates by email

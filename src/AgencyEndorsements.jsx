@@ -116,6 +116,15 @@ function AgencyEndorsements() {
     setEndorsedLoading(true);
     setEndorsedError(null);
     try {
+      // Get current agency user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('Error getting user:', userError);
+        setEndorsedError('Unable to verify user');
+        setEndorsedLoading(false);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("applications")
         .select(
@@ -226,7 +235,18 @@ function AgencyEndorsements() {
             assessment_results_file: r.assessment_results_file || null,
             raw: r,
           };
-        }).filter(Boolean);
+        }).filter(item => {
+          // Filter 1: Remove null items (already deployed agency employees)
+          if (item === null) return false;
+          
+          // Filter 2: Only show endorsements made by the current agency
+          // If agency_profile_id (endorsed_by_profile_id from meta) exists, it must match the current user
+          if (item.agency_profile_id && item.agency_profile_id !== user.id) {
+            return false;
+          }
+          
+          return true;
+        });
 
         setEndorsedEmployees(normalized);
       }
