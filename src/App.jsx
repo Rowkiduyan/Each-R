@@ -1,7 +1,6 @@
 import { Routes, Route } from "react-router-dom";
 import ApplicantRegister from "./ApplicantRegister";
 import ApplicantLogin from "./ApplicantLogin";
-import HrHome from "./HrHome";
 import AgencyEndorse from "./AgencyEndorse";
 import Employees from "./Employees";
 import ApplicantGHome from "./ApplicantGHome";
@@ -9,7 +8,6 @@ import ApplicantLHome from "./ApplicantLHome";
 import EmployeeLogin from "./EmployeeLogin";
 import EmHome from "./EmHome";
 import AdminHome from "./AdminHome";
-import ManageAccounts from "./ManageAccounts";
 import HrTrainings from "./HrTrainings";
 import EmployeeTrainings from "./EmployeeTrainings";
 import HrRecruitment from "./HrRecruitment";
@@ -62,7 +60,8 @@ function App() {
           </RequireRole>
         }
       >
-        <Route path="home" element={<HrHome />} />
+        <Route index element={<HrRecruitment />} />
+        <Route path="home" element={<HrRecruitment />} />
         <Route path="schedules" element={<HrSched />} />
         <Route path="trainings" element={<HrTrainings />} />
         <Route path="recruitment" element={<HrRecruitment />} />
@@ -110,7 +109,6 @@ function App() {
         }
         >
         <Route path="home" element={<AdminHome />} />
-        <Route path="accounts" element={<ManageAccounts />} />
         <Route path="create" element={<AdminCreate />} />
         <Route path="enable-disable" element={<AdminEnableDisable />} />
       </Route>

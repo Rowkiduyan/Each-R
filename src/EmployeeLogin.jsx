@@ -144,7 +144,7 @@ function EmployeeLogin() {
     console.log("🔐 Login successful! Role:", profile.role, "Normalized:", roleForRedirect);
 
     if (roleForRedirect === "hr" || roleForRedirect === "hrc") {
-      navigate("/hr/home");
+      navigate("/hr/recruitment");
     } else if (roleForRedirect === "employee") {
       console.log("✅ Redirecting to employee home...");
       navigate("/employee/home");

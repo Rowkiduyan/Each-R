@@ -66,7 +66,7 @@ function ApplicantLogin() {
     const jobId = location.state?.jobId;
     navigate(redirectTo, { state: { jobId } });
   } else if (userRole === "hr") {
-    navigate("/hr/home");
+    navigate("/hr/recruitment");
   } else {
     setError("Unknown role or access not allowed");
     setShowErrorModal(true);

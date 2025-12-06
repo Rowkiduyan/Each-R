@@ -74,14 +74,6 @@ export default function AdminLayout() {
                 Home
               </NavLink>
 
-              <NavLink to="/admin/accounts" className={({ isActive }) =>
-              `hover:text-red-600 ${isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700 font-medium"
-                }`
-              }
-              >
-                Manage Accounts
-              </NavLink>
-
               <NavLink to="/admin/create" className={({ isActive }) =>
               `hover:text-red-600 ${isActive ? "text-red-600 font-semibold border-b-2 border-red-600" : "text-gray-700 font-medium"
                 }`
