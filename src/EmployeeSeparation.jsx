@@ -17,6 +17,10 @@ function EmployeeSeparation() {
   // Separation record from database
   const [separationRecord, setSeparationRecord] = useState(null);
   
+  // Resignation Type Selection
+  const [resignationType, setResignationType] = useState(null); // null, 'resignation', 'immediate'
+  const [showTypeSelection, setShowTypeSelection] = useState(true);
+  
   // Stage 1: Resignation Letter
   const [resignationFile, setResignationFile] = useState(null);
   const [resignationStatus, setResignationStatus] = useState("none"); // none, submitted, validated
@@ -54,11 +58,11 @@ function EmployeeSeparation() {
 
   // Fetch separation record on component mount
   useEffect(() => {
-    if (userId) {
+    if (employeeData?.id) {
       fetchSeparationRecord();
       fetchTemplates();
     }
-  }, [userId]);
+  }, [employeeData]);
 
   const fetchTemplates = async () => {
     try {
@@ -84,12 +88,19 @@ function EmployeeSeparation() {
       setLoading(true);
       setError(null);
       
-      console.log('Fetching separation record for userId:', userId);
+      const employeeId = employeeData?.id;
+      console.log('Fetching separation record for employeeId:', employeeId);
+      
+      if (!employeeId) {
+        console.log('No employee ID available');
+        setLoading(false);
+        return;
+      }
       
       const { data, error: fetchError } = await supabase
         .from('employee_separations')
         .select('*')
-        .eq('employee_id', userId)
+        .eq('employee_id', employeeId)
         .maybeSingle(); // Changed from .single() to .maybeSingle()
 
       console.log('Fetch result:', { data, error: fetchError });
@@ -106,6 +117,9 @@ function EmployeeSeparation() {
 
       if (data) {
         setSeparationRecord(data);
+        setResignationType(data.type || null);
+        // Hide type selection if type is already set OR if separation is completed OR terminated
+        setShowTypeSelection(!data.type && data.status !== 'completed' && !data.is_terminated); 
         setResignationStatus(data.resignation_status || 'none');
         setExitClearanceStatus(data.signed_exit_clearance_status || 'none');
         setExitInterviewStatus(data.signed_exit_interview_status || 'none');
@@ -132,7 +146,39 @@ function EmployeeSeparation() {
   };
 
   const handleResignationSubmit = async () => {
-    if (!resignationFile || !userId) return;
+    const employeeId = employeeData?.id || userId;
+    console.log('Employee Data:', employeeData);
+    console.log('Employee ID for submission:', employeeId);
+    console.log('User ID (auth):', userId);
+    
+    if (!resignationFile) {
+      setError('Please select a resignation letter file.');
+      return;
+    }
+    
+    if (!employeeId) {
+      setError('Unable to submit: Employee information not found. Please contact HR.');
+      return;
+    }
+    
+    // Verify employee exists in employees table
+    const { data: employeeCheck, error: checkError } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('id', employeeId)
+      .maybeSingle();
+    
+    if (checkError) {
+      console.error('Error checking employee:', checkError);
+      setError('Unable to verify employee record. Please try again.');
+      return;
+    }
+    
+    if (!employeeCheck) {
+      console.error('Employee not found in employees table with ID:', employeeId);
+      setError('Employee record not found. Please contact HR to ensure your employee account is set up correctly.');
+      return;
+    }
     
     setShowUpdateConfirm(false); // Close update modal
     setShowSubmitConfirm(false); // Close submit modal
@@ -156,7 +202,7 @@ function EmployeeSeparation() {
       
       // 1. Upload file to storage
       const fileExt = resignationFile.name.split('.').pop();
-      const fileName = `${userId}/resignation_letter_${Date.now()}.${fileExt}`;
+      const fileName = `${employeeData?.authUserId || userId}/resignation_letter_${Date.now()}.${fileExt}`;
       
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('separation-documents')
@@ -175,7 +221,8 @@ function EmployeeSeparation() {
       const { error: upsertError } = await supabase
         .from('employee_separations')
         .upsert({
-          employee_id: userId,
+          employee_id: employeeId,
+          type: resignationType,
           resignation_letter_url: filePath,
           resignation_status: 'submitted',
           resignation_submitted_at: new Date().toISOString(),
@@ -217,7 +264,8 @@ function EmployeeSeparation() {
   const isStage3Active = exitClearanceStatus === "submitted" && exitInterviewStatus === "submitted";
 
   const handleExitClearanceSubmit = async () => {
-    if (!exitClearanceFile || !userId) return;
+    const employeeId = employeeData?.id;
+    if (!exitClearanceFile || !employeeId) return;
     
     setShowExitClearanceConfirm(false);
     
@@ -234,7 +282,7 @@ function EmployeeSeparation() {
       
       // Upload new file
       const fileExt = exitClearanceFile.name.split('.').pop();
-      const fileName = `${userId}/signed_exit_clearance_${Date.now()}.${fileExt}`;
+      const fileName = `${employeeData?.authUserId || userId}/signed_exit_clearance_${Date.now()}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
         .from('separation-documents')
@@ -254,7 +302,7 @@ function EmployeeSeparation() {
           signed_exit_clearance_status: 'submitted',
           signed_exit_clearance_submitted_at: new Date().toISOString()
         })
-        .eq('employee_id', userId);
+        .eq('employee_id', employeeId);
       
       if (updateError) throw updateError;
       
@@ -280,7 +328,8 @@ function EmployeeSeparation() {
   };
 
   const handleExitInterviewSubmit = async () => {
-    if (!exitInterviewFile || !userId) return;
+    const employeeId = employeeData?.id;
+    if (!exitInterviewFile || !employeeId) return;
     
     setShowExitInterviewConfirm(false);
     
@@ -297,7 +346,7 @@ function EmployeeSeparation() {
       
       // Upload new file
       const fileExt = exitInterviewFile.name.split('.').pop();
-      const fileName = `${userId}/signed_exit_interview_${Date.now()}.${fileExt}`;
+      const fileName = `${employeeData?.authUserId || userId}/signed_exit_interview_${Date.now()}.${fileExt}`;
       
       const { error: uploadError } = await supabase.storage
         .from('separation-documents')
@@ -317,7 +366,7 @@ function EmployeeSeparation() {
           signed_exit_interview_status: 'submitted',
           signed_exit_interview_submitted_at: new Date().toISOString()
         })
-        .eq('employee_id', userId);
+        .eq('employee_id', employeeId);
       
       if (updateError) throw updateError;
       
@@ -406,6 +455,85 @@ function EmployeeSeparation() {
         </div>
       )}
 
+      {/* Resignation Type Selection */}
+      {showTypeSelection && !isTerminated && (
+        <div className="bg-white shadow-lg rounded-lg p-6 mb-6">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Select Resignation Type</h2>
+          <p className="text-gray-600 mb-6">Please choose the type of resignation before proceeding.</p>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Regular Resignation */}
+            <button
+              onClick={() => {
+                setResignationType('resignation');
+                setShowTypeSelection(false);
+              }}
+              className="border-2 border-gray-300 rounded-lg p-6 hover:border-blue-500 hover:bg-blue-50 transition-all text-left group"
+            >
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mr-4">
+                  <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2 group-hover:text-blue-600">Regular Resignation</h3>
+                  <p className="text-sm text-gray-600">Submit your resignation with standard notice period and complete the full separation process.</p>
+                </div>
+              </div>
+            </button>
+
+            {/* Immediate Resignation */}
+            <button
+              onClick={() => {
+                setResignationType('immediate');
+                setShowTypeSelection(false);
+              }}
+              className="border-2 border-gray-300 rounded-lg p-6 hover:border-orange-500 hover:bg-orange-50 transition-all text-left group"
+            >
+              <div className="flex items-start">
+                <div className="flex-shrink-0 mr-4">
+                  <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 mb-2 group-hover:text-orange-600">Immediate Resignation</h3>
+                  <p className="text-sm text-gray-600">Resign immediately without notice period. This option should only be used in urgent situations.</p>
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Show progress and stages only after type is selected */}
+      {resignationType && !showTypeSelection && (
+        <>
+          {/* Resignation Type Badge */}
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                resignationType === 'immediate' 
+                  ? 'bg-orange-100 text-orange-800 border border-orange-300' 
+                  : 'bg-blue-100 text-blue-800 border border-blue-300'
+              }`}>
+                {resignationType === 'immediate' ? '⚡ Immediate Resignation' : '📄 Regular Resignation'}
+              </span>
+            </div>
+            {resignationStatus === 'none' && (
+              <button
+                onClick={() => {
+                  setResignationType(null);
+                  setShowTypeSelection(true);
+                }}
+                className="text-sm text-gray-600 hover:text-gray-800 underline"
+              >
+                Change Type
+              </button>
+            )}
+          </div>
+
       {/* Progress Bar */}
       <div className="mb-12">
         <div className="flex items-center justify-between relative">
@@ -457,6 +585,22 @@ function EmployeeSeparation() {
           </div>
         </div>
       </div>
+
+      {/* Back to Type Selection Button */}
+      {resignationStatus === 'none' && (
+        <button
+          onClick={() => {
+            setResignationType(null);
+            setShowTypeSelection(true);
+          }}
+          className="mb-4 inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors text-sm font-medium"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Type Selection
+        </button>
+      )}
 
       {/* Stage 1: Resignation Submission */}
       <div className="bg-white shadow-lg rounded-lg p-6 mb-6">
@@ -907,7 +1051,9 @@ function EmployeeSeparation() {
           </div>
         </div>
       )}
-      
+        </>
+      )}
+
       {/* Submit Confirmation Modal */}
       {showSubmitConfirm && (
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">

@@ -1039,7 +1039,7 @@ function HrRecruitment() {
           
           // Build employee data with only fields that exist in the employees table
           // Based on Employees.jsx, the table has: id, email, fname, lname, mname, contact_number, 
-          // position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status
+          // position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, personal_email
           const employeeData = {
             email: employeeEmail,
             fname: firstName,
@@ -1052,6 +1052,7 @@ function HrRecruitment() {
             hired_at: new Date().toISOString(),
             source: employeeSource,
             status: "Probationary", // Set new employees as Probationary
+            personal_email: applicantEmail || null, // Carry over applicant's email to personal_email
             // For agency applicants, preserve agency metadata
             ...(isAgencyApplicant && {
               is_agency: true,
@@ -1094,6 +1095,7 @@ function HrRecruitment() {
               hired_at: new Date().toISOString(),
               source: employeeSource,
               status: "Probationary", // Set new employees as Probationary
+              personal_email: applicantEmail || null, // Carry over applicant's email to personal_email
             };
 
             const { data: retryData, error: retryError } = await supabase

@@ -85,18 +85,37 @@ function EmployeeLayout() {
 
                 // User is authenticated and is an employee
                 // Try to get employee data from employees table
+                // The employees table has its own 'id' which is different from auth user id
                 try {
-                    const { data: employee, error: empError } = await supabase
+                    // First try to find by auth user id if that's how it's linked
+                    let { data: employee, error: empError } = await supabase
                         .from('employees')
-                        .select('fname, mname, lname, email')
-                        .eq('email', user.email)
+                        .select('id, fname, mname, lname, email')
+                        .eq('id', user.id)
                         .maybeSingle();
                     
+                    // If not found by auth id, try by email
+                    if (!employee && !empError) {
+                        const result = await supabase
+                            .from('employees')
+                            .select('id, fname, mname, lname, email')
+                            .eq('email', user.email)
+                            .maybeSingle();
+                        
+                        employee = result.data;
+                        empError = result.error;
+                    }
+                    
                     if (!empError && employee) {
-                        setEmployeeUser(employee);
+                        setEmployeeUser({
+                            ...employee,
+                            authUserId: user.id // Keep auth ID for storage paths
+                        });
                     } else {
                         // Use profile data as fallback
                         setEmployeeUser({
+                            id: null,
+                            authUserId: user.id,
                             fname: profile.first_name || "",
                             lname: profile.last_name || "",
                             email: profile.email || user.email
@@ -106,6 +125,8 @@ function EmployeeLayout() {
                     console.warn('Exception fetching employee data:', queryErr);
                     // Use profile data as fallback
                     setEmployeeUser({
+                        id: null,
+                        authUserId: user.id,
                         fname: profile.first_name || "",
                         lname: profile.last_name || "",
                         email: profile.email || user.email
