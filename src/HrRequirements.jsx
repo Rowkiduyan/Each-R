@@ -620,13 +620,20 @@ function HrRequirements() {
         return doc.status || 'missing';
       };
       
-      // Count totals
-      const idCount = Object.keys(idNums).length || 4; // SSS, TIN, PAG-IBIG, PhilHealth
-      const licenseCount = license ? 1 : 0; // Driver's License
-      const medicalCount = Object.keys(medicalExams).length || medicalExams.length || 6; // 6 medical exams
-      const personalCount = Object.keys(personalDocs).length || personalDocs.length || 5; // 5 personal documents
-      const clearanceCount = Object.keys(clearances).length || clearances.length || 3; // 3 clearances
-      const educationalCount = Object.keys(educationalDocs).length || educationalDocs.length || 2; // 2 educational docs
+      // Count totals - use actual expected counts, not defaults
+      // ID Numbers: SSS, TIN, PAG-IBIG, PhilHealth = 4
+      const idCount = 4;
+      // Driver's License = 1
+      const licenseCount = 1;
+      // Medical Exams: X-ray, Stool, Urine, HEPA, CBC, Drug Test = 6
+      const medicalCount = 6;
+      // Personal Documents: 2x2 Picture, PSA Birth Cert, Marriage Contract, Dependents Birth Cert, Residence Sketch = 5
+      const personalCount = 5;
+      // Clearances: NBI, Police, Barangay = 3
+      const clearanceCount = 3;
+      // Educational Documents: Diploma, Transcript of Records = 2
+      const educationalCount = 2;
+      // Legacy documents (if any)
       const legacyDocCount = Array.isArray(documents) ? documents.length : 0;
       
       const total = idCount + licenseCount + medicalCount + personalCount + clearanceCount + educationalCount + legacyDocCount;
@@ -635,10 +642,31 @@ function HrRequirements() {
       const uploadedIds = Object.values(idNums).filter(id => 
         !!(id?.file_path || id?.filePath) || id?.status === 'Submitted' || id?.status === 'Validated'
       ).length;
+      
+      const uploadedLicense = (license && (!!(license?.frontFilePath || license?.front_file_path || license?.backFilePath || license?.back_file_path) || 
+        license?.status === 'Submitted' || license?.status === 'Validated')) ? 1 : 0;
+      
+      const uploadedMedical = Object.values(medicalExams).filter(doc => 
+        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
+      ).length;
+      
+      const uploadedPersonal = Object.values(personalDocs).filter(doc => 
+        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
+      ).length;
+      
+      const uploadedClearances = Object.values(clearances).filter(doc => 
+        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
+      ).length;
+      
+      const uploadedEducational = Object.values(educationalDocs).filter(doc => 
+        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
+      ).length;
+      
       const uploadedDocs = documents.filter(doc => 
         !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
       ).length;
-      const uploaded = uploadedIds + uploadedDocs;
+      
+      const uploaded = uploadedIds + uploadedLicense + uploadedMedical + uploadedPersonal + uploadedClearances + uploadedEducational + uploadedDocs;
       
       // Count approved
       const approvedIds = Object.values(idNums).filter(id => id?.status === 'Validated').length;

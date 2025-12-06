@@ -11,7 +11,7 @@ function ApplicantLogin() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showErrorModal, setShowErrorModal] = useState(false);
-  const [showGuestModal, setShowGuestModal] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleLogin = async (e) => {
   e.preventDefault();
@@ -78,62 +78,134 @@ function ApplicantLogin() {
 
 
   return (
-    <div className="flex flex-col items-center min-h-screen bg-neutral-100">
-      <div className="flex justify-end gap-2 w-full bg-neutral-100 p-5">
-        <button
-          onClick={() => navigate("/employee/login")}
-          className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
-          Employee Login
-        </button>
-        <button
-          onClick={() => setShowGuestModal(true)}
-          className="bg-red-600 text-white font-bold py-2 px-4 rounded hover:bg-red-700 cursor-pointer">
-          View Jobs as Guest
-        </button>
-      </div>
-
-      <div className="flex flex-col items-center justify-center bg-neutral-200 p-10 rounded-lg shadow-md max-w-sm w-full mt-10">
-        <div className="text-red-600 font-bold text-3xl italic mb-4">
-          Each-R
+    <div className="flex-1 flex flex-col items-center justify-center py-12 px-4">
+      <div className="w-full max-w-md">
+        {/* Login Type Selector */}
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-6">
+          <div className="flex border-b border-gray-200">
+            <button
+              className="flex-1 px-6 py-4 text-center font-semibold text-red-600 bg-red-50 border-b-2 border-red-600 transition-colors"
+              disabled
+            >
+              <div className="flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                Applicant Login
+              </div>
+            </button>
+            <button
+              onClick={() => navigate("/employee/login")}
+              className="flex-1 px-6 py-4 text-center font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                Employee Login
+              </div>
+            </button>
+          </div>
         </div>
-        <h2 className="text-black text-xl font-semibold mb-4">Applicant Log In</h2>
 
-        <form onSubmit={handleLogin} className="flex flex-col items-center w-full">
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Email"
-            className="w-3/4 p-2 mb-3 border border-gray-300 rounded bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-red-400"
-            required
-          />
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Password"
-            className="w-3/4 p-2 mb-4 border border-gray-300 rounded bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-red-400"
-            required
-          />
+        {/* Login Form */}
+        <div className="bg-white rounded-xl shadow-lg p-8">
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Welcome Back</h2>
+            <p className="text-gray-600 text-sm">Sign in to your applicant account</p>
+          </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-1/3 py-2 bg-red-600 text-white font-bold rounded hover:bg-red-700 flex justify-center items-center">
-            {loading ? "Logging in..." : "LOGIN"}
-          </button>
-        </form>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address</label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter your email"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                required
+              />
+            </div>
 
-        <p className="mt-3 text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
-          Forgot Password?
-        </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all pr-12"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors"
+                >
+                  {showPassword ? (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
 
-        <div className="mt-3 flex justify-center w-full space-x-6 max-w-xs mx-auto">
-          <Link
-            to="/applicant/register"
-            className="text-gray-500 text-sm underline cursor-pointer hover:text-gray-700">
-            Create Account
-          </Link>
+            <div className="flex items-center justify-between text-sm">
+              <label className="flex items-center">
+                <input type="checkbox" className="rounded border-gray-300 text-red-600 focus:ring-red-500" />
+                <span className="ml-2 text-gray-600">Remember me</span>
+              </label>
+              <button
+                type="button"
+                className="text-red-600 hover:text-red-700 font-medium"
+              >
+                Forgot Password?
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Logging in...
+                </>
+              ) : (
+                <>
+                  Login
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <p className="text-center text-sm text-gray-600">
+              Don't have an account?{" "}
+              <Link
+                to="/applicant/register"
+                className="text-red-600 hover:text-red-700 font-semibold underline"
+              >
+                Create Account
+              </Link>
+            </p>
+          </div>
         </div>
       </div>
 
@@ -170,41 +242,6 @@ function ApplicantLogin() {
         </div>
       )}
 
-      {/* Guest Modal */}
-      {showGuestModal && (
-        <div
-          className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
-          onClick={() => setShowGuestModal(false)}
-        >
-          <div
-            className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-6 text-center">
-              <div className="text-lg font-semibold text-gray-800 mb-4">Continue as Guest?</div>
-              <div className="flex justify-center gap-2">
-                <button
-                  type="button"
-                  className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
-                  onClick={() => setShowGuestModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-                  onClick={() => {
-                    setShowGuestModal(false);
-                    navigate("/applicantg/home");
-                  }}
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -39,6 +39,7 @@ import RequireRole from "./RequireRole";
 import HRLayout from "./layouts/HRLayout";
 import AdminLayout from "./layouts/AdminLayout";
 import EmployeeLayout from "./layouts/EmployeeLayout";
+import GuestLayout from "./layouts/GuestLayout";
 import AdminCreate from "./AdminCreate";
 import AdminEnableDisable from "./AdminEnableDisable";
 import TermsAndPrivacy from "./TermsAndPrivacy";
@@ -49,10 +50,6 @@ function App() {
   return (
     <Routes>
       {/* Public routes */}
-      <Route path="/" element={<ApplicantGHome />} />
-      <Route path="/applicant/register" element={<ApplicantRegister />} />
-      <Route path="/applicant/verify" element={<VerifyEmail />} />
-      <Route path="/applicant/login" element={<ApplicantLogin />} />
       <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
 
       {/* HR protected routes */}
@@ -115,12 +112,24 @@ function App() {
         <Route path="accounts" element={<ManageAccounts />} />
         <Route path="create" element={<AdminCreate />} />
         <Route path="enable-disable" element={<AdminEnableDisable />} />
-      </Route>      {/* Public routes (no protection) */}
-      <Route path="/employee/login" element={<EmployeeLogin />} />
-      <Route path="/agency/endorse" element={<AgencyEndorse />} />
-      <Route path="/applicantg/home" element={<ApplicantGHome />} />
+      </Route>
+
+      {/* Applicant routes (public, but with layout) */}
+      <Route path="/" element={<GuestLayout />}>
+        <Route index element={<ApplicantGHome />} />
+        <Route path="applicantg/home" element={<ApplicantGHome />} />
+        <Route path="applicant/login" element={<ApplicantLogin />} />
+        <Route path="applicant/register" element={<ApplicantRegister />} />
+        <Route path="applicant/verify" element={<VerifyEmail />} />
+        <Route path="employee/login" element={<EmployeeLogin />} />
+      </Route>
+
+      {/* Applicant logged-in routes (no layout) */}
       <Route path="/applicantl/home" element={<ApplicantLHome />} />
       <Route path="/applicant/applications" element={<ApplicantApplications />} />
+
+      {/* Public routes (no protection) */}
+      <Route path="/agency/endorse" element={<AgencyEndorse />} />
       
       {/* Agency protected routes */}
       <Route 

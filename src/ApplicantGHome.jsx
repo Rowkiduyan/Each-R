@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import Roadwise from './Roadwise.png';
@@ -169,7 +169,7 @@ function ApplicantGHome() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
+    <div className="flex-1 flex flex-col overflow-y-auto">
       <style>{`
         .no-scrollbar {
           -ms-overflow-style: none;
@@ -179,83 +179,47 @@ function ApplicantGHome() {
           display: none;
         }
       `}</style>
-      <div className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="flex-shrink-0 text-red-600 font-bold text-3xl italic">
-                Each-R
-              </div>
-            </div>
-
-            <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
-              <Link
-                to="/applicantg/home"
-                className="text-red-600 border-b-2 border-red-600 pb-1"
-              >
-                Job Search
-              </Link>
-              <Link to="#" className="hover:text-gray-900 transition-colors">
-                About
-              </Link>
-              <Link to="#" className="hover:text-gray-900 transition-colors">
-                Contact Us
-              </Link>
-            </nav>
-
-            <Link
-              to="/applicant/register"
-              className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              Sign In
-            </Link>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-7xl mx-auto px-6">
+      {/* Search Bar with Photo Banner */}
+      <div className="w-full">
         <div className="relative">
-          <div className="overflow-hidden">
-            <img
-              src={Roadwise}
-              alt="Delivery trucks on the road"
-              className="w-full h-[200px] object-cover"
-            />
-          </div>
-          <div className="absolute inset-0 bg-black/30 pointer-events-none" />
-          <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
-            <div className="w-full max-w-4xl pointer-events-auto">
-              <form onSubmit={handleSearchSubmit}>
-                <div className="flex flex-col gap-3">
-                  <div className="flex items-stretch bg-white rounded-2xl shadow-xl border border-gray-200 overflow-visible relative">
-                    <div className="flex-1 flex items-center px-5 py-4 relative">
-                      <input
-                        type="text"
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        onFocus={() => setShowSearchSuggestions(true)}
-                        onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
-                        className="w-full bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none"
-                        placeholder=" Job title, keywords, or company"
-                      />
-                      {showSearchSuggestions && filteredSearchSuggestions.length > 0 && (
-                        <ul className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto z-[9999]">
-                          {filteredSearchSuggestions.map((title) => (
-                            <li
-                              key={title}
-                              className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                              onMouseDown={() => {
-                                setSearchInput(title);
-                                setShowSearchSuggestions(false);
-                              }}
-                            >
-                              {title}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                    <div className="w-px bg-gray-200" />
+          <img
+            src={Roadwise}
+            alt="Delivery trucks on the road"
+            className="w-full h-[200px] object-cover"
+          />
+          <div className="absolute inset-0 bg-black/30" />
+          <div className="absolute inset-0 flex items-center justify-center px-4">
+            <form className="w-full max-w-4xl" onSubmit={handleSearchSubmit}>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-stretch bg-white rounded-2xl shadow-xl border border-gray-200 overflow-visible relative">
+                  <div className="flex-1 flex items-center px-5 py-4 relative">
+                    <input
+                      type="text"
+                      value={searchInput}
+                      onChange={(e) => setSearchInput(e.target.value)}
+                      onFocus={() => setShowSearchSuggestions(true)}
+                      onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
+                      className="w-full bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none"
+                      placeholder=" Job title, keywords, or company"
+                    />
+                    {showSearchSuggestions && filteredSearchSuggestions.length > 0 && (
+                      <ul className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto z-[9999]">
+                        {filteredSearchSuggestions.map((title) => (
+                          <li
+                            key={title}
+                            className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
+                            onMouseDown={() => {
+                              setSearchInput(title);
+                              setShowSearchSuggestions(false);
+                            }}
+                          >
+                            {title}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div className="w-px bg-gray-200" />
                   <div className="flex-1 flex items-center px-6 py-3 relative">
                     <input
                       type="text"
@@ -296,14 +260,13 @@ function ApplicantGHome() {
                 <div className="flex justify-end pr-4">
                   <button
                     type="button"
-                    className="text-gray-900 text-sm font-medium hover:underline"
+                    className="text-white text-sm font-medium hover:underline"
                   >
                     More options
                   </button>
                 </div>
               </div>
             </form>
-            </div>
           </div>
         </div>
       </div>

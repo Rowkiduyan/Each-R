@@ -36,39 +36,98 @@ function VerifyEmail() {
       // 2️⃣ Check if user already exists in Supabase Auth
       let authUserId;
 
-      // First, try to sign up
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: pendingUser.email,
-        password: pendingUser.password,
-      });
+      // First, check if user exists by querying profiles table (which uses auth user ID)
+      const { data: existingProfileByEmail } = await supabase
+        .from("profiles")
+        .select("id, email")
+        .eq("email", pendingUser.email)
+        .maybeSingle();
 
-      if (signUpError) {
-        // If user already exists, try to sign in instead
-        if (signUpError.message.includes("already registered") || signUpError.message.includes("User already registered")) {
-          console.log("User already exists in Auth, attempting to sign in...");
-          
-          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-            email: pendingUser.email,
-            password: pendingUser.password,
-          });
+      if (existingProfileByEmail) {
+        // User already exists and is verified, they should just log in
+        console.log("User already exists and is verified");
+        setErrorMessage("This email is already registered and verified. Please log in instead. If you forgot your password, use 'Forgot Password' to reset it.");
+        setIsVerifying(false);
+        return;
+      } else {
+        // User doesn't exist, try to create new account
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: pendingUser.email,
+          password: pendingUser.password,
+          options: {
+            emailRedirectTo: undefined, // Don't redirect, we're handling verification manually
+          }
+        });
 
-          if (signInError) {
-            console.error("Auth signin error:", signInError);
-            setErrorMessage("Error signing in: " + signInError.message);
+        if (signUpError) {
+          // Check for specific error types
+          if (signUpError.message.includes("already registered") || 
+              signUpError.message.includes("User already registered") ||
+              signUpError.message.includes("already exists") ||
+              signUpError.message.includes("already been registered")) {
+            // User exists in Auth but not in profiles table yet
+            console.log("User exists in Auth, attempting to sign in to get user ID...");
+            
+            // Try to sign in to get the user ID
+            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+              email: pendingUser.email,
+              password: pendingUser.password,
+            });
+
+            if (signInError) {
+              // If sign-in fails, the password might be wrong or user was created differently
+              console.error("Auth signin error:", signInError);
+              
+              // Check if there's a profile with this email (user might have been created via different flow)
+              const { data: profileCheck } = await supabase
+                .from("profiles")
+                .select("id")
+                .eq("email", pendingUser.email)
+                .maybeSingle();
+              
+              if (profileCheck) {
+                authUserId = profileCheck.id;
+                console.log("Found user via profiles table");
+              } else {
+                // User exists in Auth but password doesn't match and no profile exists
+                // This could happen if:
+                // 1. User registered before but didn't complete verification
+                // 2. User changed password
+                // 3. User was created through a different flow
+                
+                // Try to reset password using the password from pending_applicants
+                // But first, let's check if we can proceed by creating the profile/applicant records
+                // We'll use a workaround: try to get user by attempting password reset
+                
+                // Actually, if user exists in Auth but password doesn't match, we should
+                // still allow verification to proceed, but they'll need to reset password to log in
+                // For now, let's try to find the user ID another way or create a new account
+                
+                // Since we can't get the user ID without password, we'll need to inform the user
+                setErrorMessage("An account with this email already exists, but the password doesn't match. Please use 'Forgot Password' to reset your password, then try verifying again. If you believe this is an error, please contact support.");
+                setIsVerifying(false);
+                return;
+              }
+            } else {
+              authUserId = signInData.user.id;
+              // Sign out immediately after getting the ID (we don't want to stay signed in)
+              await supabase.auth.signOut();
+            }
+          } else {
+            console.error("Auth signup error:", signUpError);
+            setErrorMessage("Error creating account: " + signUpError.message);
             setIsVerifying(false);
             return;
           }
-
-          authUserId = signInData.user.id;
         } else {
-          console.error("Auth signup error:", signUpError);
-          setErrorMessage("Error creating user in Supabase Auth: " + signUpError.message);
-          setIsVerifying(false);
-          return;
+          // Sign up was successful
+          authUserId = signUpData.user?.id;
+          if (!authUserId) {
+            setErrorMessage("Account creation failed. Please try again.");
+            setIsVerifying(false);
+            return;
+          }
         }
-      } else {
-        // Sign up was successful
-        authUserId = signUpData.user.id;
       }
 
       // 3️⃣ Check if profile already exists, if not create it
@@ -159,54 +218,123 @@ function VerifyEmail() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 flex items-center justify-center">
-      <form
-        onSubmit={handleVerify}
-        className="w-full max-w-md p-8 space-y-4 rounded-2xl bg-white shadow"
-      >
-        <h1 className="text-2xl font-bold text-center mb-2">
-          Verify Your Email
-        </h1>
-        <p className="text-gray-600 text-center mb-6">
-          Enter the 6-digit code we sent to your email.
-        </p>
-
-        {errorMessage && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-            {errorMessage}
+    <div className="flex-1 flex flex-col items-center justify-center py-12 px-4">
+      <div className="w-full max-w-md">
+        <div className="bg-white rounded-xl shadow-lg p-8">
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Verify Your Email</h2>
+            <p className="text-gray-600 text-sm">
+              Enter the 6-digit verification code we sent to your email address
+            </p>
           </div>
-        )}
 
-        {successMessage && (
-          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-            {successMessage}
+          <form onSubmit={handleVerify} className="space-y-4">
+            {/* Error Message */}
+            {errorMessage && (
+              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg flex items-start gap-3">
+                <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-red-700 text-sm">{errorMessage}</p>
+              </div>
+            )}
+
+            {/* Success Message */}
+            {successMessage && (
+              <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded-lg flex items-start gap-3">
+                <svg className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <p className="text-green-700 text-sm">{successMessage}</p>
+              </div>
+            )}
+
+            {/* Email Field */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address</label>
+              <input
+                type="email"
+                value={email}
+                readOnly
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 text-gray-600 focus:outline-none cursor-not-allowed"
+              />
+            </div>
+
+            {/* Verification Code Field */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Verification Code</label>
+              <input
+                type="text"
+                placeholder="Enter 6-digit code"
+                value={code}
+                onChange={(e) => {
+                  // Only allow digits and limit to 6 characters
+                  const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                  setCode(value);
+                }}
+                maxLength={6}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all text-center text-2xl tracking-widest font-semibold"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">Enter the 6-digit code sent to your email</p>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={isVerifying || code.length !== 6}
+              className={`w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${
+                isVerifying ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+            >
+              {isVerifying ? (
+                <>
+                  <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Verifying...
+                </>
+              ) : (
+                <>
+                  Verify Email
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="mt-6 pt-6 border-t border-gray-200">
+            <p className="text-center text-sm text-gray-600">
+              Didn't receive the code?{" "}
+              <button
+                type="button"
+                className="text-red-600 font-semibold underline cursor-not-allowed"
+                disabled
+              >
+                Resend Code
+              </button>
+            </p>
+            <p className="text-center text-sm text-gray-600 mt-2">
+              Already verified?{" "}
+              <button
+                type="button"
+                className="text-red-600 hover:text-red-700 font-semibold underline"
+                onClick={() => navigate("/applicant/login")}
+              >
+                Sign In
+              </button>
+            </p>
           </div>
-        )}
-
-        <input
-          className="border p-3 rounded w-full"
-          type="email"
-          value={email}
-          readOnly
-        />
-
-        <input
-          className="border p-3 rounded w-full"
-          placeholder="Verification Code"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-        />
-
-        <button
-          type="submit"
-          className={`bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded w-full ${
-            isVerifying ? "opacity-50 cursor-not-allowed" : ""
-          }`}
-          disabled={isVerifying}
-        >
-          {isVerifying ? "Verifying..." : "Verify Email"}
-        </button>
-      </form>
+        </div>
+      </div>
     </div>
   );
 }
