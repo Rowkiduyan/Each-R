@@ -479,25 +479,20 @@ const handleSave = async () => {
     }
 
     const requiredFields = [
-      'street',
-      'barangay',
-      'city',
-      'zip',
-      'sex',
-      'birthday',
-      'age',
-      'marital_status',
-      'educational_attainment',
-      'institution_name',
-      'year_graduated',
-      'skills',
+      { key: 'street', label: 'Street Name' },
+      { key: 'barangay', label: 'Barangay' },
+      { key: 'city', label: 'City' },
+      { key: 'postal_code', label: 'ZIP Code', altKey: 'zip' },
+      { key: 'sex', label: 'Sex' },
+      { key: 'birthday', label: 'Birthday' },
+      { key: 'marital_status', label: 'Marital Status' },
     ];
-    const missing = requiredFields.find((key) => {
-      const val = profileForm[key];
+    const missing = requiredFields.find((field) => {
+      const val = profileForm[field.key] || (field.altKey ? profileForm[field.altKey] : '');
       return String(val ?? '').trim() === '';
     });
     if (missing) {
-      setErrorMessage('Please fill out all fields before saving your profile.');
+      setErrorMessage(`Please fill out the ${missing.label} field before saving your profile.`);
       setSaving(false);
       return;
     }
@@ -516,7 +511,7 @@ const handleSave = async () => {
       profileForm.barangay,
       profileForm.city,
       profileForm.province,
-      profileForm.postal_code,
+      profileForm.postal_code || profileForm.zip,
     ]
       .map((part) => String(part || '').trim())
       .filter(Boolean)
@@ -531,19 +526,18 @@ const handleSave = async () => {
         barangay: profileForm.barangay,
         city: profileForm.city,
         province: profileForm.province,
-        postal_code: profileForm.postal_code,
-        zip: profileForm.postal_code || profileForm.zip, // Keep zip for backward compatibility
+        zip: profileForm.postal_code || profileForm.zip || '', // Use zip column (postal_code is just the form field name)
         sex: profileForm.sex,
         birthday: profileForm.birthday,
         age: profileForm.age,
         marital_status: profileForm.marital_status,
-        educational_attainment: profileForm.educational_attainment,
-        institution_name: profileForm.institution_name,
-        year_graduated: profileForm.year_graduated,
+        educational_attainment: profileForm.educational_attainment || null,
+        institution_name: profileForm.institution_name || null,
+        year_graduated: profileForm.year_graduated || null,
         skills: Array.isArray(profileForm.skills) ? profileForm.skills : normalizeSkills(profileForm.skills),
-        work_experiences: profileForm.work_experiences,
-        character_references: profileForm.character_references,
-        preferred_depot: profileForm.preferred_depot
+        work_experiences: profileForm.work_experiences || [],
+        character_references: profileForm.character_references || [],
+        preferred_depot: profileForm.preferred_depot || null
       })
       .ilike('email', user.email);
 
@@ -1401,9 +1395,10 @@ const formatDateForInput = (dateString) => {
       );
     }
 
-    const currentJobType =
-      (selectedJob || newJob)?.job_type?.toLowerCase() || null;
-    const showLicenseSection = currentJobType !== 'office_employee';
+    // Check if the job title is "Delivery Drivers" to show license and driving fields
+    const jobTitle = (selectedJob || newJob)?.title || '';
+    const isDeliveryDriverJob = jobTitle === 'Delivery Drivers';
+    const showLicenseSection = isDeliveryDriverJob;
 
     // Calculate suggestions after early return
     const locationSuggestions = Array.from(
@@ -2187,7 +2182,7 @@ const formatDateForInput = (dateString) => {
                       </div>
 
                       {/* Education & Skills Card */}
-                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200" style={{ overflowX: 'hidden', overflowY: 'visible' }}>
                         <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200">
                           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                             <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2196,7 +2191,10 @@ const formatDateForInput = (dateString) => {
                             Education & Skills
                           </h3>
                         </div>
-                        <div className="p-6">
+                        <div className="p-6" style={{ overflow: 'visible' }}>
+                          <div className="mb-4">
+                            <p className="text-sm text-gray-600 italic">If not applicable, select N/A</p>
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Highest Educational Attainment</label>
@@ -2204,12 +2202,17 @@ const formatDateForInput = (dateString) => {
                                 <select
                                   value={profileForm.educational_attainment || ''}
                                   onChange={(e) => {
-                                    handleFormChange('educational_attainment', e.target.value);
-                                    // Clear institution and year when N/A is selected
-                                    if (e.target.value === 'N/A') {
-                                      handleFormChange('institution_name', '');
-                                      handleFormChange('year_graduated', '');
-                                    }
+                                    const selectedValue = e.target.value;
+                                    // Update educational attainment
+                                    setProfileForm(prev => {
+                                      const updated = { ...prev, educational_attainment: selectedValue };
+                                      // Clear institution and year when N/A is selected or when cleared
+                                      if (selectedValue === 'N/A' || selectedValue === '') {
+                                        updated.institution_name = '';
+                                        updated.year_graduated = '';
+                                      }
+                                      return updated;
+                                    });
                                   }}
                                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
                                 >
@@ -2224,46 +2227,54 @@ const formatDateForInput = (dateString) => {
                                 <div className="text-gray-900">{profileForm.educational_attainment || 'Not provided'}</div>
                               )}
                             </div>
-                            {profileForm.educational_attainment !== 'N/A' && (
-                              <>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-2">Institution Name</label>
-                                  {isEditMode ? (
-                                    <input
-                                      type="text"
-                                      value={profileForm.institution_name || ''}
-                                      onChange={(e) => handleFormChange('institution_name', e.target.value)}
-                                      placeholder="Enter school or institution name"
-                                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                                    />
-                                  ) : (
-                                    <div className="text-gray-900">{profileForm.institution_name || 'Not provided'}</div>
-                                  )}
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-2">Year Graduated</label>
-                                  {isEditMode ? (
-                                    <input
-                                      type="text"
-                                      value={profileForm.year_graduated || ''}
-                                      onChange={(e) => handleFormChange('year_graduated', e.target.value)}
-                                      placeholder="e.g., 2020"
-                                      maxLength={4}
-                                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                                    />
-                                  ) : (
-                                    <div className="text-gray-900">{profileForm.year_graduated || 'Not provided'}</div>
-                                  )}
-                                </div>
-                              </>
-                            )}
-                            <div className="md:col-span-2">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Institution Name</label>
+                              {isEditMode ? (
+                                <input
+                                  type="text"
+                                  value={profileForm.institution_name || ''}
+                                  onChange={(e) => handleFormChange('institution_name', e.target.value)}
+                                  placeholder="Enter school or institution name"
+                                  disabled={!profileForm.educational_attainment || profileForm.educational_attainment === 'N/A' || profileForm.educational_attainment === ''}
+                                  className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 ${
+                                    (!profileForm.educational_attainment || profileForm.educational_attainment === 'N/A' || profileForm.educational_attainment === '') 
+                                      ? 'bg-gray-100 cursor-not-allowed' 
+                                      : ''
+                                  }`}
+                                />
+                              ) : (
+                                <div className="text-gray-900">{profileForm.institution_name || 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Year Graduated</label>
+                              {isEditMode ? (
+                                <input
+                                  type="text"
+                                  value={profileForm.year_graduated || ''}
+                                  onChange={(e) => handleFormChange('year_graduated', e.target.value)}
+                                  placeholder="e.g., 2020"
+                                  maxLength={4}
+                                  disabled={!profileForm.educational_attainment || profileForm.educational_attainment === 'N/A' || profileForm.educational_attainment === ''}
+                                  className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 ${
+                                    (!profileForm.educational_attainment || profileForm.educational_attainment === 'N/A' || profileForm.educational_attainment === '') 
+                                      ? 'bg-gray-100 cursor-not-allowed' 
+                                      : ''
+                                  }`}
+                                />
+                              ) : (
+                                <div className="text-gray-900">{profileForm.year_graduated || 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div className="md:col-span-2 relative" style={{ zIndex: 1 }}>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Skills</label>
                               {isEditMode ? (
-                                <SkillsInput
-                                  skills={normalizeSkills(profileForm.skills)}
-                                  onChange={(skillsArray) => handleFormChange('skills', skillsArray)}
-                                />
+                                <div className="relative" style={{ zIndex: 50 }}>
+                                  <SkillsInput
+                                    skills={normalizeSkills(profileForm.skills)}
+                                    onChange={(skillsArray) => handleFormChange('skills', skillsArray)}
+                                  />
+                                </div>
                               ) : (
                                 <div className="text-gray-900">
                                   {Array.isArray(profileForm.skills) && profileForm.skills.length > 0
