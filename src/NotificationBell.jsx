@@ -23,9 +23,34 @@ function NotificationBell() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        setUserId(user.id);
-        await fetchNotifications(user.id);
-        await fetchUnreadCount(user.id);
+        // Check if user is an employee and get their employee ID
+        let notificationUserId = user.id; // Default to auth ID
+        
+        // Try to get employee ID from employees table
+        const { data: employee, error: empError } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('id', user.id)
+          .maybeSingle();
+        
+        // If not found by auth id, try by email
+        if (!employee && !empError) {
+          const { data: empByEmail } = await supabase
+            .from('employees')
+            .select('id')
+            .eq('email', user.email)
+            .maybeSingle();
+          
+          if (empByEmail) {
+            notificationUserId = empByEmail.id;
+          }
+        } else if (employee) {
+          notificationUserId = employee.id;
+        }
+
+        setUserId(notificationUserId);
+        await fetchNotifications(notificationUserId);
+        await fetchUnreadCount(notificationUserId);
 
         // Set up real-time subscription for notifications
         channel = supabase

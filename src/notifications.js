@@ -7,9 +7,54 @@ export async function createNotification({
   applicationId,
   type,
   title,
-  message
+  message,
+  userType = 'profile' // 'employee', 'applicant', or 'profile' (HR/Admin/Agency)
 }) {
   try {
+    // Check if the user exists in the appropriate table
+    let tableName, checkError, userCheck;
+    
+    switch (userType) {
+      case 'employee':
+        // For employee notifications, check employees table
+        ({ data: userCheck, error: checkError } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('id', userId)
+          .maybeSingle());
+        tableName = 'employees';
+        break;
+        
+      case 'applicant':
+        // For applicant notifications, check applicants table
+        ({ data: userCheck, error: checkError } = await supabase
+          .from('applicants')
+          .select('id')
+          .eq('id', userId)
+          .maybeSingle());
+        tableName = 'applicants';
+        break;
+        
+      default:
+        // For HR/Admin/Agency notifications, check profiles table
+        ({ data: userCheck, error: checkError } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', userId)
+          .maybeSingle());
+        tableName = 'profiles';
+    }
+    
+    if (checkError) {
+      console.error(`Error checking ${tableName}:`, checkError);
+      return { success: false, error: checkError };
+    }
+    
+    if (!userCheck) {
+      console.warn(`User not found in ${tableName} for user ${userId}, skipping notification`);
+      return { success: false, error: { message: `User not found in ${tableName}` } };
+    }
+    
     const { data, error } = await supabase
       .from('notifications')
       .insert({
@@ -147,7 +192,8 @@ export async function createInterviewScheduledNotification({
     applicationId,
     type: 'interview_scheduled',
     title: 'Interview Scheduled',
-    message: `Your interview has been scheduled for ${formattedDate} at ${interviewTime} in ${interviewLocation}. Please confirm your availability.`
+    message: `Your interview has been scheduled for ${formattedDate} at ${interviewTime} in ${interviewLocation}. Please confirm your availability.`,
+    userType: 'applicant'
   });
 }
 
@@ -171,7 +217,8 @@ export async function createInterviewRescheduledNotification({
     applicationId,
     type: 'interview_rescheduled',
     title: 'Interview Rescheduled',
-    message: `Your interview has been rescheduled to ${formattedDate} at ${interviewTime} in ${interviewLocation}. Please check your application and confirm your availability.`
+    message: `Your interview has been rescheduled to ${formattedDate} at ${interviewTime} in ${interviewLocation}. Please check your application and confirm your availability.`,
+    userType: 'applicant'
   });
 }
 
@@ -203,7 +250,8 @@ export async function createStatusUpdateNotification({
     applicationId,
     type: 'status_update',
     title,
-    message: message || `Your application status has been updated to: ${status}`
+    message: message || `Your application status has been updated to: ${status}`,
+    userType: 'applicant'
   });
 }
 
@@ -283,7 +331,8 @@ export async function createResignationValidatedNotification({
     applicationId: null,
     type: 'resignation_validated',
     title: 'Resignation Letter Validated',
-    message: 'Your resignation letter has been validated by HR. Stage 2 is now unlocked. Please download and complete the exit forms.'
+    message: 'Your resignation letter has been validated by HR. Stage 2 is now unlocked. Please download and complete the exit forms.',
+    userType: 'employee'
   });
 }
 
@@ -296,7 +345,8 @@ export async function createExitFormsUploadedNotification({
     applicationId: null,
     type: 'exit_forms_uploaded',
     title: 'Exit Forms Available',
-    message: 'HR has uploaded exit clearance and interview forms for you. Please download, complete, and upload the signed versions.'
+    message: 'HR has uploaded exit clearance and interview forms for you. Please download, complete, and upload the signed versions.',
+    userType: 'employee'
   });
 }
 
@@ -306,13 +356,15 @@ export async function createFormValidatedNotification({
   formType // 'clearance' or 'interview'
 }) {
   const formName = formType === 'clearance' ? 'Exit Clearance Form' : 'Exit Interview Form';
+  const unlockMessage = formType === 'clearance' ? ' Stage 3 is now unlocked.' : ' Your separation process is moving forward.';
   
   return await createNotification({
     userId: employeeUserId,
     applicationId: null,
     type: `${formType}_validated`,
     title: `${formName} Validated`,
-    message: `Your ${formName} has been validated by HR.`
+    message: `Your ${formName} has been validated by HR.${unlockMessage}`,
+    userType: 'employee'
   });
 }
 
@@ -328,7 +380,8 @@ export async function createFormResubmissionNotification({
     applicationId: null,
     type: `${formType}_resubmission`,
     title: `${formName} - Re-submission Required`,
-    message: `HR has requested you to re-submit your ${formName}. Please review and upload a corrected version.`
+    message: `HR has requested you to re-submit your ${formName}. Please review and upload a corrected version.`,
+    userType: 'employee'
   });
 }
 
@@ -378,22 +431,21 @@ export async function notifyHRAboutSeparationSubmission({
             message: messageMap[submissionType]
           });
           return { ...result, hrId: hr.id };
-        } catch (err) {
-          console.error(`Failed to notify HR user ${hr.id}:`, err);
-          return { success: false, error: err, hrId: hr.id };
+        } catch (error) {
+          console.error(`Failed to notify HR user ${hr.id}:`, error);
+          return { success: false, error, hrId: hr.id };
         }
       })
     );
 
-    const successful = notifications.filter(n => n.success).length;
-    const failed = notifications.filter(n => !n.success).length;
-
-    console.log(`Notified ${successful} HR users about ${submissionType} submission, ${failed} failed`);
+    const successCount = notifications.filter(n => n.success).length;
+    console.log(`Created ${successCount}/${hrUsers.length} HR notifications for ${submissionType}`);
+    
     return { 
-      success: true, 
-      notified: successful, 
-      failed,
-      details: notifications 
+      success: successCount > 0, 
+      notifications,
+      successCount,
+      totalCount: hrUsers.length
     };
 
   } catch (err) {
@@ -411,7 +463,8 @@ export async function createSeparationCompletedNotification({
     applicationId: null,
     type: 'separation_completed',
     title: 'Separation Process Completed',
-    message: 'Your separation process has been finalized by HR. Thank you for your service.'
+    message: 'Your separation process has been finalized by HR. Thank you for your service.',
+    userType: 'employee'
   });
 }
 
@@ -434,6 +487,7 @@ export async function createAccountTerminationNotification({
     applicationId: null,
     type: 'account_termination',
     title: 'Account Termination Notice',
-    message: `Your account has been terminated. You will have access to your account until ${formattedDate}. After this time, your account will be automatically closed.`
+    message: `Your account has been terminated. You will have access to your account until ${formattedDate}. After this time, your account will be automatically closed.`,
+    userType: 'employee'
   });
 }

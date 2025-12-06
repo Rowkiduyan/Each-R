@@ -38,24 +38,17 @@ function Employees() {
   const [activeTab, setActiveTab] = useState("profiling");
 
   // Detail tab states
-  const [evaluationDocs, setEvaluationDocs] = useState([
-    { id: 1, name: "Evaluation", file: { name: "evaluation.pdf" }, url: "#", date: "2024-01-15", remarks: "Select", employeeType: "Select", locked: false }
-  ]);
-  const [requiredDocs, setRequiredDocs] = useState([
-    { id: "psa", name: "PSA Birth Cert", file: { name: "PSABirthcert.pdf" }, previewUrl: "#", uploadedAt: "2024-01-15", status: "pending", validatedAt: null },
-    { id: "dlicense", name: "Photocopy of Drivers License (Front and Back)", file: null, previewUrl: null, uploadedAt: null, status: "pending", validatedAt: null },
-    { id: "sss", name: "Photocopy of SSS ID", file: null, previewUrl: null, uploadedAt: null, status: "pending", validatedAt: null },
-    { id: "nbi", name: "NBI Clearance", file: { name: "NBIClearance.pdf" }, previewUrl: "#", uploadedAt: "2024-01-20", status: "pending", validatedAt: null },
-    { id: "police", name: "Police Clearance", file: null, previewUrl: null, uploadedAt: null, status: "pending", validatedAt: null },
-    { id: "drivetest", name: "Drive Test", file: { name: "DriveTest.pdf" }, previewUrl: "#", uploadedAt: "2024-01-25", status: "pending", validatedAt: null },
-  ]);
-  const [requestedDocs, setRequestedDocs] = useState([]);
+  const [evaluationDocs, setEvaluationDocs] = useState([]);
+  const [employeeDocuments, setEmployeeDocuments] = useState([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [terminationData, setTerminationData] = useState(null);
-  const [onboardingItems, setOnboardingItems] = useState([
-    { id: 1, item: "Uniform", description: "Company Shirt", date: "9/20/25", file: "file.pdf" },
-    { id: 2, item: "Laptop", description: "Lenovo 8GB RAM", date: "9/21/25", file: "file.pdf" },
-  ]);
+  const [onboardingItems, setOnboardingItems] = useState([]);
+  const [resumeData, setResumeData] = useState(null);
+  const [applicationFormData, setApplicationFormData] = useState(null);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [applicationData, setApplicationData] = useState(null);
+  const [loadingApplication, setLoadingApplication] = useState(false);
 
   // Termination modal states
   const [showTerminateModal, setShowTerminateModal] = useState(false);
@@ -417,6 +410,569 @@ function Employees() {
     if (selectedEmployee && activeTab === 'certifications') {
       fetchExternalCertificates(selectedEmployee);
     }
+  }, [selectedEmployee, activeTab]);
+
+  // Fetch employee documents when employee is selected and documents tab is active
+  useEffect(() => {
+    const fetchEmployeeDocuments = async () => {
+      if (!selectedEmployee || activeTab !== 'documents') {
+        setEmployeeDocuments([]);
+        return;
+      }
+
+      setLoadingDocuments(true);
+      try {
+        // Fetch employee requirements from database
+        const { data: employeeData, error } = await supabase
+          .from('employees')
+          .select('id, requirements, is_agency')
+          .eq('id', selectedEmployee.id)
+          .single();
+
+        if (error) throw error;
+
+        // Parse requirements
+        let requirementsData = null;
+        if (employeeData.requirements) {
+          if (typeof employeeData.requirements === 'string') {
+            try {
+              requirementsData = JSON.parse(employeeData.requirements);
+            } catch {
+              requirementsData = null;
+            }
+          } else {
+            requirementsData = employeeData.requirements;
+          }
+        }
+
+        const documents = [];
+        const isAgency = employeeData.is_agency === true;
+
+        // Helper function to get document URL from file path
+        const getDocumentUrl = (filePath) => {
+          if (!filePath) return null;
+          const { data } = supabase.storage
+            .from('application-files')
+            .getPublicUrl(filePath);
+          return data?.publicUrl || null;
+        };
+
+        // Helper function to get filename from file path
+        const getFilename = (filePath) => {
+          if (!filePath) return null;
+          return filePath.split('/').pop() || filePath;
+        };
+
+        if (isAgency) {
+          // Agency employees: extract documents from ID numbers
+          const idNumbers = requirementsData?.id_numbers || {};
+          const idMapping = [
+            { key: 'sss', name: 'SSS (Social Security System)' },
+            { key: 'tin', name: 'TIN (Tax Identification Number)' },
+            { key: 'pagibig', name: 'PAG-IBIG (HDMF)' },
+            { key: 'philhealth', name: 'PhilHealth' },
+          ];
+
+          idMapping.forEach(({ key, name }) => {
+            const idData = idNumbers[key];
+            if (idData) {
+              const filePath = idData.file_path || idData.filePath;
+              const status = idData.status || 'Missing';
+              const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
+                                   status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
+                                   status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
+              
+              documents.push({
+                id: key,
+                name: name,
+                file: filePath ? { name: getFilename(filePath) } : null,
+                previewUrl: filePath ? getDocumentUrl(filePath) : null,
+                status: displayStatus,
+              });
+            } else {
+              documents.push({
+                id: key,
+                name: name,
+                file: null,
+                previewUrl: null,
+                status: 'Missing',
+              });
+            }
+          });
+        } else {
+          // Direct employees: extract from all document sections
+          
+          // 1. Extract ID Numbers (SSS, TIN, PAG-IBIG, PhilHealth)
+          const idNumbers = requirementsData?.id_numbers || {};
+          const idMapping = [
+            { key: 'sss', name: 'Photocopy of SSS ID' },
+            { key: 'tin', name: 'TIN (Tax Identification Number)' },
+            { key: 'pagibig', name: 'PAG-IBIG (HDMF)' },
+            { key: 'philhealth', name: 'PhilHealth' },
+          ];
+
+          idMapping.forEach(({ key, name }) => {
+            const idData = idNumbers[key];
+            if (idData) {
+              const filePath = idData.file_path || idData.filePath;
+              const status = idData.status || 'Missing';
+              const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
+                                   status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
+                                   status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
+              
+              documents.push({
+                id: key,
+                name: name,
+                file: filePath ? { name: getFilename(filePath) } : null,
+                previewUrl: filePath ? getDocumentUrl(filePath) : null,
+                status: displayStatus,
+              });
+            } else {
+              documents.push({
+                id: key,
+                name: name,
+                file: null,
+                previewUrl: null,
+                status: 'Missing',
+              });
+            }
+          });
+
+          // 2. Extract Driver's License
+          const license = requirementsData?.license || {};
+          if (license && typeof license === 'object') {
+            const frontPath = license.frontFilePath || license.front_file_path;
+            const backPath = license.backFilePath || license.back_file_path;
+            const hasFile = !!(frontPath || backPath);
+            const status = license.status || 'Missing';
+            const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
+                                 status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
+                                 status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
+            
+            documents.push({
+              id: 'drivers_license',
+              name: 'Photocopy of Drivers License (Front and Back)',
+              file: hasFile ? { name: frontPath ? getFilename(frontPath) : 'Driver\'s License' } : null,
+              previewUrl: frontPath ? getDocumentUrl(frontPath) : (backPath ? getDocumentUrl(backPath) : null),
+              status: displayStatus,
+            });
+          } else {
+            documents.push({
+              id: 'drivers_license',
+              name: 'Photocopy of Drivers License (Front and Back)',
+              file: null,
+              previewUrl: null,
+              status: 'Missing',
+            });
+          }
+
+          // 3. Extract Personal Documents
+          const personalDocs = requirementsData?.personalDocuments || {};
+          const personalDocMapping = [
+            { key: 'psa_birth_certificate', name: 'PSA Birth Cert' },
+            { key: 'photo_2x2', name: '2x2 Picture w/ White Background' },
+            { key: 'marriage_contract', name: 'Marriage Contract Photocopy (If applicable)' },
+            { key: 'dependents_birth_certificate', name: 'PSA Birth Certificate of Dependents (if applicable)' },
+            { key: 'residence_sketch', name: 'Direction of Residence (House to Depot Sketch)' },
+          ];
+
+          personalDocMapping.forEach(({ key, name }) => {
+            const docData = personalDocs[key];
+            if (docData && typeof docData === 'object') {
+              const filePath = docData.filePath || docData.file_path;
+              const status = docData.status || 'Missing';
+              const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
+                                   status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
+                                   status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
+              
+              documents.push({
+                id: key,
+                name: name,
+                file: filePath ? { name: getFilename(filePath) } : null,
+                previewUrl: filePath ? getDocumentUrl(filePath) : null,
+                status: displayStatus,
+              });
+            } else {
+              // Only add required documents or if they have data
+              if (key === 'psa_birth_certificate' || key === 'photo_2x2' || key === 'residence_sketch') {
+                documents.push({
+                  id: key,
+                  name: name,
+                  file: null,
+                  previewUrl: null,
+                  status: 'Missing',
+                });
+              }
+            }
+          });
+
+          // 4. Extract Clearances
+          const clearances = requirementsData?.clearances || {};
+          const clearanceMapping = [
+            { key: 'nbi_clearance', name: 'NBI Clearance' },
+            { key: 'police_clearance', name: 'Police Clearance' },
+            { key: 'barangay_clearance', name: 'Barangay Clearance' },
+          ];
+
+          clearanceMapping.forEach(({ key, name }) => {
+            const clearanceData = clearances[key];
+            if (clearanceData && typeof clearanceData === 'object') {
+              const filePath = clearanceData.filePath || clearanceData.file_path;
+              const status = clearanceData.status || 'Missing';
+              const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
+                                   status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
+                                   status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
+              
+              documents.push({
+                id: key,
+                name: name,
+                file: filePath ? { name: getFilename(filePath) } : null,
+                previewUrl: filePath ? getDocumentUrl(filePath) : null,
+                status: displayStatus,
+              });
+            } else {
+              documents.push({
+                id: key,
+                name: name,
+                file: null,
+                previewUrl: null,
+                status: 'Missing',
+              });
+            }
+          });
+
+          // 5. Extract Educational Documents
+          const educationalDocs = requirementsData?.educationalDocuments || {};
+          const educationalDocMapping = [
+            { key: 'diploma', name: 'Diploma' },
+            { key: 'transcript_of_records', name: 'Transcript of Records' },
+          ];
+
+          educationalDocMapping.forEach(({ key, name }) => {
+            const docData = educationalDocs[key];
+            if (docData && typeof docData === 'object') {
+              const filePath = docData.filePath || docData.file_path;
+              const status = docData.status || 'Missing';
+              const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
+                                   status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
+                                   status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
+              
+              documents.push({
+                id: key,
+                name: name,
+                file: filePath ? { name: getFilename(filePath) } : null,
+                previewUrl: filePath ? getDocumentUrl(filePath) : null,
+                status: displayStatus,
+              });
+            } else {
+              documents.push({
+                id: key,
+                name: name,
+                file: null,
+                previewUrl: null,
+                status: 'Missing',
+              });
+            }
+          });
+
+          // 6. Extract Medical Exams
+          const medicalExams = requirementsData?.medicalExams || {};
+          const medicalExamMapping = [
+            { key: 'xray', name: 'X-ray' },
+            { key: 'stool', name: 'Stool' },
+            { key: 'urine', name: 'Urine' },
+            { key: 'hepa', name: 'HEPA' },
+            { key: 'cbc', name: 'CBC' },
+            { key: 'drug_test', name: 'Drug Test' },
+          ];
+
+          medicalExamMapping.forEach(({ key, name }) => {
+            const examData = medicalExams[key];
+            if (examData && typeof examData === 'object') {
+              const filePath = examData.filePath || examData.file_path;
+              const status = examData.status || 'Missing';
+              const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
+                                   status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
+                                   status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
+              
+              documents.push({
+                id: key,
+                name: name,
+                file: filePath ? { name: getFilename(filePath) } : null,
+                previewUrl: filePath ? getDocumentUrl(filePath) : null,
+                status: displayStatus,
+              });
+            } else {
+              documents.push({
+                id: key,
+                name: name,
+                file: null,
+                previewUrl: null,
+                status: 'Missing',
+              });
+            }
+          });
+
+          // 7. Extract Legacy Documents Array (for backward compatibility)
+          const legacyDocuments = requirementsData?.documents || [];
+          legacyDocuments.forEach((doc) => {
+            // Skip if already added from structured sections
+            const existingDoc = documents.find(d => d.id === doc.key || d.name === doc.name);
+            if (!existingDoc) {
+              const filePath = doc.file_path || doc.filePath;
+              const status = doc.status || 'Missing';
+              const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
+                                   status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
+                                   status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
+              
+              documents.push({
+                id: doc.key || doc.name || `doc-${documents.length}`,
+                name: doc.name || doc.key || 'Unknown Document',
+                file: filePath ? { name: getFilename(filePath) } : null,
+                previewUrl: filePath ? getDocumentUrl(filePath) : null,
+                status: displayStatus,
+              });
+            }
+          });
+        }
+
+        setEmployeeDocuments(documents);
+      } catch (err) {
+        console.error('Error fetching employee documents:', err);
+        setEmployeeDocuments([]);
+      } finally {
+        setLoadingDocuments(false);
+      }
+    };
+
+    fetchEmployeeDocuments();
+  }, [selectedEmployee, activeTab]);
+
+  // Fetch application data when employee is selected and profiling tab is active
+  useEffect(() => {
+    const fetchEmployeeApplication = async () => {
+      if (!selectedEmployee || activeTab !== 'profiling') {
+        setResumeData(null);
+        setApplicationFormData(null);
+        setApplicationData(null);
+        return;
+      }
+
+      setLoadingApplication(true);
+      setLoadingFiles(true);
+      try {
+        // Fetch application data to get resume, application form, and all application details
+        // Try multiple queries to find the application
+        let applications = null;
+        let error = null;
+
+        // Try querying by email in payload root
+        const { data: apps1, error: err1 } = await supabase
+          .from('applications')
+          .select('id, payload, created_at')
+          .eq('payload->>email', selectedEmployee.email)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (!err1 && apps1 && apps1.length > 0) {
+          applications = apps1;
+        } else {
+          // Try querying by email in payload.form
+          const { data: apps2, error: err2 } = await supabase
+            .from('applications')
+            .select('id, payload, created_at')
+            .eq('payload->form->>email', selectedEmployee.email)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (!err2 && apps2 && apps2.length > 0) {
+            applications = apps2;
+          } else {
+            // Try querying by email in payload.applicant
+            const { data: apps3, error: err3 } = await supabase
+              .from('applications')
+              .select('id, payload, created_at')
+              .eq('payload->applicant->>email', selectedEmployee.email)
+              .order('created_at', { ascending: false })
+              .limit(1);
+
+            if (!err3 && apps3 && apps3.length > 0) {
+              applications = apps3;
+            } else {
+              error = err3 || err2 || err1;
+            }
+          }
+        }
+
+        if (error) throw error;
+
+        if (applications && applications.length > 0) {
+          const app = applications[0];
+          const payload = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload;
+          const form = payload.form || payload || {};
+          
+          // Store full application data
+          setApplicationData(form);
+          
+          // Extract resume
+          if (payload.resumePath || payload.resume_path || form.resumePath || form.resume_path) {
+            const resumePath = payload.resumePath || payload.resume_path || form.resumePath || form.resume_path;
+            const resumeName = payload.resumeName || payload.resume_name || form.resumeName || form.resume_name || 'Resume';
+            const { data: urlData } = supabase.storage
+              .from('application-files')
+              .getPublicUrl(resumePath);
+            
+            setResumeData({
+              name: resumeName,
+              url: urlData?.publicUrl || null,
+              path: resumePath
+            });
+          } else {
+            setResumeData(null);
+          }
+
+          // Extract application form
+          if (payload.applicationFormPath || payload.application_form_path || form.applicationFormPath || form.application_form_path) {
+            const formPath = payload.applicationFormPath || payload.application_form_path || form.applicationFormPath || form.application_form_path;
+            const formName = payload.applicationFormName || payload.application_form_name || form.applicationFormName || form.application_form_name || 'Application Form';
+            const { data: urlData } = supabase.storage
+              .from('application-files')
+              .getPublicUrl(formPath);
+            
+            setApplicationFormData({
+              name: formName,
+              url: urlData?.publicUrl || null,
+              path: formPath
+            });
+          } else {
+            setApplicationFormData(null);
+          }
+        } else {
+          setResumeData(null);
+          setApplicationFormData(null);
+          setApplicationData(null);
+        }
+      } catch (err) {
+        console.error('Error fetching employee application:', err);
+        setResumeData(null);
+        setApplicationFormData(null);
+        setApplicationData(null);
+      } finally {
+        setLoadingFiles(false);
+        setLoadingApplication(false);
+      }
+    };
+
+    fetchEmployeeApplication();
+  }, [selectedEmployee, activeTab]);
+
+  // Fetch onboarding items when employee is selected and onboarding tab is active
+  useEffect(() => {
+    const fetchOnboardingItems = async () => {
+      if (!selectedEmployee || activeTab !== 'onboarding') {
+        setOnboardingItems([]);
+        return;
+      }
+
+      try {
+        // Check if there's an onboarding table
+        const { data: onboardingData, error } = await supabase
+          .from('onboarding')
+          .select('*')
+          .eq('employee_id', selectedEmployee.id)
+          .order('date_issued', { ascending: false });
+
+        if (error) {
+          // If table doesn't exist or error, check if it's stored in employees table
+          console.log('Onboarding table not found or error:', error);
+          setOnboardingItems([]);
+          return;
+        }
+
+        if (onboardingData && onboardingData.length > 0) {
+          const items = onboardingData.map(item => ({
+            id: item.id,
+            item: item.item || item.name || '',
+            description: item.description || '',
+            date: item.date_issued || item.date || '',
+            file: item.file_path || item.filePath || null,
+            fileUrl: item.file_path || item.filePath ? (() => {
+              const { data } = supabase.storage
+                .from('application-files')
+                .getPublicUrl(item.file_path || item.filePath);
+              return data?.publicUrl || null;
+            })() : null
+          }));
+          setOnboardingItems(items);
+        } else {
+          setOnboardingItems([]);
+        }
+      } catch (err) {
+        console.error('Error fetching onboarding items:', err);
+        setOnboardingItems([]);
+      }
+    };
+
+    fetchOnboardingItems();
+  }, [selectedEmployee, activeTab]);
+
+  // Fetch evaluation records when employee is selected and evaluation tab is active
+  useEffect(() => {
+    const fetchEvaluationDocs = async () => {
+      if (!selectedEmployee || activeTab !== 'evaluation') {
+        setEvaluationDocs([]);
+        return;
+      }
+
+      try {
+        const { data: evaluationsData, error } = await supabase
+          .from('evaluations')
+          .select('*')
+          .eq('employee_id', selectedEmployee.id)
+          .order('date_evaluated', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching evaluations:', error);
+          setEvaluationDocs([]);
+          return;
+        }
+
+        if (evaluationsData && evaluationsData.length > 0) {
+          const docs = evaluationsData.map(ev => {
+            const filePath = ev.file_path;
+            let fileUrl = null;
+            let fileName = null;
+            
+            if (filePath) {
+              const { data: urlData } = supabase.storage
+                .from('application-files')
+                .getPublicUrl(filePath);
+              fileUrl = urlData?.publicUrl || null;
+              fileName = filePath.split('/').pop() || 'evaluation.pdf';
+            }
+
+            return {
+              id: ev.id,
+              name: "Evaluation",
+              file: filePath ? { name: fileName } : null,
+              url: fileUrl,
+              date: ev.date_evaluated ? new Date(ev.date_evaluated).toISOString().split('T')[0] : null,
+              remarks: ev.remarks || "Select",
+              employeeType: ev.type || "Select",
+              locked: ev.locked || false
+            };
+          });
+          setEvaluationDocs(docs);
+        } else {
+          setEvaluationDocs([]);
+        }
+      } catch (err) {
+        console.error('Error fetching evaluation docs:', err);
+        setEvaluationDocs([]);
+      }
+    };
+
+    fetchEvaluationDocs();
   }, [selectedEmployee, activeTab]);
 
   // Tab definitions for detail view
@@ -785,33 +1341,257 @@ function Employees() {
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
                                     <span className="text-gray-500">Full Name:</span>
-                                    <span className="ml-2 text-gray-800">{selectedEmployee.name}</span>
+                                    <span className="ml-2 text-gray-800">
+                                      {applicationData?.firstName || selectedEmployee.fname || ""} {applicationData?.middleName || selectedEmployee.mname || ""} {applicationData?.lastName || selectedEmployee.lname || ""}
+                                    </span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Email:</span>
-                                    <span className="ml-2 text-gray-800">{selectedEmployee.email || "—"}</span>
+                                    <span className="ml-2 text-gray-800">{applicationData?.email || selectedEmployee.email || "—"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Contact Number:</span>
-                                    <span className="ml-2 text-gray-800">{selectedEmployee.contact || "—"}</span>
+                                    <span className="ml-2 text-gray-800">{applicationData?.contact || selectedEmployee.contact || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Birthday:</span>
+                                    <span className="ml-2 text-gray-800">
+                                      {applicationData?.birthday ? new Date(applicationData.birthday).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : "—"}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Sex:</span>
+                                    <span className="ml-2 text-gray-800">{applicationData?.sex || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Marital Status:</span>
+                                    <span className="ml-2 text-gray-800">{applicationData?.marital_status || applicationData?.maritalStatus || "—"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Source:</span>
                                     <span className="ml-2 text-gray-800">{selectedEmployee.agency ? "Agency" : "Direct Hire"}</span>
                                   </div>
+                                  <div>
+                                    <span className="text-gray-500">Currently Employed:</span>
+                                    <span className="ml-2 text-gray-800">{applicationData?.employed || "—"}</span>
+                                  </div>
                                 </div>
                               </div>
+
+                              {applicationData && (applicationData.street || applicationData.barangay || applicationData.city || applicationData.zip) && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Address</h5>
+                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                      <span className="text-gray-500">Street/Village:</span>
+                                      <span className="ml-2 text-gray-800">{applicationData.street || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Barangay:</span>
+                                      <span className="ml-2 text-gray-800">{applicationData.barangay || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">City:</span>
+                                      <span className="ml-2 text-gray-800">{applicationData.city || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Zip Code:</span>
+                                      <span className="ml-2 text-gray-800">{applicationData.zip || "—"}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {applicationData && (applicationData.edu1Institution || applicationData.edu2Institution || applicationData.skills) && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Education & Skills</h5>
+                                  <div className="space-y-4 text-sm">
+                                    {applicationData.edu1Institution && (
+                                      <div>
+                                        <span className="text-gray-500 font-medium">{applicationData.edu1Level || "Education 1"}:</span>
+                                        <div className="ml-2 mt-1">
+                                          <div className="text-gray-800">{applicationData.edu1Institution}</div>
+                                          {applicationData.edu1Year && (
+                                            <div className="text-gray-600 text-xs">Year: {applicationData.edu1Year}</div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {applicationData.edu2Institution && (
+                                      <div>
+                                        <span className="text-gray-500 font-medium">{applicationData.edu2Level || "Education 2"}:</span>
+                                        <div className="ml-2 mt-1">
+                                          <div className="text-gray-800">{applicationData.edu2Institution}</div>
+                                          {applicationData.edu2Year && (
+                                            <div className="text-gray-600 text-xs">Year: {applicationData.edu2Year}</div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {applicationData.skills && (
+                                      <div>
+                                        <span className="text-gray-500 font-medium">Skills:</span>
+                                        <span className="ml-2 text-gray-800">{applicationData.skills}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {applicationData && applicationData.workExperiences && applicationData.workExperiences.length > 0 && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
+                                  <div className="space-y-3 text-sm">
+                                    {applicationData.workExperiences.map((exp, idx) => (
+                                      <div key={idx} className="border border-gray-200 rounded-lg p-3">
+                                        <div className="grid grid-cols-2 gap-2">
+                                          {exp.company && (
+                                            <div>
+                                              <span className="text-gray-500">Company:</span>
+                                              <span className="ml-2 text-gray-800">{exp.company}</span>
+                                            </div>
+                                          )}
+                                          {exp.position && (
+                                            <div>
+                                              <span className="text-gray-500">Position:</span>
+                                              <span className="ml-2 text-gray-800">{exp.position}</span>
+                                            </div>
+                                          )}
+                                          {exp.startDate && (
+                                            <div>
+                                              <span className="text-gray-500">Start Date:</span>
+                                              <span className="ml-2 text-gray-800">{exp.startDate}</span>
+                                            </div>
+                                          )}
+                                          {exp.endDate && (
+                                            <div>
+                                              <span className="text-gray-500">End Date:</span>
+                                              <span className="ml-2 text-gray-800">{exp.endDate}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                        {exp.description && (
+                                          <div className="mt-2">
+                                            <span className="text-gray-500">Description:</span>
+                                            <div className="ml-2 text-gray-800 mt-1">{exp.description}</div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {applicationData && applicationData.characterReferences && applicationData.characterReferences.length > 0 && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
+                                  <div className="space-y-3 text-sm">
+                                    {applicationData.characterReferences.map((ref, idx) => (
+                                      <div key={idx} className="border border-gray-200 rounded-lg p-3">
+                                        <div className="grid grid-cols-2 gap-2">
+                                          {ref.name && (
+                                            <div>
+                                              <span className="text-gray-500">Name:</span>
+                                              <span className="ml-2 text-gray-800">{ref.name}</span>
+                                            </div>
+                                          )}
+                                          {ref.contact && (
+                                            <div>
+                                              <span className="text-gray-500">Contact:</span>
+                                              <span className="ml-2 text-gray-800">{ref.contact}</span>
+                                            </div>
+                                          )}
+                                          {ref.relationship && (
+                                            <div>
+                                              <span className="text-gray-500">Relationship:</span>
+                                              <span className="ml-2 text-gray-800">{ref.relationship}</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {applicationData && (applicationData.licenseType || applicationData.licenseExpiry) && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
+                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                      <span className="text-gray-500">License Type:</span>
+                                      <span className="ml-2 text-gray-800">{applicationData.licenseType || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">License Expiry:</span>
+                                      <span className="ml-2 text-gray-800">
+                                        {applicationData.licenseExpiry ? new Date(applicationData.licenseExpiry).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : "—"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {applicationData && (applicationData.startDate || applicationData.heardFrom || applicationData.preferred_depot) && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Application Details</h5>
+                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                    {applicationData.startDate && (
+                                      <div>
+                                        <span className="text-gray-500">Preferred Start Date:</span>
+                                        <span className="ml-2 text-gray-800">
+                                          {new Date(applicationData.startDate).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {applicationData.heardFrom && (
+                                      <div>
+                                        <span className="text-gray-500">How did you hear about us:</span>
+                                        <span className="ml-2 text-gray-800">{applicationData.heardFrom}</span>
+                                      </div>
+                                    )}
+                                    {applicationData.preferred_depot && (
+                                      <div>
+                                        <span className="text-gray-500">Preferred Depot:</span>
+                                        <span className="ml-2 text-gray-800">{applicationData.preferred_depot}</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
 
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Files</h5>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
                                     <span className="text-gray-500">Resume:</span>
-                                    <button className="ml-2 text-blue-600 hover:underline">View File</button>
+                                    {resumeData && resumeData.url ? (
+                                      <a 
+                                        href={resumeData.url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="ml-2 text-blue-600 hover:underline"
+                                      >
+                                        View File
+                                      </a>
+                                    ) : (
+                                      <span className="ml-2 text-gray-400 italic">No file</span>
+                                    )}
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Application Form:</span>
-                                    <button className="ml-2 text-blue-600 hover:underline">View File</button>
+                                    {applicationFormData && applicationFormData.url ? (
+                                      <a 
+                                        href={applicationFormData.url} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="ml-2 text-blue-600 hover:underline"
+                                      >
+                                        View File
+                                      </a>
+                                    ) : (
+                                      <span className="ml-2 text-gray-400 italic">No file</span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -825,48 +1605,64 @@ function Employees() {
                                 <h5 className="font-semibold text-gray-800">Required Documents</h5>
                               </div>
 
-                              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                <table className="w-full text-sm">
-                                  <thead className="bg-gray-50">
-                                    <tr>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">Document</th>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">File</th>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">Status</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-gray-100">
-                                    {(selectedEmployee.agency ? [...requiredDocs.filter(doc => doc.file), ...requestedDocs] : requiredDocs).map((doc) => {
-                                      const displayStatus = doc.status === "validated" ? "Validated" : 
-                                        doc.status === "resubmit" ? "Re-submit" : 
-                                        doc.status === "requested" ? "Requested" :
-                                        doc.file ? "Submitted" : "Missing";
-                                      const badgeClass =
-                                        doc.status === "validated" ? "bg-green-100 text-green-700" :
-                                        doc.status === "resubmit" ? "bg-red-100 text-red-700" :
-                                        doc.status === "requested" ? "bg-yellow-100 text-yellow-700" :
-                                        doc.file ? "bg-orange-100 text-orange-700" : "bg-gray-100 text-gray-600";
-                                      
-                                      return (
-                                        <tr key={doc.id} className="hover:bg-gray-50/50">
-                                          <td className="px-4 py-3 text-gray-800">{doc.name}</td>
-                                          <td className="px-4 py-3">
-                                            {doc.file ? (
-                                              <a href={doc.previewUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                                                {doc.file.name}
-                                              </a>
-                                            ) : (
-                                              <span className="text-gray-400 italic">No file</span>
-                                            )}
-                                          </td>
-                                          <td className="px-4 py-3">
-                                            <span className={`px-2 py-1 rounded text-xs font-medium ${badgeClass}`}>{displayStatus}</span>
+                              {loadingDocuments ? (
+                                <div className="text-center py-8 text-gray-500">Loading documents...</div>
+                              ) : (
+                                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                  <table className="w-full text-sm">
+                                    <thead className="bg-gray-50">
+                                      <tr>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">Document</th>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">File</th>
+                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100">
+                                      {employeeDocuments.length === 0 ? (
+                                        <tr>
+                                          <td colSpan="3" className="px-4 py-8 text-center text-gray-500">
+                                            No documents found
                                           </td>
                                         </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
-                              </div>
+                                      ) : (
+                                        employeeDocuments.map((doc) => {
+                                          const displayStatus = doc.status || (doc.file ? "Submitted" : "Missing");
+                                          const badgeClass =
+                                            displayStatus === "Submitted" ? "bg-orange-100 text-orange-700" :
+                                            displayStatus === "Re-submit" ? "bg-red-100 text-red-700" :
+                                            displayStatus === "Validated" ? "bg-green-100 text-green-700" :
+                                            "bg-gray-100 text-gray-600";
+                                          
+                                          return (
+                                            <tr key={doc.id} className="hover:bg-gray-50/50">
+                                              <td className="px-4 py-3 text-gray-800">{doc.name}</td>
+                                              <td className="px-4 py-3">
+                                                {doc.file ? (
+                                                  <a 
+                                                    href={doc.previewUrl || "#"} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer" 
+                                                    className="text-blue-600 hover:underline"
+                                                  >
+                                                    {doc.file.name}
+                                                  </a>
+                                                ) : (
+                                                  <span className="text-gray-400 italic">No file</span>
+                                                )}
+                                              </td>
+                                              <td className="px-4 py-3">
+                                                <span className={`px-2 py-1 rounded text-xs font-medium ${badgeClass}`}>
+                                                  {displayStatus}
+                                                </span>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -878,7 +1674,7 @@ function Employees() {
                                 <button
                                   onClick={() => setOnboardingItems((prev) => [
                                     ...prev,
-                                    { id: Date.now(), item: `New Item ${prev.length + 1}`, description: "Description", date: new Date().toISOString().substring(0, 10), file: "file.pdf" }
+                                    { id: Date.now(), item: "", description: "", date: new Date().toISOString().substring(0, 10), file: null, fileUrl: null }
                                   ])}
                                   className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
                                 >
@@ -898,49 +1694,70 @@ function Employees() {
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
-                                    {onboardingItems.map((ob) => (
-                                      <tr key={ob.id} className="hover:bg-gray-50/50">
-                                        <td className="px-4 py-3">
-                                          <input
-                                            type="text"
-                                            value={ob.item}
-                                            onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, item: e.target.value } : item))}
-                                            className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
-                                          />
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <input
-                                            type="text"
-                                            value={ob.description}
-                                            onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, description: e.target.value } : item))}
-                                            className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
-                                          />
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <input
-                                            type="date"
-                                            value={ob.date ? new Date(ob.date).toISOString().substring(0, 10) : ""}
-                                            onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, date: e.target.value } : item))}
-                                            className="px-2 py-1 border border-gray-200 rounded text-sm"
-                                          />
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <a href="#" className="text-blue-600 hover:underline text-sm">{ob.file}</a>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <button
-                                            onClick={() => {
-                                              if (window.confirm("Delete this item?")) {
-                                                setOnboardingItems((prev) => prev.filter((item) => item.id !== ob.id));
-                                              }
-                                            }}
-                                            className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-red-600"
-                                          >
-                                            ×
-                                          </button>
+                                    {onboardingItems.length === 0 ? (
+                                      <tr>
+                                        <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
+                                          No onboarding items found
                                         </td>
                                       </tr>
-                                    ))}
+                                    ) : (
+                                      onboardingItems.map((ob) => (
+                                        <tr key={ob.id} className="hover:bg-gray-50/50">
+                                          <td className="px-4 py-3">
+                                            <input
+                                              type="text"
+                                              value={ob.item}
+                                              onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, item: e.target.value } : item))}
+                                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
+                                              placeholder="Item name"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <input
+                                              type="text"
+                                              value={ob.description}
+                                              onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, description: e.target.value } : item))}
+                                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
+                                              placeholder="Description"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <input
+                                              type="date"
+                                              value={ob.date ? new Date(ob.date).toISOString().substring(0, 10) : ""}
+                                              onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, date: e.target.value } : item))}
+                                              className="px-2 py-1 border border-gray-200 rounded text-sm"
+                                            />
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            {ob.fileUrl ? (
+                                              <a 
+                                                href={ob.fileUrl} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="text-blue-600 hover:underline text-sm"
+                                              >
+                                                {ob.file ? ob.file.split('/').pop() : 'View File'}
+                                              </a>
+                                            ) : (
+                                              <span className="text-gray-400 italic text-sm">No file</span>
+                                            )}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <button
+                                              onClick={() => {
+                                                if (window.confirm("Delete this item?")) {
+                                                  setOnboardingItems((prev) => prev.filter((item) => item.id !== ob.id));
+                                                }
+                                              }}
+                                              className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-red-600"
+                                            >
+                                              ×
+                                            </button>
+                                          </td>
+                                        </tr>
+                                      ))
+                                    )}
                                   </tbody>
                                 </table>
                               </div>
@@ -952,15 +1769,6 @@ function Employees() {
                             <div className="space-y-6">
                               <div className="flex items-center justify-between mb-4">
                                 <h5 className="font-semibold text-gray-800">Evaluation Records</h5>
-                                <button
-                                  onClick={() => setEvaluationDocs((prev) => [
-                                    ...prev,
-                                    { id: Date.now(), name: "Evaluation", file: null, url: null, date: null, remarks: "Select", employeeType: "Select", locked: false }
-                                  ])}
-                                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                                >
-                                  + Add Evaluation
-                                </button>
                               </div>
 
                               <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -975,55 +1783,31 @@ function Employees() {
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
-                                    {evaluationDocs.map((doc) => (
-                                      <tr key={doc.id} className="hover:bg-gray-50/50">
-                                        <td className="px-4 py-3 text-gray-800">Evaluation</td>
-                                        <td className="px-4 py-3">
-                                          {doc.file ? (
-                                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-                                              {doc.file.name}
-                                            </a>
-                                          ) : (
-                                            <span className="text-gray-400 italic">No file</span>
-                                          )}
-                                        </td>
-                                        <td className="px-4 py-3 text-gray-600">{doc.date || "—"}</td>
-                                        <td className="px-4 py-3">
-                                          <select 
-                                            value={doc.employeeType || "Select"} 
-                                            onChange={(e) => setEvaluationDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, employeeType: e.target.value } : d))}
-                                            disabled={doc.locked}
-                                            className="px-2 py-1 border border-gray-200 rounded text-xs"
-                                          >
-                                            <option value="Select">Select</option>
-                                            <option value="Regular">Regular</option>
-                                            <option value="Under Probation">Under Probation</option>
-                                          </select>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                          <div className="flex items-center gap-2">
-                                            <select 
-                                              value={doc.remarks || "Select"} 
-                                              onChange={(e) => setEvaluationDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, remarks: e.target.value } : d))}
-                                              disabled={doc.locked}
-                                              className="px-2 py-1 border border-gray-200 rounded text-xs"
-                                            >
-                                              <option value="Select">Select</option>
-                                              <option value="Retained">Retained</option>
-                                              <option value="Observed">Observed</option>
-                                            </select>
-                                            <button
-                                              onClick={() => setEvaluationDocs((prev) => prev.map((d) => d.id === doc.id ? { ...d, locked: !d.locked } : d))}
-                                              className={`w-6 h-6 rounded flex items-center justify-center text-xs ${
-                                                doc.locked ? "bg-red-100 text-red-600" : "bg-green-100 text-green-600"
-                                              }`}
-                                            >
-                                              {doc.locked ? "✗" : "✓"}
-                                            </button>
-                                          </div>
+                                    {evaluationDocs.length === 0 ? (
+                                      <tr>
+                                        <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
+                                          No evaluation records found
                                         </td>
                                       </tr>
-                                    ))}
+                                    ) : (
+                                      evaluationDocs.map((doc) => (
+                                        <tr key={doc.id} className="hover:bg-gray-50/50">
+                                          <td className="px-4 py-3 text-gray-800">Evaluation</td>
+                                          <td className="px-4 py-3">
+                                            {doc.file && doc.url ? (
+                                              <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+                                                {doc.file.name}
+                                              </a>
+                                            ) : (
+                                              <span className="text-gray-400 italic">No file</span>
+                                            )}
+                                          </td>
+                                          <td className="px-4 py-3 text-gray-600">{doc.date || "—"}</td>
+                                          <td className="px-4 py-3 text-gray-600">{doc.employeeType || "—"}</td>
+                                          <td className="px-4 py-3 text-gray-600">{doc.remarks || "—"}</td>
+                                        </tr>
+                                      ))
+                                    )}
                                   </tbody>
                                 </table>
                               </div>
@@ -1248,7 +2032,7 @@ function Employees() {
                 { id: "police", name: "Police Clearance" },
                 { id: "drivetest", name: "Drive Test" },
               ].map((doc) => {
-                const isAlreadySubmitted = requiredDocs.some(d => d.id === doc.id && d.file);
+                const isAlreadySubmitted = employeeDocuments.some(d => d.id === doc.id && d.file);
                 const isAlreadyRequested = requestedDocs.some(d => d.id === doc.id);
                 const isDisabled = isAlreadySubmitted || isAlreadyRequested;
                 return (

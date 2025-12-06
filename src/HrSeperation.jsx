@@ -86,24 +86,29 @@ function HrSeperation() {
 
       if (fetchError) throw fetchError;
 
-      // Fetch employee data for each separation
-      const employeeIds = separations.map(sep => sep.employee_id);
+      // Fetch employee data - employee_id now directly references employees table ID
+      const employeeIds = separations.map(sep => sep.employee_id).filter(id => id);
+      
       const { data: employeesData, error: empError } = await supabase
         .from('employees')
         .select('id, email, fname, lname, mname, position, depot')
         .in('id', employeeIds);
 
-      if (empError) throw empError;
+      if (empError) {
+        console.error('Error fetching employees:', empError);
+      }
 
       // Create a map of employee data
       const employeeMap = {};
-      employeesData.forEach(emp => {
-        employeeMap[emp.id] = emp;
-      });
+      if (employeesData && employeesData.length > 0) {
+        employeesData.forEach(emp => {
+          employeeMap[emp.id] = emp;
+        });
+      }
 
       // Transform data to match UI format
       const transformedEmployees = separations.map(sep => {
-        const employee = employeeMap[sep.employee_id] || {};
+        const employee = employeeMap[sep.employee_id];
         
         // Determine stage based on status
         let stage = 'pending';
@@ -114,15 +119,16 @@ function HrSeperation() {
         }
 
         return {
-          id: employee.id || sep.employee_id,
-          name: employee.fname && employee.lname 
-            ? `${employee.lname}, ${employee.fname}` 
+          id: employee?.id || sep.employee_id || 'unknown',
+          name: employee?.fname && employee?.lname 
+            ? `${employee.lname}, ${employee.fname}${employee.mname ? ' ' + employee.mname : ''}` 
             : 'Unknown Employee',
-          position: employee.position || 'N/A',
+          position: employee?.position || 'N/A',
           submissionDate: sep.resignation_submitted_at 
             ? new Date(sep.resignation_submitted_at).toLocaleDateString('en-CA') 
             : 'N/A',
           stage,
+          resignationType: sep.type || 'resignation',
           resignationStatus: sep.resignation_status === 'validated' ? 'Validated' : 'Submitted',
           exitClearanceStatus: sep.signed_exit_clearance_status === 'validated' ? 'Validated' : 
                                sep.signed_exit_clearance_status === 'resubmission_required' ? 'Re-submission Required' :
@@ -196,8 +202,24 @@ function HrSeperation() {
           isTerminated: sep.is_terminated || false,
           terminationDate: sep.terminated_at,
           dbId: sep.id,
-          employeeUserId: employee.id
+          employeeUserId: employee?.id || sep.employee_id
         };
+      });
+
+      // Sort employees: immediate resignations first, then by submission date (newest first)
+      transformedEmployees.sort((a, b) => {
+        // First priority: immediate resignations
+        if (a.resignationType === 'immediate' && b.resignationType !== 'immediate') {
+          return -1;
+        }
+        if (a.resignationType !== 'immediate' && b.resignationType === 'immediate') {
+          return 1;
+        }
+        
+        // Second priority: sort by submission date (newest first)
+        const dateA = new Date(a.submissionDate);
+        const dateB = new Date(b.submissionDate);
+        return dateB - dateA;
       });
 
       setEmployees(transformedEmployees);
@@ -269,7 +291,7 @@ function HrSeperation() {
 
       // Send notification to employee
       await createResignationValidatedNotification({
-        employeeUserId: employee.employeeUserId
+        employeeUserId: employee.id
       });
 
       // Update local state
@@ -1051,7 +1073,14 @@ function HrSeperation() {
                 >
                   <div className="flex justify-between items-start mb-2">
                     <div>
-                      <h3 className="font-semibold text-gray-900">{employee.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-gray-900">{employee.name}</h3>
+                        {employee.resignationType === 'immediate' && (
+                          <span className="px-2 py-0.5 text-xs font-bold bg-red-500 text-white rounded">
+                            IMMEDIATE
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-600">{employee.position}</p>
                       {employee.isTerminated && (
                         <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">
@@ -1077,7 +1106,14 @@ function HrSeperation() {
         {selectedEmployee ? (
           <div className="p-6">
             <div className="mb-6">
-              <h2 className="text-2xl font-bold text-gray-800 mb-2">{selectedEmployee.name}</h2>
+              <div className="flex items-center gap-3 mb-2">
+                <h2 className="text-2xl font-bold text-gray-800">{selectedEmployee.name}</h2>
+                {selectedEmployee.resignationType === 'immediate' && (
+                  <span className="px-3 py-1 text-sm font-bold bg-red-500 text-white rounded">
+                    IMMEDIATE RESIGNATION
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-4 text-sm text-gray-600">
                 <span>ID: {selectedEmployee.id}</span>
                 <span>•</span>
@@ -1158,7 +1194,7 @@ function HrSeperation() {
                       }}
                       className="w-full px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
                     >
-                      Approve Resignation (Unlock Stage 2)
+                      Proceed to Stage 2
                     </button>
                     <button
                       onClick={() => {
@@ -1503,7 +1539,7 @@ function HrSeperation() {
           <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Approve Resignation?</h3>
             <p className="text-gray-600 mb-6">
-              Are you sure you want to approve this resignation? This will unlock Stage 2 for the employee to complete their exit clearance and interview forms.
+              Are you sure you want to proceed with this resignation? This will unlock Stage 2 for the employee to complete their exit clearance and interview forms.
             </p>
             <div className="flex justify-end gap-3">
               <button

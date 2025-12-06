@@ -87,20 +87,49 @@ const handleRegister = async (e) => {
 
       console.log("✅ Verification email sent!");
 
-      // Insert into pending_applicants
-      const { error } = await supabase.from("pending_applicants").insert([
-        {
-          fname,
-          lname,
-          mname,
-          contact_number: contact,
-          email,
-          password,  // consider hashing this
-          birthday,
-          sex,
-          verification_code: verificationCode
-        }
-      ]);
+      // Check if email already exists in pending_applicants
+      const { data: existingPending } = await supabase
+        .from("pending_applicants")
+        .select("email")
+        .eq("email", email)
+        .maybeSingle();
+
+      let error;
+      if (existingPending) {
+        // Update existing record with new verification code and password
+        const { error: updateError } = await supabase
+          .from("pending_applicants")
+          .update({
+            fname,
+            lname,
+            mname,
+            contact_number: contact,
+            password,
+            birthday,
+            sex,
+            verification_code: verificationCode
+          })
+          .eq("email", email);
+        
+        error = updateError;
+      } else {
+        // Insert new record
+        const { error: insertError } = await supabase.from("pending_applicants").insert([
+          {
+            fname,
+            lname,
+            mname,
+            contact_number: contact,
+            email,
+            password,  // consider hashing this
+            birthday,
+            sex,
+            verification_code: verificationCode
+          }
+        ]);
+        
+        error = insertError;
+      }
 
       if (error) throw error;
 
