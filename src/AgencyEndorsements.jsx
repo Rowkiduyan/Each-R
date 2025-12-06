@@ -56,6 +56,10 @@ function AgencyEndorsements() {
   // Requirements data for selected employee
   const [employeeRequirements, setEmployeeRequirements] = useState(null);
   const [loadingRequirements, setLoadingRequirements] = useState(false);
+  
+  // Interview calendar state
+  const [interviews, setInterviews] = useState([]);
+  const [calendarActiveTab, setCalendarActiveTab] = useState('today'); // 'today', 'tomorrow', 'week'
 
 
   // Calculate items per page based on available screen height
@@ -286,6 +290,123 @@ function AgencyEndorsements() {
     }
   };
 
+  // ---------- Fetch interviews for calendar ----------
+  const fetchInterviews = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('applications')
+        .select(`
+          id,
+          interview_date,
+          interview_time,
+          interview_location,
+          status,
+          payload,
+          endorsed,
+          applicants:applicants ( fname, lname ),
+          job_posts:job_posts ( title )
+        `)
+        .eq('endorsed', true)
+        .not('interview_date', 'is', null)
+        .order('interview_date', { ascending: true });
+
+      if (error) throw error;
+
+      const formatted = (data || []).map(app => {
+        const source = app.payload || {};
+        const payloadObj = typeof source === 'string' ? JSON.parse(source) : source;
+        
+        const applicant = app.applicants || {};
+        const applicant_name = `${applicant.fname || ''} ${applicant.lname || ''}`.trim() || 'Unknown';
+        const position = app.job_posts?.title ?? source.position ?? source.title ?? 'Position Not Set';
+        const interview_type = payloadObj.interview_type || source.interview_type || 'onsite';
+        
+        return {
+          id: app.id,
+          applicant_name,
+          position,
+          time: app.interview_time,
+          date: app.interview_date,
+          location: app.interview_location,
+          status: app.status,
+          interview_type
+        };
+      });
+
+      setInterviews(formatted);
+    } catch (err) {
+      console.error('Error fetching interviews:', err);
+    }
+  };
+
+  // Calendar helper functions
+  const formatTime = (time24) => {
+    if (!time24) return 'N/A';
+    const [hours, minutes] = time24.split(':');
+    const h = parseInt(hours, 10);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${minutes} ${ampm}`;
+  };
+
+  const getTodayInterviews = () => {
+    const today = new Date().toISOString().split('T')[0];
+    return interviews.filter(i => i.date === today);
+  };
+
+  const getTomorrowInterviews = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    return interviews.filter(i => i.date === tomorrowStr);
+  };
+
+  const getThisWeekInterviews = () => {
+    const today = new Date();
+    const nextWeek = new Date();
+    nextWeek.setDate(today.getDate() + 7);
+    const todayStr = today.toISOString().split('T')[0];
+    const nextWeekStr = nextWeek.toISOString().split('T')[0];
+    return interviews.filter(i => i.date >= todayStr && i.date <= nextWeekStr);
+  };
+
+  const getActiveInterviews = () => {
+    if (calendarActiveTab === 'today') return getTodayInterviews();
+    if (calendarActiveTab === 'tomorrow') return getTomorrowInterviews();
+    if (calendarActiveTab === 'week') return getThisWeekInterviews();
+    return [];
+  };
+
+  const getTabTitle = () => {
+    if (calendarActiveTab === 'today') return 'Today';
+    if (calendarActiveTab === 'tomorrow') return 'Tomorrow';
+    if (calendarActiveTab === 'week') return 'This Week';
+    return 'Interviews';
+  };
+
+  const getTabDate = () => {
+    const formatDate = (date) => {
+      const options = { month: 'long', day: 'numeric', year: 'numeric' };
+      return new Date(date).toLocaleDateString('en-US', options);
+    };
+
+    if (calendarActiveTab === 'today') {
+      return formatDate(new Date());
+    }
+    if (calendarActiveTab === 'tomorrow') {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return formatDate(tomorrow);
+    }
+    if (calendarActiveTab === 'week') {
+      const today = new Date();
+      const nextWeek = new Date();
+      nextWeek.setDate(today.getDate() + 7);
+      return `${formatDate(today)} - ${formatDate(nextWeek)}`;
+    }
+    return '';
+  };
+
   // Sync endorsed list with agency-sourced employees
   // - If an endorsed application has a matching agency employee, mark it as deployed and link employee row
   // - If there is an agency employee without an application row (but still endorsed/from agency), add it to the list as deployed
@@ -509,6 +630,7 @@ function AgencyEndorsements() {
   useEffect(() => {
     loadEndorsed();
     loadHired();
+    fetchInterviews();
 
     // subscribe to applications changes (where endorsed=true)
     const applicationsChannel = supabase
@@ -822,10 +944,128 @@ function AgencyEndorsements() {
           </div>
           )}
 
-          {/* Endorsements Table Card */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 overflow-hidden min-h-0">
-            {/* Search and Filters */}
-            <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
+          {/* Main Content Area - Side by Side Layout */}
+          <div className="flex gap-4 flex-1 overflow-hidden min-h-0">
+            {/* Interview Schedule - Left Side (20%) */}
+            <div className="w-[20%] bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+              {/* Calendar Header */}
+              <div className="p-4 border-b border-gray-100 bg-gradient-to-r from-[#800000] to-[#990000] flex-shrink-0">
+                <h2 className="text-lg font-bold text-white">Interview Schedule</h2>
+                <p className="text-sm text-white/80 mt-1">Upcoming interviews</p>
+              </div>
+
+              {/* Stats Overview */}
+              <div className="p-4 border-b border-gray-100 grid grid-cols-3 gap-2 flex-shrink-0">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-800">{interviews.length}</div>
+                  <div className="text-xs text-gray-500">Total</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{interviews.filter(i => i.interview_type === 'online').length}</div>
+                  <div className="text-xs text-gray-500">Online</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{interviews.filter(i => i.interview_type === 'onsite').length}</div>
+                  <div className="text-xs text-gray-500">Onsite</div>
+                </div>
+              </div>
+
+              {/* Calendar Tabs */}
+              <div className="flex border-b border-gray-100 flex-shrink-0">
+                <button
+                  onClick={() => setCalendarActiveTab('today')}
+                  className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
+                    calendarActiveTab === 'today'
+                      ? 'text-[#800000] border-b-2 border-[#800000] bg-red-50'
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => setCalendarActiveTab('tomorrow')}
+                  className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
+                    calendarActiveTab === 'tomorrow'
+                      ? 'text-[#800000] border-b-2 border-[#800000] bg-red-50'
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                  }`}
+                >
+                  Tomorrow
+                </button>
+                <button
+                  onClick={() => setCalendarActiveTab('week')}
+                  className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
+                    calendarActiveTab === 'week'
+                      ? 'text-[#800000] border-b-2 border-[#800000] bg-red-50'
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                  }`}
+                >
+                  This Week
+                </button>
+              </div>
+
+              {/* Interview List */}
+              <div className="flex-1 overflow-y-auto p-4">
+                <div className="mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700">{getTabTitle()}</h3>
+                  <p className="text-xs text-gray-500">{getTabDate()}</p>
+                </div>
+
+                {getActiveInterviews().length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <p className="text-sm">No interviews scheduled</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {getActiveInterviews().map((interview) => (
+                      <div
+                        key={interview.id}
+                        className="bg-gray-50 rounded-lg p-3 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+                      >
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="flex-1">
+                            <h4 className="text-sm font-semibold text-gray-800 truncate">{interview.applicant_name}</h4>
+                            <p className="text-xs text-gray-600 truncate">{interview.position}</p>
+                          </div>
+                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                            interview.interview_type === 'online'
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-green-100 text-green-700'
+                          }`}>
+                            {interview.interview_type === 'online' ? 'Online' : 'Onsite'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <div className="flex items-center gap-1">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            <span>{formatTime(interview.time)}</span>
+                          </div>
+                          {interview.location && (
+                            <div className="flex items-center gap-1 flex-1 truncate">
+                              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                              <span className="truncate">{interview.location}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Endorsements Table - Right Side (80%) */}
+            <div className="w-[80%] bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+              {/* Search and Filters */}
+              <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
               <div className="flex flex-col sm:flex-row gap-3">
                 {/* Search */}
                 <div className="relative flex-1">
@@ -1991,6 +2231,7 @@ function AgencyEndorsements() {
                 </>
                 );
               })()}
+            </div>
             </div>
           </div>
         </div>

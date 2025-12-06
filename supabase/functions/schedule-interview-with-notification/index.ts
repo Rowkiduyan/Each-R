@@ -38,8 +38,8 @@ serve(async (req) => {
     // First, get the application to find the user_id and check if this is a reschedule
     const { data: existingApp, error: fetchError } = await supabase
       .from('applications')
-      // Also select job title payload for email context
-      .select('user_id, interview_date, interview_confirmed, payload')
+      // Also select job title payload, endorsed status, and agency info for notifications
+      .select('user_id, interview_date, interview_confirmed, payload, endorsed, agency_profile_id')
       .eq('id', applicationId)
       .single()
 
@@ -53,6 +53,8 @@ serve(async (req) => {
 
     const isReschedule = existingApp.interview_date !== null
     const userId = existingApp.user_id
+    const isEndorsed = existingApp.endorsed === true
+    const agencyProfileId = existingApp.agency_profile_id
 
     // Try to get job title from payload if present
     let jobTitle = 'your interview';
@@ -126,6 +128,45 @@ serve(async (req) => {
     if (notificationError) {
       console.error('Error creating notification:', notificationError)
       // Don't fail the whole request if notification fails, just log it
+    }
+
+    // Create notification for agency if this is an endorsed application
+    if (isEndorsed && agencyProfileId) {
+      // Get applicant name for the agency notification
+      const { data: applicant, error: applicantError } = await supabase
+        .from('applicants')
+        .select('fname, lname')
+        .eq('id', userId)
+        .maybeSingle()
+
+      const applicantName = applicant 
+        ? `${applicant.fname || ''} ${applicant.lname || ''}`.trim() || 'Endorsed applicant'
+        : 'Endorsed applicant'
+
+      const agencyNotificationTitle = isReschedule 
+        ? 'Endorsed Employee Interview Rescheduled' 
+        : 'Endorsed Employee Interview Scheduled'
+      
+      const agencyNotificationMessage = isReschedule
+        ? `Interview for ${applicantName} has been rescheduled to ${formattedDate} at ${interview.time} in ${interview.location}.`
+        : `Interview for ${applicantName} has been scheduled for ${formattedDate} at ${interview.time} in ${interview.location}.`
+
+      const { error: agencyNotificationError } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: agencyProfileId,
+          application_id: applicationId,
+          type: notificationType,
+          title: agencyNotificationTitle,
+          message: agencyNotificationMessage,
+          read: false,
+          created_at: new Date().toISOString()
+        })
+
+      if (agencyNotificationError) {
+        console.error('Error creating agency notification:', agencyNotificationError)
+        // Don't fail the whole request if notification fails, just log it
+      }
     }
 
     // --- Send email notification via SendGrid ---
