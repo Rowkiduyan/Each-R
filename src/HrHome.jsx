@@ -95,7 +95,7 @@ function HrHome() {
       // First get applications with interview dates
       const { data: applicationsData, error: appsError } = await supabase
         .from('applications')
-        .select('id, user_id, payload, interview_date, interview_time, status')
+        .select('id, user_id, payload, interview_date, interview_time, interview_location, interview_type, status')
         .not('interview_date', 'is', null)
         .order('interview_date', { ascending: true });
       
@@ -145,16 +145,25 @@ function HrHome() {
       // Transform the data to match our component's expected format
       const transformedData = applicationsData.map(app => {
         console.log('Processing app:', app.id, 'payload:', app.payload);
-        // Randomly assign interview type for demo purposes (you can replace this with actual data from payload)
-        const interviewType = Math.random() > 0.5 ? 'online' : 'onsite';
+        
+        // Get interview_type from column, payload.interview_type, payload.interview.type, or default to 'onsite'
+        let interviewType = 'onsite';
+        if (app.interview_type) {
+          interviewType = app.interview_type;
+        } else if (app.payload) {
+          const payload = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload;
+          interviewType = payload.interview_type || payload.interview?.type || 'onsite';
+        }
+        
         return {
           id: app.id,
           applicant_name: applicantMap[app.user_id] || 'Unknown Applicant',
           position: app.payload?.job?.title || app.payload?.title || app.payload?.job_title || 'N/A',
           date: app.interview_date,
           time: app.interview_time || 'Not set',
+          location: app.interview_location || '',
           status: app.status || 'scheduled',
-          interview_type: app.payload?.interview_type || interviewType
+          interview_type: interviewType
         };
       });
       

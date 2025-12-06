@@ -36,39 +36,98 @@ function VerifyEmail() {
       // 2️⃣ Check if user already exists in Supabase Auth
       let authUserId;
 
-      // First, try to sign up
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: pendingUser.email,
-        password: pendingUser.password,
-      });
+      // First, check if user exists by querying profiles table (which uses auth user ID)
+      const { data: existingProfileByEmail } = await supabase
+        .from("profiles")
+        .select("id, email")
+        .eq("email", pendingUser.email)
+        .maybeSingle();
 
-      if (signUpError) {
-        // If user already exists, try to sign in instead
-        if (signUpError.message.includes("already registered") || signUpError.message.includes("User already registered")) {
-          console.log("User already exists in Auth, attempting to sign in...");
-          
-          const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-            email: pendingUser.email,
-            password: pendingUser.password,
-          });
+      if (existingProfileByEmail) {
+        // User already exists and is verified, they should just log in
+        console.log("User already exists and is verified");
+        setErrorMessage("This email is already registered and verified. Please log in instead. If you forgot your password, use 'Forgot Password' to reset it.");
+        setIsVerifying(false);
+        return;
+      } else {
+        // User doesn't exist, try to create new account
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+          email: pendingUser.email,
+          password: pendingUser.password,
+          options: {
+            emailRedirectTo: undefined, // Don't redirect, we're handling verification manually
+          }
+        });
 
-          if (signInError) {
-            console.error("Auth signin error:", signInError);
-            setErrorMessage("Error signing in: " + signInError.message);
+        if (signUpError) {
+          // Check for specific error types
+          if (signUpError.message.includes("already registered") || 
+              signUpError.message.includes("User already registered") ||
+              signUpError.message.includes("already exists") ||
+              signUpError.message.includes("already been registered")) {
+            // User exists in Auth but not in profiles table yet
+            console.log("User exists in Auth, attempting to sign in to get user ID...");
+            
+            // Try to sign in to get the user ID
+            const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+              email: pendingUser.email,
+              password: pendingUser.password,
+            });
+
+            if (signInError) {
+              // If sign-in fails, the password might be wrong or user was created differently
+              console.error("Auth signin error:", signInError);
+              
+              // Check if there's a profile with this email (user might have been created via different flow)
+              const { data: profileCheck } = await supabase
+                .from("profiles")
+                .select("id")
+                .eq("email", pendingUser.email)
+                .maybeSingle();
+              
+              if (profileCheck) {
+                authUserId = profileCheck.id;
+                console.log("Found user via profiles table");
+              } else {
+                // User exists in Auth but password doesn't match and no profile exists
+                // This could happen if:
+                // 1. User registered before but didn't complete verification
+                // 2. User changed password
+                // 3. User was created through a different flow
+                
+                // Try to reset password using the password from pending_applicants
+                // But first, let's check if we can proceed by creating the profile/applicant records
+                // We'll use a workaround: try to get user by attempting password reset
+                
+                // Actually, if user exists in Auth but password doesn't match, we should
+                // still allow verification to proceed, but they'll need to reset password to log in
+                // For now, let's try to find the user ID another way or create a new account
+                
+                // Since we can't get the user ID without password, we'll need to inform the user
+                setErrorMessage("An account with this email already exists, but the password doesn't match. Please use 'Forgot Password' to reset your password, then try verifying again. If you believe this is an error, please contact support.");
+                setIsVerifying(false);
+                return;
+              }
+            } else {
+              authUserId = signInData.user.id;
+              // Sign out immediately after getting the ID (we don't want to stay signed in)
+              await supabase.auth.signOut();
+            }
+          } else {
+            console.error("Auth signup error:", signUpError);
+            setErrorMessage("Error creating account: " + signUpError.message);
             setIsVerifying(false);
             return;
           }
-
-          authUserId = signInData.user.id;
         } else {
-          console.error("Auth signup error:", signUpError);
-          setErrorMessage("Error creating user in Supabase Auth: " + signUpError.message);
-          setIsVerifying(false);
-          return;
+          // Sign up was successful
+          authUserId = signUpData.user?.id;
+          if (!authUserId) {
+            setErrorMessage("Account creation failed. Please try again.");
+            setIsVerifying(false);
+            return;
+          }
         }
-      } else {
-        // Sign up was successful
-        authUserId = signUpData.user.id;
       }
 
       // 3️⃣ Check if profile already exists, if not create it

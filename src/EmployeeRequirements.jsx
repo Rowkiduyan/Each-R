@@ -199,6 +199,10 @@ function EmployeeRequirements() {
   // Get public URL for uploaded files
   const getFileUrl = (filePath) => {
     if (!filePath) return null;
+    // Filter out placeholder paths that are not actual Supabase storage paths
+    if (filePath.includes('local-file-path') || filePath.startsWith('local-') || !filePath.includes('/')) {
+      return null;
+    }
     try {
       const { data } = supabase.storage
         .from('application-files')
@@ -254,6 +258,9 @@ function EmployeeRequirements() {
     return date < today;
   };
 
+  // State to trigger requirement reloads
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
   // Load employee requirements from database on mount and when employeeData changes
   useEffect(() => {
     const loadEmployeeRequirements = async () => {
@@ -300,13 +307,21 @@ function EmployeeRequirements() {
             ['sss', 'tin', 'pagibig', 'philhealth'].forEach(key => {
               if (idNums[key]) {
                 const idData = idNums[key];
+                // Map status - handle both HR format ('approved'/'resubmit') and database format ('Validated'/'Re-submit')
+                let idStatus = 'missing';
+                if (idData.status === 'Validated' || idData.status === 'approved') {
+                  idStatus = 'approved';
+                } else if (idData.status === 'Re-submit' || idData.status === 'resubmit') {
+                  idStatus = 'resubmit';
+                } else if (idData.status === 'Submitted' || idData.status === 'pending') {
+                  idStatus = 'pending';
+                }
+                
                 updated.requirements[key] = {
                   idNumber: idData.value || '',
                   hasFile: !!(idData.file_path || idData.filePath),
                   filePath: idData.file_path || idData.filePath || null,
-                  status: idData.status === 'Validated' ? 'approved' :
-                          idData.status === 'Re-submit' ? 'resubmit' :
-                          idData.status === 'Submitted' ? 'pending' : 'missing',
+                  status: idStatus,
                   submittedDate: idData.submitted_at || idData.validated_at || null,
                   remarks: idData.remarks || null,
                 };
@@ -318,12 +333,20 @@ function EmployeeRequirements() {
           if (requirementsData.documents && Array.isArray(requirementsData.documents)) {
             requirementsData.documents.forEach(doc => {
               if (doc.key && updated.documents[doc.key]) {
+                // Map status - handle both HR format ('approved'/'resubmit') and database format ('Validated'/'Re-submit')
+                let docStatus = 'missing';
+                if (doc.status === 'Validated' || doc.status === 'approved') {
+                  docStatus = 'approved';
+                } else if (doc.status === 'Re-submit' || doc.status === 'resubmit') {
+                  docStatus = 'resubmit';
+                } else if (doc.status === 'Submitted' || doc.status === 'pending') {
+                  docStatus = 'pending';
+                }
+                
                 updated.documents[doc.key] = {
                   hasFile: !!(doc.file_path || doc.filePath),
                   filePath: doc.file_path || doc.filePath || null,
-                  status: doc.status === 'Validated' ? 'approved' :
-                          doc.status === 'Re-submit' ? 'resubmit' :
-                          doc.status === 'Submitted' ? 'pending' : 'missing',
+                  status: docStatus,
                   submittedDate: doc.submitted_at || doc.validated_at || null,
                   dateValidity: doc.date_validity || null,
                   remarks: doc.remarks || null,
@@ -337,13 +360,25 @@ function EmployeeRequirements() {
             Object.keys(requirementsData.medicalExams).forEach(key => {
               if (updated.medicalExams[key]) {
                 const medData = requirementsData.medicalExams[key];
+                // Filter out placeholder paths
+                const medFilePath = medData.file_path || medData.filePath;
+                const validMedPath = medFilePath && !medFilePath.includes('local-file-path') && !medFilePath.startsWith('local-') && medFilePath.includes('/') ? medFilePath : null;
+                
+                // Map status - handle both HR format ('approved'/'resubmit') and database format ('Validated'/'Re-submit')
+                let medStatus = 'missing';
+                if (medData.status === 'Validated' || medData.status === 'approved') {
+                  medStatus = 'approved';
+                } else if (medData.status === 'Re-submit' || medData.status === 'resubmit') {
+                  medStatus = 'resubmit';
+                } else if (medData.status === 'Submitted' || medData.status === 'pending') {
+                  medStatus = 'pending';
+                }
+                
                 updated.medicalExams[key] = {
                   ...updated.medicalExams[key],
-                  hasFile: !!(medData.file_path || medData.filePath),
-                  filePath: medData.file_path || medData.filePath || null,
-                  status: medData.status === 'Validated' ? 'approved' :
-                          medData.status === 'Re-submit' ? 'resubmit' :
-                          medData.status === 'Submitted' ? 'pending' : 'missing',
+                  hasFile: !!validMedPath,
+                  filePath: validMedPath,
+                  status: medStatus,
                   submittedDate: medData.submitted_at || medData.validated_at || null,
                   validUntil: medData.validUntil || medData.valid_until || null,
                   remarks: medData.remarks || null,
@@ -359,13 +394,25 @@ function EmployeeRequirements() {
             Object.keys(requirementsData.personalDocuments).forEach(key => {
               if (updated.personalDocuments[key]) {
                 const docData = requirementsData.personalDocuments[key];
+                // Filter out placeholder paths
+                const personalFilePath = docData.file_path || docData.filePath;
+                const validPersonalPath = personalFilePath && !personalFilePath.includes('local-file-path') && !personalFilePath.startsWith('local-') && personalFilePath.includes('/') ? personalFilePath : null;
+                
+                // Map status - handle both HR format ('approved'/'resubmit') and database format ('Validated'/'Re-submit')
+                let personalStatus = 'missing';
+                if (docData.status === 'Validated' || docData.status === 'approved') {
+                  personalStatus = 'approved';
+                } else if (docData.status === 'Re-submit' || docData.status === 'resubmit') {
+                  personalStatus = 'resubmit';
+                } else if (docData.status === 'Submitted' || docData.status === 'pending') {
+                  personalStatus = 'pending';
+                }
+                
                 updated.personalDocuments[key] = {
                   ...updated.personalDocuments[key],
-                  hasFile: !!(docData.file_path || docData.filePath),
-                  filePath: docData.file_path || docData.filePath || null,
-                  status: docData.status === 'Validated' ? 'approved' :
-                          docData.status === 'Re-submit' ? 'resubmit' :
-                          docData.status === 'Submitted' ? 'pending' : 'missing',
+                  hasFile: !!validPersonalPath,
+                  filePath: validPersonalPath,
+                  status: personalStatus,
                   submittedDate: docData.submitted_at || docData.validated_at || null,
                   remarks: docData.remarks || null,
                 };
@@ -378,13 +425,25 @@ function EmployeeRequirements() {
             Object.keys(requirementsData.clearances).forEach(key => {
               if (updated.clearances[key]) {
                 const clearData = requirementsData.clearances[key];
+                // Filter out placeholder paths
+                const clearFilePath = clearData.file_path || clearData.filePath;
+                const validClearPath = clearFilePath && !clearFilePath.includes('local-file-path') && !clearFilePath.startsWith('local-') && clearFilePath.includes('/') ? clearFilePath : null;
+                
+                // Map status - handle both HR format ('approved'/'resubmit') and database format ('Validated'/'Re-submit')
+                let clearanceStatus = 'missing';
+                if (clearData.status === 'Validated' || clearData.status === 'approved') {
+                  clearanceStatus = 'approved';
+                } else if (clearData.status === 'Re-submit' || clearData.status === 'resubmit') {
+                  clearanceStatus = 'resubmit';
+                } else if (clearData.status === 'Submitted' || clearData.status === 'pending') {
+                  clearanceStatus = 'pending';
+                }
+                
                 updated.clearances[key] = {
                   ...updated.clearances[key],
-                  hasFile: !!(clearData.file_path || clearData.filePath),
-                  filePath: clearData.file_path || clearData.filePath || null,
-                  status: clearData.status === 'Validated' ? 'approved' :
-                          clearData.status === 'Re-submit' ? 'resubmit' :
-                          clearData.status === 'Submitted' ? 'pending' : 'missing',
+                  hasFile: !!validClearPath,
+                  filePath: validClearPath,
+                  status: clearanceStatus,
                   submittedDate: clearData.submitted_at || clearData.validated_at || null,
                   dateValidity: clearData.dateValidity || clearData.date_validity || null,
                   remarks: clearData.remarks || null,
@@ -400,13 +459,25 @@ function EmployeeRequirements() {
             Object.keys(requirementsData.educationalDocuments).forEach(key => {
               if (updated.educationalDocuments[key]) {
                 const eduData = requirementsData.educationalDocuments[key];
+                // Filter out placeholder paths
+                const eduFilePath = eduData.file_path || eduData.filePath;
+                const validEduPath = eduFilePath && !eduFilePath.includes('local-file-path') && !eduFilePath.startsWith('local-') && eduFilePath.includes('/') ? eduFilePath : null;
+                
+                // Map status - handle both HR format ('approved'/'resubmit') and database format ('Validated'/'Re-submit')
+                let eduStatus = 'missing';
+                if (eduData.status === 'Validated' || eduData.status === 'approved') {
+                  eduStatus = 'approved';
+                } else if (eduData.status === 'Re-submit' || eduData.status === 'resubmit') {
+                  eduStatus = 'resubmit';
+                } else if (eduData.status === 'Submitted' || eduData.status === 'pending') {
+                  eduStatus = 'pending';
+                }
+                
                 updated.educationalDocuments[key] = {
                   ...updated.educationalDocuments[key],
-                  hasFile: !!(eduData.file_path || eduData.filePath),
-                  filePath: eduData.file_path || eduData.filePath || null,
-                  status: eduData.status === 'Validated' ? 'approved' :
-                          eduData.status === 'Re-submit' ? 'resubmit' :
-                          eduData.status === 'Submitted' ? 'pending' : 'missing',
+                  hasFile: !!validEduPath,
+                  filePath: validEduPath,
+                  status: eduStatus,
                   submittedDate: eduData.submitted_at || eduData.validated_at || null,
                   remarks: eduData.remarks || null,
                 };
@@ -417,16 +488,30 @@ function EmployeeRequirements() {
           // Map license
           if (requirementsData.license) {
             const licenseData = requirementsData.license;
+            // Filter out placeholder paths
+            const frontPath = licenseData.frontFilePath || licenseData.front_file_path;
+            const backPath = licenseData.backFilePath || licenseData.back_file_path;
+            const validFrontPath = frontPath && !frontPath.includes('local-file-path') && !frontPath.startsWith('local-') && frontPath.includes('/') ? frontPath : null;
+            const validBackPath = backPath && !backPath.includes('local-file-path') && !backPath.startsWith('local-') && backPath.includes('/') ? backPath : null;
+            
+            // Map status - handle both HR format ('approved'/'resubmit') and database format ('Validated'/'Re-submit')
+            let licenseStatus = 'missing';
+            if (licenseData.status === 'Validated' || licenseData.status === 'approved') {
+              licenseStatus = 'approved';
+            } else if (licenseData.status === 'Re-submit' || licenseData.status === 'resubmit') {
+              licenseStatus = 'resubmit';
+            } else if (licenseData.status === 'Submitted' || licenseData.status === 'pending') {
+              licenseStatus = 'pending';
+            }
+            
             updated.license = {
               ...updated.license,
               licenseNumber: licenseData.licenseNumber || licenseData.license_number || '',
               licenseExpiry: licenseData.licenseExpiry || licenseData.license_expiry || '',
-              frontFilePath: licenseData.frontFilePath || licenseData.front_file_path || null,
-              backFilePath: licenseData.backFilePath || licenseData.back_file_path || null,
-              hasFile: !!(licenseData.frontFilePath || licenseData.front_file_path) && !!(licenseData.backFilePath || licenseData.back_file_path),
-              status: licenseData.status === 'Validated' ? 'approved' :
-                      licenseData.status === 'Re-submit' ? 'resubmit' :
-                      licenseData.status === 'Submitted' ? 'pending' : 'missing',
+              frontFilePath: validFrontPath,
+              backFilePath: validBackPath,
+              hasFile: !!(validFrontPath && validBackPath),
+              status: licenseStatus,
               submittedDate: licenseData.submitted_at || licenseData.validated_at || null,
               remarks: licenseData.remarks || null,
               versions: licenseData.versions || [],
@@ -442,7 +527,7 @@ function EmployeeRequirements() {
     };
 
     loadEmployeeRequirements();
-  }, [employeeData?.email]);
+  }, [employeeData?.email, refreshTrigger]);
 
   const getStatusStyle = (status) => {
     const styles = {
@@ -618,6 +703,7 @@ function EmployeeRequirements() {
     setIsDraggingFront(false);
     setIsDraggingBack(false);
   };
+
 
   const handleFileSelect = (file) => {
     if (file) {
@@ -926,11 +1012,20 @@ function EmployeeRequirements() {
             currentMedical.versions = [...(currentMedical.versions || []), versionToSave];
           }
 
+          // Upload file to storage
+          const filePath = await uploadFileToStorage(
+            uploadForm.file,
+            'employee-requirements',
+            `medical_${key}`
+          );
+
           updated.medicalExams[key] = {
             ...currentMedical,
             hasFile: true,
-            filePath: "local-file-path",
-            status: "pending", // Always set to pending for HR review (whether renewal, resubmit, or new upload)
+            filePath: filePath,
+            file_path: filePath, // Also store as file_path for HR compatibility
+            status: "Submitted", // Set to Submitted for HR to validate
+            submitted_at: new Date().toISOString(),
             submittedDate: new Date().toISOString(),
             validUntil: uploadForm.validUntil.trim(),
             currentVersion: uploadTarget.isRenewal ? (currentMedical.versions?.length || 0) : currentMedical.currentVersion,
@@ -946,11 +1041,20 @@ function EmployeeRequirements() {
             remarks: null,
           };
 
+          // Upload file to storage
+          const filePath = await uploadFileToStorage(
+            uploadForm.file,
+            'employee-requirements',
+            `personal_${key}`
+          );
+
           updated.personalDocuments[key] = {
             ...currentPersonal,
             hasFile: true,
-            filePath: "local-file-path",
-            status: uploadTarget.isResubmit ? "pending" : "pending",
+            filePath: filePath,
+            file_path: filePath, // Also store as file_path for HR compatibility
+            status: "Submitted", // Set to Submitted for HR to validate
+            submitted_at: new Date().toISOString(),
             submittedDate: new Date().toISOString(),
           };
         } else if (uploadTarget.type === "clearance") {
@@ -978,13 +1082,23 @@ function EmployeeRequirements() {
             currentClearance.versions = [...(currentClearance.versions || []), versionToSave];
           }
 
+          // Upload file to storage
+          const filePath = await uploadFileToStorage(
+            uploadForm.file,
+            'employee-requirements',
+            `clearance_${key}`
+          );
+
           updated.clearances[key] = {
             ...currentClearance,
             hasFile: true,
-            filePath: "local-file-path",
-            status: "pending", // Always set to pending for HR review (whether renewal, resubmit, or new upload)
+            filePath: filePath,
+            file_path: filePath, // Also store as file_path for HR compatibility
+            status: "Submitted", // Set to Submitted for HR to validate
+            submitted_at: new Date().toISOString(),
             submittedDate: new Date().toISOString(),
             dateValidity: uploadForm.validUntil.trim(),
+            date_validity: uploadForm.validUntil.trim(), // Also store as date_validity for HR compatibility
             currentVersion: uploadTarget.isRenewal ? (currentClearance.versions?.length || 0) : currentClearance.currentVersion,
             remarks: null, // Clear any previous remarks when submitting a renewal
           };
@@ -998,11 +1112,20 @@ function EmployeeRequirements() {
             remarks: null,
           };
 
+          // Upload file to storage
+          const filePath = await uploadFileToStorage(
+            uploadForm.file,
+            'employee-requirements',
+            `educational_${key}`
+          );
+
           updated.educationalDocuments[key] = {
             ...currentEducational,
             hasFile: true,
-            filePath: "local-file-path",
-            status: uploadTarget.isResubmit ? "pending" : "pending",
+            filePath: filePath,
+            file_path: filePath, // Also store as file_path for HR compatibility
+            status: "Submitted", // Set to Submitted for HR to validate
+            submitted_at: new Date().toISOString(),
             submittedDate: new Date().toISOString(),
           };
         } else if (uploadTarget.type === "license") {
@@ -1062,7 +1185,8 @@ function EmployeeRequirements() {
             frontFilePath: frontFilePath,
             backFile: uploadForm.backFile,
             backFilePath: backFilePath,
-            status: "pending", // Always set to pending for HR review (whether renewal, resubmit, or new upload)
+            status: "Submitted", // Set to Submitted for HR to validate
+            submitted_at: new Date().toISOString(),
             submittedDate: new Date().toISOString(),
             hasFile: !!(frontFilePath && backFilePath),
             currentVersion: uploadTarget.isRenewal ? (currentLicense.versions?.length || 0) : currentLicense.currentVersion,
@@ -1150,6 +1274,41 @@ function EmployeeRequirements() {
 
         setUploading(false);
         closeUploadModal();
+        
+        // Reload employee requirements data without full page reload
+        const { data: refreshedEmployee, error: refreshError } = await supabase
+          .from('employees')
+          .select('requirements, position, depot, hired_at')
+          .eq('email', employeeData.email)
+          .single();
+
+        if (!refreshError && refreshedEmployee?.requirements) {
+          // Parse refreshed requirements
+          let requirementsData = refreshedEmployee.requirements;
+          if (typeof requirementsData === 'string') {
+            try {
+              requirementsData = JSON.parse(requirementsData);
+            } catch {
+              requirementsData = {};
+            }
+          }
+
+          // Update employee state with refreshed data using the same logic as useEffect
+          setEmployee((prev) => {
+            if (!prev) return prev;
+            const updated = { ...prev };
+            
+            // Update position and depot if available
+            if (refreshedEmployee.position) updated.position = refreshedEmployee.position;
+            if (refreshedEmployee.depot) updated.depot = refreshedEmployee.depot;
+            if (refreshedEmployee.hired_at) updated.deployedDate = refreshedEmployee.hired_at;
+            
+            // Trigger a re-fetch by updating the refresh trigger
+            setRefreshTrigger(Date.now());
+            return updated;
+          });
+        }
+        
         setAlertMessage(
           uploadTarget.isRenewal 
             ? `${uploadTarget.name} renewal submitted successfully! Previous version has been archived. The renewed document is now pending HR review and approval.`
@@ -1198,6 +1357,19 @@ function EmployeeRequirements() {
 
     return (
     <>
+      {/* Loading Overlay */}
+      {uploading && (
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-4">
+            <div className="relative w-16 h-16">
+              <div className="absolute inset-0 border-4 border-gray-200 rounded-full"></div>
+              <div className="absolute inset-0 border-4 border-red-600 rounded-full border-t-transparent animate-spin"></div>
+            </div>
+            <p className="text-gray-700 font-medium">Uploading file...</p>
+          </div>
+        </div>
+      )}
+      
       <style>{`
         .no-scrollbar {
           -ms-overflow-style: none;
@@ -1416,13 +1588,15 @@ function EmployeeRequirements() {
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                               data.status === 'resubmit'
                                 ? 'bg-red-600 text-white hover:bg-red-700'
-                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                                : data.hasFile && data.status !== 'approved'
+                                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                  : 'bg-blue-600 text-white hover:bg-blue-700'
                             }`}
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                             </svg>
-                            {data.status === 'resubmit' ? 'Re-upload' : 'Upload'}
+                            {data.hasFile && data.status !== 'approved' ? 'Re-upload' : 'Upload'}
                           </button>
                         )}
                         {data.status === 'approved' && (
@@ -1471,8 +1645,8 @@ function EmployeeRequirements() {
               const style = getStatusStyle(licenseData.status);
               const needsAction = licenseData.status === "missing" || licenseData.status === "resubmit";
               const hasBothFiles = licenseData.frontFilePath && licenseData.backFilePath;
-              const canRenew = licenseData.status === "approved" && licenseData.licenseExpiry && isExpiredOrExpiring(licenseData.licenseExpiry);
               const isExpiredDoc = licenseData.licenseExpiry && isExpired(licenseData.licenseExpiry);
+              const canRenew = licenseData.status === "approved" && licenseData.licenseExpiry && isExpiredDoc;
 
               return (
                 <div
@@ -1546,7 +1720,7 @@ function EmployeeRequirements() {
                             <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">Uploaded</span>
                           )}
                         </div>
-                        {licenseData.frontFilePath ? (
+                        {licenseData.frontFilePath && getFileUrl(licenseData.frontFilePath) ? (
                           <div className="flex items-center gap-2 text-sm text-blue-600">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -1568,7 +1742,7 @@ function EmployeeRequirements() {
                             <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">Uploaded</span>
                           )}
                         </div>
-                        {licenseData.backFilePath ? (
+                        {licenseData.backFilePath && getFileUrl(licenseData.backFilePath) ? (
                           <div className="flex items-center gap-2 text-sm text-blue-600">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -1601,13 +1775,15 @@ function EmployeeRequirements() {
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                             licenseData.status === "resubmit"
                               ? "bg-red-600 text-white hover:bg-red-700"
-                              : "bg-blue-600 text-white hover:bg-blue-700"
+                              : hasBothFiles && licenseData.status !== "approved"
+                                ? "bg-blue-600 text-white hover:bg-blue-700"
+                                : "bg-blue-600 text-white hover:bg-blue-700"
                           }`}
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                           </svg>
-                          {licenseData.status === "resubmit" ? "Re-upload" : "Upload"}
+                          {hasBothFiles && licenseData.status !== "approved" ? "Re-upload" : licenseData.status === "resubmit" ? "Re-upload" : "Upload"}
                         </button>
                       )}
                       {licenseData.status === "approved" && !canRenew && (
@@ -1617,10 +1793,15 @@ function EmployeeRequirements() {
                           </svg>
                         </div>
                       )}
-                      {canRenew && (
+                      {licenseData.status === "approved" && (
                         <button
                           onClick={() => openUploadModal("license", "drivers_license", "Driver's License", false, licenseData.licenseNumber, true)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors bg-amber-600 text-white hover:bg-amber-700"
+                          disabled={!isExpiredDoc}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                            isExpiredDoc
+                              ? "bg-amber-600 text-white hover:bg-amber-700 cursor-pointer"
+                              : "bg-gray-300 text-gray-500 cursor-not-allowed opacity-60"
+                          }`}
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -1772,7 +1953,9 @@ function EmployeeRequirements() {
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                               data.status === "resubmit"
                                 ? "bg-red-600 text-white hover:bg-red-700"
-                                : "bg-blue-600 text-white hover:bg-blue-700"
+                                : data.hasFile && data.status !== "approved"
+                                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                                  : "bg-blue-600 text-white hover:bg-blue-700"
                             }`}
                           >
                             <svg
@@ -1788,7 +1971,7 @@ function EmployeeRequirements() {
                                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
                               />
                             </svg>
-                            {data.status === "resubmit" ? "Re-upload" : "Upload"}
+                            {data.hasFile && data.status !== "approved" ? "Re-upload" : data.status === "resubmit" ? "Re-upload" : "Upload"}
                           </button>
                         )}
                         {data.status === "approved" && !canRenew && (
@@ -1952,7 +2135,9 @@ function EmployeeRequirements() {
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                               data.status === "resubmit"
                                 ? "bg-red-600 text-white hover:bg-red-700"
-                                : "bg-blue-600 text-white hover:bg-blue-700"
+                                : data.hasFile && data.status !== "approved"
+                                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                                  : "bg-blue-600 text-white hover:bg-blue-700"
                             }`}
                           >
                             <svg
@@ -1968,7 +2153,7 @@ function EmployeeRequirements() {
                                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
                               />
                             </svg>
-                            {data.status === "resubmit" ? "Re-upload" : "Upload"}
+                            {data.hasFile && data.status !== "approved" ? "Re-upload" : data.status === "resubmit" ? "Re-upload" : "Upload"}
                           </button>
                         )}
                         {data.status === "approved" && (
@@ -2124,7 +2309,9 @@ function EmployeeRequirements() {
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                               data.status === "resubmit"
                                 ? "bg-red-600 text-white hover:bg-red-700"
-                                : "bg-blue-600 text-white hover:bg-blue-700"
+                                : data.hasFile && data.status !== "approved"
+                                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                                  : "bg-blue-600 text-white hover:bg-blue-700"
                             }`}
                           >
                             <svg
@@ -2140,7 +2327,7 @@ function EmployeeRequirements() {
                                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
                               />
                             </svg>
-                            {data.status === "resubmit" ? "Re-upload" : "Upload"}
+                            {data.hasFile && data.status !== "approved" ? "Re-upload" : data.status === "resubmit" ? "Re-upload" : "Upload"}
                           </button>
                         )}
                         {data.status === "approved" && !canRenew && (
@@ -2299,7 +2486,9 @@ function EmployeeRequirements() {
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                               data.status === "resubmit"
                                 ? "bg-red-600 text-white hover:bg-red-700"
-                                : "bg-blue-600 text-white hover:bg-blue-700"
+                                : data.hasFile && data.status !== "approved"
+                                  ? "bg-blue-600 text-white hover:bg-blue-700"
+                                  : "bg-blue-600 text-white hover:bg-blue-700"
                             }`}
                           >
                             <svg
@@ -2315,7 +2504,7 @@ function EmployeeRequirements() {
                                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
                               />
                             </svg>
-                            {data.status === "resubmit" ? "Re-upload" : "Upload"}
+                            {data.hasFile && data.status !== "approved" ? "Re-upload" : data.status === "resubmit" ? "Re-upload" : "Upload"}
                           </button>
                         )}
                         {data.status === "approved" && (
