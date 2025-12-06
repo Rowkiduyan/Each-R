@@ -44,8 +44,15 @@ function HrTrainings() {
     date: "",
     time: "",
     end_time: "",
-    description: ""
+    description: "",
+    schedule_type: "onsite"
   });
+  
+  const [imageFileEdit, setImageFileEdit] = useState(null);
+  
+  // Position-based selection state for edit
+  const [selectedPositionsEdit, setSelectedPositionsEdit] = useState([]);
+  const [employeesByPositionMapEdit, setEmployeesByPositionMapEdit] = useState({});
   
   const [attendees, setAttendees] = useState([]);
   const [attendeesEdit, setAttendeesEdit] = useState([]);
@@ -637,8 +644,8 @@ function HrTrainings() {
       setShowAlertModal(true);
       return;
     }
-    if (!editForm.date || !editForm.time) {
-      setAlertMessage("Please provide both date and time.");
+    if (!editForm.date || !editForm.time || !editForm.end_time) {
+      setAlertMessage("Please provide date, start time, and end time.");
       setShowAlertModal(true);
       return;
     }
@@ -659,27 +666,62 @@ function HrTrainings() {
     }
 
     const startAt = new Date(`${editForm.date}T${editForm.time}:00`);
+    const endAt = new Date(`${editForm.date}T${editForm.end_time}:00`);
+    
+    if (endAt <= startAt) {
+      setAlertMessage("End time must be after start time.");
+      setShowAlertModal(true);
+      return;
+    }
+    
     const now = new Date();
-    const trainingDayEnd = new Date(
-      startAt.getFullYear(),
-      startAt.getMonth(),
-      startAt.getDate(),
-      23, 59, 59, 999
-    );
-    const isActiveFlag = trainingDayEnd >= now;
+    const isActiveFlag = endAt >= now;
 
     try {
+      let uploadedImageUrl = selectedTraining.image_url || null;
+
+      // Upload new image if file is selected
+      if (imageFileEdit) {
+        const fileExt = imageFileEdit.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('schedule-trainings')
+          .upload(filePath, imageFileEdit, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (uploadError) {
+          console.error('Error uploading image:', uploadError);
+          setAlertMessage(`Failed to upload image: ${uploadError.message}`);
+          setShowAlertModal(true);
+          return;
+        }
+
+        // Get public URL
+        const { data: { publicUrl } } = supabase.storage
+          .from('schedule-trainings')
+          .getPublicUrl(filePath);
+        
+        uploadedImageUrl = publicUrl;
+      }
+
       const { data, error } = await supabase
         .from('trainings')
         .update({
           title: editForm.title,
           venue: editForm.venue || null,
           start_at: startAt.toISOString(),
+          end_at: endAt.toISOString(),
           description: editForm.description || null,
           // keep attendees as plain names only
           attendees: attendeesEdit || [],
-          // keep is_active in sync with whether the training day is in the past
+          // keep is_active in sync with whether the training is in the future
           is_active: isActiveFlag,
+          schedule_type: editForm.schedule_type || 'onsite',
+          image_url: uploadedImageUrl
         })
         .eq('id', selectedTraining.id)
         .select()
@@ -750,21 +792,115 @@ function HrTrainings() {
   // Open edit modal
   const openEdit = (training) => {
     setSelectedTraining(training);
+    
+    // Format end_time from end_at if available
+    let endTime = "";
+    if (training.end_at) {
+      const endDate = new Date(training.end_at);
+      const hours = endDate.getHours().toString().padStart(2, '0');
+      const minutes = endDate.getMinutes().toString().padStart(2, '0');
+      endTime = `${hours}:${minutes}`;
+    }
+    
     setEditForm({
       title: training.title || "",
       venue: training.venue || "",
       date: training.date || "",
       time: training.time || "",
-      description: training.description || ""
+      end_time: endTime,
+      description: training.description || "",
+      schedule_type: training.schedule_type || "onsite"
     });
     setAttendeesEdit(
       (training.attendees || []).map((a) =>
         typeof a === "string" ? a : a.name || ""
       )
     );
+    setImageFileEdit(null);
+    setSelectedPositionsEdit([]);
+    setEmployeesByPositionMapEdit({});
     setActionMenuOpen(null);
     setShowEdit(true);
   };
+  
+  // Handle position selection for edit
+  const handlePositionSelectEdit = (position) => {
+    if (position && !selectedPositionsEdit.includes(position)) {
+      setSelectedPositionsEdit([...selectedPositionsEdit, position]);
+    }
+  };
+
+  // Handle position removal for edit
+  const handlePositionRemoveEdit = (positionToRemove) => {
+    const updatedPositions = selectedPositionsEdit.filter(pos => pos !== positionToRemove);
+    setSelectedPositionsEdit(updatedPositions);
+    
+    // Remove employees from this position
+    const employeesToRemove = employeesByPositionMapEdit[positionToRemove] || [];
+    setAttendeesEdit(prev => prev.filter(emp => !employeesToRemove.includes(emp)));
+    
+    // Remove from map
+    const updatedMap = { ...employeesByPositionMapEdit };
+    delete updatedMap[positionToRemove];
+    setEmployeesByPositionMapEdit(updatedMap);
+  };
+  
+  // Load employees for each selected position in edit mode
+  useEffect(() => {
+    const fetchEmployeesForPositionsEdit = async () => {
+      if (selectedPositionsEdit.length === 0) {
+        setEmployeesByPositionMapEdit({});
+        return;
+      }
+
+      const newMap = { ...employeesByPositionMapEdit };
+      const allEmployees = new Set();
+
+      // Fetch employees for each position
+      for (const position of selectedPositionsEdit) {
+        // Skip if we already have employees for this position
+        if (newMap[position]) {
+          // Add existing employees to the set
+          newMap[position].forEach(emp => allEmployees.add(emp));
+          continue;
+        }
+
+        try {
+          const { data, error } = await supabase
+            .from("employees")
+            .select("id, fname, lname, mname, position")
+            .eq("position", position);
+
+          if (error) {
+            console.error(`Error loading employees for position ${position}:`, error);
+            continue;
+          }
+
+          const options =
+            data?.map((emp) => {
+              const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
+              const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
+              return full || "Unnamed employee";
+            }) || [];
+
+          newMap[position] = options;
+          // Add employees to attendees
+          options.forEach(emp => allEmployees.add(emp));
+        } catch (err) {
+          console.error(`Unexpected error loading employees for position ${position}:`, err);
+        }
+      }
+
+      setEmployeesByPositionMapEdit(newMap);
+      // Merge with existing attendees (to keep manually added ones)
+      setAttendeesEdit(prev => {
+        const combined = new Set([...prev, ...allEmployees]);
+        return [...combined];
+      });
+    };
+
+    fetchEmployeesForPositionsEdit();
+  }, [selectedPositionsEdit]);
 
   // Open attendance modal
   const openAttendance = (training) => {
@@ -1325,18 +1461,6 @@ function HrTrainings() {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                openEdit(training);
-                              }}
-                              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2 transition-colors"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                              </svg>
-                              Edit
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
                                 openAttendance(training);
                               }}
                               className="w-full text-left px-4 py-2.5 text-sm text-orange-700 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-2 transition-colors font-semibold"
@@ -1345,18 +1469,6 @@ function HrTrainings() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               Mark Attendance
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDelete(training);
-                              }}
-                              className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                              Delete
                             </button>
                           </div>
                         )}
@@ -2196,88 +2308,286 @@ function HrTrainings() {
       {/* Edit Training Modal */}
       {showEdit && selectedTraining && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-2xl p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <div className="text-center font-semibold text-xl mb-6">Edit Training/Seminar Schedule</div>
-            <form onSubmit={onSaveChanges}>
-              <div className="grid grid-cols-1 gap-4">
-                <label className="text-sm font-medium text-gray-700">
-                  Title: *
-                  <input
-                    name="title"
-                    value={editForm.title}
-                    onChange={onEditChange}
-                    required
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder="Personal Development"
-                  />
-              </label>
-                <div className="grid grid-cols-2 gap-4">
-                  <label className="text-sm font-medium text-gray-700">
-                    Date: *
-                    <input
-                      name="date"
-                      value={editForm.date}
-                      onChange={onEditChange}
-                      type="date"
-                      required
-                      min={new Date().toISOString().split('T')[0]}
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    />
-              </label>
-                  <label className="text-sm font-medium text-gray-700">
-                    Time: *
-                <input
-                      name="time"
-                      value={editForm.time}
-                      onChange={onEditChange}
-                      type="time"
-                      required
-                      className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    />
-                  </label>
-                </div>
-                <label className="text-sm font-medium text-gray-700">
-                  Venue: *
-                  <input
-                    name="venue"
-                    value={editForm.venue}
-                    onChange={onEditChange}
-                    required
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder="Google Meet (Online)"
-                  />
-                </label>
-                <label className="text-sm font-medium text-gray-700">
-                  Description: *
-                  <textarea
-                    name="description"
-                    value={editForm.description}
-                    onChange={onEditChange}
-                    rows="3"
-                    required
-                    className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
-                    placeholder="Gmeet link: https://..."
-                  />
-                </label>
-                <label className="text-sm font-medium text-gray-700">
-                  Attendees: *
-                  <div className="flex items-center justify-between mb-1 mt-1">
-                    <span className="text-xs text-gray-500">Add employees to this training</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        // Select all employees
-                        setAttendeesEdit(employeeOptions);
-                      }}
-                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline transition-colors flex items-center gap-1"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                      </svg>
-                      Select All Employees
-                    </button>
+          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col h-[650px]">
+            {/* Header - Fixed */}
+            <div className="px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-white">
+              <h2 className="text-center font-semibold text-lg text-gray-800">Edit Schedule</h2>
+            </div>
+            
+            {/* Content - Two Column Layout */}
+            <div className="flex-1 overflow-hidden flex">
+              {/* Left Side - Form Fields (50% width) */}
+              <div className="w-[50%] px-5 py-4 border-r border-gray-200 overflow-y-auto">
+                <form onSubmit={onSaveChanges} className="h-full">
+                  <div className="grid grid-cols-1 gap-2.5">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          Title <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="title"
+                          value={editForm.title}
+                          onChange={onEditChange}
+                          required
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          placeholder="Personal Development"
+                        />
+                      </div>
+                      
+                      {/* Schedule Type Selection */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          Schedule Type <span className="text-red-500">*</span>
+                        </label>
+                        <div className="flex gap-4 mt-1.5">
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="schedule_type"
+                              value="onsite"
+                              checked={editForm.schedule_type === "onsite"}
+                              onChange={onEditChange}
+                              className="w-4 h-4 text-red-600 focus:ring-red-500"
+                            />
+                            <span className="text-sm text-gray-700 font-medium">Onsite</span>
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="schedule_type"
+                              value="online"
+                              checked={editForm.schedule_type === "online"}
+                              onChange={onEditChange}
+                              className="w-4 h-4 text-red-600 focus:ring-red-500"
+                            />
+                            <span className="text-sm text-gray-700 font-medium">Online</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Image Upload */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                        Training Image <span className="text-gray-500 font-normal">(PNG, JPG, max 10MB)</span>
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/jpg"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              // Check file size (10MB = 10 * 1024 * 1024 bytes)
+                              if (file.size > 10 * 1024 * 1024) {
+                                setAlertMessage('File size must be less than 10MB');
+                                setShowAlertModal(true);
+                                e.target.value = '';
+                                return;
+                              }
+                              // Check file type
+                              if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
+                                setAlertMessage('Only PNG and JPG files are allowed');
+                                setShowAlertModal(true);
+                                e.target.value = '';
+                                return;
+                              }
+                              setImageFileEdit(file);
+                            }
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100"
+                        />
+                        {imageFileEdit && (
+                          <p className="text-xs text-gray-500 mt-1 truncate">{imageFileEdit.name}</p>
+                        )}
+                        {selectedTraining.image_url && !imageFileEdit && (
+                          <p className="text-xs text-gray-500 mt-1">Current image will be kept</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          Date <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="date"
+                          value={editForm.date}
+                          onChange={onEditChange}
+                          type="date"
+                          required
+                          min={new Date().toISOString().split('T')[0]}
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          {editForm.schedule_type === 'online' ? 'Meeting Link' : 'Venue'} <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="venue"
+                          value={editForm.venue}
+                          onChange={onEditChange}
+                          required
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          placeholder={editForm.schedule_type === 'online' ? 'Google Meet, Zoom, etc.' : 'Location address'}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          Start Time <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="time"
+                          value={editForm.time}
+                          onChange={onEditChange}
+                          type="time"
+                          required
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                          End Time <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          name="end_time"
+                          value={editForm.end_time}
+                          onChange={onEditChange}
+                          type="time"
+                          required
+                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        />
+                      </div>
+                    </div>
+                    {editForm.time && editForm.end_time && editForm.end_time <= editForm.time && (
+                      <p className="text-red-600 text-xs font-medium -mt-2">End time must be after start time</p>
+                    )}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                        Description <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        name="description"
+                        value={editForm.description}
+                        onChange={onEditChange}
+                        rows="2"
+                        required
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none transition-colors"
+                        placeholder="Training details..."
+                      />
+                    </div>
+                    
+                    {/* Attendees Section Header */}
+                    <div className="pt-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-medium text-gray-700">
+                          Attendees <span className="text-red-500">*</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Toggle: if all are selected, deselect all. Otherwise, select all
+                            if (attendeesEdit.length === employeeOptions.length) {
+                              setAttendeesEdit([]);
+                              setSelectedPositionsEdit([]);
+                              setEmployeesByPositionMapEdit({});
+                            } else {
+                              setAttendeesEdit(employeeOptions.map(emp => emp.name));
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center gap-1.5 text-xs font-semibold group ${
+                            attendeesEdit.length === employeeOptions.length
+                              ? 'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700'
+                              : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
+                          }`}
+                        >
+                          {attendeesEdit.length === employeeOptions.length ? (
+                            <>
+                              <svg className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                              <span>Deselect All</span>
+                            </>
+                          ) : (
+                            <>
+                              <svg className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>Select All ({employeeOptions.length})</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Position Selection */}
+                    <div>
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handlePositionSelectEdit(e.target.value);
+                            e.target.value = "";
+                          }
+                        }}
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
+                      >
+                        <option value="">Select by Position</option>
+                        {positions
+                          .filter(pos => !selectedPositionsEdit.includes(pos))
+                          .map((pos, idx) => (
+                            <option key={idx} value={pos}>
+                              {pos}
+                            </option>
+                          ))}
+                      </select>
+                      
+                      {/* Selected Positions Chips */}
+                      {selectedPositionsEdit.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-gray-50 rounded-lg border border-gray-200">
+                          {selectedPositionsEdit.map((pos) => {
+                            const empCount = employeesByPositionMapEdit[pos]?.length || 0;
+                            return (
+                              <div
+                                key={pos}
+                                className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-md px-2 py-0.5 group hover:bg-blue-100 transition-colors"
+                              >
+                                <span className="text-xs font-medium text-blue-800">{pos}</span>
+                                <span className="text-[10px] text-blue-700 bg-blue-200 px-1 py-0.5 rounded-full font-medium">
+                                  {empCount}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePositionRemoveEdit(pos)}
+                                  className="text-blue-600 hover:text-red-600 hover:bg-red-100 rounded-full p-0.5 transition-colors"
+                                  title={`Remove ${pos} and its employees`}
+                                >
+                                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="relative">
+                </form>
+              </div>
+
+              {/* Right Side - Others Search and Selected Attendees List (50% width) */}
+              <div className="w-[50%] px-5 py-4 bg-gray-50 overflow-hidden">
+                <div className="h-full flex flex-col">
+                  {/* Search Input - Optional for additional employees */}
+                  <div className="mb-2.5 relative">
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Others
+                    </label>
                     <input
                       type="text"
                       value={employeeSearchQueryEdit}
@@ -2289,7 +2599,7 @@ function HrTrainings() {
                       onFocus={() => {
                         if (employeeSearchQueryEdit) setShowEmployeeSuggestionsEdit(true);
                       }}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                      className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
                       placeholder="Search employee name..."
                     />
                     {showEmployeeSuggestionsEdit && filteredEmployeesEdit.length > 0 && (
@@ -2317,49 +2627,80 @@ function HrTrainings() {
                       </ul>
                     )}
                   </div>
-                  <div className="mt-2 border border-gray-300 rounded-lg h-32 overflow-y-auto p-2 bg-gray-50">
-                    {attendeesEdit.length > 0 ? (
-                      attendeesEdit.map((name, i) => (
-                        <div key={i} className="flex items-center justify-between px-3 py-2 mb-1 bg-white rounded border border-gray-200">
-                          <span className="text-sm text-gray-700 truncate">{name}</span>
-                          <button
-                            type="button"
-                            onClick={() => removeAttendeeEdit(i)}
-                            className="text-red-600 hover:text-red-700 text-lg font-bold ml-2"
-                          >
-                            ×
-                          </button>
+                  
+                  {/* Attendees List - Scrollable */}
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-medium text-gray-700">
+                        Selected Depots <span className="text-gray-500">({attendeesEdit.length})</span>
+                      </span>
+                      {attendeesEdit.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAttendeesEdit([]);
+                            setSelectedPositionsEdit([]);
+                            setEmployeesByPositionMapEdit({});
+                          }}
+                          className="text-xs text-red-600 hover:text-red-700 font-medium transition-colors"
+                        >
+                          Clear All
+                        </button>
+                      )}
+                    </div>
+                    <div className="border border-gray-300 rounded-lg p-2 bg-white flex-1 overflow-y-auto">
+                      {attendeesEdit.length > 0 ? (
+                        <div className="space-y-1">
+                          {attendeesEdit.map((name, i) => (
+                            <div key={i} className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors">
+                              <span className="text-xs text-gray-700 truncate flex-1">{name}</span>
+                              <button
+                                type="button"
+                                onClick={() => removeAttendeeEdit(i)}
+                                className="text-red-600 hover:text-red-700 text-sm font-bold ml-2 flex-shrink-0 transition-colors"
+                                title="Remove"
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-gray-400 text-center py-4">No attendees added yet</p>
-                    )}
+                      ) : (
+                        <p className="text-xs text-gray-400 text-center py-8">No attendees added yet. Select positions or search for employees.</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </label>
+              </div>
             </div>
-              <div className="flex justify-end gap-3 mt-6">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowEdit(false);
-                    setEmployeeSearchQueryEdit("");
-                    setShowEmployeeSuggestionsEdit(false);
-                  }}
-                  className="px-4 py-2 rounded-lg bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium"
-                >
-                  Save Changes
-                </button>
+            
+            {/* Footer - Fixed */}
+            <div className="px-5 py-3 border-t border-gray-200 flex justify-end gap-3 flex-shrink-0 bg-white">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEdit(false);
+                  setEmployeeSearchQueryEdit("");
+                  setSelectedPositionsEdit([]);
+                  setEmployeesByPositionMapEdit({});
+                  setShowEmployeeSuggestionsEdit(false);
+                  setImageFileEdit(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors font-medium text-sm border border-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={onSaveChanges}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm shadow-sm"
+              >
+                Save Changes
+              </button>
             </div>
-          </form>
+          </div>
         </div>
-      </div>
-    )}
+      )}
          
       {/* Mark Attendance Modal */}
       {showAttendance && selectedTraining && (
