@@ -291,17 +291,28 @@ function EmployeeTrainings() {
         }
     };
 
-    // Format time to 12-hour with AM/PM
-    const formatTime = (timeStr) => {
-        if (!timeStr) return 'Not set';
+    // Format time to 12-hour with AM/PM (handles both time strings and timestamps)
+    const formatTime = (timeStrOrTimestamp) => {
+        if (!timeStrOrTimestamp) return 'Not set';
         try {
-            const [hours, minutes] = timeStr.split(':');
+            // Check if it's a timestamp (ISO string or Date object)
+            if (typeof timeStrOrTimestamp === 'string' && (timeStrOrTimestamp.includes('T') || timeStrOrTimestamp.includes('-'))) {
+                const date = new Date(timeStrOrTimestamp);
+                const hours = date.getHours();
+                const minutes = date.getMinutes();
+                const ampm = hours >= 12 ? 'PM' : 'AM';
+                const displayHour = hours % 12 || 12;
+                const displayMinutes = minutes.toString().padStart(2, '0');
+                return `${displayHour}:${displayMinutes} ${ampm}`;
+            }
+            // Otherwise treat as time string (HH:MM format)
+            const [hours, minutes] = timeStrOrTimestamp.split(':');
             const hour = parseInt(hours, 10);
             const ampm = hour >= 12 ? 'PM' : 'AM';
             const hour12 = hour % 12 || 12;
             return `${hour12}:${minutes} ${ampm}`;
         } catch {
-            return timeStr;
+            return timeStrOrTimestamp;
         }
     };
 
@@ -774,28 +785,14 @@ function EmployeeTrainings() {
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                            </svg>
-                                                            <span className="font-medium">{formatDate(training.date)}</span>
-                                                        </div>
+                                                    <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                                                        <span className="font-medium">{formatDate(training.date)}</span>
                                                         <span className="text-gray-300">•</span>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                            </svg>
-                                                            <span>{formatTime(training.time)}</span>
-                                                        </div>
+                                                        <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
                                                         <span className="text-gray-300">•</span>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                            </svg>
-                                                            <span className="truncate">{training.venue || 'Venue not set'}</span>
-                                                        </div>
+                                                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                                                            {training.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                                                        </span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -830,32 +827,16 @@ function EmployeeTrainings() {
                                                 </div>
                                                 <div className="flex-1 min-w-0">
                                                     <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-orange-600 transition-colors">{training.title}</h3>
-                                                    <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                            </svg>
-                                                            <span className="font-medium">{formatDate(training.date)}</span>
-                                                        </div>
+                                                    <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                                                        <span className="font-medium">{formatDate(training.date)}</span>
                                                         <span className="text-gray-300">•</span>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                            </svg>
-                                                            <span>{formatTime(training.time)}</span>
-                                                        </div>
+                                                        <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
                                                         <span className="text-gray-300">•</span>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                            </svg>
-                                                            <span className="truncate">{training.venue || 'Venue not set'}</span>
-                                                        </div>
+                                                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                                                            {training.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                                                        </span>
                                                         <span className="text-gray-300">•</span>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="text-xs font-semibold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">Pending HR Confirmation</span>
-                                                        </div>
+                                                        <span className="text-xs font-semibold text-orange-600 bg-orange-100 px-2 py-0.5 rounded-full">Pending HR Confirmation</span>
                                                     </div>
                                                 </div>
                                             </div>
@@ -955,42 +936,23 @@ function EmployeeTrainings() {
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-green-600 transition-colors">{training.title}</h3>
-                                                <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                                        </svg>
-                                                        <span className="font-medium">{formatDate(training.date)}</span>
-                                                    </div>
+                                                <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                                                    <span className="font-medium">{formatDate(training.date)}</span>
                                                     <span className="text-gray-300">•</span>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                        </svg>
-                                                        <span>{formatTime(training.time)}</span>
-                                                    </div>
+                                                    <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
                                                     <span className="text-gray-300">•</span>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                        </svg>
-                                                        <span className="truncate">{training.venue || 'Venue not set'}</span>
-                                                    </div>
+                                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                                                        {training.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                                                    </span>
                                                     {training.attendance && (() => {
                                                         const nameVariations = getEmployeeNameVariations();
                                                         const attended = nameVariations.some(name => training.attendance[name] === true);
                                                         return (
                                                             <>
                                                                 <span className="text-gray-300">•</span>
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <svg className={`w-4 h-4 ${attended ? 'text-green-500' : 'text-red-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={attended ? "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" : "M6 18L18 6M6 6l12 12"} />
-                                                                    </svg>
-                                                                    <span className={`font-semibold ${attended ? 'text-green-600' : 'text-red-600'}`}>
-                                                                        {attended ? 'Attended' : 'Absent'}
-                                                                    </span>
-                                                                </div>
+                                                                <span className={`font-semibold ${attended ? 'text-green-600' : 'text-red-600'}`}>
+                                                                    {attended ? 'Attended' : 'Absent'}
+                                                                </span>
                                                             </>
                                                         );
                                                     })()}
@@ -1053,7 +1015,7 @@ function EmployeeTrainings() {
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <p className="text-xs text-gray-500 mb-1">Start Time</p>
-                                            <p className="text-sm font-semibold text-gray-900">{formatTime(selectedTraining.time)}</p>
+                                            <p className="text-sm font-semibold text-gray-900">{formatTime(selectedTraining.start_at)}</p>
                                         </div>
                                         <div>
                                             <p className="text-xs text-gray-500 mb-1">End Time</p>
@@ -1067,10 +1029,12 @@ function EmployeeTrainings() {
                                         <p className="text-sm font-semibold text-gray-900">{calculateDuration(selectedTraining.start_at, selectedTraining.end_at)}</p>
                                     </div>
                                     
-                                    {/* Location */}
+                                    {/* Schedule Type */}
                                     <div>
-                                        <p className="text-xs text-gray-500 mb-1">Location</p>
-                                        <p className="text-sm font-semibold text-gray-900">{selectedTraining.venue || 'Not set'}</p>
+                                        <p className="text-xs text-gray-500 mb-1">Schedule Type</p>
+                                        <p className="text-sm font-semibold text-gray-900">
+                                            {selectedTraining.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                                        </p>
                                     </div>
                                 </div>
                             </div>
