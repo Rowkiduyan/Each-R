@@ -17,8 +17,318 @@ function AgencyTrainings() {
   const [expandedRow, setExpandedRow] = useState(null);
   const itemsPerPage = 10;
 
-  // Mock data - Training-centric (one training can have multiple attendees)
-  const upcomingTrainings = [
+  // Data state
+  const [loading, setLoading] = useState(true);
+  const [upcomingTrainings, setUpcomingTrainings] = useState([]);
+  const [orientationSchedule, setOrientationSchedule] = useState([]);
+  const [trainingHistory, setTrainingHistory] = useState([]);
+  const [agencyUserId, setAgencyUserId] = useState(null);
+
+  // Fetch agency user ID and trainings
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      try {
+        // Get current logged-in user
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+          console.error('Error getting user:', authError);
+          setLoading(false);
+          return;
+        }
+
+        setAgencyUserId(user.id);
+
+        // Fetch all employees belonging to this agency
+        // Use separate queries to ensure we get all employees
+        const [result1, result2] = await Promise.all([
+          supabase
+            .from('employees')
+            .select('id, fname, lname, mname, email')
+            .eq('agency_profile_id', user.id)
+            .not('hired_at', 'is', null),
+          supabase
+            .from('employees')
+            .select('id, fname, lname, mname, email')
+            .eq('endorsed_by_agency_id', user.id)
+            .not('hired_at', 'is', null)
+        ]);
+
+        // Combine and deduplicate by id
+        const combined = [...(result1.data || []), ...(result2.data || [])];
+        const uniqueMap = new Map();
+        combined.forEach(emp => {
+          if (!uniqueMap.has(emp.id)) {
+            uniqueMap.set(emp.id, emp);
+          }
+        });
+        const finalEmployees = Array.from(uniqueMap.values());
+
+        // Log employee fetch results
+        console.log('Employee fetch results:', {
+          result1Count: result1.data?.length || 0,
+          result1Error: result1.error,
+          result2Count: result2.data?.length || 0,
+          result2Error: result2.error,
+          finalCount: finalEmployees.length
+        });
+
+        if (result1.error && result2.error && finalEmployees.length === 0) {
+          console.error('Error fetching agency employees:', result1.error, result2.error);
+          setLoading(false);
+          return;
+        }
+
+        if (finalEmployees.length === 0) {
+          console.warn('No employees found for this agency. User ID:', user.id);
+          setLoading(false);
+          return;
+        }
+
+        // Generate name variations for matching (same format as HrTrainings uses)
+        const employeeNameVariations = new Set();
+        const employeeMap = {}; // Map from name to employee data
+        const normalizedEmployeeMap = {}; // Map from normalized name to original name
+
+        finalEmployees.forEach(emp => {
+          // Use EXACT same format as HrTrainings.jsx (line 116-117)
+          const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
+          const full = [lastFirst, emp.mname].filter(Boolean).join(" "); // No trim() to match HR format exactly
+          
+          if (full) {
+            employeeNameVariations.add(full);
+            employeeMap[full] = {
+              id: emp.id,
+              name: full,
+              email: emp.email
+            };
+            // Also create normalized version for matching (lowercase, trimmed)
+            const normalized = full.toLowerCase().trim();
+            normalizedEmployeeMap[normalized] = full;
+            // Also add trimmed version for matching
+            const trimmed = full.trim();
+            if (trimmed !== full) {
+              normalizedEmployeeMap[trimmed.toLowerCase()] = full;
+            }
+          }
+        });
+
+        // Fetch all trainings
+        const { data: allTrainings, error: trainingError } = await supabase
+          .from('trainings')
+          .select('*')
+          .order('start_at', { ascending: true });
+
+        if (trainingError) {
+          console.error('Error fetching trainings:', trainingError);
+          setLoading(false);
+          return;
+        }
+
+        // Get unique creator IDs to fetch trainer names
+        const creatorIds = [...new Set((allTrainings || [])
+          .map(t => t.created_by)
+          .filter(Boolean))];
+
+        // Fetch trainer names from profiles
+        const trainerMap = {};
+        if (creatorIds.length > 0) {
+          const { data: trainers, error: trainerError } = await supabase
+            .from('profiles')
+            .select('id, first_name, last_name')
+            .in('id', creatorIds);
+
+          if (!trainerError && trainers) {
+            trainers.forEach(trainer => {
+              const trainerName = [trainer.first_name, trainer.last_name]
+                .filter(Boolean)
+                .join(' ') || 'Unknown Trainer';
+              trainerMap[trainer.id] = trainerName;
+            });
+          }
+        }
+
+        const now = new Date();
+        const upcoming = [];
+        const history = [];
+
+        // Debug logging
+        console.log('=== Agency Trainings Debug ===');
+        console.log('Agency employees found:', finalEmployees.length);
+        console.log('Employee name variations:', Array.from(employeeNameVariations));
+        console.log('Total trainings fetched:', (allTrainings || []).length);
+        
+        // Log sample of trainings with attendees
+        const trainingsWithAttendees = (allTrainings || []).filter(t => t.attendees && t.attendees.length > 0);
+        console.log('Trainings with attendees:', trainingsWithAttendees.length);
+        if (trainingsWithAttendees.length > 0) {
+          console.log('Sample training attendees:', trainingsWithAttendees[0].attendees);
+          console.log('Sample training title:', trainingsWithAttendees[0].title);
+        }
+
+        // Helper function to format time
+        const formatTime = (date) => {
+          if (!date) return '';
+          const d = new Date(date);
+          return d.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            hour12: true 
+          });
+        };
+
+        // Filter trainings that have any of the agency's employees as attendees
+        (allTrainings || []).forEach(training => {
+          const attendees = training.attendees || [];
+          
+          // Helper function to extract and normalize attendee name
+          const getAttendeeName = (attendee) => {
+            if (typeof attendee === 'string') {
+              return attendee.trim();
+            }
+            if (attendee && typeof attendee === 'object') {
+              return (attendee.name || '').trim();
+            }
+            return '';
+          };
+
+          // Check if any attendee matches the agency's employees
+          const matchingAttendees = [];
+          attendees.forEach(attendee => {
+            const attendeeName = getAttendeeName(attendee);
+            if (!attendeeName) return;
+            
+            const trimmedAttendeeName = attendeeName.trim();
+            
+            // Try exact match first
+            if (employeeNameVariations.has(trimmedAttendeeName)) {
+              matchingAttendees.push(trimmedAttendeeName);
+              return;
+            }
+            
+            // Try normalized match (case-insensitive, trimmed)
+            const normalized = trimmedAttendeeName.toLowerCase();
+            if (normalizedEmployeeMap[normalized]) {
+              matchingAttendees.push(normalizedEmployeeMap[normalized]);
+              return;
+            }
+            
+            // Try matching with original name (in case it has extra spaces)
+            if (employeeNameVariations.has(attendeeName)) {
+              matchingAttendees.push(attendeeName);
+              return;
+            }
+          });
+
+          // Debug logging for first few trainings
+          if ((allTrainings || []).indexOf(training) < 5) {
+            console.log(`Training "${training.title}":`, {
+              rawAttendees: attendees,
+              processedAttendees: attendees.map(a => getAttendeeName(a)),
+              matchingAttendees: matchingAttendees,
+              hasMatch: matchingAttendees.length > 0
+            });
+          }
+
+          if (matchingAttendees.length === 0) {
+            return; // Skip trainings with no agency employees
+          }
+
+          // Format attendees with employee data
+          const formattedAttendees = matchingAttendees.map(attendeeName => {
+            const emp = employeeMap[attendeeName];
+            return {
+              id: emp?.id || attendeeName,
+              name: attendeeName
+            };
+          });
+
+          const start = training.start_at ? new Date(training.start_at) : null;
+          const end = training.end_at ? new Date(training.end_at) : null;
+          const trainingEnd = end || (start ? new Date(
+            start.getFullYear(),
+            start.getMonth(),
+            start.getDate(),
+            23, 59, 59, 999
+          ) : null);
+
+          // Get trainer name
+          const trainerName = training.created_by 
+            ? (trainerMap[training.created_by] || 'HR Team')
+            : 'HR Team';
+
+          const formattedTraining = {
+            id: training.id,
+            training: training.title || 'Untitled Training',
+            date: start ? start.toISOString().slice(0, 10) : '',
+            time: start && end 
+              ? `${formatTime(start)} - ${formatTime(end)}`
+              : start 
+              ? formatTime(start)
+              : '',
+            location: training.venue || 'TBA',
+            trainer: trainerName,
+            attendees: formattedAttendees,
+            start_at: training.start_at,
+            end_at: training.end_at
+          };
+
+          if (start && trainingEnd) {
+            if (trainingEnd < now) {
+              // Past training - check if attendance is recorded
+              const hasAttendance = training.attendance && Object.keys(training.attendance || {}).length > 0;
+              
+              if (hasAttendance) {
+                // Format history with attendance data
+                const historyAttendees = formattedAttendees.map(attendee => {
+                  const attendanceData = training.attendance?.[attendee.name];
+                  return {
+                    ...attendee,
+                    score: attendanceData?.score || null,
+                    certificate: attendanceData?.certificate || false,
+                    status: attendanceData?.status || (attendanceData ? 'completed' : 'pending')
+                  };
+                });
+                
+                history.push({
+                  ...formattedTraining,
+                  completedDate: start.toISOString().slice(0, 10),
+                  attendees: historyAttendees
+                });
+              }
+            } else {
+              // Upcoming training
+              upcoming.push(formattedTraining);
+            }
+          } else {
+            // No start date, treat as upcoming
+            upcoming.push(formattedTraining);
+          }
+        });
+
+        setUpcomingTrainings(upcoming);
+        setTrainingHistory(history);
+        // Orientation schedule can be filtered similarly if needed
+        setOrientationSchedule([]);
+        
+        // Final debug summary
+        console.log('=== Matching Summary ===');
+        console.log('Upcoming trainings matched:', upcoming.length);
+        console.log('History trainings matched:', history.length);
+        console.log('Total matched:', upcoming.length + history.length);
+        console.log('========================');
+      } catch (error) {
+        console.error('Error fetching trainings:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  // Mock data - Training-centric (one training can have multiple attendees) - REMOVED, using real data now
+  const _upcomingTrainings = [
     { 
       id: 1, 
       training: 'Defensive Driving Course', 
@@ -87,7 +397,7 @@ function AgencyTrainings() {
     },
   ];
 
-  const orientationSchedule = [
+  const _orientationSchedule = [
     { 
       id: 1, 
       title: 'New Hire Orientation - Batch A',
@@ -130,7 +440,7 @@ function AgencyTrainings() {
     },
   ];
 
-  const trainingHistory = [
+  const _trainingHistory = [
     { 
       id: 1, 
       training: 'Basic Safety Training', 
@@ -186,9 +496,14 @@ function AgencyTrainings() {
 
   // Stats - count total attendees across all sessions
   const stats = {
-    upcomingTrainings: upcomingTrainings.reduce((sum, t) => sum + t.attendees.length, 0),
-    pendingOrientation: orientationSchedule.reduce((sum, o) => sum + o.attendees.length, 0),
-    completedThisMonth: trainingHistory.filter(t => t.completedDate.startsWith('2024-11')).reduce((sum, t) => sum + t.attendees.length, 0),
+    upcomingTrainings: upcomingTrainings.reduce((sum, t) => sum + (t.attendees?.length || 0), 0),
+    pendingOrientation: orientationSchedule.reduce((sum, o) => sum + (o.attendees?.length || 0), 0),
+    completedThisMonth: trainingHistory.filter(t => {
+      if (!t.completedDate) return false;
+      const date = new Date(t.completedDate);
+      const now = new Date();
+      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+    }).reduce((sum, t) => sum + (t.attendees?.length || 0), 0),
   };
 
   // Close dropdowns when clicking outside
@@ -528,7 +843,16 @@ function AgencyTrainings() {
             </div>
           </div>
 
+          {/* Loading State */}
+          {loading && (
+            <div className="px-6 py-12 text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800000] mx-auto mb-4"></div>
+              <p className="text-gray-500">Loading trainings...</p>
+            </div>
+          )}
+
           {/* Table */}
+          {!loading && (
           <div className="overflow-x-auto">
             {activeTab === 'upcoming' && (
               <table className="w-full">
@@ -937,6 +1261,7 @@ function AgencyTrainings() {
               </table>
             )}
           </div>
+          )}
 
           {/* Pagination */}
           {filteredData.length > itemsPerPage && (
