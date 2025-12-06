@@ -1,9 +1,9 @@
   import { Link, useNavigate, useLocation } from 'react-router-dom';
   import { useState, useEffect, useRef } from 'react';
   import { supabase } from './supabaseClient';
-  import LogoCropped from './layouts/photos/logo(cropped).png';
   import Roadwise from './Roadwise.png';
-  import NotificationBell from './NotificationBell';
+  import AutocompleteInput from './components/AutocompleteInput';
+import SkillsInput from './components/SkillsInput';
 
   function ApplicantLHome() {
     const navigate = useNavigate();
@@ -18,13 +18,17 @@
     const [successMessage, setSuccessMessage] = useState('');
     const [showSuccessPage, setShowSuccessPage] = useState(false);
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
     const [showProfileIncompleteModal, setShowProfileIncompleteModal] = useState(false);
     const [profileIncompleteMessage, setProfileIncompleteMessage] = useState('');
     const [applicationTab, setApplicationTab] = useState('personal');
-    const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-    const profileDropdownRef = useRef(null);
     const jobDetailsRef = useRef(null);
+
+    // Update activeTab when location.state changes (e.g., from View Profile button)
+    useEffect(() => {
+      if (location.state?.activeTab) {
+        setActiveTab(location.state.activeTab);
+      }
+    }, [location.state]);
 
     const formTabs = [
       { key: 'personal', label: 'Personal' },
@@ -36,9 +40,10 @@
     const requiredFormFields = [
       { key: 'firstName', label: 'first name', tab: 'personal' },
       { key: 'lastName', label: 'last name', tab: 'personal' },
-      { key: 'street', label: 'street or village', tab: 'personal' },
+      { key: 'street', label: 'street name', tab: 'personal' },
       { key: 'barangay', label: 'barangay', tab: 'personal' },
       { key: 'city', label: 'city', tab: 'personal' },
+      { key: 'province', label: 'province', tab: 'personal' },
       { key: 'zip', label: 'zip code', tab: 'personal' },
       { key: 'contact', label: 'contact number', tab: 'personal' },
       { key: 'email', label: 'email', tab: 'personal' },
@@ -60,10 +65,12 @@
     const [selectedJobFromGuest, setSelectedJobFromGuest] = useState(null);
     const [profileForm, setProfileForm] = useState({
         address: '',
+        unit_house_number: '',
         street: '',
         barangay: '',
         city: '',
-        zip: '',
+        province: '',
+        postal_code: '',
         sex: '',
         birthday: '',
         age: '',
@@ -71,7 +78,7 @@
         educational_attainment: '',
         institution_name: '',
         year_graduated: '',
-        skills: '',
+        skills: [],
         work_experiences: [],
         character_references: [],
         preferred_depot: ''
@@ -94,9 +101,11 @@
       firstName: '',
       middleName: '',
       lastName: '',
+      unit_house_number: '',
       street: '',
       barangay: '',
       city: '',
+      province: '',
       zip: '',
       contact: '',
       email: '',
@@ -136,9 +145,24 @@
     const [userApplication, setUserApplication] = useState(null);
 
     // PSGC API states for location dropdowns
+    const [provinces, setProvinces] = useState([]);
     const [cities, setCities] = useState([]);
     const [barangays, setBarangays] = useState([]);
+    const [profileCities, setProfileCities] = useState([]);
     const [profileBarangays, setProfileBarangays] = useState([]);
+    const [applicationCities, setApplicationCities] = useState([]);
+    const [applicationBarangays, setApplicationBarangays] = useState([]);
+    const [loadingProvinces, setLoadingProvinces] = useState(false);
+    const [loadingCities, setLoadingCities] = useState(false);
+    const [loadingBarangays, setLoadingBarangays] = useState(false);
+    const [loadingProfileCities, setLoadingProfileCities] = useState(false);
+    const [loadingProfileBarangays, setLoadingProfileBarangays] = useState(false);
+    const [loadingApplicationCities, setLoadingApplicationCities] = useState(false);
+    const [loadingApplicationBarangays, setLoadingApplicationBarangays] = useState(false);
+
+    // Cache for API responses
+    const cityCache = useRef({});
+    const barangayCache = useRef({});
 
     // Depot options for preferred depot dropdown
     const depotOptions = [
@@ -183,10 +207,13 @@
             setProfileData(mergedProfile);
             setProfileForm({
               address: mergedProfile.address || '',
+              unit_house_number: mergedProfile.unit_house_number || '',
               street: mergedProfile.street || '',
               barangay: mergedProfile.barangay || '',
               city: mergedProfile.city || '',
-              zip: mergedProfile.zip || '',
+              province: mergedProfile.province || '',
+              postal_code: mergedProfile.postal_code || mergedProfile.zip || '',
+              zip: mergedProfile.zip || mergedProfile.postal_code || '',
               sex: mergedProfile.sex || '',
               birthday: mergedProfile.birthday || '',
               age: calculatedAge || mergedProfile.age || '',
@@ -194,7 +221,9 @@
               educational_attainment: mergedProfile.educational_attainment || '',
               institution_name: mergedProfile.institution_name || '',
               year_graduated: mergedProfile.year_graduated || '',
-              skills: mergedProfile.skills || '',
+              skills: normalizeSkills(mergedProfile.skills),
+              work_experiences: mergedProfile.work_experiences || [],
+              character_references: mergedProfile.character_references || [],
               preferred_depot: mergedProfile.preferred_depot || ''
             });
             prefillApplicationForm(mergedProfile);
@@ -250,22 +279,6 @@ useEffect(() => {
       fetchGuestJob();
     }, [jobIdFromGuest, loading]);
 
-    // Close dropdowns when clicking outside
-    useEffect(() => {
-      const handleClickOutside = (event) => {
-        if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target)) {
-          setShowProfileDropdown(false);
-        }
-      };
-
-      if (showProfileDropdown) {
-        document.addEventListener("mousedown", handleClickOutside);
-      }
-
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside);
-      };
-    }, [showProfileDropdown]);
 
     useEffect(() => {
       setForm((prev) => ({
@@ -423,6 +436,7 @@ useEffect(() => {
 
     // Handle form input change
     const handleFormChange = (field, value) => {
+      console.log('🔥 handleFormChange called:', field, value);
       const updatedForm = {
         ...profileForm,
         [field]: value
@@ -434,6 +448,10 @@ useEffect(() => {
       }
 
       setProfileForm(updatedForm);
+      console.log('🔥 Updated profileForm:', updatedForm);
+      if (field === 'province') {
+        console.log('🔥 Province changed to:', value, 'This should trigger city fetch useEffect');
+      }
   };
 
     const handleEdit = () => {
@@ -484,11 +502,21 @@ const handleSave = async () => {
       return;
     }
 
+    // Combine unit_house_number and street for the address field
+    const streetPart = [
+      profileForm.unit_house_number,
+      profileForm.street
+    ]
+      .map((part) => String(part || '').trim())
+      .filter(Boolean)
+      .join(' ');
+
     const combinedAddress = [
-      profileForm.street,
+      streetPart,
       profileForm.barangay,
       profileForm.city,
-      profileForm.zip,
+      profileForm.province,
+      profileForm.postal_code,
     ]
       .map((part) => String(part || '').trim())
       .filter(Boolean)
@@ -498,10 +526,13 @@ const handleSave = async () => {
       .from('applicants')
       .update({
         address: combinedAddress,
+        unit_house_number: profileForm.unit_house_number,
         street: profileForm.street,
         barangay: profileForm.barangay,
         city: profileForm.city,
-        zip: profileForm.zip,
+        province: profileForm.province,
+        postal_code: profileForm.postal_code,
+        zip: profileForm.postal_code || profileForm.zip, // Keep zip for backward compatibility
         sex: profileForm.sex,
         birthday: profileForm.birthday,
         age: profileForm.age,
@@ -509,7 +540,7 @@ const handleSave = async () => {
         educational_attainment: profileForm.educational_attainment,
         institution_name: profileForm.institution_name,
         year_graduated: profileForm.year_graduated,
-        skills: profileForm.skills,
+        skills: Array.isArray(profileForm.skills) ? profileForm.skills : normalizeSkills(profileForm.skills),
         work_experiences: profileForm.work_experiences,
         character_references: profileForm.character_references,
         preferred_depot: profileForm.preferred_depot
@@ -535,10 +566,13 @@ const handleSave = async () => {
       setProfileData(merged);
       setProfileForm({
         address: merged.address || '',
+        unit_house_number: merged.unit_house_number || '',
         street: merged.street || '',
         barangay: merged.barangay || '',
         city: merged.city || '',
-        zip: merged.zip || '',
+        province: merged.province || '',
+        postal_code: merged.postal_code || merged.zip || '',
+        zip: merged.zip || merged.postal_code || '',
         sex: merged.sex || '',
         birthday: merged.birthday || '',
         age: merged.age || '',
@@ -546,9 +580,10 @@ const handleSave = async () => {
         educational_attainment: merged.educational_attainment || '',
         institution_name: merged.institution_name || '',
         year_graduated: merged.year_graduated || '',
-        skills: merged.skills || '',
+        skills: normalizeSkills(merged.skills),
         work_experiences: merged.work_experiences || [],
-        character_references: merged.character_references || []
+        character_references: merged.character_references || [],
+        preferred_depot: merged.preferred_depot || ''
       });
       prefillApplicationForm(merged);
     }
@@ -571,10 +606,13 @@ const handleCancel = () => {
   if (profileData) {
     setProfileForm({
       address: profileData.address || '',
+      unit_house_number: profileData.unit_house_number || '',
       street: profileData.street || '',
       barangay: profileData.barangay || '',
       city: profileData.city || '',
-      zip: profileData.zip || '',
+      province: profileData.province || '',
+      postal_code: profileData.postal_code || profileData.zip || '',
+      zip: profileData.zip || profileData.postal_code || '',
       sex: profileData.sex || '',
       birthday: profileData.birthday || '',
       age: profileData.age || '',
@@ -582,7 +620,7 @@ const handleCancel = () => {
       educational_attainment: profileData.educational_attainment || '',
       institution_name: profileData.institution_name || '',
       year_graduated: profileData.year_graduated || '',
-      skills: profileData.skills || '',
+      skills: normalizeSkills(profileData.skills),
       work_experiences: profileData.work_experiences || [],
       character_references: profileData.character_references || [],
       preferred_depot: profileData.preferred_depot || ''
@@ -625,6 +663,17 @@ const formatDateForInput = (dateString) => {
         .split(',')
         .map((skill) => skill.trim())
         .filter(Boolean);
+    
+    // Helper function to normalize skills (array or string to array)
+    const normalizeSkills = (skills) => {
+      if (Array.isArray(skills)) {
+        return skills.filter(s => s && s.trim() !== '');
+      }
+      if (typeof skills === 'string' && skills.trim() !== '') {
+        return skills.split(',').map(s => s.trim()).filter(Boolean);
+      }
+      return [];
+    };
     const parseAddressParts = (record = {}) => {
       const address = record.address || '';
       const parts = address
@@ -633,10 +682,13 @@ const formatDateForInput = (dateString) => {
         .filter(Boolean);
 
       return {
+        unit_house_number: record.unit_house_number || '',
         street: record.street || parts[0] || '',
         barangay: record.barangay || parts[1] || '',
         city: record.city || parts[2] || '',
-        zip: record.zip || parts[3] || '',
+        province: record.province || parts[3] || '',
+        postal_code: record.postal_code || record.zip || parts[4] || '',
+        zip: record.zip || record.postal_code || parts[4] || '',
       };
     };
 
@@ -645,16 +697,18 @@ const formatDateForInput = (dateString) => {
       const skillsValue = Array.isArray(profile.skills)
         ? profile.skills.join(', ')
         : profile.skills || '';
-      const { street, barangay, city, zip } = parseAddressParts(profile);
+      const { unit_house_number, street, barangay, city, province, zip } = parseAddressParts(profile);
 
       setForm((prev) => ({
         ...prev,
         firstName: profile.fname || '',
         middleName: profile.mname || '',
         lastName: profile.lname || '',
+        unit_house_number: unit_house_number || '',
         street: street || '',
         barangay: barangay || '',
         city: city || '',
+        province: province || '',
         zip: zip || '',
         contact: profile.contact_number || '',
         email: profile.email || '',
@@ -1056,41 +1110,195 @@ const formatDateForInput = (dateString) => {
       return () => unsub && unsub();
     }, [navigate]);
 
-    // Fetch all cities from PSGC API on mount
+    // Fetch all provinces from PSGC API on mount
     useEffect(() => {
-      const fetchAllCities = async () => {
+      const fetchProvinces = async () => {
+        setLoadingProvinces(true);
         try {
-          const response = await fetch('https://psgc.gitlab.io/api/cities-municipalities/');
+          const response = await fetch('https://psgc.gitlab.io/api/provinces/');
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
           const data = await response.json();
-          setCities(data);
+          console.log('Provinces loaded:', data.length);
+          setProvinces(Array.isArray(data) ? data : []);
         } catch (error) {
-          console.error('Error fetching cities:', error);
+          console.error('Error fetching provinces:', error);
+          setProvinces([]);
+        } finally {
+          setLoadingProvinces(false);
         }
       };
-      fetchAllCities();
+      fetchProvinces();
     }, []);
 
-    // Fetch barangays when city is selected
+    // Fetch cities when province is selected (for profile form)
     useEffect(() => {
-      if (form.city) {
-        const fetchBarangays = async () => {
+      console.log('🔥🔥🔥 City fetch useEffect triggered!');
+      console.log('🔥 Province value:', profileForm.province);
+      console.log('🔥 Provinces array length:', provinces.length);
+      console.log('🔥 Provinces loaded:', provinces.length > 0);
+      console.log('🔥 Condition check - province exists:', !!profileForm.province, 'provinces loaded:', provinces.length > 0);
+      
+      if (profileForm.province && provinces.length > 0) {
+        console.log('🔥 Fetching cities for province:', profileForm.province, 'provinces array length:', provinces.length);
+        const fetchProfileCities = async () => {
+          setLoadingProfileCities(true);
           try {
-            // Find the city code from the city name
-            const selectedCity = cities.find(city => city.name === form.city);
-            if (selectedCity) {
-              const response = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.code}/barangays/`);
+            // Find the province code from the province name (case-insensitive match)
+            const selectedProvince = provinces.find(p => 
+              p.name && p.name.toLowerCase().trim() === profileForm.province.toLowerCase().trim()
+            );
+            console.log('🔥 Selected province object:', selectedProvince);
+            if (selectedProvince && selectedProvince.code) {
+              // Check cache first
+              if (cityCache.current[selectedProvince.code]) {
+                console.log('🔥 Using cached cities for:', selectedProvince.code);
+                setProfileCities(cityCache.current[selectedProvince.code]);
+                setLoadingProfileCities(false);
+                return;
+              }
+
+              console.log('🔥 Fetching cities from API for province code:', selectedProvince.code);
+              const response = await fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.code}/cities-municipalities/`);
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
               const data = await response.json();
-              setBarangays(data);
+              console.log('🔥 Cities fetched:', data.length, 'cities');
+              cityCache.current[selectedProvince.code] = data;
+              setProfileCities(Array.isArray(data) ? data : []);
+              console.log('🔥 profileCities state updated with', Array.isArray(data) ? data.length : 0, 'cities');
+            } else {
+              console.warn('🔥 Province not found in provinces array. Looking for:', profileForm.province);
+              console.warn('🔥 Available provinces (first 10):', provinces.map(p => p.name).slice(0, 10));
             }
           } catch (error) {
-            console.error('Error fetching barangays:', error);
+            console.error('🔥 Error fetching profile cities:', error);
+            setProfileCities([]);
+          } finally {
+            setLoadingProfileCities(false);
           }
         };
-        fetchBarangays();
-      } else {
-        setBarangays([]);
+        fetchProfileCities();
+      } else if (!profileForm.province) {
+        console.log('🔥 No province selected, clearing cities');
+        setProfileCities([]);
+        setProfileBarangays([]);
+      } else if (provinces.length === 0) {
+        console.log('🔥 Provinces array not loaded yet');
       }
-    }, [form.city, cities]);
+    }, [profileForm.province, provinces]);
+
+    // Fetch barangays when city is selected (for profile form)
+    useEffect(() => {
+      if (profileForm.city && profileCities.length > 0) {
+        const fetchProfileBarangays = async () => {
+          setLoadingProfileBarangays(true);
+          try {
+            // Find the city code from the city name
+            const selectedCity = profileCities.find(c => c.name === profileForm.city);
+            if (selectedCity) {
+              // Check cache first
+              if (barangayCache.current[selectedCity.code]) {
+                setProfileBarangays(barangayCache.current[selectedCity.code]);
+                setLoadingProfileBarangays(false);
+                return;
+              }
+
+              const response = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.code}/barangays/`);
+              const data = await response.json();
+              barangayCache.current[selectedCity.code] = data;
+              setProfileBarangays(data);
+            }
+          } catch (error) {
+            console.error('Error fetching profile barangays:', error);
+          } finally {
+            setLoadingProfileBarangays(false);
+          }
+        };
+        fetchProfileBarangays();
+      } else {
+        setProfileBarangays([]);
+      }
+    }, [profileForm.city, profileCities]);
+
+    // Fetch cities when province is selected (for application form)
+    useEffect(() => {
+      if (form.province && provinces.length > 0) {
+        const fetchApplicationCities = async () => {
+          setLoadingApplicationCities(true);
+          try {
+            // Find the province code from the province name (case-insensitive match)
+            const selectedProvince = provinces.find(p => 
+              p.name && p.name.toLowerCase().trim() === form.province.toLowerCase().trim()
+            );
+            if (selectedProvince && selectedProvince.code) {
+              // Check cache first
+              if (cityCache.current[selectedProvince.code]) {
+                setApplicationCities(cityCache.current[selectedProvince.code]);
+                setLoadingApplicationCities(false);
+                return;
+              }
+
+              const response = await fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.code}/cities-municipalities/`);
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              const data = await response.json();
+              cityCache.current[selectedProvince.code] = data;
+              setApplicationCities(Array.isArray(data) ? data : []);
+            }
+          } catch (error) {
+            console.error('Error fetching application cities:', error);
+            setApplicationCities([]);
+          } finally {
+            setLoadingApplicationCities(false);
+          }
+        };
+        fetchApplicationCities();
+      } else if (!form.province) {
+        setApplicationCities([]);
+        setApplicationBarangays([]);
+      }
+    }, [form.province, provinces]);
+
+    // Fetch barangays when city is selected (for application form)
+    useEffect(() => {
+      if (form.city && applicationCities.length > 0) {
+        const fetchApplicationBarangays = async () => {
+          setLoadingApplicationBarangays(true);
+          try {
+            // Find the city code from the city name
+            const selectedCity = applicationCities.find(c => c.name === form.city);
+            if (selectedCity) {
+              // Check cache first
+              if (barangayCache.current[selectedCity.code]) {
+                setApplicationBarangays(barangayCache.current[selectedCity.code]);
+                setLoadingApplicationBarangays(false);
+                return;
+              }
+
+              const response = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.code}/barangays/`);
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              const data = await response.json();
+              barangayCache.current[selectedCity.code] = data;
+              setApplicationBarangays(Array.isArray(data) ? data : []);
+            }
+          } catch (error) {
+            console.error('Error fetching application barangays:', error);
+            setApplicationBarangays([]);
+          } finally {
+            setLoadingApplicationBarangays(false);
+          }
+        };
+        fetchApplicationBarangays();
+      } else {
+        setApplicationBarangays([]);
+      }
+    }, [form.city, applicationCities]);
 
     // Fetch barangays when profile city is selected
     useEffect(() => {
@@ -1317,7 +1525,7 @@ const formatDateForInput = (dateString) => {
     });
 
     return (
-      <div className="min-h-screen bg-white">
+      <>
         <style>{`
           .no-scrollbar {
             -ms-overflow-style: none;
@@ -1327,115 +1535,18 @@ const formatDateForInput = (dateString) => {
             display: none;
           }
         `}</style>
-        {/* Header */}
-        <div className="bg-white shadow-sm">
-          <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center">
-                <img
-                  src={LogoCropped}
-                  alt="Each-R Logo"
-                  className="h-10 w-auto object-contain"
-                />
-              </div>
-
-              <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
-                <button
-                  onClick={() => setActiveTab('Home')}
-                  className={`pb-1 ${
-                    activeTab === 'Home'
-                      ? 'text-red-600 border-b-2 border-red-600'
-                      : 'hover:text-gray-900 transition-colors'
-                  }`}
-                >
-                  Home
-                </button>
-                <button
-                  onClick={() => {
-                    setActiveTab('Applications');
-                    navigate('/applicant/applications');
-                  }}
-                  className={`pb-1 ${
-                    activeTab === 'Applications'
-                      ? 'text-red-600 border-b-2 border-red-600'
-                      : 'hover:text-gray-900 transition-colors'
-                  }`}
-                >
-                  Applications
-                </button>
-              </nav>
-
-              <div className="flex items-center space-x-4">
-                {/* Notification Bell */}
-                <NotificationBell />
-                
-                {/* User Profile with Dropdown */}
-                <div className="relative" ref={profileDropdownRef}>
-                  <div 
-                    onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-                    className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-semibold cursor-pointer hover:bg-gray-300"
-                  >
-                    {profileData?.fname && profileData?.lname 
-                      ? `${profileData.fname[0]}${profileData.lname[0]}`.toUpperCase()
-                      : profileData?.email?.[0]?.toUpperCase() || "U"}
-                  </div>
-                  {/* Dropdown arrow */}
-                  <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full border-2 border-white flex items-center justify-center pointer-events-none">
-                    <svg className="w-2 h-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                  
-                  {/* Dropdown Menu */}
-                  {showProfileDropdown && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-50">
-                      <div className="py-1">
-                        <div className="px-4 py-2 text-sm text-gray-700 border-b">
-                          {profileData?.fname && profileData?.lname 
-                            ? `${profileData.fname} ${profileData.lname}`
-                            : profileData?.email || "User"}
-                        </div>
-                        <button
-                          onClick={() => {
-                            setShowProfileDropdown(false);
-                            setActiveTab('Profile');
-                          }}
-                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                        >
-                          View Profile
-                        </button>
-                        <button
-                          onClick={() => {
-                            setShowProfileDropdown(false);
-                            setShowLogoutConfirm(true);
-                          }}
-                          className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                        >
-                          Logout
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* Search Bar with Photo Banner */}
         {activeTab === 'Home' && (
-          <div className="max-w-7xl mx-auto px-6">
+          <div className="w-full">
             <div className="relative">
-              <div className="overflow-hidden">
-                <img
-                  src={Roadwise}
-                  alt="Delivery trucks on the road"
-                  className="w-full h-[200px] object-cover"
-                />
-              </div>
-              <div className="absolute inset-0 bg-black/30 pointer-events-none" />
-              <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
-                <div className="w-full max-w-4xl pointer-events-auto">
+              <img
+                src={Roadwise}
+                alt="Delivery trucks on the road"
+                className="w-full h-[200px] object-cover"
+              />
+              <div className="absolute inset-0 bg-black/30" />
+              <div className="absolute inset-0 flex items-center justify-center px-4">
+                <div className="w-full max-w-4xl">
                   <form onSubmit={handleSearchSubmit}>
                     <div className="flex flex-col gap-3">
                       <div className="flex items-stretch bg-white rounded-2xl shadow-xl border border-gray-200 overflow-visible relative">
@@ -1530,9 +1641,9 @@ const formatDateForInput = (dateString) => {
           </div>
         )}
 
-        <div className="flex flex-col items-center min-h-screen">
+        <div className="flex-1 flex flex-col overflow-y-auto">
           <section className={`w-full ${activeTab === 'Home' ? '' : 'hidden'}`}>
-            <div className="max-w-7xl mx-auto px-6 py-8">
+            <div className="max-w-7xl mx-auto px-6 py-8 w-full">
               {/* Profile Incomplete Warning */}
               {!isProfileComplete && (
                   <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">
@@ -1758,355 +1869,517 @@ const formatDateForInput = (dateString) => {
             </section>
 
             <section className={`w-full ${activeTab === 'Profile' ? '' : 'hidden'}`}>
-              {/* your profile panel stays identical (unchanged) */}
-              {/* ... omitted for brevity – keep your original Profile section code ... */}
-                  <div className="max-w-7xl mx-auto px-6 py-8">
-                    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                        <h2 className="text-2xl font-bold text-gray-800 mb-6">Profile Information</h2>
-                        
-                        {errorMessage && (
-                          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                            {errorMessage}
-                          </div>
-                        )}
-
-                        {successMessage && (
-                          <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-                            {successMessage}
-                          </div>
-                        )}
-
-                        {loading ? (
-                            <div className="text-center py-8">Loading profile...</div>
-                        ) : profileData ? (
-                            <>
-                                {/* Personal Information */}
-                                <div className="grid grid-cols-2 gap-8">
-                                    <div className="space-y-4">
-                                        <div>
-                                            <span className="font-bold">Full Name:</span> {getFullName()}
-                                        </div>
-                                        <div className="space-y-2">
-                                            <span className="font-bold">Address:</span>
-                                            <div className="grid grid-cols-1 gap-2">
-                                                <label className="text-sm text-gray-600">
-                                                    Street / Village
-                                            {isEditMode ? (
-                                                <input
-                                                    type="text"
-                                                            value={profileForm.street}
-                                                            onChange={(e) => handleFormChange('street', e.target.value)}
-                                                            className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                />
-                                            ) : (
-                                                        <span className="block text-gray-800">
-                                                            {profileForm.street || 'Not provided'}
-                                                        </span>
-                                                    )}
-                                                </label>
-                                                <label className="text-sm text-gray-600">
-                                                    City
-                                                    {isEditMode ? (
-                                                        <>
-                                                            <input
-                                                                type="text"
-                                                                list="profile-city-list"
-                                                                value={profileForm.city}
-                                                                onChange={(e) => handleFormChange('city', e.target.value)}
-                                                                className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                            />
-                                                            <datalist id="profile-city-list">
-                                                                {cities.map((city) => (
-                                                                    <option key={city.code} value={city.name} />
-                                                                ))}
-                                                            </datalist>
-                                                        </>
-                                                    ) : (
-                                                        <span className="block text-gray-800">
-                                                            {profileForm.city || 'Not provided'}
-                                                        </span>
-                                                    )}
-                                                </label>
-                                                <label className="text-sm text-gray-600">
-                                                    Barangay
-                                                    {isEditMode ? (
-                                                        <>
-                                                            <input
-                                                                type="text"
-                                                                list="profile-barangay-list"
-                                                                value={profileForm.barangay}
-                                                                onChange={(e) => handleFormChange('barangay', e.target.value)}
-                                                                className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                            />
-                                                            <datalist id="profile-barangay-list">
-                                                                {profileBarangays.map((brgy) => (
-                                                                    <option key={brgy.code} value={brgy.name} />
-                                                                ))}
-                                                            </datalist>
-                                                        </>
-                                                    ) : (
-                                                        <span className="block text-gray-800">
-                                                            {profileForm.barangay || 'Not provided'}
-                                                        </span>
-                                                    )}
-                                                </label>
-                                                <label className="text-sm text-gray-600">
-                                                    ZIP Code
-                                                    {isEditMode ? (
-                                                        <input
-                                                            type="text"
-                                                            value={profileForm.zip}
-                                                            onChange={(e) => handleFormChange('zip', e.target.value)}
-                                                            className="mt-1 w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                        />
-                                                    ) : (
-                                                        <span className="block text-gray-800">
-                                                            {profileForm.zip || 'Not provided'}
-                                                        </span>
-                                                    )}
-                                                </label>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Preferred Depot:</span>{' '}
-                                            {isEditMode ? (
-                                                <>
-                                                    <input
-                                                        list="profile-depot-list"
-                                                        value={profileForm.preferred_depot || ''}
-                                                        onChange={(e) => handleFormChange('preferred_depot', e.target.value)}
-                                                        className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                        placeholder="Select preferred depot"
-                                                    />
-                                                    <datalist id="profile-depot-list">
-                                                        {depotOptions.map((depot) => (
-                                                            <option key={depot} value={depot} />
-                                                        ))}
-                                                    </datalist>
-                                                </>
-                                            ) : (
-                                                profileForm.preferred_depot || 'Not provided'
-                                            )}
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Contact Number:</span> {profileData.contact_number || 'Not provided'}
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Email:</span> {profileData.email || 'Not provided'}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <span className="font-bold">Sex:</span>{' '}
-                                            {isEditMode ? (
-                                                <select
-                                                    value={profileForm.sex}
-                                                    onChange={(e) => handleFormChange('sex', e.target.value)}
-                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                >
-                                                    <option value="">Select</option>
-                                                    <option value="Male">Male</option>
-                                                    <option value="Female">Female</option>
-                                                </select>
-                                            ) : (
-                                                profileForm.sex || 'Not provided'
-                                            )}
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Birthday:</span>{' '}
-                                            {isEditMode ? (
-                                                <div>
-                                                    <input
-                                                        type="date"
-                                                        value={formatDateForInput(profileForm.birthday)}
-                                                        onChange={(e) => handleFormChange('birthday', e.target.value)}
-                                                        className={`ml-2 px-2 py-1 border rounded focus:outline-none focus:ring-1 focus:ring-red-500 ${
-                                                            birthdayError ? 'border-red-500' : 'border-gray-300'
-                                                        }`}
-                                                    />
-                                                    {birthdayError && (
-                                                        <div className="ml-2 mt-1 text-sm text-red-600">
-                                                            {birthdayError}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                profileForm.birthday ? formatDate(profileForm.birthday) : 'Not provided'
-                                            )}
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Age:</span>{' '}
-                                            {isEditMode ? (
-                                                <input
-                                                    type="text"
-                                                    value={profileForm.age}
-                                                    readOnly
-                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded bg-gray-100 w-20"
-                                                />
-                                            ) : (
-                                                profileForm.age || 'Not provided'
-                                            )}
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Marital Status:</span>{' '}
-                                            {isEditMode ? (
-                                                <select
-                                                    value={profileForm.marital_status}
-                                                    onChange={(e) => handleFormChange('marital_status', e.target.value)}
-                                                    className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                                >
-                                                    <option value="">Select</option>
-                                                    <option value="Single">Single</option>
-                                                    <option value="Married">Married</option>
-                                                    <option value="Widowed">Widowed</option>
-                                                    <option value="Divorced">Divorced</option>
-                                                </select>
-                                            ) : (
-                                                profileForm.marital_status || 'Not provided'
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div className="border-t border-gray-300 my-6"></div>
-                                
-                                {/* Application Information - Non-editable */}
-                                <div className="grid grid-cols-3 gap-8">
-                                    <div className="space-y-4">
-                                        <div>
-                                            <span className="font-bold">Application ID:</span> {userApplication?.id || 'Not available'}
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Applied Position:</span> {applicationPayload?.job?.title || 'Not available'}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <span className="font-bold">Applied Depot:</span> {applicationPayload?.job?.depot || 'Not available'}
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Application Date:</span> {userApplication?.created_at ? formatDate(userApplication.created_at) : 'Not available'}
-                                        </div>
-                                    </div>
-                                    <div className="space-y-4">
-                                        <div>
-                                            <span className="font-bold">Application Status:</span>{' '}
-                                            <span className="ml-2 px-2 py-1 bg-orange-500 text-white text-xs rounded">{userApplication?.status || 'Not available'}</span>
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Resume:</span>{' '}
-                                            {applicationResumeUrl ? (
-                                                <a href={applicationResumeUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600">{applicationPayload?.form?.resumeName || 'View Resume'}</a>
-                                            ) : ('Not available')}
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">Available Start Date:</span> {applicationPayload?.form?.startDate ? formatDate(applicationPayload.form.startDate) : 'Not available'}
-                                        </div>
-                                        <div>
-                                            <span className="font-bold">How did you learn about us:</span> {applicationPayload?.form?.heardFrom || 'Not available'}
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div className="border-t border-gray-300 my-6"></div>
-                                
-                                {/* Education & Skills */}
-                                <div className="space-y-4">
-                                    <div>
-                                        <span className="font-bold">Educational Attainment:</span>{' '}
-                                        {isEditMode ? (
-                                            <select
-                                                value={profileForm.educational_attainment}
-                                                onChange={(e) => handleFormChange('educational_attainment', e.target.value)}
-                                                className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
-                                            >
-                                                <option value="">Select</option>
-                                                <option value="Elementary School">Elementary School</option>
-                                                <option value="High School Graduate">High School Graduate</option>
-                                                <option value="Secondary School Graduate">Secondary School Graduate</option>
-                                                <option value="College Graduate">College Graduate</option>
-                                            </select>
-                                        ) : (
-                                            profileForm.educational_attainment || 'Not provided'
-                                        )}
-                                    </div>
-                                    <div>
-                                        <span className="font-bold">Institution Name:</span>{' '}
-                                        {isEditMode ? (
-                                            <input
-                                                type="text"
-                                                value={profileForm.institution_name}
-                                                onChange={(e) => handleFormChange('institution_name', e.target.value)}
-                                                className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 w-80"
-                                            />
-                                        ) : (
-                                            profileForm.institution_name || 'Not provided'
-                                        )}
-                                    </div>
-                                    <div>
-                                        <span className="font-bold">Year Graduated:</span>{' '}
-                                        {isEditMode ? (
-                                            <input
-                                                type="text"
-                                                value={profileForm.year_graduated}
-                                                onChange={(e) => handleFormChange('year_graduated', e.target.value)}
-                                                className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 w-32"
-                                            />
-                                        ) : (
-                                            profileForm.year_graduated || 'Not provided'
-                                        )}
-                                    </div>
-                                    <div>
-                                        <span className="font-bold">Skills:</span>{' '}
-                                        {isEditMode ? (
-                                            <input
-                                                type="text"
-                                                value={profileForm.skills}
-                                                onChange={(e) => handleFormChange('skills', e.target.value)}
-                                                placeholder="e.g., Driving, Customer Service, Logistics"
-                                                className="ml-2 px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-red-500 w-96"
-                                            />
-                                        ) : (
-                                            profileForm.skills || 'Not provided'
-                                        )}
-                                    </div>
-                                </div>
-                                
-      
-                                
-                                
-                                <div className="flex justify-end gap-3 mt-6">
-                                    {isEditMode ? (
-                                        <>
-                                            <button
-                                                onClick={handleCancel}
-                                                className="px-6 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
-                                            >
-                                                Cancel
-                                            </button>
-                                            <button
-                                                onClick={handleSave}
-                                                disabled={saving}
-                                                className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:bg-gray-400"
-                                            >
-                                                {saving ? 'Saving...' : 'Save Changes'}
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <button
-                                            onClick={handleEdit}
-                                            className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-                                        >
-                                            Edit Profile
-                                        </button>
-                                    )}
-                                </div>
-                            </>
-                        ) : (
-                            <div className="text-center py-8 text-gray-500">No profile data found.</div>
-                        )}
+              <div className="max-w-7xl mx-auto px-6 py-8">
+                <div className="space-y-6">
+                  {/* Header */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h2 className="text-3xl font-bold text-gray-900">My Profile</h2>
+                      <p className="text-gray-600 mt-1">Manage your personal information and preferences</p>
                     </div>
+                    {!isEditMode && profileData && (
+                      <button
+                        onClick={handleEdit}
+                        className="px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 font-medium"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        Edit Profile
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Error/Success Messages */}
+                  {errorMessage && (
+                    <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg flex items-start gap-3">
+                      <svg className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-red-700 text-sm">{errorMessage}</p>
+                    </div>
+                  )}
+
+                  {successMessage && (
+                    <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded-lg flex items-start gap-3">
+                      <svg className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-green-700 text-sm">{successMessage}</p>
+                    </div>
+                  )}
+
+                  {loading ? (
+                    <div className="text-center py-12">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto"></div>
+                      <p className="text-gray-600 mt-4">Loading profile...</p>
+                    </div>
+                  ) : profileData ? (
+                    <div className="space-y-6">
+                      {/* Personal Information Card */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div className="bg-gradient-to-r from-red-50 to-orange-50 px-6 py-4 border-b border-gray-200">
+                          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                            <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            Personal Information
+                          </h3>
+                        </div>
+                        <div className="p-6">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
+                              <div className="text-gray-900 font-medium">{getFullName()}</div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
+                              <div className="text-gray-900">{profileData.email || 'Not provided'}</div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Contact Number</label>
+                              <div className="text-gray-900">{profileData.contact_number || 'Not provided'}</div>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Sex</label>
+                              {isEditMode ? (
+                                <select
+                                  value={profileForm.sex}
+                                  onChange={(e) => handleFormChange('sex', e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                >
+                                  <option value="">Select</option>
+                                  <option value="Male">Male</option>
+                                  <option value="Female">Female</option>
+                                </select>
+                              ) : (
+                                <div className="text-gray-900">{profileForm.sex || 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Birthday</label>
+                              {isEditMode ? (
+                                <div>
+                                  <input
+                                    type="date"
+                                    value={formatDateForInput(profileForm.birthday)}
+                                    onChange={(e) => handleFormChange('birthday', e.target.value)}
+                                    className={`w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 ${
+                                      birthdayError ? 'border-red-500' : 'border-gray-300'
+                                    }`}
+                                  />
+                                  {birthdayError && (
+                                    <p className="mt-1 text-sm text-red-600">{birthdayError}</p>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-gray-900">{profileForm.birthday ? formatDate(profileForm.birthday) : 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Age</label>
+                              {isEditMode ? (
+                                <input
+                                  type="text"
+                                  value={profileForm.age}
+                                  readOnly
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-700"
+                                />
+                              ) : (
+                                <div className="text-gray-900">{profileForm.age || 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Marital Status</label>
+                              {isEditMode ? (
+                                <select
+                                  value={profileForm.marital_status}
+                                  onChange={(e) => handleFormChange('marital_status', e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                >
+                                  <option value="">Select</option>
+                                  <option value="Single">Single</option>
+                                  <option value="Married">Married</option>
+                                  <option value="Widowed">Widowed</option>
+                                  <option value="Divorced">Divorced</option>
+                                </select>
+                              ) : (
+                                <div className="text-gray-900">{profileForm.marital_status || 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Depot</label>
+                              {isEditMode ? (
+                                <>
+                                  <input
+                                    list="profile-depot-list"
+                                    value={profileForm.preferred_depot || ''}
+                                    onChange={(e) => handleFormChange('preferred_depot', e.target.value)}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                    placeholder="Select preferred depot"
+                                  />
+                                  <datalist id="profile-depot-list">
+                                    {depotOptions.map((depot) => (
+                                      <option key={depot} value={depot} />
+                                    ))}
+                                  </datalist>
+                                </>
+                              ) : (
+                                <div className="text-gray-900">{profileForm.preferred_depot || 'Not provided'}</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Address Information Card */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-visible">
+                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200">
+                          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            Address Information
+                          </h3>
+                        </div>
+                        <div className="p-6">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Unit/House Number & Street Name
+                              </label>
+                              {isEditMode ? (
+                                <div className="grid grid-cols-2 gap-3">
+                                  <input
+                                    type="text"
+                                    value={profileForm.unit_house_number || ''}
+                                    onChange={(e) => handleFormChange('unit_house_number', e.target.value)}
+                                    placeholder="Unit/House No."
+                                    className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={profileForm.street || ''}
+                                    onChange={(e) => handleFormChange('street', e.target.value)}
+                                    placeholder="Street Name"
+                                    className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="text-gray-900">
+                                  {profileForm.unit_house_number && profileForm.street
+                                    ? `${profileForm.unit_house_number} ${profileForm.street}`
+                                    : profileForm.street || 'Not provided'}
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Province</label>
+                              {isEditMode ? (
+                                <AutocompleteInput
+                                  value={profileForm.province || ''}
+                                  onChange={(value) => {
+                                    const oldProvince = profileForm.province;
+                                    handleFormChange('province', value);
+                                    // Clear city and barangay when province changes
+                                    if (oldProvince !== value) {
+                                      handleFormChange('city', '');
+                                      handleFormChange('barangay', '');
+                                    }
+                                  }}
+                                  options={Array.isArray(provinces) ? provinces : []}
+                                  placeholder="Select or type to search province"
+                                  loading={loadingProvinces}
+                                  listId="profile-province-list"
+                                  onSelect={(option) => {
+                                    if (option && option.name) {
+                                      // Update all fields at once to ensure state consistency
+                                      setProfileForm(prev => ({
+                                        ...prev,
+                                        province: option.name,
+                                        city: '',
+                                        barangay: ''
+                                      }));
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <div className="text-gray-900">{profileForm.province || 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                City / Municipality
+                              </label>
+                              {isEditMode ? (
+                                <AutocompleteInput
+                                  value={profileForm.city || ''}
+                                  onChange={(value) => {
+                                    handleFormChange('city', value);
+                                    // Clear barangay when city changes
+                                    if (profileForm.city !== value) {
+                                      handleFormChange('barangay', '');
+                                    }
+                                  }}
+                                  options={Array.isArray(profileCities) ? profileCities : []}
+                                  placeholder={profileForm.province ? "Select or type to search city" : "Select province first"}
+                                  disabled={!profileForm.province}
+                                  loading={loadingProfileCities}
+                                  listId="profile-city-list"
+                                  helperText={!profileForm.province ? "Please select a province first" : profileCities.length > 0 ? `${profileCities.length} cities available` : "Loading cities..."}
+                                  onSelect={(option) => {
+                                    if (option && option.name) {
+                                      // Update city and clear barangay in one state update
+                                      setProfileForm(prev => ({
+                                        ...prev,
+                                        city: option.name,
+                                        barangay: ''
+                                      }));
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <div className="text-gray-900">{profileForm.city || 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Barangay / Village / Subdivision
+                              </label>
+                              {isEditMode ? (
+                                <AutocompleteInput
+                                  value={profileForm.barangay || ''}
+                                  onChange={(value) => handleFormChange('barangay', value)}
+                                  options={Array.isArray(profileBarangays) ? profileBarangays : []}
+                                  placeholder={profileForm.city ? "Select or type to search barangay" : "Select city first"}
+                                  disabled={!profileForm.city}
+                                  loading={loadingProfileBarangays}
+                                  listId="profile-barangay-list"
+                                  helperText={!profileForm.city ? "Please select a city first" : ""}
+                                  onSelect={(option) => {
+                                    if (option && option.name) {
+                                      handleFormChange('barangay', option.name);
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <div className="text-gray-900">{profileForm.barangay || 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">ZIP Code</label>
+                              {isEditMode ? (
+                                <input
+                                  type="text"
+                                  value={profileForm.postal_code || ''}
+                                  onChange={(e) => handleFormChange('postal_code', e.target.value)}
+                                  placeholder="Enter ZIP code"
+                                  maxLength={10}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                />
+                              ) : (
+                                <div className="text-gray-900">{profileForm.postal_code || 'Not provided'}</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Education & Skills Card */}
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200">
+                          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                            </svg>
+                            Education & Skills
+                          </h3>
+                        </div>
+                        <div className="p-6">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Highest Educational Attainment</label>
+                              {isEditMode ? (
+                                <select
+                                  value={profileForm.educational_attainment || ''}
+                                  onChange={(e) => {
+                                    handleFormChange('educational_attainment', e.target.value);
+                                    // Clear institution and year when N/A is selected
+                                    if (e.target.value === 'N/A') {
+                                      handleFormChange('institution_name', '');
+                                      handleFormChange('year_graduated', '');
+                                    }
+                                  }}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                >
+                                  <option value="">Select</option>
+                                  <option value="N/A">N/A</option>
+                                  <option value="Elementary School">Elementary School</option>
+                                  <option value="High School Graduate">High School Graduate</option>
+                                  <option value="Secondary School Graduate">Secondary School Graduate</option>
+                                  <option value="College Graduate">College Graduate</option>
+                                </select>
+                              ) : (
+                                <div className="text-gray-900">{profileForm.educational_attainment || 'Not provided'}</div>
+                              )}
+                            </div>
+                            {profileForm.educational_attainment !== 'N/A' && (
+                              <>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">Institution Name</label>
+                                  {isEditMode ? (
+                                    <input
+                                      type="text"
+                                      value={profileForm.institution_name || ''}
+                                      onChange={(e) => handleFormChange('institution_name', e.target.value)}
+                                      placeholder="Enter school or institution name"
+                                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                    />
+                                  ) : (
+                                    <div className="text-gray-900">{profileForm.institution_name || 'Not provided'}</div>
+                                  )}
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">Year Graduated</label>
+                                  {isEditMode ? (
+                                    <input
+                                      type="text"
+                                      value={profileForm.year_graduated || ''}
+                                      onChange={(e) => handleFormChange('year_graduated', e.target.value)}
+                                      placeholder="e.g., 2020"
+                                      maxLength={4}
+                                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                    />
+                                  ) : (
+                                    <div className="text-gray-900">{profileForm.year_graduated || 'Not provided'}</div>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Skills</label>
+                              {isEditMode ? (
+                                <SkillsInput
+                                  skills={normalizeSkills(profileForm.skills)}
+                                  onChange={(skillsArray) => handleFormChange('skills', skillsArray)}
+                                />
+                              ) : (
+                                <div className="text-gray-900">
+                                  {Array.isArray(profileForm.skills) && profileForm.skills.length > 0
+                                    ? profileForm.skills.join(', ')
+                                    : (typeof profileForm.skills === 'string' && profileForm.skills
+                                        ? profileForm.skills
+                                        : 'Not provided')}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Application Information Card */}
+                      {userApplication && (
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                          <div className="bg-gradient-to-r from-purple-50 to-pink-50 px-6 py-4 border-b border-gray-200">
+                            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                              <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              Application Information
+                            </h3>
+                          </div>
+                          <div className="p-6">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-500 mb-1">Application ID</label>
+                                <div className="text-gray-900 font-medium">{userApplication?.id || 'Not available'}</div>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-500 mb-1">Applied Position</label>
+                                <div className="text-gray-900">{applicationPayload?.job?.title || 'Not available'}</div>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-500 mb-1">Applied Depot</label>
+                                <div className="text-gray-900">{applicationPayload?.job?.depot || 'Not available'}</div>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-500 mb-1">Application Date</label>
+                                <div className="text-gray-900">{userApplication?.created_at ? formatDate(userApplication.created_at) : 'Not available'}</div>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-500 mb-1">Application Status</label>
+                                <span className="inline-block px-3 py-1 bg-orange-500 text-white text-sm rounded-full font-medium">
+                                  {userApplication?.status || 'Not available'}
+                                </span>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-500 mb-1">Resume</label>
+                                {applicationResumeUrl ? (
+                                  <a href={applicationResumeUrl} target="_blank" rel="noopener noreferrer" className="text-red-600 hover:text-red-700 font-medium">
+                                    {applicationPayload?.form?.resumeName || 'View Resume'}
+                                  </a>
+                                ) : (
+                                  <div className="text-gray-500">Not available</div>
+                                )}
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-500 mb-1">Available Start Date</label>
+                                <div className="text-gray-900">{applicationPayload?.form?.startDate ? formatDate(applicationPayload.form.startDate) : 'Not available'}</div>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-500 mb-1">How did you learn about us</label>
+                                <div className="text-gray-900">{applicationPayload?.form?.heardFrom || 'Not available'}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action Buttons */}
+                      {isEditMode && (
+                        <div className="flex justify-end gap-3 pt-4">
+                          <button
+                            onClick={handleCancel}
+                            className="px-6 py-2.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="px-6 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed font-medium flex items-center gap-2"
+                          >
+                            {saving ? (
+                              <>
+                                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Saving...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Save Changes
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+                      <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <p className="text-gray-500 text-lg">No profile data found.</p>
+                    </div>
+                  )}
                 </div>
+              </div>
             </section>
 
             {/* Submit Application Modal (now controlled inputs) */}
@@ -2206,75 +2479,125 @@ const formatDateForInput = (dateString) => {
 
                         {/* Address */}
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
                             Address:
                           </label>
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div>
-                              <label className="block text-xs text-gray-600 mb-1">
-                                Street/Village *
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Unit/House Number & Street Name
                               </label>
-                              <input
-                                type="text"
-                                name="street"
-                                value={form.street}
-                                onChange={handleInput}
-                                required
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
-                              />
+                              <div className="grid grid-cols-2 gap-3">
+                                <input
+                                  type="text"
+                                  name="unit_house_number"
+                                  value={form.unit_house_number}
+                                  onChange={handleInput}
+                                  placeholder="Unit/House No."
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                />
+                                <input
+                                  type="text"
+                                  name="street"
+                                  value={form.street}
+                                  onChange={handleInput}
+                                  required
+                                  placeholder="Street Name"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                />
+                              </div>
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">City *</label>
-                              <input
-                                type="text"
-                                name="city"
-                                list="city-list"
-                                value={form.city}
-                                onChange={(e) => {
-                                  handleInput(e);
-                                  setForm(prev => ({ ...prev, barangay: '' }));
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Province
+                              </label>
+                              <AutocompleteInput
+                                value={form.province || ''}
+                                onChange={(value) => {
+                                  const oldProvince = form.province;
+                                  setForm(prev => ({ ...prev, province: value }));
+                                  // Clear city and barangay when province changes
+                                  if (oldProvince !== value) {
+                                    setForm(prev => ({ ...prev, city: '', barangay: '' }));
+                                  }
                                 }}
-                                required
-                                disabled={cities.length === 0}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                placeholder="Type or select city"
+                                options={Array.isArray(provinces) ? provinces : []}
+                                placeholder="Select or type to search province"
+                                loading={loadingProvinces}
+                                listId="application-province-list"
+                                onSelect={(option) => {
+                                  if (option && option.name) {
+                                    setForm(prev => ({ 
+                                      ...prev, 
+                                      province: option.name,
+                                      city: '',
+                                      barangay: ''
+                                    }));
+                                  }
+                                }}
                               />
-                              <datalist id="city-list">
-                                {cities.map((city) => (
-                                  <option key={city.code} value={city.name} />
-                                ))}
-                              </datalist>
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">
-                                Barangay *
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                City / Municipality
                               </label>
-                              <input
-                                type="text"
-                                name="barangay"
-                                list="barangay-list"
-                                value={form.barangay}
-                                onChange={handleInput}
-                                required
-                                disabled={!form.city || barangays.length === 0}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs disabled:bg-gray-100 disabled:cursor-not-allowed"
-                                placeholder="Type or select barangay"
+                              <AutocompleteInput
+                                value={form.city || ''}
+                                onChange={(value) => {
+                                  setForm(prev => ({ ...prev, city: value }));
+                                  // Clear barangay when city changes
+                                  if (form.city !== value) {
+                                    setForm(prev => ({ ...prev, barangay: '' }));
+                                  }
+                                }}
+                                options={Array.isArray(applicationCities) ? applicationCities : []}
+                                placeholder={form.province ? "Select or type to search city" : "Select province first"}
+                                disabled={!form.province}
+                                loading={loadingApplicationCities}
+                                listId="application-city-list"
+                                helperText={!form.province ? "Please select a province first" : applicationCities.length > 0 ? `${applicationCities.length} cities available` : "Loading cities..."}
+                                onSelect={(option) => {
+                                  if (option && option.name) {
+                                    setForm(prev => ({ 
+                                      ...prev, 
+                                      city: option.name,
+                                      barangay: ''
+                                    }));
+                                  }
+                                }}
                               />
-                              <datalist id="barangay-list">
-                                {barangays.map((brgy) => (
-                                  <option key={brgy.code} value={brgy.name} />
-                                ))}
-                              </datalist>
                             </div>
                             <div>
-                              <label className="block text-xs text-gray-600 mb-1">Zip Code *</label>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Barangay / Village / Subdivision
+                              </label>
+                              <AutocompleteInput
+                                value={form.barangay || ''}
+                                onChange={(value) => setForm(prev => ({ ...prev, barangay: value }))}
+                                options={Array.isArray(applicationBarangays) ? applicationBarangays : []}
+                                placeholder={form.city ? "Select or type to search barangay" : "Select city first"}
+                                disabled={!form.city}
+                                loading={loadingApplicationBarangays}
+                                listId="application-barangay-list"
+                                helperText={!form.city ? "Please select a city first" : ""}
+                                onSelect={(option) => {
+                                  if (option && option.name) {
+                                    setForm(prev => ({ ...prev, barangay: option.name }));
+                                  }
+                                }}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">ZIP Code</label>
                               <input
                                 type="text"
                                 name="zip"
                                 value={form.zip}
                                 onChange={handleInput}
                                 required
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 text-xs"
+                                placeholder="Enter ZIP code"
+                                maxLength={10}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
                               />
                             </div>
                           </div>
@@ -3129,47 +3452,8 @@ const formatDateForInput = (dateString) => {
               </div>
             )}
 
-            {/* Logout Confirmation */}
-            {showLogoutConfirm && (
-              <div
-                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
-                onClick={() => setShowLogoutConfirm(false)}
-              >
-                <div
-                  className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="p-4 border-b">
-                    <h3 className="text-lg font-semibold text-gray-800">Confirm Logout</h3>
-                  </div>
-                  <div className="p-4 text-sm text-gray-700">
-                    Are you sure you want to logout?
-                  </div>
-                  <div className="p-4 border-t flex justify-end gap-2">
-                    <button
-                      type="button"
-                      className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
-                      onClick={() => setShowLogoutConfirm(false)}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-                      onClick={async () => {
-                        setShowLogoutConfirm(false);
-                        await supabase.auth.signOut();
-                        navigate('/applicant/login', { replace: true });
-                      }}
-                    >
-                      Logout
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
-      </div>
+      </>
     );
   }
 

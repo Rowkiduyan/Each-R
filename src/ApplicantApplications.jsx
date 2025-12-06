@@ -1,13 +1,10 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
-import NotificationBell from './NotificationBell';
-import LogoCropped from './layouts/photos/logo(cropped).png';
 import { createInterviewScheduledNotification, createInterviewRescheduledNotification } from './notifications';
 
 function ApplicantApplications() {
   const navigate = useNavigate();
-  const profileDropdownRef = useRef(null);
   const steps = ["Application", "Assessment", "Agreements"];
   const [activeStep, setActiveStep] = useState("Application");
   const [loading, setLoading] = useState(true);
@@ -59,8 +56,6 @@ function ApplicantApplications() {
   const [retracting, setRetracting] = useState(false);
   const [showRetractSuccess, setShowRetractSuccess] = useState(false);
   const [retractError, setRetractError] = useState('');
-  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const interview = {
   date: applicationData?.interview_date || applicationData?.payload?.interview?.date || applicationData?.payload?.form?.interview_date || null,
@@ -275,22 +270,6 @@ function ApplicantApplications() {
     };
   }, []);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (profileDropdownRef.current && !profileDropdownRef.current.contains(event.target)) {
-        setShowProfileDropdown(false);
-      }
-    };
-
-    if (showProfileDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [showProfileDropdown]);
 
 //   const getStepClasses = (step) => {
 //     const base = "px-4 py-1 rounded text-sm font-semibold border";
@@ -338,90 +317,7 @@ function ApplicantApplications() {
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Header */}
-      <div className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <img
-                src={LogoCropped}
-                alt="Each-R Logo"
-                className="h-10 w-auto object-contain"
-              />
-            </div>
-
-            <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
-              <button
-                onClick={() => navigate('/applicantl/home')}
-                className="pb-1 hover:text-gray-900 transition-colors"
-              >
-                Home
-              </button>
-              <button
-                className="pb-1 text-red-600 border-b-2 border-red-600"
-              >
-                Applications
-              </button>
-            </nav>
-
-            <div className="flex items-center space-x-4">
-              {/* Notification Bell */}
-              <NotificationBell />
-              
-              {/* User Profile with Dropdown */}
-              <div className="relative" ref={profileDropdownRef}>
-                <div 
-                  onClick={() => setShowProfileDropdown(!showProfileDropdown)}
-                  className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 font-semibold cursor-pointer hover:bg-gray-300"
-                >
-                  {profileData?.fname && profileData?.lname 
-                    ? `${profileData.fname[0]}${profileData.lname[0]}`.toUpperCase()
-                    : profileData?.email?.[0]?.toUpperCase() || "U"}
-                </div>
-                {/* Dropdown arrow */}
-                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-white rounded-full border-2 border-white flex items-center justify-center pointer-events-none">
-                  <svg className="w-2 h-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-                
-                {/* Dropdown Menu */}
-                {showProfileDropdown && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-50">
-                    <div className="py-1">
-                      <div className="px-4 py-2 text-sm text-gray-700 border-b">
-                        {profileData?.fname && profileData?.lname 
-                          ? `${profileData.fname} ${profileData.lname}`
-                          : profileData?.email || "User"}
-                      </div>
-                      <button
-                        onClick={() => {
-                          setShowProfileDropdown(false);
-                          navigate('/applicantl/home', { state: { activeTab: 'Profile' } });
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      >
-                        View Profile
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowProfileDropdown(false);
-                          setShowLogoutConfirm(true);
-                        }}
-                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      >
-                        Logout
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
+    <div className="flex-1">
       <div className="max-w-7xl mx-auto px-6 py-6">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -1620,45 +1516,6 @@ function ApplicantApplications() {
         </div>
       )}
 
-      {/* Logout Confirmation */}
-      {showLogoutConfirm && (
-        <div
-          className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
-          onClick={() => setShowLogoutConfirm(false)}
-        >
-          <div
-            className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 border-b">
-              <h3 className="text-lg font-semibold text-gray-800">Confirm Logout</h3>
-            </div>
-            <div className="p-4 text-sm text-gray-700">
-              Are you sure you want to logout?
-            </div>
-            <div className="p-4 border-t flex justify-end gap-2">
-              <button
-                type="button"
-                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
-                onClick={() => setShowLogoutConfirm(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-                onClick={async () => {
-                  setShowLogoutConfirm(false);
-                  await supabase.auth.signOut();
-                  navigate('/applicant/login', { replace: true });
-                }}
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

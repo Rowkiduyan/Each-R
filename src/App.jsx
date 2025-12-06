@@ -40,6 +40,7 @@ import HRLayout from "./layouts/HRLayout";
 import AdminLayout from "./layouts/AdminLayout";
 import EmployeeLayout from "./layouts/EmployeeLayout";
 import GuestLayout from "./layouts/GuestLayout";
+import ApplicantLayout from "./layouts/ApplicantLayout";
 import AdminCreate from "./AdminCreate";
 import AdminEnableDisable from "./AdminEnableDisable";
 import TermsAndPrivacy from "./TermsAndPrivacy";
@@ -124,9 +125,11 @@ function App() {
         <Route path="employee/login" element={<EmployeeLogin />} />
       </Route>
 
-      {/* Applicant logged-in routes (no layout) */}
-      <Route path="/applicantl/home" element={<ApplicantLHome />} />
-      <Route path="/applicant/applications" element={<ApplicantApplications />} />
+      {/* Applicant logged-in routes (with ApplicantLayout) */}
+      <Route element={<ApplicantLayout />}>
+        <Route path="/applicantl/home" element={<ApplicantLHome />} />
+        <Route path="/applicant/applications" element={<ApplicantApplications />} />
+      </Route>
 
       {/* Public routes (no protection) */}
       <Route path="/agency/endorse" element={<AgencyEndorse />} />

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, Outlet } from "react-router-dom";
+import { supabase } from "../supabaseClient";
 import LogoCropped from "./photos/logo(cropped).png";
 import HrNotificationBell from "../HrNotificationBell";
 
@@ -26,8 +27,10 @@ export default function HRLayout() {
     
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem("loggedInHR");
+    // Also sign out from Supabase to prevent ApplicantLayout from showing
+    await supabase.auth.signOut();
     navigate("/employee/login");
   };
 
