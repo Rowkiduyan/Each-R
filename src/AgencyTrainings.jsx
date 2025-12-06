@@ -120,11 +120,10 @@ function AgencyTrainings() {
           }
         });
 
-        // Fetch all trainings
+        // Fetch all trainings (not filtered by created_by - agencies should see trainings where their employees are attendees)
         const { data: allTrainings, error: trainingError } = await supabase
           .from('trainings')
           .select('*')
-          .eq('created_by', user.id)
           .order('start_at', { ascending: true });
 
         if (trainingError) {
@@ -158,6 +157,7 @@ function AgencyTrainings() {
 
         const now = new Date();
         const upcoming = [];
+        const pending = [];
         const history = [];
 
         // Debug logging
@@ -281,7 +281,9 @@ function AgencyTrainings() {
             trainer: trainerName,
             attendees: formattedAttendees,
             start_at: training.start_at,
-            end_at: training.end_at
+            end_at: training.end_at,
+            schedule_type: training.schedule_type || 'onsite',
+            is_online: training.schedule_type === 'online'
           };
 
           if (start && trainingEnd) {
@@ -306,6 +308,9 @@ function AgencyTrainings() {
                   completedDate: start.toISOString().slice(0, 10),
                   attendees: historyAttendees
                 });
+              } else {
+                // Past training without attendance → Pending Attendance
+                pending.push(formattedTraining);
               }
             } else {
               // Upcoming training
@@ -318,15 +323,15 @@ function AgencyTrainings() {
         });
 
         setUpcomingTrainings(upcoming);
+        setPendingAttendance(pending);
         setTrainingHistory(history);
-        // Orientation schedule can be filtered similarly if needed
-        setOrientationSchedule([]);
         
         // Final debug summary
         console.log('=== Matching Summary ===');
         console.log('Upcoming trainings matched:', upcoming.length);
+        console.log('Pending attendance trainings matched:', pending.length);
         console.log('History trainings matched:', history.length);
-        console.log('Total matched:', upcoming.length + history.length);
+        console.log('Total matched:', upcoming.length + pending.length + history.length);
         console.log('========================');
       } catch (error) {
         console.error('Error fetching trainings:', error);
@@ -759,7 +764,8 @@ function AgencyTrainings() {
                 {paginatedData.length > 0 ? paginatedData.map((training) => (
                   <div
                     key={training.id}
-                    className="group border border-orange-200 rounded-xl p-5 hover:shadow-md hover:border-orange-300 transition-all bg-white"
+                    className="group border border-orange-200 rounded-xl p-5 hover:shadow-md hover:border-orange-300 transition-all bg-white cursor-pointer"
+                    onClick={() => viewDetails(training)}
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3 flex-1">

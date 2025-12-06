@@ -24,6 +24,11 @@ function EmployeeTrainings() {
     const [certificateToDelete, setCertificateToDelete] = useState(null);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successMessage, setSuccessMessage] = useState({ title: '', description: '' });
+    
+    // Training certificate upload state
+    const [showTrainingCertUpload, setShowTrainingCertUpload] = useState(false);
+    const [trainingCertFile, setTrainingCertFile] = useState(null);
+    const [trainingForCert, setTrainingForCert] = useState(null);
 
     // Get employee's possible name formats for matching
     const getEmployeeNameVariations = () => {
@@ -51,6 +56,36 @@ function EmployeeTrainings() {
         
         // Normalize all variations (trim and lowercase for comparison)
         return variations.map(v => v.trim()).filter(Boolean);
+    };
+
+    // Get employee's attendance status and certificate from training
+    const getEmployeeAttendanceStatus = (training) => {
+        if (!training.attendance) return { isPresent: null, certificateUrl: null, employeeName: null };
+        
+        const nameVariations = getEmployeeNameVariations();
+        
+        // Find which name variation matches in attendance
+        for (const name of nameVariations) {
+            const attendanceData = training.attendance[name];
+            if (attendanceData !== undefined && attendanceData !== null) {
+                // Check if it's an object (with certificate) or boolean
+                if (typeof attendanceData === 'object' && attendanceData !== null) {
+                    return {
+                        isPresent: attendanceData.status === true || attendanceData === true,
+                        certificateUrl: attendanceData.certificate_url || null,
+                        employeeName: name
+                    };
+                } else {
+                    return {
+                        isPresent: attendanceData === true,
+                        certificateUrl: null,
+                        employeeName: name
+                    };
+                }
+            }
+        }
+        
+        return { isPresent: null, certificateUrl: null, employeeName: null };
     };
 
     // Fetch employee data if not available from context
@@ -211,6 +246,7 @@ function EmployeeTrainings() {
 
             myTrainings.forEach((training) => {
                 const start = training.start_at ? new Date(training.start_at) : null;
+                const end = training.end_at ? new Date(training.end_at) : null;
                 const normalized = {
                     ...training,
                     date: start ? start.toISOString().slice(0, 10) : "",
@@ -218,16 +254,16 @@ function EmployeeTrainings() {
                 };
 
                 if (start) {
-                    // Get the end of the training day (23:59:59.999)
-                    const trainingDayEnd = new Date(
+                    // Use end_at if available, otherwise default to end of training day
+                    const trainingEnd = end || new Date(
                         start.getFullYear(),
                         start.getMonth(),
                         start.getDate(),
                         23, 59, 59, 999
                     );
 
-                    // Training is in the past day
-                    if (trainingDayEnd < now) {
+                    // Check if training has ended (end_at has passed)
+                    if (trainingEnd < now) {
                         const hasAttendance =
                             training.attendance &&
                             Object.keys(training.attendance || {}).length > 0;
@@ -240,7 +276,8 @@ function EmployeeTrainings() {
                             pendingAttendanceTrainings.push(normalized);
                         }
                     } else {
-                        // Training is happening today or in the future → Upcoming
+                        // Training is happening now or in the future → Upcoming
+                        // But we need to check again after sorting to move past ones to pending
                         upcomingTrainings.push(normalized);
                     }
                 } else {
@@ -249,8 +286,29 @@ function EmployeeTrainings() {
                 }
             });
 
+            // After initial categorization, check upcoming trainings again
+            // Move any that have passed their end_at to pending attendance
+            const stillUpcoming = [];
+            upcomingTrainings.forEach((training) => {
+                const end = training.end_at ? new Date(training.end_at) : null;
+                if (end && end < now) {
+                    // Training has ended, move to pending attendance
+                    const hasAttendance =
+                        training.attendance &&
+                        Object.keys(training.attendance || {}).length > 0;
+                    
+                    if (hasAttendance) {
+                        completedTrainings.push(training);
+                    } else {
+                        pendingAttendanceTrainings.push(training);
+                    }
+                } else {
+                    stillUpcoming.push(training);
+                }
+            });
+
             // Sort upcoming in ascending order by date (soonest first)
-            upcomingTrainings.sort((a, b) => {
+            stillUpcoming.sort((a, b) => {
                 const dateA = a.start_at ? new Date(a.start_at) : new Date(0);
                 const dateB = b.start_at ? new Date(b.start_at) : new Date(0);
                 return dateA - dateB;
@@ -270,7 +328,7 @@ function EmployeeTrainings() {
                 return dateB - dateA;
             });
 
-            setUpcoming(upcomingTrainings);
+            setUpcoming(stillUpcoming);
             setPendingAttendance(pendingAttendanceTrainings);
             setCompleted(completedTrainings);
         } catch (error) {
@@ -354,18 +412,27 @@ function EmployeeTrainings() {
         }
     };
 
-    // Check if training is happening today
+    // Check if training is happening now (current time is between start_at and end_at)
     const isHappeningToday = (training) => {
         if (!training.start_at) return false;
         try {
-            const trainingDate = new Date(training.start_at);
+            const start = new Date(training.start_at);
+            const end = training.end_at ? new Date(training.end_at) : null;
             const now = new Date();
             
             // Check if same date (year, month, day)
-            const isSameDate = trainingDate.getFullYear() === now.getFullYear() &&
-                             trainingDate.getMonth() === now.getMonth() &&
-                             trainingDate.getDate() === now.getDate();
+            const isSameDate = start.getFullYear() === now.getFullYear() &&
+                             start.getMonth() === now.getMonth() &&
+                             start.getDate() === now.getDate();
             
+            if (!isSameDate) return false;
+            
+            // If end_at is available, check if current time is between start and end
+            if (end) {
+                return now >= start && now <= end;
+            }
+            
+            // If no end_at, only check if it's the same date
             return isSameDate;
         } catch {
             return false;
@@ -630,6 +697,138 @@ function EmployeeTrainings() {
     const handleViewCertificate = (certificate, e) => {
         e.stopPropagation();
         window.open(certificate.certificate_url, '_blank');
+    };
+
+    // Handle training certificate upload
+    const handleTrainingCertUpload = async () => {
+        if (!trainingCertFile || !trainingForCert) {
+            alert("Please select a certificate file.");
+            return;
+        }
+
+        if (!userId) {
+            alert('User ID not available. Please try again.');
+            return;
+        }
+
+        try {
+            // Get employee name for attendance update
+            const attendanceStatus = getEmployeeAttendanceStatus(trainingForCert);
+            if (!attendanceStatus.employeeName) {
+                throw new Error('Could not find your name in attendance records');
+            }
+
+            // Check if certificate already exists for this training and employee
+            const { data: existingCertificates, error: fetchError } = await supabase
+                .from('certificates')
+                .select('*')
+                .eq('employee_id', userId)
+                .eq('training_id', trainingForCert.id);
+
+            if (fetchError) {
+                console.error('Error fetching existing certificates:', fetchError);
+            }
+
+            // Delete old certificate from storage and database if it exists
+            if (existingCertificates && existingCertificates.length > 0) {
+                for (const oldCert of existingCertificates) {
+                    // Extract file path from URL
+                    const oldUrl = oldCert.certificate_url;
+                    if (oldUrl) {
+                        // Get the file name from the URL
+                        const urlParts = oldUrl.split('/');
+                        const oldFileName = urlParts[urlParts.length - 1];
+                        
+                        // Delete from storage
+                        const { error: deleteStorageError } = await supabase.storage
+                            .from('certificates')
+                            .remove([oldFileName]);
+
+                        if (deleteStorageError) {
+                            console.error('Error deleting old file from storage:', deleteStorageError);
+                        }
+                    }
+
+                    // Delete from certificates table
+                    const { error: deleteCertError } = await supabase
+                        .from('certificates')
+                        .delete()
+                        .eq('id', oldCert.id);
+
+                    if (deleteCertError) {
+                        console.error('Error deleting old certificate record:', deleteCertError);
+                    }
+                }
+            }
+
+            // Generate unique filename
+            const timestamp = Date.now();
+            const fileExt = trainingCertFile.name.split('.').pop();
+            const fileName = `training_${trainingForCert.id}_${userId}_${timestamp}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+            const filePath = `${fileName}`;
+
+            // Upload file to Supabase storage (certificates bucket)
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('certificates')
+                .upload(filePath, trainingCertFile);
+
+            if (uploadError) {
+                console.error('Upload error:', uploadError);
+                throw new Error(`Failed to upload certificate: ${uploadError.message}`);
+            }
+
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('certificates')
+                .getPublicUrl(filePath);
+
+            // Insert into certificates table
+            const { data: certificateData, error: certificateError } = await supabase
+                .from('certificates')
+                .insert({
+                    employee_id: userId,
+                    training_id: trainingForCert.id,
+                    certificate_url: publicUrl
+                })
+                .select()
+                .single();
+
+            if (certificateError) {
+                console.error('Certificate table error:', certificateError);
+                throw new Error(`Failed to save certificate record: ${certificateError.message}`);
+            }
+
+            // Update attendance in training record
+            const currentAttendance = trainingForCert.attendance || {};
+            currentAttendance[attendanceStatus.employeeName] = {
+                status: true,
+                certificate_url: publicUrl
+            };
+
+            const { error: updateError } = await supabase
+                .from('trainings')
+                .update({ attendance: currentAttendance })
+                .eq('id', trainingForCert.id);
+
+            if (updateError) {
+                throw new Error(`Failed to update attendance: ${updateError.message}`);
+            }
+
+            // Refresh trainings
+            await fetchTrainings();
+            
+            setShowTrainingCertUpload(false);
+            setTrainingCertFile(null);
+            setTrainingForCert(null);
+            setSuccessMessage({
+                title: 'Certificate Uploaded',
+                description: 'Your training certificate has been successfully uploaded and saved.'
+            });
+            setShowSuccessModal(true);
+        } catch (error) {
+            console.error('Error uploading certificate:', error);
+            alert(`Error uploading certificate: ${error.message}`);
+        }
     };
 
     return (
@@ -924,18 +1123,42 @@ function EmployeeTrainings() {
                             {filteredCompleted.map((training) => (
                                 <div
                                     key={training.id}
-                                    className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md hover:border-green-300 transition-all cursor-pointer group"
-                                    onClick={() => viewDetails(training)}
+                                    className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md hover:border-green-300 transition-all group"
                                 >
                                     <div className="flex items-start justify-between gap-4">
-                                        <div className="flex items-start gap-4 flex-1">
+                                        <div className="flex items-start gap-4 flex-1 cursor-pointer" onClick={() => viewDetails(training)}>
                                             <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center text-white shadow-md flex-shrink-0">
                                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                                 </svg>
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-green-600 transition-colors">{training.title}</h3>
+                                                <div className="flex items-start justify-between gap-3 mb-2">
+                                                    <h3 className="text-base font-bold text-gray-900 group-hover:text-green-600 transition-colors">{training.title}</h3>
+                                                    {training.attendance && (() => {
+                                                        const attendanceStatus = getEmployeeAttendanceStatus(training);
+                                                        if (attendanceStatus.isPresent === null) return null;
+                                                        
+                                                        return (
+                                                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-sm flex-shrink-0 ${
+                                                                attendanceStatus.isPresent 
+                                                                    ? 'bg-green-50 border border-green-200 text-green-700' 
+                                                                    : 'bg-red-50 border border-red-200 text-red-700'
+                                                            }`}>
+                                                                {attendanceStatus.isPresent ? (
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                                    </svg>
+                                                                ) : (
+                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                    </svg>
+                                                                )}
+                                                                <span>{attendanceStatus.isPresent ? 'Present' : 'Absent'}</span>
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
                                                 <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
                                                     <span className="font-medium">{formatDate(training.date)}</span>
                                                     <span className="text-gray-300">•</span>
@@ -944,21 +1167,53 @@ function EmployeeTrainings() {
                                                     <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
                                                         {training.schedule_type === 'online' ? 'Online' : 'Onsite'}
                                                     </span>
-                                                    {training.attendance && (() => {
-                                                        const nameVariations = getEmployeeNameVariations();
-                                                        const attended = nameVariations.some(name => training.attendance[name] === true);
-                                                        return (
-                                                            <>
-                                                                <span className="text-gray-300">•</span>
-                                                                <span className={`font-semibold ${attended ? 'text-green-600' : 'text-red-600'}`}>
-                                                                    {attended ? 'Attended' : 'Absent'}
-                                                                </span>
-                                                            </>
-                                                        );
-                                                    })()}
                                                 </div>
                                             </div>
                                         </div>
+                                        {training.attendance && (() => {
+                                            const attendanceStatus = getEmployeeAttendanceStatus(training);
+                                            if (attendanceStatus.isPresent === true) {
+                                                return (
+                                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                                        {attendanceStatus.certificateUrl && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    window.open(attendanceStatus.certificateUrl, '_blank');
+                                                                }}
+                                                                className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2"
+                                                                title="View certificate"
+                                                            >
+                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                                </svg>
+                                                                View Certificate
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setTrainingForCert(training);
+                                                                setTrainingCertFile(null);
+                                                                setShowTrainingCertUpload(true);
+                                                            }}
+                                                            className={`px-4 py-2 rounded-lg transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2 ${
+                                                                attendanceStatus.certificateUrl
+                                                                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
+                                                                    : 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white hover:from-indigo-600 hover:to-indigo-700'
+                                                            }`}
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                                            </svg>
+                                                            {attendanceStatus.certificateUrl ? 'Update Certificate' : 'Upload Certificate'}
+                                                        </button>
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
+                                        })()}
                                     </div>
                                 </div>
                             ))}
@@ -1306,6 +1561,139 @@ function EmployeeTrainings() {
                                 className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium text-sm"
                             >
                                 OK
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Training Certificate Upload Modal */}
+            {showTrainingCertUpload && trainingForCert && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => {
+                    setShowTrainingCertUpload(false);
+                    setTrainingCertFile(null);
+                    setTrainingForCert(null);
+                }}>
+                    <div className="bg-white rounded-xl w-full max-w-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="px-6 py-4 border-b border-gray-200">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900">Upload Training Certificate</h2>
+                                    <p className="text-sm text-gray-500 mt-1">Upload certificate for: {trainingForCert.title}</p>
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        setShowTrainingCertUpload(false);
+                                        setTrainingCertFile(null);
+                                        setTrainingForCert(null);
+                                    }}
+                                    className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="p-6">
+                            {/* Instructions */}
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                                <div className="flex items-start gap-3">
+                                    <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-blue-900 mb-1">Upload Guidelines</h3>
+                                        <ul className="text-sm text-blue-800 space-y-1">
+                                            <li>• Accepted formats: <span className="font-medium">PDF, JPG, JPEG, PNG</span></li>
+                                            <li>• Maximum file size: <span className="font-medium">10 MB</span></li>
+                                            <li>• This certificate will be linked to your attendance record</li>
+                                            {trainingForCert && getEmployeeAttendanceStatus(trainingForCert).certificateUrl && (
+                                                <li className="text-orange-800 font-medium">• Uploading a new file will replace the existing certificate</li>
+                                            )}
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* File Upload Area */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Certificate <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="file"
+                                    onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                            const maxSize = 10 * 1024 * 1024; // 10MB
+                                            const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+                                            
+                                            if (!allowedTypes.includes(file.type)) {
+                                                alert('Only PDF, JPG, JPEG, and PNG files are allowed');
+                                                e.target.value = '';
+                                                return;
+                                            }
+                                            
+                                            if (file.size > maxSize) {
+                                                alert('File size must be less than 10MB');
+                                                e.target.value = '';
+                                                return;
+                                            }
+                                            
+                                            setTrainingCertFile(file);
+                                        }
+                                    }}
+                                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                />
+                                {trainingCertFile && (
+                                    <div className="mt-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                                </svg>
+                                                <div>
+                                                    <p className="text-sm font-medium text-gray-900">{trainingCertFile.name}</p>
+                                                    <p className="text-xs text-gray-500">{(trainingCertFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => setTrainingCertFile(null)}
+                                                className="text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full p-1 transition-colors"
+                                            >
+                                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+                            <button
+                                onClick={() => {
+                                    setShowTrainingCertUpload(false);
+                                    setTrainingCertFile(null);
+                                    setTrainingForCert(null);
+                                }}
+                                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleTrainingCertUpload}
+                                disabled={!trainingCertFile}
+                                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium text-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
+                            >
+                                Upload Certificate
                             </button>
                         </div>
                     </div>
