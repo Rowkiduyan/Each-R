@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './supabaseClient';
+import emailjs from '@emailjs/browser';
 
 function HrTrainings() {
   const [loading, setLoading] = useState(true);
@@ -16,6 +17,13 @@ function HrTrainings() {
   const [currentUserId, setCurrentUserId] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [trainingToDelete, setTrainingToDelete] = useState(null);
+  
+  // Alert and confirmation modals
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
+  const [showConfirmAddModal, setShowConfirmAddModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   
   const [form, setForm] = useState({
     title: "",
@@ -89,7 +97,7 @@ function HrTrainings() {
       try {
         const { data, error } = await supabase
           .from("employees")
-          .select("id, fname, lname, mname, position");
+          .select("id, fname, lname, mname, position, email");
 
         if (error) {
           console.error("Error loading employees for training attendees:", error);
@@ -100,11 +108,22 @@ function HrTrainings() {
           data?.map((emp) => {
             const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
             const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
-            return full || "Unnamed employee";
+            return {
+              name: full || "Unnamed employee",
+              email: emp.email,
+              id: emp.id
+            };
           }) || [];
 
-        const uniqueSorted = Array.from(new Set(options)).sort((a, b) =>
-          a.localeCompare(b)
+        // Remove duplicates by name and sort
+        const seen = new Set();
+        const uniqueOptions = options.filter(emp => {
+          if (seen.has(emp.name)) return false;
+          seen.add(emp.name);
+          return true;
+        });
+        const uniqueSorted = uniqueOptions.sort((a, b) =>
+          a.name.localeCompare(b.name)
         );
         setEmployeeOptions(uniqueSorted);
       } catch (err) {
@@ -320,13 +339,13 @@ function HrTrainings() {
   // Filter employees based on search query (from employees table)
   const filteredEmployees = employeeSearchQuery
     ? employeeOptions.filter(emp =>
-        emp.toLowerCase().includes(employeeSearchQuery.toLowerCase())
+        emp.name.toLowerCase().includes(employeeSearchQuery.toLowerCase())
       )
     : [];
   
   const filteredEmployeesEdit = employeeSearchQueryEdit
     ? employeeOptions.filter(emp =>
-        emp.toLowerCase().includes(employeeSearchQueryEdit.toLowerCase())
+        emp.name.toLowerCase().includes(employeeSearchQueryEdit.toLowerCase())
       )
     : [];
 
@@ -340,7 +359,8 @@ function HrTrainings() {
     setEditForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleEmployeeSelect = (employeeName) => {
+  const handleEmployeeSelect = (employee) => {
+    const employeeName = typeof employee === 'string' ? employee : employee.name;
     if (!attendees.includes(employeeName)) {
       setAttendees((prev) => [...prev, employeeName]);
     }
@@ -348,7 +368,8 @@ function HrTrainings() {
     setShowEmployeeSuggestions(false);
   };
 
-  const handleEmployeeSelectEdit = (employeeName) => {
+  const handleEmployeeSelectEdit = (employee) => {
+    const employeeName = typeof employee === 'string' ? employee : employee.name;
     if (!attendeesEdit.includes(employeeName)) {
       setAttendeesEdit((prev) => [...prev, employeeName]);
     }
@@ -384,35 +405,139 @@ function HrTrainings() {
     }
   };
 
+  // Send email notifications to attendees
+  const sendTrainingEmails = async (trainingData, attendeeNames) => {
+    try {
+      // Get employees with their personal emails
+      const { data: employees, error: empError } = await supabase
+        .from('employees')
+        .select('id, fname, lname, mname, personal_email');
+
+      if (empError) {
+        console.error('Error fetching employees:', empError);
+        return;
+      }
+
+      // Create maps for name to ID and ID to personal email
+      const nameToIdMap = {};
+      const idToEmailMap = {};
+      const idToNameMap = {};
+      
+      employees.forEach(emp => {
+        const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
+        const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
+        nameToIdMap[full] = emp.id;
+        idToEmailMap[emp.id] = emp.personal_email;
+        idToNameMap[emp.id] = full;
+      });
+
+      // Format date and time
+      const trainingDate = new Date(trainingData.start_at);
+      const formattedDate = trainingDate.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+      const formattedTime = trainingDate.toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+      const endTime = new Date(trainingData.end_at).toLocaleTimeString('en-US', { 
+        hour: '2-digit', 
+        minute: '2-digit' 
+      });
+
+      // Send email to each attendee
+      const emailPromises = attendeeNames.map(async (attendeeName) => {
+        const employeeId = nameToIdMap[attendeeName];
+        if (!employeeId) {
+          console.warn(`No employee ID found for: ${attendeeName}`);
+          return;
+        }
+
+        const email = idToEmailMap[employeeId];
+        if (!email) {
+          console.warn(`No personal email found for employee: ${attendeeName} (ID: ${employeeId})`);
+          return;
+        }
+
+        const templateParams = {
+          to_email: email,
+          reply_to: email,
+          to_name: attendeeName,
+          training_title: trainingData.title,
+          training_date: formattedDate,
+          training_time: `${formattedTime} - ${endTime}`,
+          training_venue: trainingData.venue || 'TBA',
+          training_description: trainingData.description || 'No description provided',
+          training_type: trainingData.schedule_type === 'online' ? 'Online Training' : 'On-site Training',
+          training_image: trainingData.image_url || ''
+        };
+
+        try {
+          const response = await emailjs.send(
+            'service_gwgx09j',
+            'template_yb96xd9',
+            templateParams,
+            'Ti2ZNs2V451t9EhdT'
+          );
+          console.log(`Email sent successfully to ${attendeeName} (${email}):`, response.status, response.text);
+        } catch (error) {
+          console.error(`Failed to send email to ${attendeeName} (${email}):`, error);
+        }
+      });
+
+      await Promise.all(emailPromises);
+      console.log('All training notification emails sent');
+    } catch (error) {
+      console.error('Error sending training emails:', error);
+    }
+  };
+
   // Create new training
   const onSubmit = async (e) => {
     e.preventDefault();
     if (!form.title) {
-      alert("Title is required.");
+      setAlertMessage("Title is required.");
+      setShowAlertModal(true);
       return;
     }
     if (!form.date || !form.time || !form.end_time) {
-      alert("Please provide date, start time, and end time.");
+      setAlertMessage("Please provide date, start time, and end time.");
+      setShowAlertModal(true);
       return;
     }
     if (!form.venue) {
-      alert("Venue is required.");
+      setAlertMessage("Venue is required.");
+      setShowAlertModal(true);
       return;
     }
     if (!form.description) {
-      alert("Description is required.");
+      setAlertMessage("Description is required.");
+      setShowAlertModal(true);
       return;
     }
     if (!attendees || attendees.length === 0) {
-      alert("At least one attendee is required.");
+      setAlertMessage("At least one attendee is required.");
+      setShowAlertModal(true);
       return;
     }
+    
+    // Show confirmation modal
+    setShowConfirmAddModal(true);
+  };
+  
+  // Actual submission after confirmation
+  const confirmAddTraining = async () => {
+    setShowConfirmAddModal(false);
 
     const startAt = new Date(`${form.date}T${form.time}:00`);
     const endAt = new Date(`${form.date}T${form.end_time}:00`);
     
     if (endAt <= startAt) {
-      alert("End time must be after start time.");
+      setAlertMessage("End time must be after start time.");
+      setShowAlertModal(true);
       return;
     }
     
@@ -437,7 +562,8 @@ function HrTrainings() {
 
         if (uploadError) {
           console.error('Error uploading image:', uploadError);
-          alert(`Failed to upload image: ${uploadError.message}`);
+          setAlertMessage(`Failed to upload image: ${uploadError.message}`);
+          setShowAlertModal(true);
           return;
         }
 
@@ -472,8 +598,14 @@ function HrTrainings() {
 
       if (error) {
         console.error('Error creating training:', error);
-        alert(`Failed to create training schedule: ${error.message || 'Unknown error'}`);
+        setAlertMessage(`Failed to create training schedule: ${error.message || 'Unknown error'}`);
+        setShowAlertModal(true);
         return;
+      }
+
+      // Send email notifications to attendees
+      if (data && attendees.length > 0) {
+        await sendTrainingEmails(data, attendees);
       }
 
       // Reset form
@@ -487,9 +619,12 @@ function HrTrainings() {
       
       // Refresh list
       fetchTrainings();
+      setSuccessMessage('Training schedule created and notifications sent to attendees!');
+      setShowSuccessModal(true);
     } catch (error) {
       console.error('Error creating training:', error);
-      alert(`Failed to create training schedule: ${error.message || 'Unknown error'}`);
+      setAlertMessage(`Failed to create training schedule: ${error.message || 'Unknown error'}`);
+      setShowAlertModal(true);
     }
   };
 
@@ -498,23 +633,28 @@ function HrTrainings() {
     e.preventDefault();
     if (!selectedTraining) return;
     if (!editForm.title) {
-      alert("Title is required.");
+      setAlertMessage("Title is required.");
+      setShowAlertModal(true);
       return;
     }
     if (!editForm.date || !editForm.time) {
-      alert("Please provide both date and time.");
+      setAlertMessage("Please provide both date and time.");
+      setShowAlertModal(true);
       return;
     }
     if (!editForm.venue) {
-      alert("Venue is required.");
+      setAlertMessage("Venue is required.");
+      setShowAlertModal(true);
       return;
     }
     if (!editForm.description) {
-      alert("Description is required.");
+      setAlertMessage("Description is required.");
+      setShowAlertModal(true);
       return;
     }
     if (!attendeesEdit || attendeesEdit.length === 0) {
-      alert("At least one attendee is required.");
+      setAlertMessage("At least one attendee is required.");
+      setShowAlertModal(true);
       return;
     }
 
@@ -547,7 +687,8 @@ function HrTrainings() {
 
       if (error) {
         console.error('Error updating training:', error);
-        alert(`Failed to update training schedule: ${error.message || 'Unknown error'}`);
+        setAlertMessage(`Failed to update training schedule: ${error.message || 'Unknown error'}`);
+        setShowAlertModal(true);
         return;
       }
 
@@ -557,9 +698,12 @@ function HrTrainings() {
       
       // Refresh list
       fetchTrainings();
+      setSuccessMessage('Training updated successfully!');
+      setShowSuccessModal(true);
     } catch (error) {
       console.error('Error updating training:', error);
-      alert(`Failed to update training schedule: ${error.message || 'Unknown error'}`);
+      setAlertMessage(`Failed to update training schedule: ${error.message || 'Unknown error'}`);
+      setShowAlertModal(true);
     }
   };
 
@@ -582,7 +726,8 @@ function HrTrainings() {
 
       if (error) {
         console.error('Error deleting training:', error);
-        alert('Failed to delete training schedule');
+        setAlertMessage('Failed to delete training schedule');
+        setShowAlertModal(true);
         setShowDeleteModal(false);
         setTrainingToDelete(null);
         return;
@@ -591,10 +736,12 @@ function HrTrainings() {
       setShowDeleteModal(false);
       setTrainingToDelete(null);
       fetchTrainings();
-      alert('Training schedule deleted successfully!');
+      setSuccessMessage('Training schedule deleted successfully!');
+      setShowSuccessModal(true);
     } catch (error) {
       console.error('Error deleting training:', error);
-      alert('Failed to delete training schedule');
+      setAlertMessage('Failed to delete training schedule');
+      setShowAlertModal(true);
       setShowDeleteModal(false);
       setTrainingToDelete(null);
     }
@@ -649,16 +796,20 @@ function HrTrainings() {
 
       if (error) {
         console.error('Error saving attendance:', error);
-        alert('Failed to save attendance');
+        setAlertMessage('Failed to save attendance');
+        setShowAlertModal(true);
         return;
       }
 
       setShowAttendance(false);
       setSelectedTraining(null);
       fetchTrainings();
+      setSuccessMessage('Attendance saved and training marked as completed!');
+      setShowSuccessModal(true);
     } catch (error) {
       console.error('Error saving attendance:', error);
-      alert('Failed to save attendance');
+      setAlertMessage('Failed to save attendance');
+      setShowAlertModal(true);
     }
   };
 
@@ -1725,13 +1876,15 @@ function HrTrainings() {
                             if (file) {
                               // Check file size (10MB = 10 * 1024 * 1024 bytes)
                               if (file.size > 10 * 1024 * 1024) {
-                                alert('File size must be less than 10MB');
+                                setAlertMessage('File size must be less than 10MB');
+                                setShowAlertModal(true);
                                 e.target.value = '';
                                 return;
                               }
                               // Check file type
                               if (!['image/png', 'image/jpeg', 'image/jpg'].includes(file.type)) {
-                                alert('Only PNG and JPG files are allowed');
+                                setAlertMessage('Only PNG and JPG files are allowed');
+                                setShowAlertModal(true);
                                 e.target.value = '';
                                 return;
                               }
@@ -1944,7 +2097,7 @@ function HrTrainings() {
                     {showEmployeeSuggestions && filteredEmployees.length > 0 && (
                       <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                         {filteredEmployees.map((emp, i) => {
-                          const alreadyAdded = attendees.includes(emp);
+                          const alreadyAdded = attendees.includes(emp.name);
                           return (
                             <li
                               key={i}
@@ -1959,7 +2112,7 @@ function HrTrainings() {
                                 handleEmployeeSelect(emp);
                               }}
                             >
-                              {emp}
+                              {emp.name}
                             </li>
                           );
                         })}
@@ -2142,7 +2295,7 @@ function HrTrainings() {
                     {showEmployeeSuggestionsEdit && filteredEmployeesEdit.length > 0 && (
                       <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                         {filteredEmployeesEdit.map((emp, i) => {
-                          const alreadyAdded = attendeesEdit.includes(emp);
+                          const alreadyAdded = attendeesEdit.includes(emp.name);
                           return (
                             <li
                               key={i}
@@ -2157,7 +2310,7 @@ function HrTrainings() {
                                 handleEmployeeSelectEdit(emp);
                               }}
                             >
-                              {emp}
+                              {emp.name}
                             </li>
                           );
                         })}
@@ -2342,6 +2495,122 @@ function HrTrainings() {
                 className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm"
               >
                 Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Alert Modal */}
+      {showAlertModal && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowAlertModal(false)}>
+          <div className="bg-white/95 backdrop-blur-md rounded-xl w-full max-w-md shadow-2xl border border-black" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <h2 className="text-lg font-bold text-gray-900">Attention Required</h2>
+              </div>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-sm text-gray-700">{alertMessage}</p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowAlertModal(false)}
+                className="px-4 py-2 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition-colors font-medium text-sm"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowSuccessModal(false)}>
+          <div className="bg-white/95 backdrop-blur-md rounded-xl w-full max-w-md shadow-2xl border border-black" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h2 className="text-lg font-bold text-gray-900">Success</h2>
+              </div>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-sm text-gray-700">{successMessage}</p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors font-medium text-sm"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Add Training Modal */}
+      {showConfirmAddModal && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowConfirmAddModal(false)}>
+          <div className="bg-white/95 backdrop-blur-md rounded-xl w-full max-w-md shadow-2xl border border-black" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Confirm Training Schedule</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">Review before creating</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Training Title</p>
+                  <p className="text-sm text-gray-900 font-medium mt-1">{form.title}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Date & Time</p>
+                  <p className="text-sm text-gray-900 mt-1">{form.date} at {form.time} - {form.end_time}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Venue</p>
+                  <p className="text-sm text-gray-900 mt-1">{form.venue}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Attendees</p>
+                  <p className="text-sm text-gray-900 mt-1">{attendees.length} employee(s)</p>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600 mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <span className="font-semibold">Note:</span> Email notifications will be sent to all attendees.
+              </p>
+            </div>
+            <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowConfirmAddModal(false)}
+                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmAddTraining}
+                className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] transition-colors font-medium text-sm"
+              >
+                Confirm & Create
               </button>
             </div>
           </div>

@@ -34,160 +34,12 @@ function AgencySeparation() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Mock deployed employees for selection
-  const deployedEmployees = [
-    { id: 2, name: 'Maria Santos', position: 'Dispatcher', depot: 'BGC' },
-    { id: 6, name: 'Roberto Cruz', position: 'Driver', depot: 'Makati' },
-    { id: 7, name: 'Elena Mendoza', position: 'Admin Staff', depot: 'Quezon City' },
-    { id: 8, name: 'Antonio Reyes', position: 'Mechanic', depot: 'Pasig' },
-    { id: 9, name: 'Lucia Fernandez', position: 'Driver', depot: 'Makati' },
-    { id: 10, name: 'Carlos Villanueva', position: 'Driver', depot: 'Pasay' },
-    { id: 11, name: 'Marco Santos', position: 'Driver', depot: 'BGC' },
-    { id: 12, name: 'Ana Garcia', position: 'Dispatcher', depot: 'Makati' },
-    { id: 13, name: 'Pedro Reyes', position: 'Driver', depot: 'Pasig' },
-  ];
-
-  // Mock resignation requests data
-  // Status flow: pending_review -> reviewed/rejected -> processing (if reviewed) -> completed/cancelled
-  const [resignationRequests, setResignationRequests] = useState([
-    {
-      id: 1,
-      employeeId: 2,
-      employeeName: 'Maria Santos',
-      position: 'Dispatcher',
-      depot: 'BGC',
-      resignationType: 'voluntary',
-      lastWorkingDay: '2024-12-15',
-      reason: 'Pursuing further studies abroad. Thank you for the opportunity to work with Roadwise.',
-      submittedDate: '2024-11-20',
-      status: 'pending_review',
-      hrRemarks: null,
-      processedDate: null,
-      completedDate: null,
-      hasResignationLetter: true,
-      clearanceDocuments: [],
-      hasUnviewedUpdate: false, // No new update
-    },
-    {
-      id: 2,
-      employeeId: 6,
-      employeeName: 'Roberto Cruz',
-      position: 'Driver',
-      depot: 'Makati',
-      resignationType: 'voluntary',
-      lastWorkingDay: '2024-12-01',
-      reason: 'Relocating to province for family reasons.',
-      submittedDate: '2024-11-10',
-      status: 'reviewed',
-      hrRemarks: 'Resignation reviewed. Please ensure proper turnover of assigned vehicle and equipment.',
-      processedDate: '2024-11-12',
-      completedDate: null,
-      hasResignationLetter: true,
-      clearanceDocuments: [],
-      hasUnviewedUpdate: true, // New update from HR
-    },
-    {
-      id: 3,
-      employeeId: 7,
-      employeeName: 'Elena Mendoza',
-      position: 'Admin Staff',
-      depot: 'Quezon City',
-      resignationType: 'end_of_contract',
-      lastWorkingDay: '2024-11-30',
-      reason: 'Contract period has ended.',
-      submittedDate: '2024-11-01',
-      status: 'completed',
-      hrRemarks: 'Clearance completed. Final pay to be released on December 5, 2024.',
-      processedDate: '2024-11-03',
-      completedDate: '2024-11-28',
-      hasResignationLetter: false,
-      clearanceDocuments: [
-        { id: 1, name: 'Equipment Turnover Form', uploadedDate: '2024-11-25', status: 'approved' },
-        { id: 2, name: 'ID and Access Card Return', uploadedDate: '2024-11-26', status: 'approved' },
-      ],
-      hasUnviewedUpdate: true, // Final pay update
-    },
-    {
-      id: 4,
-      employeeId: 8,
-      employeeName: 'Antonio Reyes',
-      position: 'Mechanic',
-      depot: 'Pasig',
-      resignationType: 'voluntary',
-      lastWorkingDay: '2024-12-20',
-      reason: 'Accepted a job offer with better compensation.',
-      submittedDate: '2024-11-22',
-      status: 'processing',
-      hrRemarks: 'Approved. Currently processing clearance and final pay computation.',
-      processedDate: '2024-11-24',
-      completedDate: null,
-      hasResignationLetter: true,
-      clearanceResubmitRequired: false,
-      clearanceResubmitRemarks: null,
-      clearanceDocuments: [
-        { id: 1, name: 'Tool Inventory Checklist', uploadedDate: '2024-11-25', status: 'pending' },
-      ],
-      hasUnviewedUpdate: false,
-    },
-    {
-      id: 7,
-      employeeId: 11,
-      employeeName: 'Marco Santos',
-      position: 'Driver',
-      depot: 'BGC',
-      resignationType: 'voluntary',
-      lastWorkingDay: '2024-12-28',
-      reason: 'Career change - pursuing business venture.',
-      submittedDate: '2024-11-18',
-      status: 'processing',
-      hrRemarks: 'Processing clearance. Awaiting re-submission of clearance documents.',
-      processedDate: '2024-11-20',
-      completedDate: null,
-      hasResignationLetter: true,
-      clearanceResubmitRequired: true,
-      clearanceResubmitRemarks: 'The submitted Equipment Turnover Form is incomplete. Please upload a signed copy with supervisor signature.',
-      clearanceDocuments: [
-        { id: 1, name: 'Equipment Turnover Form', uploadedDate: '2024-11-22', status: 'rejected' },
-      ],
-      hasUnviewedUpdate: true, // Re-submit required - new update
-    },
-    {
-      id: 5,
-      employeeId: 9,
-      employeeName: 'Lucia Fernandez',
-      position: 'Driver',
-      depot: 'Makati',
-      resignationType: 'retirement',
-      lastWorkingDay: '2025-01-31',
-      reason: 'Reaching retirement age. Grateful for 15 years of service with the company.',
-      submittedDate: '2024-11-15',
-      status: 'reviewed',
-      hrRemarks: 'Retirement reviewed. HR will coordinate for retirement benefits processing.',
-      processedDate: '2024-11-18',
-      completedDate: null,
-      hasResignationLetter: true,
-      clearanceDocuments: [],
-      hasUnviewedUpdate: false,
-    },
-    {
-      id: 6,
-      employeeId: 10,
-      employeeName: 'Carlos Villanueva',
-      position: 'Driver',
-      depot: 'Pasay',
-      resignationType: 'voluntary',
-      lastWorkingDay: '2025-01-15',
-      reason: 'Personal reasons - relocating to province.',
-      submittedDate: '2024-11-20',
-      status: 'reviewed',
-      hrRemarks: 'Reviewed. Please submit clearance documents to proceed with processing.',
-      processedDate: '2024-11-25',
-      completedDate: null,
-      hasResignationLetter: true,
-      clearanceDocuments: [],
-      hasUnviewedUpdate: true, // New update from HR
-    },
-  ]);
+  // Real data states
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [deployedEmployees, setDeployedEmployees] = useState([]);
+  const [resignationRequests, setResignationRequests] = useState([]);
+  const [agencyProfileId, setAgencyProfileId] = useState(null);
 
   // Helper function to check if a request has an unviewed update
   const hasUnviewedUpdate = (request) => {
@@ -216,6 +68,11 @@ function AgencySeparation() {
     completed: resignationRequests.filter(r => r.status === 'completed' && hasUnviewedUpdate(r)).length,
   };
 
+  // Fetch agency profile and separation data on mount
+  useEffect(() => {
+    fetchAgencyData();
+  }, []);
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -230,6 +87,124 @@ function AgencySeparation() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/employee/login");
+  };
+
+  const fetchAgencyData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError) throw userError;
+      if (!user) throw new Error('No authenticated user');
+
+      // Get agency profile
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) throw profileError;
+      setAgencyProfileId(profile.id);
+
+      // Fetch employees endorsed by this agency
+      const { data: employees, error: empError } = await supabase
+        .from('employees')
+        .select('id, fname, lname, mname, position, depot, hired_at')
+        .eq('endorsed_by_agency_id', profile.id);
+
+      if (empError) throw empError;
+
+      // Format deployed employees for dropdown
+      const formattedEmployees = employees.map(emp => ({
+        id: emp.id,
+        name: `${emp.fname} ${emp.lname}`,
+        position: emp.position || 'N/A',
+        depot: emp.depot || 'N/A'
+      }));
+      setDeployedEmployees(formattedEmployees);
+
+      // Fetch separation records for these employees
+      const employeeIds = employees.map(emp => emp.id);
+      if (employeeIds.length === 0) {
+        setResignationRequests([]);
+        setLoading(false);
+        return;
+      }
+
+      const { data: separations, error: sepError } = await supabase
+        .from('employee_separations')
+        .select('*')
+        .in('employee_id', employeeIds);
+
+      if (sepError) throw sepError;
+
+      // Transform data to match UI format
+      const transformedRequests = separations.map(sep => {
+        const employee = employees.find(emp => emp.id === sep.employee_id);
+        
+        // Map status from DB to UI format
+        let uiStatus = 'pending_review';
+        if (sep.status === 'completed') {
+          uiStatus = 'completed';
+        } else if (sep.resignation_status === 'validated') {
+          if (sep.signed_exit_clearance_status === 'validated' && sep.signed_exit_interview_status === 'validated') {
+            uiStatus = 'processing';
+          } else {
+            uiStatus = 'reviewed';
+          }
+        } else if (sep.resignation_status === 'submitted') {
+          uiStatus = 'pending_review';
+        }
+
+        // Determine resignation type from reason or default to voluntary
+        let resignationType = 'voluntary';
+        if (sep.is_terminated) {
+          resignationType = 'termination';
+        } else if (sep.resignation_reason) {
+          const reason = sep.resignation_reason.toLowerCase();
+          if (reason.includes('retirement') || reason.includes('retire')) {
+            resignationType = 'retirement';
+          } else if (reason.includes('contract') || reason.includes('end of')) {
+            resignationType = 'end_of_contract';
+          }
+        }
+
+        return {
+          id: sep.id,
+          employeeId: sep.employee_id,
+          employeeName: employee ? `${employee.fname} ${employee.lname}` : 'Unknown',
+          position: employee?.position || 'N/A',
+          depot: employee?.depot || 'N/A',
+          resignationType,
+          lastWorkingDay: sep.last_working_day || 'N/A',
+          reason: sep.resignation_reason || 'No reason provided',
+          submittedDate: sep.resignation_submitted_at ? new Date(sep.resignation_submitted_at).toISOString().split('T')[0] : 'N/A',
+          status: uiStatus,
+          hrRemarks: sep.resignation_status === 'validated' ? 'Resignation approved by HR' : null,
+          processedDate: sep.resignation_validated_at ? new Date(sep.resignation_validated_at).toISOString().split('T')[0] : null,
+          completedDate: sep.status === 'completed' && sep.completed_at ? new Date(sep.completed_at).toISOString().split('T')[0] : null,
+          hasResignationLetter: !!sep.resignation_letter_url,
+          resignationLetterUrl: sep.resignation_letter_url,
+          clearanceDocuments: [],
+          hasUnviewedUpdate: false,
+          clearanceResubmitRequired: sep.signed_exit_clearance_status === 'resubmission_required' || sep.signed_exit_interview_status === 'resubmission_required',
+          clearanceResubmitRemarks: sep.signed_exit_clearance_status === 'resubmission_required' ? 'Exit clearance requires resubmission' : 
+                                   sep.signed_exit_interview_status === 'resubmission_required' ? 'Exit interview requires resubmission' : null,
+          isTerminated: sep.is_terminated || false,
+          terminationDate: sep.terminated_at
+        };
+      });
+
+      setResignationRequests(transformedRequests);
+    } catch (err) {
+      console.error('Error fetching agency separation data:', err);
+      setError(`Failed to load separation data: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Get filtered data based on active tab and search
@@ -552,7 +527,39 @@ function AgencySeparation() {
           </button>
         </div>
 
+        {/* Loading State */}
+        {loading && (
+          <div className="flex items-center justify-center py-12">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#800000]"></div>
+          </div>
+        )}
+
+        {/* Error State */}
+        {error && !loading && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-8">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold text-red-800">Error Loading Data</h4>
+                <p className="text-sm text-red-700 mt-1">{error}</p>
+                <button 
+                  onClick={fetchAgencyData}
+                  className="mt-2 text-sm text-red-600 hover:text-red-800 font-medium"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Stats Cards */}
+        {!loading && !error && (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           {/* Pending Review */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
@@ -1117,6 +1124,8 @@ function AgencySeparation() {
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
 
       {/* Logout Confirmation Modal */}
