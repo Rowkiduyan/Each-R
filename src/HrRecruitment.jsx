@@ -579,6 +579,7 @@ function HrRecruitment() {
           interview_time: row.interview_time || row.payload?.interview?.time || null,
           interview_location: row.interview_location || row.payload?.interview?.location || null,
           interviewer: row.interviewer || row.payload?.interview?.interviewer || null,
+          interview_type: row.interview_type || payloadObj.interview_type || payloadObj.interview?.type || 'onsite',
           // New fields - check both column and payload as fallback
           interview_confirmed: row.interview_confirmed ?? payloadObj.interview_confirmed ?? false,
           interview_confirmed_at: row.interview_confirmed_at ?? payloadObj.interview_confirmed_at ?? null,
@@ -2584,56 +2585,83 @@ function HrRecruitment() {
                     </div>
 
                     {/* Interview Schedule */}
-                    {selectedApplicant.interview_date && (
-                      <div className="bg-gray-50 border rounded-md p-4 mb-4 relative">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="text-sm text-gray-800 font-semibold">Interview Schedule</div>
-                          {(() => {
-                            // Check interview status using the new text-based system
-                            const interviewStatus = selectedApplicant.interview_confirmed || selectedApplicant.payload?.interview_confirmed || 'Idle';
-                            
-                            if (interviewStatus === 'Confirmed') {
-                              return (
-                                <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
-                                  Interview Confirmed
-                                </span>
-                              );
-                            } else if (interviewStatus === 'Rejected') {
-                              return (
-                                <span className="text-sm px-3 py-1 rounded bg-red-100 text-red-800 border border-red-300 font-medium">
-                                  Interview Rejected
-                                </span>
-                              );
-                            } else if (interviewStatus === 'Idle' && selectedApplicant.interview_date) {
-                              return (
-                                <span className="text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-medium">
-                                  Awaiting Response
-                                </span>
-                              );
-                            }
-                            return null;
-                          })()}
+                    {selectedApplicant.interview_date && (() => {
+                      // Extract interview_type from various sources
+                      let interviewType = 'onsite'; // default
+                      if (selectedApplicant.interview_type) {
+                        interviewType = selectedApplicant.interview_type;
+                      } else if (selectedApplicant.raw?.payload) {
+                        const payload = typeof selectedApplicant.raw.payload === 'string' 
+                          ? JSON.parse(selectedApplicant.raw.payload) 
+                          : selectedApplicant.raw.payload;
+                        interviewType = payload.interview_type || payload.interview?.type || 'onsite';
+                      } else if (selectedApplicant.payload) {
+                        const payload = typeof selectedApplicant.payload === 'string' 
+                          ? JSON.parse(selectedApplicant.payload) 
+                          : selectedApplicant.payload;
+                        interviewType = payload.interview_type || payload.interview?.type || 'onsite';
+                      }
+
+                      return (
+                        <div className="bg-gray-50 border rounded-md p-4 mb-4 relative">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="text-sm text-gray-800 font-semibold">Interview Schedule</div>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                                interviewType === 'online'
+                                  ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                  : 'bg-amber-100 text-amber-700 border border-amber-300'
+                              }`}>
+                                {interviewType === 'online' ? 'ONLINE' : 'ONSITE'}
+                              </span>
+                              {(() => {
+                                // Check interview status using the new text-based system
+                                const interviewStatus = selectedApplicant.interview_confirmed || selectedApplicant.payload?.interview_confirmed || 'Idle';
+                                
+                                if (interviewStatus === 'Confirmed') {
+                                  return (
+                                    <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
+                                      Interview Confirmed
+                                    </span>
+                                  );
+                                } else if (interviewStatus === 'Rejected') {
+                                  return (
+                                    <span className="text-sm px-3 py-1 rounded bg-red-100 text-red-800 border border-red-300 font-medium">
+                                      Interview Rejected
+                                    </span>
+                                  );
+                                } else if (interviewStatus === 'Idle' && selectedApplicant.interview_date) {
+                                  return (
+                                    <span className="text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-medium">
+                                      Awaiting Response
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+                          </div>
+                          <div className="text-sm text-gray-700 space-y-1">
+                            <div><span className="font-medium">Date:</span> {selectedApplicant.interview_date}</div>
+                            <div><span className="font-medium">Time:</span> {selectedApplicant.interview_time || "—"}</div>
+                            <div><span className="font-medium">{interviewType === 'online' ? 'Meeting Link' : 'Location'}:</span> {selectedApplicant.interview_location || "—"}</div>
+                            <div><span className="font-medium">Interviewer:</span> {selectedApplicant.interviewer || "—"}</div>
+                          </div>
+                          <div className="mt-3 flex items-center justify-end">
+                            <button
+                              type="button"
+                              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                              onClick={() => {
+                                setSelectedApplicationForInterview(selectedApplicant);
+                                openInterviewModal(selectedApplicant);
+                              }}
+                            >
+                              Schedule Another Interview
+                            </button>
+                          </div>
                         </div>
-                        <div className="text-sm text-gray-700 space-y-1">
-                          <div><span className="font-medium">Date:</span> {selectedApplicant.interview_date}</div>
-                          <div><span className="font-medium">Time:</span> {selectedApplicant.interview_time || "—"}</div>
-                          <div><span className="font-medium">Location:</span> {selectedApplicant.interview_location || "—"}</div>
-                          <div><span className="font-medium">Interviewer:</span> {selectedApplicant.interviewer || "—"}</div>
-                        </div>
-                        <div className="mt-3 flex items-center justify-end">
-                          <button
-                            type="button"
-                            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                            onClick={() => {
-                              setSelectedApplicationForInterview(selectedApplicant);
-                              openInterviewModal(selectedApplicant);
-                            }}
-                          >
-                            Schedule Another Interview
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Upload Interview Details Section */}
                     <div className="mt-4 border rounded-md p-4">
