@@ -2100,7 +2100,7 @@ function HrTrainings() {
                               setSelectedPositions([]);
                               setEmployeesByPositionMap({});
                             } else {
-                              setAttendees(employeeOptions);
+                              setAttendees(employeeOptions.map(emp => emp.name));
                             }
                           }}
                           className={`px-2.5 py-1 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center gap-1.5 text-xs font-semibold group ${

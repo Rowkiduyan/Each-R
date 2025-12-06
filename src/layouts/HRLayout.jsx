@@ -97,7 +97,7 @@ export default function HRLayout() {
 
             <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
               <NavLink
-                to="/hr/home"
+                to="/hr/recruitment"
                 className={({ isActive }) =>
                   `pb-1 transition-colors ${
                     isActive
@@ -106,7 +106,7 @@ export default function HRLayout() {
                   }`
                 }
               >
-                Home
+                Recruitment
               </NavLink>
 
               <NavLink
@@ -120,19 +120,6 @@ export default function HRLayout() {
                 }
               >
                 Employees
-              </NavLink>
-
-              <NavLink
-                to="/hr/recruitment"
-                className={({ isActive }) =>
-                  `pb-1 transition-colors ${
-                    isActive
-                      ? "text-red-600 border-b-2 border-red-600"
-                      : "hover:text-gray-900"
-                  }`
-                }
-              >
-                Recruitment
               </NavLink>
 
               <NavLink
