@@ -664,6 +664,16 @@ const formatDateForInput = (dateString) => {
         return skills.filter(s => s && s.trim() !== '');
       }
       if (typeof skills === 'string' && skills.trim() !== '') {
+        // Try to parse as JSON first (in case it's stored as JSON string in database)
+        try {
+          const parsed = JSON.parse(skills);
+          if (Array.isArray(parsed)) {
+            return parsed.filter(s => s && s.trim() !== '');
+          }
+        } catch {
+          // Not valid JSON, treat as comma-separated string
+        }
+        // Fallback to comma-separated parsing
         return skills.split(',').map(s => s.trim()).filter(Boolean);
       }
       return [];
@@ -2277,11 +2287,32 @@ const formatDateForInput = (dateString) => {
                                 </div>
                               ) : (
                                 <div className="text-gray-900">
-                                  {Array.isArray(profileForm.skills) && profileForm.skills.length > 0
-                                    ? profileForm.skills.join(', ')
-                                    : (typeof profileForm.skills === 'string' && profileForm.skills
-                                        ? profileForm.skills
-                                        : 'Not provided')}
+                                  {(() => {
+                                    // Handle different skill formats
+                                    let skillsToDisplay = [];
+                                    
+                                    if (Array.isArray(profileForm.skills)) {
+                                      skillsToDisplay = profileForm.skills;
+                                    } else if (typeof profileForm.skills === 'string') {
+                                      // Try to parse as JSON first
+                                      try {
+                                        const parsed = JSON.parse(profileForm.skills);
+                                        if (Array.isArray(parsed)) {
+                                          skillsToDisplay = parsed;
+                                        } else {
+                                          // Not a JSON array, treat as comma-separated string
+                                          skillsToDisplay = profileForm.skills.split(',').map(s => s.trim()).filter(Boolean);
+                                        }
+                                      } catch {
+                                        // Not valid JSON, treat as comma-separated string
+                                        skillsToDisplay = profileForm.skills.split(',').map(s => s.trim()).filter(Boolean);
+                                      }
+                                    }
+                                    
+                                    return skillsToDisplay.length > 0 
+                                      ? skillsToDisplay.join(', ')
+                                      : 'Not provided';
+                                  })()}
                                 </div>
                               )}
                             </div>

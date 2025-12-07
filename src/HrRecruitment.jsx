@@ -2340,7 +2340,7 @@ function HrRecruitment() {
                 <div className="flex gap-4">
                   {/* Left: Interview Schedule - 30% */}
                   <div className="w-[30%]">
-                    <div className="bg-white rounded-lg shadow-lg p-4 border-l-4 border-indigo-500 sticky top-0">
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col p-4 h-[calc(100vh-200px)]">
                       <h2 className="text-base font-bold text-gray-800 mb-3">Interview Schedule</h2>
                       
                       {/* Stats Overview */}
@@ -2402,7 +2402,7 @@ function HrRecruitment() {
                         <p className="text-xs text-gray-500">{getTabDate()}</p>
                       </div>
                       
-                      <div className="max-h-[calc(100vh-450px)] overflow-y-auto space-y-2">
+                      <div className="flex-1 overflow-y-auto space-y-2">
                         {getActiveInterviews().length === 0 ? (
                           <div className="text-center py-12 bg-gray-50 rounded-lg">
                             <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2450,7 +2450,7 @@ function HrRecruitment() {
 
                   {/* Right: Main Applications Table - 70% */}
                   <div className="w-[70%]">
-                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col">
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-200px)]">
             {/* Search and Filters Bar (always visible) */}
             <div className="p-4 border-b border-gray-100 bg-gray-50/50">
                 <div className="flex flex-col sm:flex-row gap-3">
