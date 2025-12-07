@@ -229,9 +229,24 @@ function HrRecruitment() {
   const [assessmentFileName, setAssessmentFileName] = useState("");
   const [agreementFile, setAgreementFile] = useState(null);
   const [agreementFileName, setAgreementFileName] = useState("");
+  const [undertakingFile, setUndertakingFile] = useState(null);
+  const [undertakingFileName, setUndertakingFileName] = useState("");
+  const [applicationFormFile, setApplicationFormFile] = useState(null);
+  const [applicationFormFileName, setApplicationFormFileName] = useState("");
+  const [undertakingDutiesFile, setUndertakingDutiesFile] = useState(null);
+  const [undertakingDutiesFileName, setUndertakingDutiesFileName] = useState("");
+  const [preEmploymentRequirementsFile, setPreEmploymentRequirementsFile] = useState(null);
+  const [preEmploymentRequirementsFileName, setPreEmploymentRequirementsFileName] = useState("");
+  const [idFormFile, setIdFormFile] = useState(null);
+  const [idFormFileName, setIdFormFileName] = useState("");
   const [uploadingInterviewFile, setUploadingInterviewFile] = useState(false);
   const [uploadingAssessmentFile, setUploadingAssessmentFile] = useState(false);
   const [uploadingAgreementFile, setUploadingAgreementFile] = useState(false);
+  const [uploadingUndertakingFile, setUploadingUndertakingFile] = useState(false);
+  const [uploadingApplicationFormFile, setUploadingApplicationFormFile] = useState(false);
+  const [uploadingUndertakingDutiesFile, setUploadingUndertakingDutiesFile] = useState(false);
+  const [uploadingPreEmploymentRequirementsFile, setUploadingPreEmploymentRequirementsFile] = useState(false);
+  const [uploadingIdFormFile, setUploadingIdFormFile] = useState(false);
   
   // Interview calendar state
   const [interviews, setInterviews] = useState([]);
@@ -543,6 +558,11 @@ function HrRecruitment() {
           interview_details_file,
           assessment_results_file,
           appointment_letter_file,
+          undertaking_file,
+          application_form_file,
+          undertaking_duties_file,
+          pre_employment_requirements_file,
+          id_form_file,
           job_posts:job_posts ( id, title, depot )
         `)
         .neq("status", "hired")
@@ -615,6 +635,12 @@ function HrRecruitment() {
           interview_confirmed_at: row.interview_confirmed_at ?? payloadObj.interview_confirmed_at ?? null,
           interview_details_file: row.interview_details_file ?? payloadObj.interview_details_file ?? null,
           assessment_results_file: row.assessment_results_file ?? payloadObj.assessment_results_file ?? null,
+          appointment_letter_file: row.appointment_letter_file ?? payloadObj.appointment_letter_file ?? null,
+          undertaking_file: row.undertaking_file ?? payloadObj.undertaking_file ?? null,
+          application_form_file: row.application_form_file ?? payloadObj.application_form_file ?? null,
+          undertaking_duties_file: row.undertaking_duties_file ?? payloadObj.undertaking_duties_file ?? null,
+          pre_employment_requirements_file: row.pre_employment_requirements_file ?? payloadObj.pre_employment_requirements_file ?? null,
+          id_form_file: row.id_form_file ?? payloadObj.id_form_file ?? null,
           // Load requirements data from payload (column may not exist yet)
           requirements: payloadObj.requirements ?? null,
         };
@@ -2117,6 +2143,166 @@ function HrRecruitment() {
     return colors[index];
   };
 
+  // Helper function to handle agreement file uploads
+  const handleAgreementFileUpload = async (file, fileName, fileKey, filePathPrefix, setFile, setFileName, setUploading, setSuccessMessage, setShowSuccessAlert, setErrorMessage, setShowErrorAlert) => {
+    if (!file || !selectedApplicant?.id) return;
+    
+    setUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const finalFileName = fileName || `${filePathPrefix}-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
+      const filePath = `${filePathPrefix}/${selectedApplicant.id}/${finalFileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('application-files')
+        .upload(filePath, file, {
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw uploadError;
+      }
+
+      // Update application record with file path
+      const { error: updateError } = await supabase
+        .from('applications')
+        .update({ [fileKey]: uploadData.path })
+        .eq('id', selectedApplicant.id);
+
+      if (updateError && updateError.code === 'PGRST204') {
+        // Column doesn't exist, store in payload instead
+        console.warn(`${fileKey} column not found, storing in payload`);
+        const currentPayload = selectedApplicant.raw?.payload || {};
+        let payloadObj = currentPayload;
+        if (typeof payloadObj === 'string') {
+          try {
+            payloadObj = JSON.parse(payloadObj);
+          } catch {
+            payloadObj = {};
+          }
+        }
+        
+        const updatedPayload = {
+          ...payloadObj,
+          [fileKey]: uploadData.path
+        };
+        
+        const { error: payloadError } = await supabase
+          .from('applications')
+          .update({ payload: updatedPayload })
+          .eq('id', selectedApplicant.id);
+        
+        if (payloadError) {
+          throw payloadError;
+        }
+      } else if (updateError) {
+        throw updateError;
+      }
+
+      // Update local state immediately
+      setFileName(finalFileName);
+      setFile(null);
+      
+      // Update selectedApplicant state with the new file path
+      setSelectedApplicant(prev => ({
+        ...prev,
+        [fileKey]: uploadData.path
+      }));
+      
+      // Reload applications to sync with database
+      await loadApplications();
+      
+      // After reload, update selectedApplicant again to ensure it's current
+      const { data: updatedApp } = await supabase
+        .from('applications')
+        .select('*')
+        .eq('id', selectedApplicant.id)
+        .single();
+      
+      if (updatedApp) {
+        let payloadObj = updatedApp.payload;
+        if (typeof payloadObj === 'string') {
+          try {
+            payloadObj = JSON.parse(payloadObj);
+          } catch {
+            payloadObj = {};
+          }
+        }
+        
+        setSelectedApplicant(prev => ({
+          ...prev,
+          [fileKey]: updatedApp[fileKey] || payloadObj?.[fileKey] || uploadData.path,
+          raw: updatedApp
+        }));
+      }
+      
+      setSuccessMessage(`${fileName || filePathPrefix} uploaded successfully`);
+      setShowSuccessAlert(true);
+    } catch (err) {
+      console.error(`Error uploading ${fileKey}:`, err);
+      setErrorMessage("Failed to upload file. Please try again.");
+      setShowErrorAlert(true);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // Helper function to handle agreement file removal
+  const handleAgreementFileRemove = async (fileKey, setFileName, setSuccessMessage, setShowSuccessAlert, setErrorMessage, setShowErrorAlert) => {
+    if (!selectedApplicant?.id) return;
+    
+    try {
+      // Remove file path from database
+      const { error: updateError } = await supabase
+        .from('applications')
+        .update({ [fileKey]: null })
+        .eq('id', selectedApplicant.id);
+
+      if (updateError && updateError.code === 'PGRST204') {
+        // Column doesn't exist, remove from payload
+        const currentPayload = selectedApplicant.raw?.payload || {};
+        let payloadObj = currentPayload;
+        if (typeof payloadObj === 'string') {
+          try {
+            payloadObj = JSON.parse(payloadObj);
+          } catch {
+            payloadObj = {};
+          }
+        }
+        
+        const updatedPayload = {
+          ...payloadObj,
+          [fileKey]: null
+        };
+        
+        const { error: payloadError } = await supabase
+          .from('applications')
+          .update({ payload: updatedPayload })
+          .eq('id', selectedApplicant.id);
+        
+        if (payloadError) {
+          throw payloadError;
+        }
+      } else if (updateError) {
+        throw updateError;
+      }
+
+      // Reload applications
+      await loadApplications();
+      setFileName("");
+      setSelectedApplicant(prev => ({
+        ...prev,
+        [fileKey]: null
+      }));
+      setSuccessMessage("File removed successfully");
+      setShowSuccessAlert(true);
+    } catch (err) {
+      console.error(`Error removing ${fileKey}:`, err);
+      setErrorMessage("Failed to remove file. Please try again.");
+      setShowErrorAlert(true);
+    }
+  };
+
   // Helper: Get application status display info
   const getApplicationStatus = (applicant) => {
     const status = applicant.status?.toLowerCase() || 'submitted';
@@ -2587,6 +2773,17 @@ function HrRecruitment() {
                                 setAssessmentFileName(a.assessment_results_file ? a.assessment_results_file.split('/').pop() : "");
                                 setAgreementFile(null);
                                 setAgreementFileName(a.appointment_letter_file ? a.appointment_letter_file.split('/').pop() : "");
+                                // Reset new agreement file states
+                                setUndertakingFile(null);
+                                setUndertakingFileName(a.undertaking_file ? a.undertaking_file.split('/').pop() : "");
+                                setApplicationFormFile(null);
+                                setApplicationFormFileName(a.application_form_file ? a.application_form_file.split('/').pop() : "");
+                                setUndertakingDutiesFile(null);
+                                setUndertakingDutiesFileName(a.undertaking_duties_file ? a.undertaking_duties_file.split('/').pop() : "");
+                                setPreEmploymentRequirementsFile(null);
+                                setPreEmploymentRequirementsFileName(a.pre_employment_requirements_file ? a.pre_employment_requirements_file.split('/').pop() : "");
+                                setIdFormFile(null);
+                                setIdFormFileName(a.id_form_file ? a.id_form_file.split('/').pop() : "");
                               }}
                             >
                               <td className="px-6 py-4">
@@ -2670,6 +2867,17 @@ function HrRecruitment() {
                             setAgreementFileName(
                               a.appointment_letter_file ? a.appointment_letter_file.split("/").pop() : ""
                             );
+                            // Reset new agreement file states
+                            setUndertakingFile(null);
+                            setUndertakingFileName(a.undertaking_file ? a.undertaking_file.split("/").pop() : "");
+                            setApplicationFormFile(null);
+                            setApplicationFormFileName(a.application_form_file ? a.application_form_file.split("/").pop() : "");
+                            setUndertakingDutiesFile(null);
+                            setUndertakingDutiesFileName(a.undertaking_duties_file ? a.undertaking_duties_file.split("/").pop() : "");
+                            setPreEmploymentRequirementsFile(null);
+                            setPreEmploymentRequirementsFileName(a.pre_employment_requirements_file ? a.pre_employment_requirements_file.split("/").pop() : "");
+                            setIdFormFile(null);
+                            setIdFormFileName(a.id_form_file ? a.id_form_file.split("/").pop() : "");
                           }}
                         >
                           <td className="px-4 py-3">
@@ -3602,236 +3810,201 @@ function HrRecruitment() {
                       <div className="col-span-6">File</div>
                     </div>
 
-                    <div className="border-b">
-                      <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                        <div className="col-span-12 md:col-span-6 text-sm text-gray-800">Employee Appointment Letter</div>
-                        <div className="col-span-12 md:col-span-6 text-sm">
-                          <div className="flex items-center gap-2">
-                            {agreementFile || selectedApplicant.appointment_letter_file ? (
-                              <div className="flex items-center gap-2 w-full">
-                                <div className="flex items-center gap-2 flex-1">
-                                  <input
-                                    type="text"
-                                    placeholder="File name"
-                                    value={agreementFileName || (selectedApplicant.appointment_letter_file ? selectedApplicant.appointment_letter_file.split('/').pop() : "")}
-                                    onChange={(e) => setAgreementFileName(e.target.value)}
-                                    className={`flex-1 px-3 py-2 border border-gray-300 rounded text-sm ${
-                                      agreementFile || selectedApplicant.appointment_letter_file 
-                                        ? "text-blue-600 underline" 
-                                        : ""
-                                    }`}
-                                    readOnly={!!(agreementFile || selectedApplicant.appointment_letter_file)}
-                                  />
-                                  {(agreementFile || selectedApplicant.appointment_letter_file) && (
-                                    <button
-                                      type="button"
-                                      className="w-6 h-6 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center flex-shrink-0 transition-colors"
-                                      onClick={async () => {
-                                        if (agreementFile) {
-                                          // Just remove from selection if not saved yet
-                                          setAgreementFile(null);
-                                          setAgreementFileName("");
-                                        } else if (selectedApplicant.appointment_letter_file) {
-                                          // Remove from database if already saved
-                                          if (!selectedApplicant?.id) return;
-                                          
-                                          try {
-                                            // Remove file path from database
-                                            const { error: updateError } = await supabase
-                                              .from('applications')
-                                              .update({ appointment_letter_file: null })
-                                              .eq('id', selectedApplicant.id);
-
-                                            if (updateError && updateError.code === 'PGRST204') {
-                                              // Column doesn't exist, remove from payload
-                                              const currentPayload = selectedApplicant.raw?.payload || {};
-                                              let payloadObj = currentPayload;
-                                              if (typeof payloadObj === 'string') {
-                                                try {
-                                                  payloadObj = JSON.parse(payloadObj);
-                                                } catch {
-                                                  payloadObj = {};
-                                                }
+                    {/* Helper function to render document row */}
+                    {(() => {
+                      const renderDocumentRow = (documentName, fileKey, file, setFile, fileName, setFileName, uploading, setUploading, filePathPrefix) => {
+                        // Get file value from direct field or payload
+                        let fileValue = selectedApplicant?.[fileKey] || null;
+                        if (!fileValue && selectedApplicant?.raw?.payload) {
+                          const payload = typeof selectedApplicant.raw.payload === 'string' 
+                            ? JSON.parse(selectedApplicant.raw.payload) 
+                            : selectedApplicant.raw.payload;
+                          fileValue = payload?.[fileKey] || null;
+                        }
+                        const displayFileName = fileName || (fileValue ? fileValue.split('/').pop() : "");
+                        
+                        return (
+                          <div key={fileKey} className="border-b">
+                            <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                              <div className="col-span-12 md:col-span-6 text-sm text-gray-800">{documentName}</div>
+                              <div className="col-span-12 md:col-span-6 text-sm">
+                                <div className="flex items-center gap-2">
+                                  {file || fileValue ? (
+                                    <div className="flex items-center gap-2 w-full">
+                                      <div className="flex items-center gap-2 flex-1">
+                                        <input
+                                          type="text"
+                                          placeholder="File name"
+                                          value={displayFileName}
+                                          onChange={(e) => setFileName(e.target.value)}
+                                          className={`flex-1 px-3 py-2 border border-gray-300 rounded text-sm ${
+                                            file || fileValue 
+                                              ? "text-blue-600 underline" 
+                                              : ""
+                                          }`}
+                                          readOnly={!!(file || fileValue)}
+                                        />
+                                        {(file || fileValue) && (
+                                          <button
+                                            type="button"
+                                            className="w-6 h-6 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center flex-shrink-0 transition-colors"
+                                            onClick={async () => {
+                                              if (file) {
+                                                // Just remove from selection if not saved yet
+                                                setFile(null);
+                                                setFileName("");
+                                              } else if (fileValue) {
+                                                // Remove from database if already saved
+                                                await handleAgreementFileRemove(
+                                                  fileKey,
+                                                  setFileName,
+                                                  setSuccessMessage,
+                                                  setShowSuccessAlert,
+                                                  setErrorMessage,
+                                                  setShowErrorAlert
+                                                );
                                               }
-                                              
-                                              const updatedPayload = {
-                                                ...payloadObj,
-                                                appointment_letter_file: null
-                                              };
-                                              
-                                              const { error: payloadError } = await supabase
-                                                .from('applications')
-                                                .update({ payload: updatedPayload })
-                                                .eq('id', selectedApplicant.id);
-                                              
-                                              if (payloadError) {
-                                                throw payloadError;
-                                              }
-                                            } else if (updateError) {
-                                              throw updateError;
+                                            }}
+                                            title="Remove file"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                          </button>
+                                        )}
+                                      </div>
+                                      {uploading ? (
+                                        <span className="text-gray-600 text-sm whitespace-nowrap">Uploading...</span>
+                                      ) : file ? (
+                                        <button
+                                          type="button"
+                                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 whitespace-nowrap"
+                                          onClick={async () => {
+                                            await handleAgreementFileUpload(
+                                              file,
+                                              fileName,
+                                              fileKey,
+                                              filePathPrefix,
+                                              setFile,
+                                              setFileName,
+                                              setUploading,
+                                              setSuccessMessage,
+                                              setShowSuccessAlert,
+                                              setErrorMessage,
+                                              setShowErrorAlert
+                                            );
+                                          }}
+                                        >
+                                          Save
+                                        </button>
+                                      ) : fileValue ? (
+                                        <a
+                                          href={supabase.storage.from('application-files').getPublicUrl(fileValue)?.data?.publicUrl}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 whitespace-nowrap border border-blue-300"
+                                        >
+                                          View
+                                        </a>
+                                      ) : null}
+                                    </div>
+                                  ) : (
+                                    <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
+                                      Upload
+                                      <input
+                                        type="file"
+                                        accept=".pdf,.docx"
+                                        onChange={(e) => {
+                                          const selectedFile = e.target.files?.[0];
+                                          if (selectedFile) {
+                                            setFile(selectedFile);
+                                            if (!fileName) {
+                                              setFileName(selectedFile.name);
                                             }
-
-                                            // Reload applications
-                                            await loadApplications();
-                                            setAgreementFileName("");
-                                            setSelectedApplicant(prev => ({
-                                              ...prev,
-                                              appointment_letter_file: null
-                                            }));
-                                            setSuccessMessage("Appointment letter removed successfully");
-                                            setShowSuccessAlert(true);
-                                          } catch (err) {
-                                            console.error('Error removing appointment letter:', err);
-                                            setErrorMessage("Failed to remove file. Please try again.");
-                                            setShowErrorAlert(true);
                                           }
-                                        }
-                                      }}
-                                      title="Remove file"
-                                    >
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                        <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                      </svg>
-                                    </button>
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
                                   )}
                                 </div>
-                                {uploadingAgreementFile ? (
-                                  <span className="text-gray-600 text-sm whitespace-nowrap">Uploading...</span>
-                                ) : agreementFile ? (
-                                  <button
-                                    type="button"
-                                    className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 whitespace-nowrap"
-                                    onClick={async () => {
-                                      if (!agreementFile || !selectedApplicant?.id) return;
-                                      
-                                      setUploadingAgreementFile(true);
-                                      try {
-                                        const fileExt = agreementFile.name.split('.').pop();
-                                        const fileName = agreementFileName || `appointment-letter-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
-                                        const filePath = `appointment-letters/${selectedApplicant.id}/${fileName}`;
-
-                                        const { data: uploadData, error: uploadError } = await supabase.storage
-                                          .from('application-files')
-                                          .upload(filePath, agreementFile, {
-                                            upsert: true,
-                                          });
-
-                                        if (uploadError) {
-                                          throw uploadError;
-                                        }
-
-                                        // Update application record with file path
-                                        const { error: updateError } = await supabase
-                                          .from('applications')
-                                          .update({ appointment_letter_file: uploadData.path })
-                                          .eq('id', selectedApplicant.id);
-
-                                        if (updateError && updateError.code === 'PGRST204') {
-                                          // Column doesn't exist, store in payload instead
-                                          console.warn('appointment_letter_file column not found, storing in payload');
-                                          const currentPayload = selectedApplicant.raw?.payload || {};
-                                          let payloadObj = currentPayload;
-                                          if (typeof payloadObj === 'string') {
-                                            try {
-                                              payloadObj = JSON.parse(payloadObj);
-                                            } catch {
-                                              payloadObj = {};
-                                            }
-                                          }
-                                          
-                                          const updatedPayload = {
-                                            ...payloadObj,
-                                            appointment_letter_file: uploadData.path
-                                          };
-                                          
-                                          const { error: payloadError } = await supabase
-                                            .from('applications')
-                                            .update({ payload: updatedPayload })
-                                            .eq('id', selectedApplicant.id);
-                                          
-                                          if (payloadError) {
-                                            throw payloadError;
-                                          }
-                                        } else if (updateError) {
-                                          throw updateError;
-                                        }
-
-                                        // Update local state immediately
-                                        setAgreementFileName(fileName);
-                                        // Clear the file object but keep the name visible
-                                        setAgreementFile(null);
-                                        
-                                        // Update selectedApplicant state with the new file path
-                                        setSelectedApplicant(prev => ({
-                                          ...prev,
-                                          appointment_letter_file: uploadData.path
-                                        }));
-                                        
-                                        // Reload applications to sync with database
-                                        await loadApplications();
-                                        
-                                        // After reload, update selectedApplicant again to ensure it's current
-                                        const { data: updatedApp } = await supabase
-                                          .from('applications')
-                                          .select('*')
-                                          .eq('id', selectedApplicant.id)
-                                          .single();
-                                        
-                                        if (updatedApp) {
-                                          let payloadObj = updatedApp.payload;
-                                          if (typeof payloadObj === 'string') {
-                                            try {
-                                              payloadObj = JSON.parse(payloadObj);
-                                            } catch {
-                                              payloadObj = {};
-                                            }
-                                          }
-                                          
-                                          setSelectedApplicant(prev => ({
-                                            ...prev,
-                                            appointment_letter_file: updatedApp.appointment_letter_file || payloadObj?.appointment_letter_file || uploadData.path,
-                                            raw: updatedApp
-                                          }));
-                                        }
-                                        
-                                        setSuccessMessage("Appointment letter uploaded successfully");
-                                        setShowSuccessAlert(true);
-                                      } catch (err) {
-                                        console.error('Error uploading appointment letter:', err);
-                                        setErrorMessage("Failed to upload file. Please try again.");
-                                        setShowErrorAlert(true);
-                                      } finally {
-                                        setUploadingAgreementFile(false);
-                                      }
-                                    }}
-                                  >
-                                    Save
-                                  </button>
-                                ) : null}
                               </div>
-                            ) : (
-                              <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
-                                Upload
-                                <input
-                                  type="file"
-                                  accept=".pdf,.docx"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                      setAgreementFile(file);
-                                      if (!agreementFileName) {
-                                        setAgreementFileName(file.name);
-                                      }
-                                    }
-                                  }}
-                                  className="hidden"
-                                />
-                              </label>
-                            )}
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    </div>
+                        );
+                      };
+
+                      return (
+                        <>
+                          {renderDocumentRow(
+                            "Employee Appointment Letter",
+                            "appointment_letter_file",
+                            agreementFile,
+                            setAgreementFile,
+                            agreementFileName,
+                            setAgreementFileName,
+                            uploadingAgreementFile,
+                            setUploadingAgreementFile,
+                            "appointment-letter"
+                          )}
+                          {renderDocumentRow(
+                            "Undertaking",
+                            "undertaking_file",
+                            undertakingFile,
+                            setUndertakingFile,
+                            undertakingFileName,
+                            setUndertakingFileName,
+                            uploadingUndertakingFile,
+                            setUploadingUndertakingFile,
+                            "undertaking"
+                          )}
+                          {renderDocumentRow(
+                            "Application Form",
+                            "application_form_file",
+                            applicationFormFile,
+                            setApplicationFormFile,
+                            applicationFormFileName,
+                            setApplicationFormFileName,
+                            uploadingApplicationFormFile,
+                            setUploadingApplicationFormFile,
+                            "application-form"
+                          )}
+                          {renderDocumentRow(
+                            "Undertaking of Duties and Responsibilities",
+                            "undertaking_duties_file",
+                            undertakingDutiesFile,
+                            setUndertakingDutiesFile,
+                            undertakingDutiesFileName,
+                            setUndertakingDutiesFileName,
+                            uploadingUndertakingDutiesFile,
+                            setUploadingUndertakingDutiesFile,
+                            "undertaking-duties"
+                          )}
+                          {renderDocumentRow(
+                            "Roadwise Pre Employment Requirements",
+                            "pre_employment_requirements_file",
+                            preEmploymentRequirementsFile,
+                            setPreEmploymentRequirementsFile,
+                            preEmploymentRequirementsFileName,
+                            setPreEmploymentRequirementsFileName,
+                            uploadingPreEmploymentRequirementsFile,
+                            setUploadingPreEmploymentRequirementsFile,
+                            "pre-employment-requirements"
+                          )}
+                          {renderDocumentRow(
+                            "ID Form",
+                            "id_form_file",
+                            idFormFile,
+                            setIdFormFile,
+                            idFormFileName,
+                            setIdFormFileName,
+                            uploadingIdFormFile,
+                            setUploadingIdFormFile,
+                            "id-form"
+                          )}
+                        </>
+                      );
+                    })()}
 
                     <div className="flex justify-end mt-6">
                       <button

@@ -836,7 +836,12 @@ function AgencyEndorse() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Position <span className="text-[#800000]">*</span></label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.position} onChange={(e) => handleChange(activeApplicant, "position", e.target.value)}>
+                      <select 
+                        className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm ${job?.title ? 'bg-gray-100 cursor-not-allowed' : 'focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]'}`}
+                        value={fv.position} 
+                        onChange={(e) => handleChange(activeApplicant, "position", e.target.value)}
+                        disabled={!!job?.title}
+                      >
                 <option value="">Select Position</option>
                 <option>Delivery Drivers</option>
                 <option>Delivery Helpers</option>
@@ -848,7 +853,12 @@ function AgencyEndorse() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot Assignment <span className="text-[#800000]">*</span></label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.depot} onChange={(e) => handleChange(activeApplicant, "depot", e.target.value)}>
+                      <select 
+                        className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm ${job?.depot ? 'bg-gray-100 cursor-not-allowed' : 'focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]'}`}
+                        value={fv.depot} 
+                        onChange={(e) => handleChange(activeApplicant, "depot", e.target.value)}
+                        disabled={!!job?.depot}
+                      >
                         <option value="">Select Depot</option>
                         <option>Batangas</option>
                         <option>Bulacan</option>
