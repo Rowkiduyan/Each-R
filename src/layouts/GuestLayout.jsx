@@ -40,7 +40,7 @@ function GuestLayout() {
         // Fetch applicant data from applicants table
         const { data: applicant, error } = await supabase
           .from('applicants')
-          .select('id, email, first_name, last_name')
+          .select('id, email, fname, lname')
           .eq('email', user.email)
           .maybeSingle();
 
@@ -52,8 +52,8 @@ function GuestLayout() {
           // If no applicant record, use auth user data
           setApplicantUser({
             email: user.email,
-            first_name: user.user_metadata?.first_name || null,
-            last_name: user.user_metadata?.last_name || null,
+            fname: user.user_metadata?.first_name || null,
+            lname: user.user_metadata?.last_name || null,
           });
         }
       } catch (error) {
@@ -101,8 +101,8 @@ function GuestLayout() {
 
   // Get user initials for avatar
   const getUserInitials = () => {
-    if (applicantUser?.first_name && applicantUser?.last_name) {
-      return `${applicantUser.first_name[0]}${applicantUser.last_name[0]}`.toUpperCase();
+    if (applicantUser?.fname && applicantUser?.lname) {
+      return `${applicantUser.fname[0]}${applicantUser.lname[0]}`.toUpperCase();
     } else if (applicantUser?.email) {
       return applicantUser.email[0].toUpperCase();
     }
@@ -111,8 +111,8 @@ function GuestLayout() {
 
   // Get user display name
   const getUserDisplayName = () => {
-    if (applicantUser?.first_name && applicantUser?.last_name) {
-      return `${applicantUser.first_name} ${applicantUser.last_name}`;
+    if (applicantUser?.fname && applicantUser?.lname) {
+      return `${applicantUser.fname} ${applicantUser.lname}`;
     } else if (applicantUser?.email) {
       return applicantUser.email;
     }
