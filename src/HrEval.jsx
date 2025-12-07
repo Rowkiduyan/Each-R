@@ -205,9 +205,15 @@ function HrEval() {
           // Use the final remarks for all records
           const recordRemarks = finalRemarks;
           
-          // Calculate next_due based on reason and date_evaluated
+          // Calculate next_due based on reason, date_evaluated, and remarks
           let nextDueDate = null;
-          if (finalReason === 'Annual' && record.dateEvaluated) {
+          
+          // For probationary employees with "Observe" remark, set next_due to 90 days from now
+          if (selectedEmployee?.employmentType === 'probationary' && recordRemarks === 'Observe') {
+            const today = new Date();
+            today.setDate(today.getDate() + 90);
+            nextDueDate = today.toISOString().split('T')[0];
+          } else if (finalReason === 'Annual' && record.dateEvaluated) {
             const evalDate = new Date(record.dateEvaluated);
             evalDate.setFullYear(evalDate.getFullYear() + 1);
             nextDueDate = evalDate.toISOString().split('T')[0];
