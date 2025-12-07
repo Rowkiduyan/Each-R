@@ -319,13 +319,6 @@ function ApplicantApplications() {
   return (
     <div className="flex-1">
       <div className="max-w-7xl mx-auto px-6 py-6">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-bold text-gray-800">My Applications</h2>
-            <p className="text-sm text-gray-500">Track your progress and complete all steps.</p>
-          </div>
-          <Link to="/applicantl/home" className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors">Back</Link>
-        </div>
 
         {/* Steps header */}
         <div className="flex items-center gap-3 mb-6 overflow-x-auto">

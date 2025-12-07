@@ -199,7 +199,7 @@ function ApplicantLayout() {
                   `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
                 }
               >
-                My Applications
+                My Application
               </NavLink>
               <NavLink
                 to="#"
