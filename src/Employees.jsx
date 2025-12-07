@@ -49,6 +49,14 @@ function Employees() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [applicationData, setApplicationData] = useState(null);
   const [loadingApplication, setLoadingApplication] = useState(false);
+  const [uploadingOnboarding, setUploadingOnboarding] = useState(false);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [editingOnboardingItem, setEditingOnboardingItem] = useState(null);
+  const [onboardingErrors, setOnboardingErrors] = useState({});
+  const [showOnboardingSuccess, setShowOnboardingSuccess] = useState(false);
+  const [isEditingOnboarding, setIsEditingOnboarding] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
 
   // Termination modal states
   const [showTerminateModal, setShowTerminateModal] = useState(false);
@@ -875,34 +883,40 @@ function Employees() {
       }
 
       try {
-        // Check if there's an onboarding table
         const { data: onboardingData, error } = await supabase
-          .from('onboarding')
+          .from('onboarding_records')
           .select('*')
           .eq('employee_id', selectedEmployee.id)
           .order('date_issued', { ascending: false });
 
         if (error) {
-          // If table doesn't exist or error, check if it's stored in employees table
-          console.log('Onboarding table not found or error:', error);
+          console.error('Error fetching onboarding items:', error);
           setOnboardingItems([]);
           return;
         }
 
         if (onboardingData && onboardingData.length > 0) {
-          const items = onboardingData.map(item => ({
-            id: item.id,
-            item: item.item || item.name || '',
-            description: item.description || '',
-            date: item.date_issued || item.date || '',
-            file: item.file_path || item.filePath || null,
-            fileUrl: item.file_path || item.filePath ? (() => {
-              const { data } = supabase.storage
-                .from('application-files')
-                .getPublicUrl(item.file_path || item.filePath);
-              return data?.publicUrl || null;
-            })() : null
-          }));
+          const items = onboardingData.map(item => {
+            // Extract file path from URL for deletion purposes
+            let filePath = null;
+            if (item.file_url) {
+              const urlParts = item.file_url.split('/onboarding/');
+              if (urlParts.length > 1) {
+                filePath = urlParts[1];
+              }
+            }
+            
+            return {
+              id: item.id,
+              item: item.item_name || '',
+              description: item.description || '',
+              date: item.date_issued ? new Date(item.date_issued).toISOString().substring(0, 10) : '',
+              file: item.file_url ? item.file_url.split('/').pop() : null,
+              fileUrl: item.file_url || null,
+              filePath: filePath,
+              dbId: item.id
+            };
+          });
           setOnboardingItems(items);
         } else {
           setOnboardingItems([]);
@@ -915,6 +929,214 @@ function Employees() {
 
     fetchOnboardingItems();
   }, [selectedEmployee, activeTab]);
+
+  // Handle onboarding file upload
+  const handleOnboardingFileUpload = async (itemId, file) => {
+    if (!file || !selectedEmployee) return;
+
+    setUploadingOnboarding(true);
+    try {
+      // If there's an existing file, delete it first
+      if (editingOnboardingItem.filePath) {
+        await supabase.storage
+          .from('onboarding')
+          .remove([editingOnboardingItem.filePath]);
+      }
+
+      // Upload new file to onboarding bucket
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${selectedEmployee.id}/${Date.now()}.${fileExt}`;
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('onboarding')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('onboarding')
+        .getPublicUrl(fileName);
+
+      // Update editing item state with file URL and path
+      setEditingOnboardingItem(prev => ({
+        ...prev,
+        file: file.name,
+        fileUrl: urlData.publicUrl,
+        filePath: fileName,  // Store the path for deletion
+        oldFilePath: null    // Clear old file path since we deleted it
+      }));
+
+      return urlData.publicUrl;
+    } catch (err) {
+      console.error('Error uploading onboarding file:', err);
+      alert('Failed to upload file: ' + err.message);
+      return null;
+    } finally {
+      setUploadingOnboarding(false);
+    }
+  };
+
+  // Remove uploaded file from modal
+  const handleRemoveOnboardingFile = async () => {
+    if (!editingOnboardingItem.filePath) {
+      // Just clear the file state if no path (shouldn't happen)
+      setEditingOnboardingItem(prev => ({
+        ...prev,
+        file: null,
+        fileUrl: null,
+        filePath: null
+      }));
+      return;
+    }
+
+    setUploadingOnboarding(true);
+    try {
+      // Delete file from storage
+      const { error } = await supabase.storage
+        .from('onboarding')
+        .remove([editingOnboardingItem.filePath]);
+
+      if (error) throw error;
+
+      // Clear file state
+      setEditingOnboardingItem(prev => ({
+        ...prev,
+        file: null,
+        fileUrl: null,
+        filePath: null
+      }));
+    } catch (err) {
+      console.error('Error deleting file:', err);
+      alert('Failed to delete file: ' + err.message);
+    } finally {
+      setUploadingOnboarding(false);
+    }
+  };
+
+  // Save onboarding item to database
+  const handleSaveOnboardingItem = async (item) => {
+    // Validate fields
+    const errors = {};
+    if (!item.item.trim()) errors.item = 'Item name is required';
+    if (!item.description.trim()) errors.description = 'Description is required';
+    if (!item.date) errors.date = 'Date issued is required';
+
+    if (Object.keys(errors).length > 0) {
+      setOnboardingErrors(errors);
+      return;
+    }
+
+    setOnboardingErrors({});
+    if (!selectedEmployee) return;
+
+    setUploadingOnboarding(true);
+    try {
+      const itemData = {
+        employee_id: selectedEmployee.id,
+        item_name: item.item,
+        description: item.description || null,
+        date_issued: item.date ? new Date(item.date).toISOString() : null,
+        file_url: item.fileUrl || null
+      };
+
+      if (item.dbId) {
+        // Update existing item
+        const { error } = await supabase
+          .from('onboarding_records')
+          .update(itemData)
+          .eq('id', item.dbId);
+
+        if (error) throw error;
+        
+        // Delete old file from storage if it was replaced
+        if (item.oldFilePath && item.oldFilePath !== item.filePath) {
+          await supabase.storage
+            .from('onboarding')
+            .remove([item.oldFilePath]);
+        }
+        
+        // Update local state
+        setOnboardingItems(prev => prev.map(i => 
+          i.id === item.id ? { ...item, file: item.file, fileUrl: item.fileUrl, filePath: item.filePath, dbId: item.dbId } : i
+        ));
+        
+        // Track that this was an edit
+        setIsEditingOnboarding(true);
+      } else {
+        // Insert new item
+        const { data, error } = await supabase
+          .from('onboarding_records')
+          .insert([itemData])
+          .select();
+
+        if (error) throw error;
+
+        // Update local state with database ID
+        setOnboardingItems(prev => [...prev, {
+          ...item,
+          dbId: data[0].id
+        }]);
+        
+        // Track that this was a new record
+        setIsEditingOnboarding(false);
+      }
+
+      // Show success modal
+      setShowOnboardingModal(false);
+      setEditingOnboardingItem(null);
+      setShowOnboardingSuccess(true);
+    } catch (err) {
+      console.error('Error saving onboarding item:', err);
+      alert('Failed to save onboarding item: ' + err.message);
+    } finally {
+      setUploadingOnboarding(false);
+    }
+  };
+
+  // Delete onboarding item from database and storage
+  const handleDeleteOnboardingItem = async (item) => {
+    setItemToDelete(item);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteOnboarding = async () => {
+    if (!itemToDelete) return;
+
+    setUploadingOnboarding(true);
+    try {
+      // Delete file from storage if exists
+      if (itemToDelete.fileUrl) {
+        const filePath = itemToDelete.fileUrl.split('/').slice(-2).join('/');
+        await supabase.storage
+          .from('onboarding')
+          .remove([filePath]);
+      }
+
+      // Delete from database if it has a dbId
+      if (itemToDelete.dbId) {
+        const { error } = await supabase
+          .from('onboarding_records')
+          .delete()
+          .eq('id', itemToDelete.dbId);
+
+        if (error) throw error;
+      }
+
+      // Remove from local state
+      setOnboardingItems(prev => prev.filter(i => i.id !== itemToDelete.id));
+      
+      // Close confirmation and show success
+      setShowDeleteConfirm(false);
+      setItemToDelete(null);
+      setShowOnboardingSuccess(true);
+    } catch (err) {
+      console.error('Error deleting onboarding item:', err);
+      alert('Failed to delete onboarding item: ' + err.message);
+    } finally {
+      setUploadingOnboarding(false);
+    }
+  };
 
   // Fetch evaluation records when employee is selected and evaluation tab is active
   useEffect(() => {
@@ -1670,15 +1892,15 @@ function Employees() {
                           {activeTab === 'onboarding' && (
                             <div className="space-y-6">
                               <div className="flex items-center justify-between mb-4">
-                                <h5 className="font-semibold text-gray-800">Onboarding Items</h5>
+                                <h5 className="font-semibold text-gray-800">Onboarding Records</h5>
                                 <button
-                                  onClick={() => setOnboardingItems((prev) => [
-                                    ...prev,
-                                    { id: Date.now(), item: "", description: "", date: new Date().toISOString().substring(0, 10), file: null, fileUrl: null }
-                                  ])}
-                                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                                  onClick={() => {
+                                    setEditingOnboardingItem({ id: Date.now(), item: "", description: "", date: new Date().toISOString().substring(0, 10), file: null, fileUrl: null });
+                                    setShowOnboardingModal(true);
+                                  }}
+                                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
                                 >
-                                  + Add Item
+                                  <span>+</span> Add Record
                                 </button>
                               </div>
 
@@ -1686,48 +1908,38 @@ function Employees() {
                                 <table className="w-full text-sm">
                                   <thead className="bg-gray-50">
                                     <tr>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">Item</th>
+                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">Item Name</th>
                                       <th className="px-4 py-3 text-left text-gray-600 font-medium">Description</th>
                                       <th className="px-4 py-3 text-left text-gray-600 font-medium">Date Issued</th>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">File</th>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium w-16"></th>
+                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">Attachment</th>
+                                      <th className="px-4 py-3 text-center text-gray-600 font-medium w-32">Actions</th>
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-gray-100">
                                     {onboardingItems.length === 0 ? (
                                       <tr>
-                                        <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
-                                          No onboarding items found
+                                        <td colSpan="5" className="px-4 py-12 text-center">
+                                          <div className="flex flex-col items-center gap-2 text-gray-400">
+                                            <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            <p className="text-sm">No onboarding records yet</p>
+                                          </div>
                                         </td>
                                       </tr>
                                     ) : (
                                       onboardingItems.map((ob) => (
                                         <tr key={ob.id} className="hover:bg-gray-50/50">
                                           <td className="px-4 py-3">
-                                            <input
-                                              type="text"
-                                              value={ob.item}
-                                              onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, item: e.target.value } : item))}
-                                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
-                                              placeholder="Item name"
-                                            />
+                                            <span className="font-medium text-gray-800">{ob.item}</span>
                                           </td>
                                           <td className="px-4 py-3">
-                                            <input
-                                              type="text"
-                                              value={ob.description}
-                                              onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, description: e.target.value } : item))}
-                                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
-                                              placeholder="Description"
-                                            />
+                                            <span className="text-gray-600">{ob.description || '—'}</span>
                                           </td>
                                           <td className="px-4 py-3">
-                                            <input
-                                              type="date"
-                                              value={ob.date ? new Date(ob.date).toISOString().substring(0, 10) : ""}
-                                              onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, date: e.target.value } : item))}
-                                              className="px-2 py-1 border border-gray-200 rounded text-sm"
-                                            />
+                                            <span className="text-gray-600">
+                                              {ob.date ? new Date(ob.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
+                                            </span>
                                           </td>
                                           <td className="px-4 py-3">
                                             {ob.fileUrl ? (
@@ -1735,25 +1947,46 @@ function Employees() {
                                                 href={ob.fileUrl} 
                                                 target="_blank" 
                                                 rel="noopener noreferrer"
-                                                className="text-blue-600 hover:underline text-sm"
+                                                className="text-blue-600 hover:underline text-sm flex items-center gap-1"
                                               >
-                                                {ob.file ? ob.file.split('/').pop() : 'View File'}
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                                </svg>
+                                                View File
                                               </a>
                                             ) : (
                                               <span className="text-gray-400 italic text-sm">No file</span>
                                             )}
                                           </td>
                                           <td className="px-4 py-3">
-                                            <button
-                                              onClick={() => {
-                                                if (window.confirm("Delete this item?")) {
-                                                  setOnboardingItems((prev) => prev.filter((item) => item.id !== ob.id));
-                                                }
-                                              }}
-                                              className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-red-600"
-                                            >
-                                              ×
-                                            </button>
+                                            <div className="flex items-center justify-center gap-2">
+                                              <button
+                                                onClick={() => {
+                                                  // Store old file path when editing
+                                                  setEditingOnboardingItem({
+                                                    ...ob,
+                                                    oldFilePath: ob.filePath  // Track old file for deletion if replaced
+                                                  });
+                                                  setShowOnboardingModal(true);
+                                                }}
+                                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                title="Edit"
+                                              >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                </svg>
+                                              </button>
+                                              <button
+                                                onClick={() => handleDeleteOnboardingItem(ob)}
+                                                disabled={uploadingOnboarding}
+                                                className="p-1.5 text-red-600 hover:bg-red-50 rounded transition-colors disabled:opacity-50"
+                                                title="Delete"
+                                              >
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                              </button>
+                                            </div>
                                           </td>
                                         </tr>
                                       ))
@@ -2229,6 +2462,218 @@ function Employees() {
             >
               OK
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Onboarding Item Modal */}
+      {showOnboardingModal && editingOnboardingItem && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-800">
+                {editingOnboardingItem.dbId ? 'Edit' : 'Add'} Onboarding Record
+              </h3>
+            </div>
+
+            <div className="px-6 py-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Item Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editingOnboardingItem.item}
+                  onChange={(e) => {
+                    setEditingOnboardingItem({ ...editingOnboardingItem, item: e.target.value });
+                    if (onboardingErrors.item) setOnboardingErrors({ ...onboardingErrors, item: null });
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                    onboardingErrors.item ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  placeholder="e.g., ID Card, Uniform, Laptop"
+                />
+                {onboardingErrors.item && (
+                  <p className="text-red-500 text-xs mt-1">{onboardingErrors.item}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={editingOnboardingItem.description}
+                  onChange={(e) => {
+                    setEditingOnboardingItem({ ...editingOnboardingItem, description: e.target.value });
+                    if (onboardingErrors.description) setOnboardingErrors({ ...onboardingErrors, description: null });
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none ${
+                    onboardingErrors.description ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                  rows="3"
+                  placeholder="Enter description"
+                />
+                {onboardingErrors.description && (
+                  <p className="text-red-500 text-xs mt-1">{onboardingErrors.description}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date Issued <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={editingOnboardingItem.date || ""}
+                  onChange={(e) => {
+                    setEditingOnboardingItem({ ...editingOnboardingItem, date: e.target.value });
+                    if (onboardingErrors.date) setOnboardingErrors({ ...onboardingErrors, date: null });
+                  }}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                    onboardingErrors.date ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                />
+                {onboardingErrors.date && (
+                  <p className="text-red-500 text-xs mt-1">{onboardingErrors.date}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Attachment <span className="text-gray-500 font-normal">(Optional - PDF, JPG, PNG)</span>
+                </label>
+                {editingOnboardingItem.fileUrl ? (
+                  <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg border border-green-200">
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <a
+                      href={editingOnboardingItem.fileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-blue-600 hover:underline flex-1 truncate"
+                    >
+                      {editingOnboardingItem.file || 'View File'}
+                    </a>
+                    <button
+                      onClick={handleRemoveOnboardingFile}
+                      disabled={uploadingOnboarding}
+                      className="p-1 text-red-500 hover:text-red-700 hover:bg-red-100 rounded disabled:opacity-50"
+                      type="button"
+                      title="Remove file"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          await handleOnboardingFileUpload(editingOnboardingItem.id, file);
+                          if (onboardingErrors.file) setOnboardingErrors({ ...onboardingErrors, file: null });
+                          e.target.value = ''; // Reset input
+                        }
+                      }}
+                      className={`w-full border rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 ${
+                        onboardingErrors.file ? 'border-red-500' : 'border-gray-300'
+                      }`}
+                    />
+                    {onboardingErrors.file && (
+                      <p className="text-red-500 text-xs mt-1">{onboardingErrors.file}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end gap-3 rounded-b-xl">
+              <button
+                onClick={() => {
+                  setShowOnboardingModal(false);
+                  setEditingOnboardingItem(null);
+                  setOnboardingErrors({});
+                }}
+                disabled={uploadingOnboarding}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-200 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  await handleSaveOnboardingItem(editingOnboardingItem);
+                }}
+                disabled={uploadingOnboarding}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                {uploadingOnboarding ? 'Saving...' : 'Save Record'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Onboarding Success Modal */}
+      {showOnboardingSuccess && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm text-center shadow-xl">
+            <div className="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-800 mb-2">Success!</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              {isEditingOnboarding 
+                ? 'Onboarding record has been updated successfully.' 
+                : 'Onboarding record has been saved successfully.'}
+            </p>
+            <button
+              onClick={() => setShowOnboardingSuccess(false)}
+              className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+            <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-7 h-7 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-bold text-gray-800 mb-2 text-center">Delete Record?</h3>
+            <p className="text-sm text-gray-600 mb-6 text-center">Are you sure you want to delete this onboarding record? This action cannot be undone.</p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setItemToDelete(null);
+                }}
+                disabled={uploadingOnboarding}
+                className="flex-1 px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDeleteOnboarding}
+                disabled={uploadingOnboarding}
+                className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium disabled:opacity-50"
+              >
+                {uploadingOnboarding ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
           </div>
         </div>
       )}

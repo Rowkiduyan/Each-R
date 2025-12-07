@@ -966,124 +966,117 @@ function AgencyEndorsements() {
 
           {/* Main Content Area - Side by Side Layout */}
           <div className="flex gap-4 flex-1 overflow-hidden min-h-0">
-            {/* Interview Schedule - Left Side (20%) */}
-            <div className="w-[20%] bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-              {/* Calendar Header */}
-              <div className="p-4 border-b border-gray-100 bg-gradient-to-r from-[#800000] to-[#990000] flex-shrink-0">
-                <h2 className="text-lg font-bold text-white">Interview Schedule</h2>
-                <p className="text-sm text-white/80 mt-1">Upcoming interviews</p>
-              </div>
-
-              {/* Stats Overview */}
-              <div className="p-4 border-b border-gray-100 grid grid-cols-3 gap-2 flex-shrink-0">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-gray-800">{interviews.length}</div>
-                  <div className="text-xs text-gray-500">Total</div>
+            {/* Interview Schedule - Left Side (30%) */}
+            <div className="w-[30%]">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col p-4 h-[calc(100vh-200px)]">
+                <h2 className="text-base font-bold text-gray-800 mb-3">Interview Schedule</h2>
+                
+                {/* Stats Overview */}
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-lg p-2 text-white">
+                    <p className="text-xs opacity-90">Total</p>
+                    <p className="text-lg font-bold">{getActiveInterviews().length}</p>
+                  </div>
+                  <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-lg p-2 text-white">
+                    <p className="text-xs opacity-90">Online</p>
+                    <p className="text-lg font-bold">
+                      {getActiveInterviews().filter(i => i.interview_type === 'online').length}
+                    </p>
+                  </div>
+                  <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg p-2 text-white">
+                    <p className="text-xs opacity-90">Onsite</p>
+                    <p className="text-lg font-bold">
+                      {getActiveInterviews().filter(i => i.interview_type === 'onsite').length}
+                    </p>
+                  </div>
                 </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{interviews.filter(i => i.interview_type === 'online').length}</div>
-                  <div className="text-xs text-gray-500">Online</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{interviews.filter(i => i.interview_type === 'onsite').length}</div>
-                  <div className="text-xs text-gray-500">Onsite</div>
-                </div>
-              </div>
 
-              {/* Calendar Tabs */}
-              <div className="flex border-b border-gray-100 flex-shrink-0">
-                <button
-                  onClick={() => setCalendarActiveTab('today')}
-                  className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-                    calendarActiveTab === 'today'
-                      ? 'text-[#800000] border-b-2 border-[#800000] bg-red-50'
-                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                  }`}
-                >
-                  Today
-                </button>
-                <button
-                  onClick={() => setCalendarActiveTab('tomorrow')}
-                  className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-                    calendarActiveTab === 'tomorrow'
-                      ? 'text-[#800000] border-b-2 border-[#800000] bg-red-50'
-                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                  }`}
-                >
-                  Tomorrow
-                </button>
-                <button
-                  onClick={() => setCalendarActiveTab('week')}
-                  className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
-                    calendarActiveTab === 'week'
-                      ? 'text-[#800000] border-b-2 border-[#800000] bg-red-50'
-                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                  }`}
-                >
-                  This Week
-                </button>
-              </div>
+                {/* Tabs */}
+                <div className="flex gap-1 mb-3 bg-gray-100 p-1 rounded-lg">
+                  <button
+                    onClick={() => setCalendarActiveTab('today')}
+                    className={`flex-1 px-3 py-1.5 font-medium text-xs rounded-lg transition-all ${
+                      calendarActiveTab === 'today'
+                        ? 'bg-white text-[#800000] shadow-sm'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setCalendarActiveTab('tomorrow')}
+                    className={`flex-1 px-3 py-1.5 font-medium text-xs rounded-lg transition-all ${
+                      calendarActiveTab === 'tomorrow'
+                        ? 'bg-white text-[#800000] shadow-sm'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    Tomorrow
+                  </button>
+                  <button
+                    onClick={() => setCalendarActiveTab('week')}
+                    className={`flex-1 px-3 py-1.5 font-medium text-xs rounded-lg transition-all ${
+                      calendarActiveTab === 'week'
+                        ? 'bg-white text-[#800000] shadow-sm'
+                        : 'text-gray-600 hover:text-gray-800'
+                    }`}
+                  >
+                    Week
+                  </button>
+                </div>
 
-              {/* Interview List */}
-              <div className="flex-1 overflow-y-auto p-4">
-                <div className="mb-3">
-                  <h3 className="text-sm font-semibold text-gray-700">{getTabTitle()}</h3>
+                <div className="mb-2">
+                  <h3 className="text-sm font-bold text-gray-800">{getTabTitle()}</h3>
                   <p className="text-xs text-gray-500">{getTabDate()}</p>
                 </div>
-
-                {getActiveInterviews().length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <p className="text-sm">No interviews scheduled</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {getActiveInterviews().map((interview) => (
+                
+                <div className="flex-1 overflow-y-auto space-y-2">
+                  {getActiveInterviews().length === 0 ? (
+                    <div className="text-center py-12 bg-gray-50 rounded-lg">
+                      <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <p className="text-xs text-gray-500">No interviews scheduled</p>
+                    </div>
+                  ) : (
+                    getActiveInterviews().map((interview) => (
                       <div
                         key={interview.id}
-                        className="bg-gray-50 rounded-lg p-3 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer"
+                        className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-3 cursor-pointer hover:shadow-md transition-all border border-gray-200 hover:border-[#800000]"
+                        onClick={() => {
+                          // Find the employee in the endorsed list
+                          const employee = endorsedEmployees.find(e => e.id === interview.id);
+                          if (employee) {
+                            setSelectedEmployee(employee);
+                          }
+                        }}
                       >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex-1">
-                            <h4 className="text-sm font-semibold text-gray-800 truncate">{interview.applicant_name}</h4>
-                            <p className="text-xs text-gray-600 truncate">{interview.position}</p>
-                          </div>
-                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                        <div className="flex items-start justify-between mb-1">
+                          <div className="font-bold text-gray-900 text-sm">{formatTime(interview.time)}</div>
+                          <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
                             interview.interview_type === 'online'
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'bg-green-100 text-green-700'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'
                           }`}>
-                            {interview.interview_type === 'online' ? 'Online' : 'Onsite'}
+                            {interview.interview_type === 'online' ? 'ONLINE' : 'ONSITE'}
                           </span>
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
-                          <div className="flex items-center gap-1">
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>{formatTime(interview.time)}</span>
-                          </div>
-                          {interview.location && (
-                            <div className="flex items-center gap-1 flex-1 truncate">
-                              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                              <span className="truncate">{interview.location}</span>
-                            </div>
-                          )}
-                        </div>
+                        <h4 className="font-semibold text-gray-900 text-sm leading-tight mb-0.5">{interview.applicant_name}</h4>
+                        <p className="text-xs text-gray-600">{interview.position}</p>
+                        {calendarActiveTab === 'week' && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            {new Date(interview.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </p>
+                        )}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    ))
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* Endorsements Table - Right Side (80%) */}
-            <div className="w-[80%] bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
+            {/* Endorsements Table - Right Side (70%) */}
+            <div className="w-[70%] bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
               {/* Search and Filters */}
               <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
               <div className="flex flex-col sm:flex-row gap-3">
