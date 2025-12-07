@@ -26,10 +26,10 @@ function HrEval() {
       reason: "",
       dateEvaluated: "",
       totalScore: "",
-      remarks: "",
       file: null,
     },
   ]);
+  const [finalRemarks, setFinalRemarks] = useState("");
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -174,12 +174,18 @@ function HrEval() {
 
   // Handle file upload
   const handleUploadEvaluation = async () => {
+    // Validate final remarks
+    if (!finalRemarks) {
+      showAlert("Please provide final remarks for the evaluation.", "warning");
+      return;
+    }
+
     // Validate all records
     for (let i = 0; i < uploadRecords.length; i++) {
       const record = uploadRecords[i];
       // For probationary employees, auto-set reason to Regularization
       const reason = selectedEmployee?.employmentType === 'probationary' ? 'Regularization' : record.reason;
-      if (!record.file || !record.evaluatorName || !reason || !record.dateEvaluated || !record.totalScore || !record.remarks) {
+      if (!record.file || !record.evaluatorName || !reason || !record.dateEvaluated || !record.totalScore) {
         showAlert(`Please fill in all required fields for Record ${i + 1}.`, "warning");
         return;
       }
@@ -195,6 +201,9 @@ function HrEval() {
         try {
           // For probationary employees, use Regularization as reason
           const finalReason = selectedEmployee?.employmentType === 'probationary' ? 'Regularization' : record.reason;
+          
+          // Use the final remarks for all records
+          const recordRemarks = finalRemarks;
           
           // Calculate next_due based on reason and date_evaluated
           let nextDueDate = null;
@@ -229,7 +238,7 @@ function HrEval() {
                 reason: finalReason || null,
                 date_evaluated: record.dateEvaluated,
                 total_score: parseFloat(record.totalScore),
-                remarks: record.remarks,
+                remarks: recordRemarks,
                 file_path: filePath,
                 next_due: nextDueDate,
               },
@@ -251,8 +260,8 @@ function HrEval() {
       // Check if we need to change employee type from Probationary to Regular
       // This happens when a probationary employee gets a "Retained" remark
       if (selectedEmployee?.employmentType === 'probationary') {
-        // Check if any of the uploaded records have "Retained" remark
-        const hasRetainedRemark = uploadRecords.some(record => record.remarks === 'Retained');
+        // Check if the final remarks is "Retained"
+        const hasRetainedRemark = finalRemarks === 'Retained';
         
         if (hasRetainedRemark) {
           // Update employee status to Regular
@@ -336,10 +345,10 @@ function HrEval() {
           reason: "",
           dateEvaluated: "",
           totalScore: "",
-          remarks: "",
           file: null,
         },
       ]);
+      setFinalRemarks("");
       setShowUploadModal(false);
       
       if (failCount === 0) {
@@ -1383,6 +1392,7 @@ function HrEval() {
                       file: null,
                     },
                   ]);
+                  setFinalRemarks("");
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -1514,28 +1524,6 @@ function HrEval() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Remarks <span className="text-red-600">*</span>
-                        </label>
-                        <select
-                          value={record.remarks}
-                          onChange={(e) => {
-                            const newRecords = [...uploadRecords];
-                            newRecords[index].remarks = e.target.value;
-                            setUploadRecords(newRecords);
-                          }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
-                        >
-                          <option value="">Select remarks</option>
-                          <option value="Retained">Retained</option>
-                          <option value="Observe">Observe</option>
-                          <option value="Dismissed">Dismissed</option>
-                        </select>
-                      </div>
-                    </div>
-
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Evaluation File <span className="text-red-600">*</span>
@@ -1559,6 +1547,26 @@ function HrEval() {
                   </div>
                 </div>
               ))}
+
+              {/* Final Remarks Section */}
+              <div className="p-4 border-2 border-blue-200 rounded-lg bg-blue-50">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Final Remarks <span className="text-red-600">*</span>
+                </label>
+                <p className="text-xs text-gray-600 mb-2">
+                  This remark will apply to all evaluation records being uploaded.
+                </p>
+                <select
+                  value={finalRemarks}
+                  onChange={(e) => setFinalRemarks(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
+                >
+                  <option value="">Select final remarks</option>
+                  <option value="Retained">Retained</option>
+                  <option value="Observe">Observe</option>
+                  <option value="Dismissed">Dismissed</option>
+                </select>
+              </div>
 
               <button
                 onClick={() => {
@@ -1599,6 +1607,7 @@ function HrEval() {
                         file: null,
                       },
                     ]);
+                    setFinalRemarks("");
                   }}
                   className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >
