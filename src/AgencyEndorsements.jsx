@@ -1335,7 +1335,7 @@ function AgencyEndorsements() {
                                   type="button"
                                   className="text-xs text-blue-600 hover:underline cursor-pointer mt-1"
                                   onClick={() => {
-                                    setConfirmMessage(`Retract the endorsement for ${selectedEmployee.name}? HR will no longer see this under agency endorsements.`);
+                                    setConfirmMessage(`Retract the endorsement for ${selectedEmployee.name}? This will remove the application from HR's recruitment list.`);
                                     setConfirmCallback(() => async () => {
                                       if (!selectedEmployee.id) {
                                         setAlertMessage('Error: Application ID not found');
@@ -1344,9 +1344,11 @@ function AgencyEndorsements() {
                                       }
 
                                       try {
+                                        // Delete the application to remove it from HR's list
+                                        // The database will automatically set application_id to NULL in notifications
                                         const { error } = await supabase
                                           .from('applications')
-                                          .update({ endorsed: false })
+                                          .delete()
                                           .eq('id', selectedEmployee.id);
 
                                         if (error) {
@@ -1360,7 +1362,7 @@ function AgencyEndorsements() {
                                         await loadEndorsed();
                                         setSelectedEmployee(null);
 
-                                        setAlertMessage('Endorsement retracted successfully.');
+                                        setAlertMessage('Endorsement retracted successfully. The application has been removed from HR\'s recruitment list.');
                                         setShowSuccessAlert(true);
                                       } catch (err) {
                                         console.error('Error retracting endorsement:', err);
@@ -1401,29 +1403,29 @@ function AgencyEndorsements() {
                           {/* PROFILING TAB */}
                           {currentTab === 'profiling' && (
                             <div className="space-y-6">
-                              {/* Job Details */}
+                              {/* Employment Details */}
                               <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Job Details</h5>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Employment Details</h5>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
-                                    <span className="text-gray-500">Position Applying For:</span>
-                                    <span className="ml-2 text-gray-800">{job.title || selectedEmployee.position || "—"}</span>
+                                    <span className="text-gray-500">Department:</span>
+                                    <span className="ml-2 text-gray-800">{formData.department || "—"}</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Current Employment Status:</span>
+                                    <span className="text-gray-500">Position:</span>
+                                    <span className="ml-2 text-gray-800">{formData.position || job.title || selectedEmployee.position || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Depot Assignment:</span>
+                                    <span className="ml-2 text-gray-800">{formData.depot || job.depot || selectedEmployee.depot || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Date Available:</span>
+                                    <span className="ml-2 text-gray-800">{formData.dateAvailable ? formatDate(formData.dateAvailable) : "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Currently Employed:</span>
                                     <span className="ml-2 text-gray-800">{formData.employed || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Available Start Date:</span>
-                                    <span className="ml-2 text-gray-800">{formData.startDate ? formatDate(formData.startDate) : "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Depot:</span>
-                                    <span className="ml-2 text-gray-800">{job.depot || selectedEmployee.depot || "—"}</span>
-                                  </div>
-                                  <div className="col-span-2">
-                                    <span className="text-gray-500">Resume:</span>
-                                    <span className="ml-2 text-blue-600 underline cursor-pointer">{formData.resumeName || "Not uploaded"}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1433,36 +1435,24 @@ function AgencyEndorsements() {
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Personal Information</h5>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
-                                    <span className="text-gray-500">Full Name:</span>
-                                    <span className="ml-2 text-gray-800">
-                                      {formData.firstName || formData.fname || selectedEmployee.first || ""} {formData.middleName || formData.mname || selectedEmployee.middle || ""} {formData.lastName || formData.lname || selectedEmployee.last || ""}
-                                    </span>
+                                    <span className="text-gray-500">Last Name:</span>
+                                    <span className="ml-2 text-gray-800">{formData.lastName || formData.lname || selectedEmployee.last || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">First Name:</span>
+                                    <span className="ml-2 text-gray-800">{formData.firstName || formData.fname || selectedEmployee.first || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Middle Name:</span>
+                                    <span className="ml-2 text-gray-800">{formData.middleName || formData.mname || selectedEmployee.middle || "—"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Sex:</span>
                                     <span className="ml-2 text-gray-800">{formData.sex || "—"}</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Address:</span>
-                                    <span className="ml-2 text-gray-800">
-                                      {[formData.street, formData.barangay, formData.city, formData.zip].filter(Boolean).join(', ') || "—"}
-                                    </span>
-                                  </div>
-                                  <div>
                                     <span className="text-gray-500">Birthday:</span>
                                     <span className="ml-2 text-gray-800">{formData.birthday ? formatDate(formData.birthday) : "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Contact Number:</span>
-                                    <span className="ml-2 text-gray-800">{formData.contact || selectedEmployee.contact || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Age:</span>
-                                    <span className="ml-2 text-gray-800">{formData.age || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Email:</span>
-                                    <span className="ml-2 text-gray-800">{formData.email || selectedEmployee.email || "—"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Marital Status:</span>
@@ -1471,102 +1461,251 @@ function AgencyEndorsements() {
                                 </div>
                               </div>
 
-                              {/* Emergency Contact */}
+                              {/* Address Information */}
                               <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Emergency Contact</h5>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Address Information</h5>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
-                                    <span className="text-gray-500">Contact Person:</span>
-                                    <span className="ml-2 text-gray-800">{formData.emergencyContactName || "—"}</span>
+                                    <span className="text-gray-500">House/Unit No.:</span>
+                                    <span className="ml-2 text-gray-800">{formData.residenceNo || formData.unit_house_number || "—"}</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Relationship:</span>
-                                    <span className="ml-2 text-gray-800">{formData.emergencyContactRelation || "—"}</span>
+                                    <span className="text-gray-500">Street/Village:</span>
+                                    <span className="ml-2 text-gray-800">{formData.street || "—"}</span>
                                   </div>
+                                  <div>
+                                    <span className="text-gray-500">City/Municipality:</span>
+                                    <span className="ml-2 text-gray-800">{formData.city || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Zip Code:</span>
+                                    <span className="ml-2 text-gray-800">{formData.zip || "—"}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Contact Information */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Contact Information</h5>
+                                <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
                                     <span className="text-gray-500">Contact Number:</span>
-                                    <span className="ml-2 text-gray-800">{formData.emergencyContactNumber || "—"}</span>
+                                    <span className="ml-2 text-gray-800">{formData.contactNumber || formData.contact || selectedEmployee.contact || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Email Address:</span>
+                                    <span className="ml-2 text-gray-800">{formData.email || selectedEmployee.email || "—"}</span>
                                   </div>
                                 </div>
                               </div>
 
-                              {/* Education */}
+                              {/* Education & Skills */}
                               <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Education</h5>
-                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Education & Skills</h5>
+                                <div className="space-y-4">
+                                  {/* Highest Educational Attainment */}
                                   <div>
-                                    <span className="text-gray-500">Level:</span>
-                                    <span className="ml-2 text-gray-800">{formData.edu1Level || formData.educational_attainment || "—"}</span>
+                                    <div className="font-medium text-gray-700 mb-2">Highest Educational Attainment:</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                      <div>
+                                        <span className="text-gray-500">Educational Level:</span>
+                                        <span className="ml-2 text-gray-800">{formData.education || formData.educational_attainment || "—"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Year Graduated:</span>
+                                        <span className="ml-2 text-gray-800">{formData.tertiaryYear || formData.year_graduated || "—"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">School/Institution:</span>
+                                        <span className="ml-2 text-gray-800">{formData.tertiarySchool || formData.institution_name || "—"}</span>
+                                      </div>
+                                      <div className="md:col-span-3">
+                                        <span className="text-gray-500">Course/Program:</span>
+                                        <span className="ml-2 text-gray-800">{formData.tertiaryProgram || "—"}</span>
+                                      </div>
+                                    </div>
                                   </div>
+
+                                  {/* Skills */}
                                   <div>
-                                    <span className="text-gray-500">Institution:</span>
-                                    <span className="ml-2 text-gray-800">{formData.edu1Institution || formData.institution_name || "—"}</span>
+                                    <span className="text-gray-500">Skills:</span>
+                                    <div className="ml-2 mt-1">
+                                      {formData.skills ? (
+                                        typeof formData.skills === 'string' ? (
+                                          <span className="text-gray-800">{formData.skills}</span>
+                                        ) : Array.isArray(formData.skills) ? (
+                                          <div className="flex flex-wrap gap-2">
+                                            {formData.skills.map((skill, idx) => (
+                                              <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                                {skill}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <span className="text-gray-800">{String(formData.skills)}</span>
+                                        )
+                                      ) : (
+                                        <span className="text-gray-500">—</span>
+                                      )}
+                                    </div>
                                   </div>
-                                  <div>
-                                    <span className="text-gray-500">Year Graduated:</span>
-                                    <span className="ml-2 text-gray-800">{formData.edu1Year || formData.year_graduated || "—"}</span>
-                                  </div>
+
+                                  {/* Specialized Training */}
+                                  {(formData.specializedTraining || formData.specializedYear) && (
+                                    <div>
+                                      <div className="font-medium text-gray-700 mb-2">Specialized Training:</div>
+                                      <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                          <span className="text-gray-500">Training/Certification Name:</span>
+                                          <span className="ml-2 text-gray-800">{formData.specializedTraining || "—"}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Year Completed:</span>
+                                          <span className="ml-2 text-gray-800">{formData.specializedYear || "—"}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
-                              {/* Skills */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Skills</h5>
-                                <p className="text-sm text-gray-800">
-                                  {Array.isArray(formData.skills) ? formData.skills.join(', ') : formData.skills || formData.skills_text || "—"}
-                                </p>
-                              </div>
-
-                              {/* License */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
-                                  <div>
-                                    <span className="text-gray-500">License Type:</span>
-                                    <span className="ml-2 text-gray-800">{formData.licenseType || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Expiry Date:</span>
-                                    <span className="ml-2 text-gray-800">{formData.licenseExpiry || "—"}</span>
+                              {/* License Information (only for Delivery Drivers) */}
+                              {(formData.position === 'Delivery Drivers' || job.title === 'Delivery Drivers') && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
+                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                      <span className="text-gray-500">License Classification:</span>
+                                      <span className="ml-2 text-gray-800">{formData.licenseClassification || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">License Expiry Date:</span>
+                                      <span className="ml-2 text-gray-800">{formData.licenseExpiry ? formatDate(formData.licenseExpiry) : "—"}</span>
+                                    </div>
+                                    {formData.restrictionCodes && Array.isArray(formData.restrictionCodes) && formData.restrictionCodes.length > 0 && (
+                                      <div className="col-span-2">
+                                        <span className="text-gray-500">Restriction Codes:</span>
+                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                          {formData.restrictionCodes.map((code, idx) => (
+                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                              {code}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
-                              </div>
+                              )}
+
+                              {/* Driving History (only for Delivery Drivers) */}
+                              {(formData.position === 'Delivery Drivers' || job.title === 'Delivery Drivers') && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Driving History</h5>
+                                  <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                      <div>
+                                        <span className="text-gray-500">Years of Driving Experience:</span>
+                                        <span className="ml-2 text-gray-800">{formData.yearsDriving || "—"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Has Truck Troubleshooting Knowledge:</span>
+                                        <span className="ml-2 text-gray-800">{formData.truckKnowledge === 'yes' ? 'Yes' : formData.truckKnowledge === 'no' ? 'No' : "—"}</span>
+                                      </div>
+                                    </div>
+
+                                    {formData.troubleshootingTasks && Array.isArray(formData.troubleshootingTasks) && formData.troubleshootingTasks.length > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Troubleshooting Capabilities:</span>
+                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                          {formData.troubleshootingTasks.map((task, idx) => (
+                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                              {task}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {formData.vehicleTypes && Array.isArray(formData.vehicleTypes) && formData.vehicleTypes.length > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Vehicles Driven:</span>
+                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                          {formData.vehicleTypes.map((vehicle, idx) => (
+                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                              {vehicle}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {(formData.takingMedications !== undefined || formData.tookMedicalTest !== undefined) && (
+                                      <div>
+                                        <span className="text-gray-500">Medical Information:</span>
+                                        <div className="ml-2 mt-1 space-y-1 text-sm">
+                                          <div>
+                                            <span className="text-gray-600">Taking Medications:</span>
+                                            <span className="ml-2 text-gray-800">{formData.takingMedications ? 'Yes' : 'No'}</span>
+                                            {formData.takingMedications && formData.medicationReason && (
+                                              <span className="ml-2 text-gray-600">({formData.medicationReason})</span>
+                                            )}
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-600">Has Taken Medical Test:</span>
+                                            <span className="ml-2 text-gray-800">{formData.tookMedicalTest ? 'Yes' : 'No'}</span>
+                                            {formData.tookMedicalTest && formData.medicalTestDate && (
+                                              <span className="ml-2 text-gray-600">({formatDate(formData.medicalTestDate)})</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
 
                               {/* Work Experience */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
-                                {workExperiences.length > 0 ? (
+                              {workExperiences && workExperiences.length > 0 && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
                                   <div className="space-y-3">
                                     {workExperiences.map((exp, idx) => (
                                       <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
                                         <div className="font-medium text-gray-800">{exp.company || "—"}</div>
-                                        <div className="text-gray-600">{exp.role || "—"} • {exp.period || "—"}</div>
-                                        <div className="text-gray-500 text-xs mt-1">Reason for leaving: {exp.reason || "—"}</div>
+                                        <div className="text-gray-600">{exp.role || exp.title || "—"} • {exp.date || exp.period || "—"}</div>
+                                        {exp.reason && (
+                                          <div className="text-gray-500 text-xs mt-1">Reason for leaving: {exp.reason}</div>
+                                        )}
+                                        {exp.notes && (
+                                          <div className="text-gray-500 text-xs mt-1">{exp.notes}</div>
+                                        )}
+                                        {exp.tasks && (
+                                          <div className="text-gray-500 text-xs mt-1">Tasks: {exp.tasks}</div>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
-                                ) : (
-                                  <p className="text-sm text-gray-500">No work experience provided.</p>
-                                )}
-                              </div>
+                                </div>
+                              )}
 
                               {/* Character References */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
-                                {characterReferences.length > 0 ? (
+                              {characterReferences && characterReferences.length > 0 && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
                                   <div className="space-y-2">
                                     {characterReferences.map((ref, idx) => (
                                       <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
                                         <div className="font-medium text-gray-800">{ref.name || "—"}</div>
-                                        <div className="text-gray-600">{ref.contact || "—"}</div>
-                                        <div className="text-gray-500 text-xs">{ref.remarks || "—"}</div>
+                                        <div className="text-gray-600">{ref.contact || ref.contactNumber || "—"}</div>
+                                        {ref.remarks && (
+                                          <div className="text-gray-500 text-xs mt-1">{ref.remarks}</div>
+                                        )}
                                       </div>
                                     ))}
                                   </div>
-                                ) : (
-                                  <p className="text-sm text-gray-500">No character references provided.</p>
-                                )}
-                              </div>
+                                </div>
+                              )}
                             </div>
                           )}
 
@@ -1974,29 +2113,29 @@ function AgencyEndorsements() {
                           {/* ENDORSEMENT DETAILS TAB (for pending) */}
                           {currentTab === 'endorsement' && (
                             <div className="space-y-6">
-                              {/* Job Details */}
+                              {/* Employment Details */}
                               <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Job Details</h5>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Employment Details</h5>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
-                                    <span className="text-gray-500">Position Applying For:</span>
-                                    <span className="ml-2 text-gray-800">{job.title || selectedEmployee.position || "—"}</span>
+                                    <span className="text-gray-500">Department:</span>
+                                    <span className="ml-2 text-gray-800">{formData.department || "—"}</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Current Employment Status:</span>
+                                    <span className="text-gray-500">Position:</span>
+                                    <span className="ml-2 text-gray-800">{formData.position || job.title || selectedEmployee.position || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Depot Assignment:</span>
+                                    <span className="ml-2 text-gray-800">{formData.depot || job.depot || selectedEmployee.depot || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Date Available:</span>
+                                    <span className="ml-2 text-gray-800">{formData.dateAvailable ? formatDate(formData.dateAvailable) : "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Currently Employed:</span>
                                     <span className="ml-2 text-gray-800">{formData.employed || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Available Start Date:</span>
-                                    <span className="ml-2 text-gray-800">{formData.startDate ? formatDate(formData.startDate) : "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Depot:</span>
-                                    <span className="ml-2 text-gray-800">{job.depot || selectedEmployee.depot || "—"}</span>
-                                  </div>
-                                  <div className="col-span-2">
-                                    <span className="text-gray-500">Resume:</span>
-                                    <span className="ml-2 text-blue-600 underline cursor-pointer">{formData.resumeName || "Not uploaded"}</span>
                                   </div>
                                 </div>
                               </div>
@@ -2006,36 +2145,24 @@ function AgencyEndorsements() {
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Personal Information</h5>
                                 <div className="grid grid-cols-2 gap-4 text-sm">
                                   <div>
-                                    <span className="text-gray-500">Full Name:</span>
-                                    <span className="ml-2 text-gray-800">
-                                      {formData.firstName || formData.fname || selectedEmployee.first || ""} {formData.middleName || formData.mname || selectedEmployee.middle || ""} {formData.lastName || formData.lname || selectedEmployee.last || ""}
-                                    </span>
+                                    <span className="text-gray-500">Last Name:</span>
+                                    <span className="ml-2 text-gray-800">{formData.lastName || formData.lname || selectedEmployee.last || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">First Name:</span>
+                                    <span className="ml-2 text-gray-800">{formData.firstName || formData.fname || selectedEmployee.first || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Middle Name:</span>
+                                    <span className="ml-2 text-gray-800">{formData.middleName || formData.mname || selectedEmployee.middle || "—"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Sex:</span>
                                     <span className="ml-2 text-gray-800">{formData.sex || "—"}</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Address:</span>
-                                    <span className="ml-2 text-gray-800">
-                                      {[formData.street, formData.barangay, formData.city, formData.zip].filter(Boolean).join(', ') || "—"}
-                                    </span>
-                                  </div>
-                                  <div>
                                     <span className="text-gray-500">Birthday:</span>
                                     <span className="ml-2 text-gray-800">{formData.birthday ? formatDate(formData.birthday) : "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Contact Number:</span>
-                                    <span className="ml-2 text-gray-800">{formData.contact || selectedEmployee.contact || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Age:</span>
-                                    <span className="ml-2 text-gray-800">{formData.age || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Email:</span>
-                                    <span className="ml-2 text-gray-800">{formData.email || selectedEmployee.email || "—"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Marital Status:</span>
@@ -2043,6 +2170,252 @@ function AgencyEndorsements() {
                                   </div>
                                 </div>
                               </div>
+
+                              {/* Address Information */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Address Information</h5>
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div>
+                                    <span className="text-gray-500">House/Unit No.:</span>
+                                    <span className="ml-2 text-gray-800">{formData.residenceNo || formData.unit_house_number || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Street/Village:</span>
+                                    <span className="ml-2 text-gray-800">{formData.street || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">City/Municipality:</span>
+                                    <span className="ml-2 text-gray-800">{formData.city || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Zip Code:</span>
+                                    <span className="ml-2 text-gray-800">{formData.zip || "—"}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Contact Information */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Contact Information</h5>
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div>
+                                    <span className="text-gray-500">Contact Number:</span>
+                                    <span className="ml-2 text-gray-800">{formData.contactNumber || formData.contact || selectedEmployee.contact || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Email Address:</span>
+                                    <span className="ml-2 text-gray-800">{formData.email || selectedEmployee.email || "—"}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Education & Skills */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Education & Skills</h5>
+                                <div className="space-y-4">
+                                  {/* Highest Educational Attainment */}
+                                  <div>
+                                    <div className="font-medium text-gray-700 mb-2">Highest Educational Attainment:</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                                      <div>
+                                        <span className="text-gray-500">Educational Level:</span>
+                                        <span className="ml-2 text-gray-800">{formData.education || formData.educational_attainment || "—"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Year Graduated:</span>
+                                        <span className="ml-2 text-gray-800">{formData.tertiaryYear || formData.year_graduated || "—"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">School/Institution:</span>
+                                        <span className="ml-2 text-gray-800">{formData.tertiarySchool || formData.institution_name || "—"}</span>
+                                      </div>
+                                      <div className="md:col-span-3">
+                                        <span className="text-gray-500">Course/Program:</span>
+                                        <span className="ml-2 text-gray-800">{formData.tertiaryProgram || "—"}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Skills */}
+                                  <div>
+                                    <span className="text-gray-500">Skills:</span>
+                                    <div className="ml-2 mt-1">
+                                      {formData.skills ? (
+                                        typeof formData.skills === 'string' ? (
+                                          <span className="text-gray-800">{formData.skills}</span>
+                                        ) : Array.isArray(formData.skills) ? (
+                                          <div className="flex flex-wrap gap-2">
+                                            {formData.skills.map((skill, idx) => (
+                                              <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                                {skill}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <span className="text-gray-800">{String(formData.skills)}</span>
+                                        )
+                                      ) : (
+                                        <span className="text-gray-500">—</span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Specialized Training */}
+                                  {(formData.specializedTraining || formData.specializedYear) && (
+                                    <div>
+                                      <div className="font-medium text-gray-700 mb-2">Specialized Training:</div>
+                                      <div className="grid grid-cols-2 gap-4 text-sm">
+                                        <div>
+                                          <span className="text-gray-500">Training/Certification Name:</span>
+                                          <span className="ml-2 text-gray-800">{formData.specializedTraining || "—"}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Year Completed:</span>
+                                          <span className="ml-2 text-gray-800">{formData.specializedYear || "—"}</span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* License Information (only for Delivery Drivers) */}
+                              {(formData.position === 'Delivery Drivers' || job.title === 'Delivery Drivers') && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
+                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                    <div>
+                                      <span className="text-gray-500">License Classification:</span>
+                                      <span className="ml-2 text-gray-800">{formData.licenseClassification || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">License Expiry Date:</span>
+                                      <span className="ml-2 text-gray-800">{formData.licenseExpiry ? formatDate(formData.licenseExpiry) : "—"}</span>
+                                    </div>
+                                    {formData.restrictionCodes && Array.isArray(formData.restrictionCodes) && formData.restrictionCodes.length > 0 && (
+                                      <div className="col-span-2">
+                                        <span className="text-gray-500">Restriction Codes:</span>
+                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                          {formData.restrictionCodes.map((code, idx) => (
+                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                              {code}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Driving History (only for Delivery Drivers) */}
+                              {(formData.position === 'Delivery Drivers' || job.title === 'Delivery Drivers') && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Driving History</h5>
+                                  <div className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                      <div>
+                                        <span className="text-gray-500">Years of Driving Experience:</span>
+                                        <span className="ml-2 text-gray-800">{formData.yearsDriving || "—"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Has Truck Troubleshooting Knowledge:</span>
+                                        <span className="ml-2 text-gray-800">{formData.truckKnowledge === 'yes' ? 'Yes' : formData.truckKnowledge === 'no' ? 'No' : "—"}</span>
+                                      </div>
+                                    </div>
+
+                                    {formData.troubleshootingTasks && Array.isArray(formData.troubleshootingTasks) && formData.troubleshootingTasks.length > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Troubleshooting Capabilities:</span>
+                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                          {formData.troubleshootingTasks.map((task, idx) => (
+                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                              {task}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {formData.vehicleTypes && Array.isArray(formData.vehicleTypes) && formData.vehicleTypes.length > 0 && (
+                                      <div>
+                                        <span className="text-gray-500">Vehicles Driven:</span>
+                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                          {formData.vehicleTypes.map((vehicle, idx) => (
+                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                              {vehicle}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {(formData.takingMedications !== undefined || formData.tookMedicalTest !== undefined) && (
+                                      <div>
+                                        <span className="text-gray-500">Medical Information:</span>
+                                        <div className="ml-2 mt-1 space-y-1 text-sm">
+                                          <div>
+                                            <span className="text-gray-600">Taking Medications:</span>
+                                            <span className="ml-2 text-gray-800">{formData.takingMedications ? 'Yes' : 'No'}</span>
+                                            {formData.takingMedications && formData.medicationReason && (
+                                              <span className="ml-2 text-gray-600">({formData.medicationReason})</span>
+                                            )}
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-600">Has Taken Medical Test:</span>
+                                            <span className="ml-2 text-gray-800">{formData.tookMedicalTest ? 'Yes' : 'No'}</span>
+                                            {formData.tookMedicalTest && formData.medicalTestDate && (
+                                              <span className="ml-2 text-gray-600">({formatDate(formData.medicalTestDate)})</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Work Experience */}
+                              {workExperiences && workExperiences.length > 0 && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
+                                  <div className="space-y-3">
+                                    {workExperiences.map((exp, idx) => (
+                                      <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
+                                        <div className="font-medium text-gray-800">{exp.company || "—"}</div>
+                                        <div className="text-gray-600">{exp.role || exp.title || "—"} • {exp.date || exp.period || "—"}</div>
+                                        {exp.reason && (
+                                          <div className="text-gray-500 text-xs mt-1">Reason for leaving: {exp.reason}</div>
+                                        )}
+                                        {exp.notes && (
+                                          <div className="text-gray-500 text-xs mt-1">{exp.notes}</div>
+                                        )}
+                                        {exp.tasks && (
+                                          <div className="text-gray-500 text-xs mt-1">Tasks: {exp.tasks}</div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Character References */}
+                              {characterReferences && characterReferences.length > 0 && (
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
+                                  <div className="space-y-2">
+                                    {characterReferences.map((ref, idx) => (
+                                      <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
+                                        <div className="font-medium text-gray-800">{ref.name || "—"}</div>
+                                        <div className="text-gray-600">{ref.contact || ref.contactNumber || "—"}</div>
+                                        {ref.remarks && (
+                                          <div className="text-gray-500 text-xs mt-1">{ref.remarks}</div>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
 

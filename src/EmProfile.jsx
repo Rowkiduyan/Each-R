@@ -18,18 +18,23 @@ function EmpProfile() {
                     .from('employees')
                     .select('*')
                     .eq('email', userEmail)
-                    .single();
+                    .maybeSingle();
 
                 if (error) {
                     console.error('Error fetching employee profile:', error);
-                } else {
+                    setProfileData(null);
+                } else if (data) {
                     setProfileData({
                         ...data,
                         employment_status: data.employment_status || 'regular' // Temporary dummy data
                     });
+                } else {
+                    console.warn('No employee profile found for email:', userEmail);
+                    setProfileData(null);
                 }
             } catch (err) {
                 console.error('Error:', err);
+                setProfileData(null);
             } finally {
                 setLoading(false);
             }
@@ -127,14 +132,17 @@ function EmpProfile() {
                 </div>
 
                 {/* Personal Information */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-                    <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                        <h3 className="text-lg font-bold text-gray-800">Personal Information</h3>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+                    <div className="bg-gradient-to-r from-red-50 to-orange-50 px-6 py-4 border-b border-gray-200">
+                        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                            <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                            Personal Information
+                        </h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
                             <div className="flex flex-col">
                                 <span className="text-sm text-gray-500 mb-1">Full Name</span>
@@ -174,17 +182,21 @@ function EmpProfile() {
                             </div>
                         </div>
                     </div>
+                    </div>
                 </div>
 
                 {/* Employment Information */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-                    <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                        <h3 className="text-lg font-bold text-gray-800">Employment Information</h3>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-gray-200">
+                        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            Employment Information
+                        </h3>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="p-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
                             <div className="flex flex-col">
                                 <span className="text-sm text-gray-500 mb-1">Employment Start Date</span>
@@ -218,20 +230,24 @@ function EmpProfile() {
                                 )}
                             </div>
                         </div>
+                        </div>
                     </div>
                 </div>
 
                 {/* Educational Background */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-                    <div className="flex items-center gap-2 mb-4">
-                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
-                        </svg>
-                        <h3 className="text-lg font-bold text-gray-800">Educational Background</h3>
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+                    <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200">
+                        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
+                            </svg>
+                            Educational Background
+                        </h3>
                     </div>
-                    <div className="space-y-4">
+                    <div className="p-6">
+                        <div className="space-y-4">
                         {profileData.educational_attainment && (
                             <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                                 <div className="flex items-center gap-2 mb-2">
@@ -265,6 +281,7 @@ function EmpProfile() {
                                 <p className="text-sm text-gray-500">No educational information available</p>
                             </div>
                         )}
+                        </div>
                     </div>
                 </div>
             </div>

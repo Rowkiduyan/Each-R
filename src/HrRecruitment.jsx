@@ -461,6 +461,32 @@ function HrRecruitment() {
     }
   }, [location.state, navigate, location.pathname]);
 
+  // Ensure activeDetailTab is always an unlocked step
+  useEffect(() => {
+    if (!selectedApplicant) return;
+    
+    const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
+    const hasInterview = !!selectedApplicant?.interview_date;
+    const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
+                              selectedApplicant?.interview_confirmed === 'confirmed';
+    
+    // Check which steps are unlocked
+    const step2Unlocked = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
+    const step3Unlocked = hasInterview && interviewConfirmed;
+    
+    // If current tab is locked, switch to first unlocked step
+    if (activeDetailTab === "Assessment" && !step2Unlocked) {
+      setActiveDetailTab("Application");
+    } else if (activeDetailTab === "Agreements" && !step3Unlocked) {
+      // If Step 3 is locked, go to Step 2 if unlocked, otherwise Step 1
+      if (step2Unlocked) {
+        setActiveDetailTab("Assessment");
+      } else {
+        setActiveDetailTab("Application");
+      }
+    }
+  }, [selectedApplicant, activeDetailTab]);
+
   useEffect(() => {
     window.openHrActionModal = (applicant) => {
       setSelectedApplicationForInterview(applicant);
@@ -583,6 +609,7 @@ function HrRecruitment() {
           interview_time: row.interview_time || row.payload?.interview?.time || null,
           interview_location: row.interview_location || row.payload?.interview?.location || null,
           interviewer: row.interviewer || row.payload?.interview?.interviewer || null,
+          interview_type: row.interview_type || payloadObj.interview_type || payloadObj.interview?.type || 'onsite',
           // New fields - check both column and payload as fallback
           interview_confirmed: row.interview_confirmed ?? payloadObj.interview_confirmed ?? false,
           interview_confirmed_at: row.interview_confirmed_at ?? payloadObj.interview_confirmed_at ?? null,
@@ -2728,31 +2755,49 @@ function HrRecruitment() {
                       { key: "Agreements", label: "Agreements", description: "Step 3 · Final agreements & hire" },
                     ].map((step, index, arr) => {
                       const isActive = activeDetailTab === step.key;
-                      // Check applicant status to determine if step is completed
                       const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
                       const hasInterview = !!selectedApplicant?.interview_date;
+                      const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
+                                                selectedApplicant?.interview_confirmed === 'confirmed';
                       
-                      // Application step is completed if:
-                      // - We're on Assessment or Agreements tab AND
-                      // - (Status is screening+ OR an interview has been set)
-                      // Assessment step is completed if:
-                      // - An interview has been scheduled, OR
-                      // - We're on Agreements tab AND status is agreement/hired
-                      const isCompleted =
-                        (step.key === "Application" && 
-                         ["Assessment", "Agreements"].includes(activeDetailTab) &&
-                         (["screening", "requirements", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus) || hasInterview)) ||
-                        (step.key === "Assessment" && 
-                         (hasInterview || 
-                          (activeDetailTab === "Agreements" &&
-                           ["agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus))));
+                      // Determine step completion and unlock status
+                      let isCompleted = false;
+                      let isUnlocked = false;
+                      
+                      if (step.key === "Application") {
+                        // Step 1 is always unlocked (it's the first step)
+                        // Step 1 is completed when status is "screening" or higher
+                        isUnlocked = true;
+                        isCompleted = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
+                      } else if (step.key === "Assessment") {
+                        // Step 2 is unlocked when Step 1 is completed
+                        const step1Completed = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
+                        isUnlocked = step1Completed;
+                        // Step 2 is completed when interview is scheduled AND confirmed
+                        isCompleted = hasInterview && interviewConfirmed;
+                      } else if (step.key === "Agreements") {
+                        // Step 3 is unlocked when Step 2 is completed (interview scheduled and confirmed)
+                        isUnlocked = hasInterview && interviewConfirmed;
+                        // Step 3 is completed when status is agreement or hired
+                        isCompleted = ["agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
+                      }
+
+                      const isLocked = !isUnlocked;
 
                       return (
                         <button
                           key={step.key}
                           type="button"
-                          onClick={() => setActiveDetailTab(step.key)}
-                          className="flex-1 flex items-center text-left focus:outline-none"
+                          onClick={() => {
+                            if (!isLocked) {
+                              setActiveDetailTab(step.key);
+                            }
+                          }}
+                          disabled={isLocked}
+                          className={`flex-1 flex items-center text-left focus:outline-none ${
+                            isLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                          }`}
+                          title={isLocked ? `Complete previous steps to unlock ${step.label}` : ''}
                         >
                           <div className="flex items-center gap-3 w-full">
                             <div
@@ -2762,10 +2807,18 @@ function HrRecruitment() {
                                   ? "bg-red-600 text-white border-red-600 shadow"
                                   : isCompleted
                                   ? "bg-green-50 text-green-700 border-green-500"
+                                  : isLocked
+                                  ? "bg-gray-100 text-gray-400 border-gray-200"
                                   : "bg-gray-50 text-gray-500 border-gray-300",
                               ].join(" ")}
                             >
-                              {index + 1}
+                              {isLocked ? (
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                              ) : (
+                                index + 1
+                              )}
                             </div>
                             <div className="flex flex-col">
                               <span
@@ -2775,17 +2828,24 @@ function HrRecruitment() {
                                     ? "text-red-600"
                                     : isCompleted
                                     ? "text-green-700"
+                                    : isLocked
+                                    ? "text-gray-400"
                                     : "text-gray-600",
                                 ].join(" ")}
                               >
                                 {step.label}
+                                {isLocked && <span className="ml-1 text-[10px]">(Locked)</span>}
                               </span>
-                              <span className="text-[10px] text-gray-400">
+                              <span className={`text-[10px] ${isLocked ? 'text-gray-300' : 'text-gray-400'}`}>
                                 {step.description}
                               </span>
                             </div>
                             {index < arr.length - 1 && (
-                              <div className="flex-1 h-px mx-2 rounded-full bg-gradient-to-r from-gray-200 via-gray-200 to-gray-200" />
+                              <div className={`flex-1 h-px mx-2 rounded-full ${
+                                isLocked || (step.key === "Assessment" && !isUnlocked)
+                                  ? 'bg-gray-200'
+                                  : 'bg-gradient-to-r from-gray-200 via-gray-200 to-gray-200'
+                              }`} />
                             )}
                           </div>
                         </button>
@@ -2821,25 +2881,298 @@ function HrRecruitment() {
                     </div>
 
                     {/* Personal Information */}
-                    <div>
-                      <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
-                        Personal Information
-                      </h5>
-                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                        <div>
-                          <span className="text-gray-500">Full Name:</span>
-                          <span className="ml-2 text-gray-800">{selectedApplicant.name}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Email:</span>
-                          <span className="ml-2 text-gray-800">{selectedApplicant.email || "—"}</span>
-                        </div>
-                        <div>
-                          <span className="text-gray-500">Contact Number:</span>
-                          <span className="ml-2 text-gray-800">{selectedApplicant.phone || "—"}</span>
-                        </div>
-                      </div>
-                    </div>
+                    {(() => {
+                      // Get payload from raw data or directly from selectedApplicant
+                      const rawPayload = selectedApplicant.raw?.payload || selectedApplicant.payload || {};
+                      let payloadObj = {};
+                      try {
+                        payloadObj = typeof rawPayload === 'string' ? JSON.parse(rawPayload) : rawPayload;
+                      } catch (e) {
+                        console.error('Error parsing payload:', e);
+                        payloadObj = {};
+                      }
+                      const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
+                      
+                      // Calculate age from birthday
+                      const calculateAge = (birthday) => {
+                        if (!birthday) return '—';
+                        const today = new Date();
+                        const birthDate = new Date(birthday);
+                        let age = today.getFullYear() - birthDate.getFullYear();
+                        const monthDiff = today.getMonth() - birthDate.getMonth();
+                        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                          age--;
+                        }
+                        return age;
+                      };
+
+                      // Format date
+                      const formatDate = (dateStr) => {
+                        if (!dateStr) return '—';
+                        try {
+                          const date = new Date(dateStr);
+                          return date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+                        } catch {
+                          return dateStr;
+                        }
+                      };
+
+                      // Get resume URL
+                      const resumePath = form.resumePath || form.resumeName || null;
+                      const resumeUrl = resumePath ? supabase.storage.from('resume').getPublicUrl(resumePath)?.data?.publicUrl : null;
+
+                      return (
+                        <>
+                          {/* Personal Information */}
+                          <div className="mb-6">
+                            <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                              Personal Information
+                            </h5>
+                            <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                              <div>
+                                <span className="text-gray-500">First Name:</span>
+                                <span className="ml-2 text-gray-800">{form.firstName || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Middle Name:</span>
+                                <span className="ml-2 text-gray-800">{form.middleName || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Last Name:</span>
+                                <span className="ml-2 text-gray-800">{form.lastName || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Email:</span>
+                                <span className="ml-2 text-gray-800">{form.email || selectedApplicant.email || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Contact Number:</span>
+                                <span className="ml-2 text-gray-800">{form.contact || selectedApplicant.phone || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Birthday:</span>
+                                <span className="ml-2 text-gray-800">{formatDate(form.birthday)}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Age:</span>
+                                <span className="ml-2 text-gray-800">{form.birthday ? calculateAge(form.birthday) : "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Sex:</span>
+                                <span className="ml-2 text-gray-800">{form.sex || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Marital Status:</span>
+                                <span className="ml-2 text-gray-800">{form.maritalStatus || form.marital_status || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Available Start Date:</span>
+                                <span className="ml-2 text-gray-800">{formatDate(form.startDate)}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">How did you learn about our company?</span>
+                                <span className="ml-2 text-gray-800">{form.heardFrom || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Currently Employed?</span>
+                                <span className="ml-2 text-gray-800">{form.employed || "—"}</span>
+                              </div>
+                              <div className="md:col-span-2">
+                                <span className="text-gray-500">Resume:</span>
+                                {resumeUrl ? (
+                                  <a 
+                                    href={resumeUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="ml-2 text-blue-600 hover:underline"
+                                  >
+                                    {form.resumeName || 'View Resume'}
+                                  </a>
+                                ) : (
+                                  <span className="ml-2 text-gray-500">No resume uploaded</span>
+                                )}
+                              </div>
+                              <div className="md:col-span-2">
+                                <span className="text-gray-500">Government IDs:</span>
+                                <div className="ml-2 mt-1 space-y-1">
+                                  {form.hasSSS && <div className="text-gray-800">• SSS</div>}
+                                  {form.hasPhilHealth && <div className="text-gray-800">• PhilHealth</div>}
+                                  {form.hasTIN && <div className="text-gray-800">• TIN</div>}
+                                  {!form.hasSSS && !form.hasPhilHealth && !form.hasTIN && <span className="text-gray-500">None</span>}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Address Information */}
+                          <div className="mb-6">
+                            <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                              Address Information
+                            </h5>
+                            <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                              <div>
+                                <span className="text-gray-500">Unit/House Number:</span>
+                                <span className="ml-2 text-gray-800">{form.unit_house_number || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Street Name:</span>
+                                <span className="ml-2 text-gray-800">{form.street || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Barangay:</span>
+                                <span className="ml-2 text-gray-800">{form.barangay || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">City/Municipality:</span>
+                                <span className="ml-2 text-gray-800">{form.city || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">Province:</span>
+                                <span className="ml-2 text-gray-800">{form.province || "—"}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">ZIP Code:</span>
+                                <span className="ml-2 text-gray-800">{form.zip || "—"}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Education & Skills */}
+                          <div className="mb-6">
+                            <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                              Education & Skills
+                            </h5>
+                            <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
+                              {/* Education 1 */}
+                              {(form.edu1Level || form.edu1Institution || form.edu1Year) && (
+                                <div>
+                                  <div className="font-medium text-gray-700 mb-2">Education 1:</div>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-2">
+                                    <div>
+                                      <span className="text-gray-500">Level:</span>
+                                      <span className="ml-2 text-gray-800">{form.edu1Level || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Institution:</span>
+                                      <span className="ml-2 text-gray-800">{form.edu1Institution || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Year Finished:</span>
+                                      <span className="ml-2 text-gray-800">{form.edu1Year || "—"}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Education 2 */}
+                              {(form.edu2Level || form.edu2Institution || form.edu2Year) && (
+                                <div>
+                                  <div className="font-medium text-gray-700 mb-2">Education 2:</div>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-2">
+                                    <div>
+                                      <span className="text-gray-500">Level:</span>
+                                      <span className="ml-2 text-gray-800">{form.edu2Level || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Institution:</span>
+                                      <span className="ml-2 text-gray-800">{form.edu2Institution || "—"}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Year Finished:</span>
+                                      <span className="ml-2 text-gray-800">{form.edu2Year || "—"}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Skills */}
+                              <div>
+                                <span className="text-gray-500">Skills:</span>
+                                <div className="ml-2 mt-1">
+                                  {form.skills && Array.isArray(form.skills) ? (
+                                    <div className="flex flex-wrap gap-2">
+                                      {form.skills.map((skill, idx) => (
+                                        <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800">
+                                          {skill}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : form.skills_text ? (
+                                    <span className="text-gray-800">{form.skills_text}</span>
+                                  ) : (
+                                    <span className="text-gray-500">—</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Work Experience */}
+                          {payloadObj.workExperiences && Array.isArray(payloadObj.workExperiences) && payloadObj.workExperiences.length > 0 && (
+                            <div className="mb-6">
+                              <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                                Work Experience
+                              </h5>
+                              <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
+                                {payloadObj.workExperiences.map((exp, idx) => (
+                                  <div key={idx} className="border-b border-gray-200 pb-4 last:border-b-0 last:pb-0">
+                                    <div className="font-medium text-gray-700 mb-2">Experience #{idx + 1}:</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                      <div>
+                                        <span className="text-gray-500">Company:</span>
+                                        <span className="ml-2 text-gray-800">{exp.company || "—"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Role/Title:</span>
+                                        <span className="ml-2 text-gray-800">{exp.role || exp.title || "—"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Year Employed:</span>
+                                        <span className="ml-2 text-gray-800">{exp.year || exp.period || "—"}</span>
+                                      </div>
+                                      <div className="md:col-span-2">
+                                        <span className="text-gray-500">Reason for Leaving:</span>
+                                        <span className="ml-2 text-gray-800">{exp.reason || "—"}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Character References */}
+                          {payloadObj.characterReferences && Array.isArray(payloadObj.characterReferences) && payloadObj.characterReferences.length > 0 && (
+                            <div className="mb-6">
+                              <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                                Character References
+                              </h5>
+                              <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
+                                {payloadObj.characterReferences.map((ref, idx) => (
+                                  <div key={idx} className="border-b border-gray-200 pb-4 last:border-b-0 last:pb-0">
+                                    <div className="font-medium text-gray-700 mb-2">Reference #{idx + 1}:</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                      <div>
+                                        <span className="text-gray-500">Name:</span>
+                                        <span className="ml-2 text-gray-800">{ref.name || "—"}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Contact Number:</span>
+                                        <span className="ml-2 text-gray-800">{ref.contact || ref.contactNumber || "—"}</span>
+                                      </div>
+                                      <div className="md:col-span-2">
+                                        <span className="text-gray-500">Remarks:</span>
+                                        <span className="ml-2 text-gray-800">{ref.remarks || "—"}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
 
                     {/* Action: Approve to proceed to Assessment */}
                     <div className="pt-2 flex justify-end">
@@ -2888,56 +3221,83 @@ function HrRecruitment() {
                     </div>
 
                     {/* Interview Schedule */}
-                    {selectedApplicant.interview_date && (
-                      <div className="bg-gray-50 border rounded-md p-4 mb-4 relative">
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="text-sm text-gray-800 font-semibold">Interview Schedule</div>
-                          {(() => {
-                            // Check interview status using the new text-based system
-                            const interviewStatus = selectedApplicant.interview_confirmed || selectedApplicant.payload?.interview_confirmed || 'Idle';
-                            
-                            if (interviewStatus === 'Confirmed') {
-                              return (
-                                <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
-                                  Interview Confirmed
-                                </span>
-                              );
-                            } else if (interviewStatus === 'Rejected') {
-                              return (
-                                <span className="text-sm px-3 py-1 rounded bg-red-100 text-red-800 border border-red-300 font-medium">
-                                  Interview Rejected
-                                </span>
-                              );
-                            } else if (interviewStatus === 'Idle' && selectedApplicant.interview_date) {
-                              return (
-                                <span className="text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-medium">
-                                  Awaiting Response
-                                </span>
-                              );
-                            }
-                            return null;
-                          })()}
+                    {selectedApplicant.interview_date && (() => {
+                      // Extract interview_type from various sources
+                      let interviewType = 'onsite'; // default
+                      if (selectedApplicant.interview_type) {
+                        interviewType = selectedApplicant.interview_type;
+                      } else if (selectedApplicant.raw?.payload) {
+                        const payload = typeof selectedApplicant.raw.payload === 'string' 
+                          ? JSON.parse(selectedApplicant.raw.payload) 
+                          : selectedApplicant.raw.payload;
+                        interviewType = payload.interview_type || payload.interview?.type || 'onsite';
+                      } else if (selectedApplicant.payload) {
+                        const payload = typeof selectedApplicant.payload === 'string' 
+                          ? JSON.parse(selectedApplicant.payload) 
+                          : selectedApplicant.payload;
+                        interviewType = payload.interview_type || payload.interview?.type || 'onsite';
+                      }
+
+                      return (
+                        <div className="bg-gray-50 border rounded-md p-4 mb-4 relative">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="text-sm text-gray-800 font-semibold">Interview Schedule</div>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                                interviewType === 'online'
+                                  ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                  : 'bg-amber-100 text-amber-700 border border-amber-300'
+                              }`}>
+                                {interviewType === 'online' ? 'ONLINE' : 'ONSITE'}
+                              </span>
+                              {(() => {
+                                // Check interview status using the new text-based system
+                                const interviewStatus = selectedApplicant.interview_confirmed || selectedApplicant.payload?.interview_confirmed || 'Idle';
+                                
+                                if (interviewStatus === 'Confirmed') {
+                                  return (
+                                    <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
+                                      Interview Confirmed
+                                    </span>
+                                  );
+                                } else if (interviewStatus === 'Rejected') {
+                                  return (
+                                    <span className="text-sm px-3 py-1 rounded bg-red-100 text-red-800 border border-red-300 font-medium">
+                                      Interview Rejected
+                                    </span>
+                                  );
+                                } else if (interviewStatus === 'Idle' && selectedApplicant.interview_date) {
+                                  return (
+                                    <span className="text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-medium">
+                                      Awaiting Response
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+                          </div>
+                          <div className="text-sm text-gray-700 space-y-1">
+                            <div><span className="font-medium">Date:</span> {selectedApplicant.interview_date}</div>
+                            <div><span className="font-medium">Time:</span> {selectedApplicant.interview_time || "—"}</div>
+                            <div><span className="font-medium">{interviewType === 'online' ? 'Meeting Link' : 'Location'}:</span> {selectedApplicant.interview_location || "—"}</div>
+                            <div><span className="font-medium">Interviewer:</span> {selectedApplicant.interviewer || "—"}</div>
+                          </div>
+                          <div className="mt-3 flex items-center justify-end">
+                            <button
+                              type="button"
+                              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                              onClick={() => {
+                                setSelectedApplicationForInterview(selectedApplicant);
+                                openInterviewModal(selectedApplicant);
+                              }}
+                            >
+                              Schedule Another Interview
+                            </button>
+                          </div>
                         </div>
-                        <div className="text-sm text-gray-700 space-y-1">
-                          <div><span className="font-medium">Date:</span> {selectedApplicant.interview_date}</div>
-                          <div><span className="font-medium">Time:</span> {selectedApplicant.interview_time || "—"}</div>
-                          <div><span className="font-medium">Location:</span> {selectedApplicant.interview_location || "—"}</div>
-                          <div><span className="font-medium">Interviewer:</span> {selectedApplicant.interviewer || "—"}</div>
-                        </div>
-                        <div className="mt-3 flex items-center justify-end">
-                          <button
-                            type="button"
-                            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                            onClick={() => {
-                              setSelectedApplicationForInterview(selectedApplicant);
-                              openInterviewModal(selectedApplicant);
-                            }}
-                          >
-                            Schedule Another Interview
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Upload Interview Details Section */}
                     <div className="mt-4 border rounded-md p-4">

@@ -293,13 +293,20 @@ function HrCreateJob() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Job Title</label>
-              <input
+              <label className="block text-sm font-medium mb-1">Job Title <span className="text-red-600">*</span></label>
+              <select
                 className="w-full border rounded px-3 py-2"
                 value={form.title}
                 onChange={(e) => setField("title", e.target.value)}
-                placeholder="Delivery Driver"
-              />
+              >
+                <option value="">Select Job Title</option>
+                <option value="Delivery Drivers">Delivery Drivers</option>
+                <option value="Delivery Helpers">Delivery Helpers</option>
+                <option value="Transport Coordinators">Transport Coordinators</option>
+                <option value="Dispatchers">Dispatchers</option>
+                <option value="Customer Service Representative">Customer Service Representative</option>
+                <option value="POD (Proof of Delivery) Specialist">POD (Proof of Delivery) Specialist</option>
+              </select>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Depot</label>

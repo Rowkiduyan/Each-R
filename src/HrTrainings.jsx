@@ -990,17 +990,28 @@ function HrTrainings() {
     }
   };
 
-  // Format time to 12-hour with AM/PM
-  const formatTime = (timeStr) => {
-    if (!timeStr) return 'Not set';
+  // Format time to 12-hour with AM/PM (handles both time strings and timestamps)
+  const formatTime = (timeStrOrTimestamp) => {
+    if (!timeStrOrTimestamp) return 'Not set';
     try {
-      const [hours, minutes] = timeStr.split(':');
+      // Check if it's a timestamp (ISO string or Date object)
+      if (typeof timeStrOrTimestamp === 'string' && (timeStrOrTimestamp.includes('T') || timeStrOrTimestamp.includes('-'))) {
+        const date = new Date(timeStrOrTimestamp);
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        const ampm = hours >= 12 ? 'PM' : 'AM';
+        const displayHour = hours % 12 || 12;
+        const displayMinutes = minutes.toString().padStart(2, '0');
+        return `${displayHour}:${displayMinutes} ${ampm}`;
+      }
+      // Otherwise treat as time string (HH:MM format)
+      const [hours, minutes] = timeStrOrTimestamp.split(':');
       const hour = parseInt(hours, 10);
       const ampm = hour >= 12 ? 'PM' : 'AM';
       const hour12 = hour % 12 || 12;
       return `${hour12}:${minutes} ${ampm}`;
     } catch {
-      return timeStr;
+      return timeStrOrTimestamp;
     }
   };
 
@@ -1066,14 +1077,6 @@ function HrTrainings() {
     }
   };
 
-  // Stats
-  const stats = {
-    upcoming: upcoming.length,
-    pendingAttendance: pendingAttendance.length,
-    completed: completed.length,
-    totalAttendees: upcoming.reduce((sum, t) => sum + (t.attendees?.length || 0), 0)
-  };
-
   // Search-filtered lists
   const normalizeForSearch = (t) => {
     const haystack = [t.title, t.venue]
@@ -1106,69 +1109,6 @@ function HrTrainings() {
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
           <p className="text-gray-500 mt-1">Manage schedules and track employee participation</p>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Upcoming</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.upcoming}</p>
-              </div>
-              <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-xs text-blue-600 mt-3 font-medium">Scheduled sessions</p>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Pending Attendance</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.pendingAttendance}</p>
-              </div>
-              <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-xs text-orange-600 mt-3 font-medium">Awaiting confirmation</p>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Completed Schedules</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.completed}</p>
-              </div>
-              <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-xs text-green-600 mt-3 font-medium">Finished sessions</p>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Total Attendees</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.totalAttendees}</p>
-              </div>
-              <div className="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-xs text-purple-600 mt-3 font-medium">Employees scheduled</p>
-          </div>
         </div>
 
         {/* Main Content Card with Tabs (Upcoming / History) */}
@@ -1296,35 +1236,16 @@ function HrTrainings() {
                               </span>
                             )}
                           </div>
-                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                            <div className="flex items-center gap-1.5">
-                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                              <span className="font-medium">{formatDate(training.date)}</span>
-                            </div>
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                            <span className="font-medium">{formatDate(training.date)}</span>
                             <span className="text-gray-300">•</span>
-                            <div className="flex items-center gap-1.5">
-                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <span>{training.time || 'Time not set'}</span>
-                            </div>
+                            <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
                             <span className="text-gray-300">•</span>
-                            <div className="flex items-center gap-1.5">
-                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                              <span className="truncate">{training.venue || 'Venue not set'}</span>
-                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                              {training.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                            </span>
                             <span className="text-gray-300">•</span>
-                            <div className="flex items-center gap-1.5">
-                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                              </svg>
-                              <span className="font-semibold text-blue-600">{training.attendees?.length || 0} attendees</span>
-                            </div>
+                            <span className="font-semibold text-blue-600">{training.attendees?.length || 0} attendees</span>
                           </div>
                         </div>
                       </div>
@@ -1352,31 +1273,7 @@ function HrTrainings() {
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
-                              Edit
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openAttendance(training);
-                              }}
-                              className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50 hover:text-blue-600 flex items-center gap-2 transition-colors"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              Mark Attendance
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onDelete(training);
-                              }}
-                              className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                              </svg>
-                              Delete
+                              Edit Details
                             </button>
                           </div>
                         )}
@@ -1412,35 +1309,16 @@ function HrTrainings() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-orange-600 transition-colors">{training.title}</h3>
-                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                            <div className="flex items-center gap-1.5">
-                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                              <span className="font-medium">{formatDate(training.date)}</span>
-                            </div>
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                            <span className="font-medium">{formatDate(training.date)}</span>
                             <span className="text-gray-300">•</span>
-                            <div className="flex items-center gap-1.5">
-                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <span>{training.time || 'Time not set'}</span>
-                            </div>
+                            <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
                             <span className="text-gray-300">•</span>
-                            <div className="flex items-center gap-1.5">
-                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                              </svg>
-                              <span className="truncate">{training.venue || 'Venue not set'}</span>
-                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                              {training.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                            </span>
                             <span className="text-gray-300">•</span>
-                            <div className="flex items-center gap-1.5">
-                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                              </svg>
-                              <span className="font-semibold text-blue-600">{training.attendees?.length || 0} attendees</span>
-                            </div>
+                            <span className="font-semibold text-blue-600">{training.attendees?.length || 0} attendees</span>
                           </div>
                         </div>
                       </div>
@@ -1503,48 +1381,24 @@ function HrTrainings() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-green-600 transition-colors">{training.title}</h3>
-                        <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
-                          <div className="flex items-center gap-1.5">
-                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <span className="font-medium">{formatDate(training.date)}</span>
-                          </div>
+                        <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                          <span className="font-medium">{formatDate(training.date)}</span>
                           <span className="text-gray-300">•</span>
-                          <div className="flex items-center gap-1.5">
-                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>{training.time || 'Time not set'}</span>
-                          </div>
+                          <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
                           <span className="text-gray-300">•</span>
-                          <div className="flex items-center gap-1.5">
-                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                            <span className="truncate">{training.venue || 'Venue not set'}</span>
-                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
+                            {training.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                          </span>
                           {training.attendance && (
                             <>
                               <span className="text-gray-300">•</span>
-                              <div className="flex items-center gap-1.5">
-                                <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                <span className="font-semibold text-green-600">
-                                  {Object.values(training.attendance || {}).filter(Boolean).length} present
-                                </span>
-                              </div>
-                              <span className="text-gray-300">•</span>
-                              <div className="flex items-center gap-1.5">
-                                <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                                <span className="font-semibold text-red-600">
-                                  {Object.values(training.attendance || {}).filter((v) => v === false).length} absent
-                                </span>
-                              </div>
+                              <span className="text-green-600 font-semibold">
+                                {Object.values(training.attendance || {}).filter(Boolean).length} present
+                              </span>
+                              <span className="text-gray-300">/</span>
+                              <span className="text-red-600 font-semibold">
+                                {Object.values(training.attendance || {}).filter((v) => v === false).length} absent
+                              </span>
                             </>
                           )}
                         </div>
@@ -1564,18 +1418,6 @@ function HrTrainings() {
                       </button>
                       {actionMenuOpen === training.id && (
                         <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openAttendance(training);
-                            }}
-                            className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 hover:text-green-600 flex items-center gap-2 transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            Edit Attendance
-                          </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1716,7 +1558,7 @@ function HrTrainings() {
                           </svg>
                           <div>
                             <p className="text-xs font-medium text-gray-500">Start</p>
-                            <p className="text-sm font-bold text-gray-900">{formatTime(selectedTraining.time)}</p>
+                            <p className="text-sm font-bold text-gray-900">{formatTime(selectedTraining.start_at)}</p>
                           </div>
                         </div>
                         <div className="flex items-start gap-2">

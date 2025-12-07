@@ -3,13 +3,17 @@ import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
+import SkillsInput from './components/SkillsInput';
 
 function AgencyEndorse() {
   const [step, setStep] = useState(1);
-  const totalSteps = 4;
   const location = useLocation();
   const navigate = useNavigate();
   const job = location.state?.job;
+  
+  // Check if job title is "Delivery Drivers" to show license and driving fields
+  const isDeliveryDriverJob = job?.title === 'Delivery Drivers';
+  const totalSteps = isDeliveryDriverJob ? 4 : 2; // 4 steps if driver, 2 steps if not
 
   // Header state
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
@@ -125,10 +129,59 @@ function AgencyEndorse() {
   const [isDraggingCsv, setIsDraggingCsv] = useState(false);
   const csvInputRef = useRef(null);
 
+  // Ensure step doesn't exceed totalSteps when job changes
+  useEffect(() => {
+    if (step > totalSteps) {
+      setStep(totalSteps);
+    }
+  }, [totalSteps, step]);
+
+  // Auto-fill depot and position from job when available
+  useEffect(() => {
+    if (job && job.depot && job.title) {
+      // Auto-fill for all existing applicants
+      setFormValues((prev) => {
+        const updated = { ...prev };
+        let hasChanges = false;
+        
+        Object.keys(updated).forEach((appId) => {
+          const currentValues = updated[appId] || makeEmptyValues();
+          const newValues = { ...currentValues };
+          let applicantHasChanges = false;
+          
+          // Only auto-fill if fields are empty (don't overwrite user input)
+          if (!currentValues.depot && job.depot) {
+            newValues.depot = job.depot;
+            applicantHasChanges = true;
+          }
+          if (!currentValues.position && job.title) {
+            newValues.position = job.title;
+            applicantHasChanges = true;
+          }
+          
+          if (applicantHasChanges) {
+            updated[appId] = newValues;
+            hasChanges = true;
+          }
+        });
+        
+        return hasChanges ? updated : prev;
+      });
+    }
+  }, [job?.depot, job?.title]);
+
   const addApplicant = () => {
     const newId = applicants.length + 1;
     setApplicants((prev) => [...prev, { id: newId, name: `Applicant ${newId}` }]);
-    setFormValues((prev) => ({ ...prev, [newId]: makeEmptyValues() }));
+    const newValues = makeEmptyValues();
+    // Auto-fill depot and position from job if available
+    if (job?.depot) {
+      newValues.depot = job.depot;
+    }
+    if (job?.title) {
+      newValues.position = job.title;
+    }
+    setFormValues((prev) => ({ ...prev, [newId]: newValues }));
     setActiveApplicant(newId);
   };
 
@@ -335,12 +388,17 @@ function AgencyEndorse() {
   const nextStep = () => setStep((s) => Math.min(s + 1, totalSteps));
   const prevStep = () => setStep((s) => Math.max(s - 1, 1));
 
-  const stepLabels = [
-    { num: 1, label: 'Personal Info' },
-    { num: 2, label: 'Education & Skills' },
-    { num: 3, label: 'License Info' },
-    { num: 4, label: 'Driving History' },
-  ];
+  const stepLabels = isDeliveryDriverJob 
+    ? [
+        { num: 1, label: 'Personal Info' },
+        { num: 2, label: 'Education & Skills' },
+        { num: 3, label: 'License Info' },
+        { num: 4, label: 'Driving History' },
+      ]
+    : [
+        { num: 1, label: 'Personal Info' },
+        { num: 2, label: 'Education & Skills' },
+      ];
 
   // --- Endorse implementation (no blocking auth alert) ---
   // Endorse handler (AgencyEndorse.jsx)
@@ -403,48 +461,139 @@ function AgencyEndorse() {
 
       // ---------- PRE-CHECK: avoid duplicates ----------
       // Check applications for same job + applicant email
-      const { data: existingApps, error: errAppCheck } = await supabase
-        .from("applications")
-        .select("id, created_at, endorsed")
-        .eq("job_id", jobIdToSend)
-        .or(`payload->applicant->>email.eq.${email}, payload->form->applicant->>email.eq.${email}, payload->>email.eq.${email}`)
-        .limit(1);
+      let existingApp = null;
+      if (jobIdToSend && email) {
+        try {
+          // Get all applications for this job and check payload manually
+          const { data: allApps, error: errAppCheck } = await supabase
+            .from("applications")
+            .select("id, created_at, endorsed, status, payload")
+            .eq("job_id", jobIdToSend);
 
-      if (errAppCheck) {
-        console.warn("applications pre-check warning:", errAppCheck);
-        // continue anyway
-      } else if (existingApps && existingApps.length > 0) {
-        setErrorMessage("This application already exists (someone else endorsed it). Endorsement skipped.");
-        setShowErrorAlert(true);
-        return;
+          if (errAppCheck) {
+            console.warn("applications pre-check warning:", errAppCheck);
+            // continue anyway
+          } else if (allApps && allApps.length > 0) {
+            // Check payload for matching email
+            for (const app of allApps) {
+              let payloadObj = app.payload;
+              if (typeof payloadObj === 'string') {
+                try { payloadObj = JSON.parse(payloadObj); } catch { continue; }
+              }
+              const appEmail = payloadObj?.applicant?.email || payloadObj?.form?.email || '';
+              if (appEmail && appEmail.toLowerCase().trim() === email.toLowerCase().trim()) {
+                existingApp = app;
+                break;
+              }
+            }
+
+            if (existingApp) {
+              // If already endorsed, show success message
+              if (existingApp.endorsed) {
+                setSuccessMessage("This applicant has already been endorsed for this position. ✅");
+                setSuccessNavigatePath("/agency/endorsements");
+                setShowSuccessAlert(true);
+                return;
+              }
+              // If exists but not endorsed, we can still try to update it
+            }
+          }
+        } catch (e) {
+          console.warn("Error checking for existing applications:", e);
+          // Continue with insert
+        }
       }
 
-      // ---------- INSERT: directly into applications table with endorsed=true ----------
-      // For agency endorsements, we no longer tie applications.user_id to the agency auth user.
-      // Insert with NULL user_id to avoid foreign key issues; HR/Employees modules will use payload/meta.
-
-      const { error: errAppInsert } = await supabase
-        .from("applications")
-        .insert([
-          {
-            job_id: jobIdToSend,
+      // ---------- INSERT or UPDATE: directly into applications table with endorsed=true ----------
+      let insertSuccess = false;
+      
+      if (existingApp && existingApp.id) {
+        // Update existing application to mark as endorsed
+        const { error: errAppUpdate } = await supabase
+          .from("applications")
+          .update({
             payload,
+            endorsed: true,
             status: "submitted",
-            endorsed: true, // Mark as endorsed by agency
-          },
-        ]);
+          })
+          .eq("id", existingApp.id);
 
-      if (errAppInsert) {
-        console.error("Failed to create application:", errAppInsert);
-        setErrorMessage("Failed to create endorsement. See console for details.");
-        setShowErrorAlert(true);
-        return;
+        if (errAppUpdate) {
+          console.error("Failed to update application:", errAppUpdate);
+          // If update fails, try insert instead
+        } else {
+          insertSuccess = true;
+        }
       }
 
-      // Success: application created directly with endorsed=true
-      setSuccessMessage("Successfully endorsed. ✅");
-      setSuccessNavigatePath("/agency/endorsements");
-      setShowSuccessAlert(true);
+      // If no existing app or update failed, try insert
+      if (!insertSuccess) {
+        const { data: insertedData, error: errAppInsert } = await supabase
+          .from("applications")
+          .insert([
+            {
+              job_id: jobIdToSend,
+              payload,
+              status: "submitted",
+              endorsed: true, // Mark as endorsed by agency
+            },
+          ])
+          .select("id");
+
+        if (errAppInsert) {
+          // Check if it's a 409 conflict but the record was actually created
+          if (errAppInsert.code === '23505' || errAppInsert.code === 'PGRST116' || errAppInsert.status === 409 || errAppInsert.code === 'PGRST204') {
+            // Try to verify if the application was actually created by checking all apps for this job
+            try {
+              const { data: allApps } = await supabase
+                .from("applications")
+                .select("id, endorsed, payload")
+                .eq("job_id", jobIdToSend);
+
+              if (allApps && allApps.length > 0) {
+                // Check payload for matching email and endorsed status
+                for (const app of allApps) {
+                  let payloadObj = app.payload;
+                  if (typeof payloadObj === 'string') {
+                    try { payloadObj = JSON.parse(payloadObj); } catch { continue; }
+                  }
+                  const appEmail = payloadObj?.applicant?.email || payloadObj?.form?.email || '';
+                  if (appEmail && appEmail.toLowerCase().trim() === email.toLowerCase().trim() && app.endorsed) {
+                    // Application exists and is endorsed - treat as success
+                    insertSuccess = true;
+                    break;
+                  }
+                }
+              }
+
+              if (!insertSuccess) {
+                console.error("Failed to create application (409 conflict, but not found):", errAppInsert);
+                setErrorMessage("Failed to create endorsement. The application may already exist. Please check the endorsements list.");
+                setShowErrorAlert(true);
+                return;
+              }
+            } catch (verifyErr) {
+              console.error("Error verifying application after 409:", verifyErr);
+              // If verification fails, still treat as potential success since 409 might mean it was created
+              insertSuccess = true;
+            }
+          } else {
+            console.error("Failed to create application:", errAppInsert);
+            setErrorMessage(`Failed to create endorsement: ${errAppInsert.message || 'Unknown error'}. See console for details.`);
+            setShowErrorAlert(true);
+            return;
+          }
+        } else {
+          insertSuccess = true;
+        }
+      }
+
+      // Success: application created or updated with endorsed=true
+      if (insertSuccess) {
+        setSuccessMessage("Successfully endorsed. ✅");
+        setSuccessNavigatePath("/agency/endorsements");
+        setShowSuccessAlert(true);
+      }
     } catch (err) {
       console.error("unexpected endorse error:", err);
       setErrorMessage("An unexpected error occurred. Check console.");
@@ -689,22 +838,46 @@ function AgencyEndorse() {
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Position <span className="text-[#800000]">*</span></label>
                       <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.position} onChange={(e) => handleChange(activeApplicant, "position", e.target.value)}>
                 <option value="">Select Position</option>
-                <option>Delivery Driver</option>
-                <option>Delivery Helper</option>
-                <option>Driver</option>
-                <option>Security Personnel</option>
+                <option>Delivery Drivers</option>
+                <option>Delivery Helpers</option>
+                <option>Transport Coordinators</option>
+                <option>Dispatchers</option>
+                <option>Customer Service Representative</option>
+                <option>POD (Proof of Delivery) Specialist</option>
               </select>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot Assignment <span className="text-[#800000]">*</span></label>
                       <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.depot} onChange={(e) => handleChange(activeApplicant, "depot", e.target.value)}>
                         <option value="">Select Depot</option>
-                <option>Pasig</option>
-                <option>Cebu</option>
-                <option>Butuan</option>
-                <option>Manila</option>
-                <option>Quezon City</option>
-                <option>Taguig</option>
+                        <option>Batangas</option>
+                        <option>Bulacan</option>
+                        <option>Butuan</option>
+                        <option>Cagayan</option>
+                        <option>Calamba</option>
+                        <option>Calbayog</option>
+                        <option>Cebu</option>
+                        <option>Davao</option>
+                        <option>Dipolog</option>
+                        <option>Iloilo</option>
+                        <option>Isabela</option>
+                        <option>Kalibo</option>
+                        <option>Kidapawan</option>
+                        <option>La Union</option>
+                        <option>Liip</option>
+                        <option>Manggahan</option>
+                        <option>Mindoro</option>
+                        <option>Naga</option>
+                        <option>Ozamis</option>
+                        <option>Palawan</option>
+                        <option>Pampanga</option>
+                        <option>Pasig</option>
+                        <option>Sucat</option>
+                        <option>Tacloban</option>
+                        <option>Tarlac</option>
+                        <option>Taytay</option>
+                        <option>Tuguegarao</option>
+                        <option>Vigan</option>
               </select>
             </div>
             <div>
@@ -834,51 +1007,112 @@ function AgencyEndorse() {
                   <p className="text-xs text-gray-500 mt-0.5">Provide the highest level of education completed</p>
                 </div>
                 <div className="p-6 space-y-4">
+                  <div className="mb-2">
+                    <p className="text-sm text-gray-600 italic">If not applicable, select N/A</p>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Educational Level <span className="text-[#800000]">*</span></label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.education || ""} onChange={(e) => handleChange(activeApplicant, "education", e.target.value)}>
+                      <select 
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" 
+                        value={fv.education || ""} 
+                        onChange={(e) => {
+                          const selectedValue = e.target.value;
+                          handleChange(activeApplicant, "education", selectedValue);
+                          // Clear related fields when N/A is selected
+                          if (selectedValue === "N/A") {
+                            handleChange(activeApplicant, "tertiaryYear", "");
+                            handleChange(activeApplicant, "tertiarySchool", "");
+                            handleChange(activeApplicant, "tertiaryProgram", "");
+                          }
+                        }}
+                      >
                         <option value="">Select highest education</option>
+                        <option value="N/A">N/A</option>
                         <option value="Elementary">Elementary Graduate</option>
-                <option value="High School">High School Graduate</option>
+                        <option value="High School">High School Graduate</option>
                         <option value="Vocational">Vocational/Technical Course</option>
-                <option value="College">College Graduate</option>
+                        <option value="College">College Graduate</option>
                         <option value="Post Graduate">Post Graduate (Masters/Doctorate)</option>
-              </select>
-            </div>
+                      </select>
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Graduated</label>
-                      <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 2020" value={fv.tertiaryYear || ""} onChange={(e) => handleChange(activeApplicant, "tertiaryYear", e.target.value)} />
-          </div>
-            </div>
+                      <input 
+                        type="number" 
+                        className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${
+                          fv.education === "N/A" ? "bg-gray-100 cursor-not-allowed" : ""
+                        }`}
+                        placeholder="e.g. 2020" 
+                        value={fv.tertiaryYear || ""} 
+                        onChange={(e) => handleChange(activeApplicant, "tertiaryYear", e.target.value)}
+                        disabled={fv.education === "N/A"}
+                      />
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">School/Institution Name</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter school name" value={fv.tertiarySchool || ""} onChange={(e) => handleChange(activeApplicant, "tertiarySchool", e.target.value)} />
+                      <input 
+                        className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${
+                          fv.education === "N/A" ? "bg-gray-100 cursor-not-allowed" : ""
+                        }`}
+                        placeholder="Enter school name" 
+                        value={fv.tertiarySchool || ""} 
+                        onChange={(e) => handleChange(activeApplicant, "tertiarySchool", e.target.value)}
+                        disabled={fv.education === "N/A"}
+                      />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Course/Program (if applicable)</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. BS Mechanical Engineering" value={fv.tertiaryProgram || ""} onChange={(e) => handleChange(activeApplicant, "tertiaryProgram", e.target.value)} />
+                      <input 
+                        className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${
+                          fv.education === "N/A" ? "bg-gray-100 cursor-not-allowed" : ""
+                        }`}
+                        placeholder="e.g. BS Mechanical Engineering" 
+                        value={fv.tertiaryProgram || ""} 
+                        onChange={(e) => handleChange(activeApplicant, "tertiaryProgram", e.target.value)}
+                        disabled={fv.education === "N/A"}
+                      />
                     </div>
                   </div>
                 </div>
             </div>
 
               {/* Skills & Proficiency */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100" style={{ overflowX: 'hidden', overflowY: 'visible' }}>
                 <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
                   <h2 className="text-base font-semibold text-gray-800">Skills & Proficiency</h2>
                 </div>
-                <div className="p-6">
+                <div className="p-6" style={{ overflow: 'visible' }}>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Areas of Expertise</label>
-                  <textarea 
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] resize-none" 
-                    rows={4} 
-                    placeholder="List the employee's skills and areas of proficiency (e.g., defensive driving, vehicle maintenance, customer service, route planning...)"
-                    value={fv.skills || ""} 
-                    onChange={(e) => handleChange(activeApplicant, "skills", e.target.value)}
-                  />
-                  <p className="text-xs text-gray-500 mt-2">Separate each skill with a comma</p>
+                  {(() => {
+                    // Helper function to normalize skills (string or array to array)
+                    const normalizeSkills = (skills) => {
+                      if (Array.isArray(skills)) {
+                        return skills.filter(s => s && s.trim() !== '');
+                      }
+                      if (typeof skills === 'string' && skills.trim() !== '') {
+                        return skills.split(',').map(s => s.trim()).filter(Boolean);
+                      }
+                      return [];
+                    };
+
+                    // Convert skills string to array for SkillsInput
+                    const skillsArray = normalizeSkills(fv.skills);
+
+                    return (
+                      <div className="relative" style={{ zIndex: 50 }}>
+                        <SkillsInput
+                          skills={skillsArray}
+                          onChange={(skillsArray) => {
+                            // Convert array back to comma-separated string
+                            handleChange(activeApplicant, "skills", skillsArray.join(', '));
+                          }}
+                        />
+                      </div>
+                    );
+                  })()}
                 </div>
             </div>
 
@@ -964,7 +1198,7 @@ function AgencyEndorse() {
       )}
 
           {/* Step 3: License Information */}
-      {step === 3 && (
+      {step === 3 && isDeliveryDriverJob && (
         <div className="space-y-6">
               {/* License Details */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1102,7 +1336,7 @@ function AgencyEndorse() {
       )}
 
           {/* Step 4: Driving History */}
-      {step === 4 && (
+      {step === 4 && isDeliveryDriverJob && (
         <div className="space-y-6">
               {/* Driving Experience */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

@@ -20,7 +20,7 @@ function AgencyTrainings() {
   // Data state
   const [loading, setLoading] = useState(true);
   const [upcomingTrainings, setUpcomingTrainings] = useState([]);
-  const [orientationSchedule, setOrientationSchedule] = useState([]);
+  const [pendingAttendance, setPendingAttendance] = useState([]);
   const [trainingHistory, setTrainingHistory] = useState([]);
   const [agencyUserId, setAgencyUserId] = useState(null);
   
@@ -28,6 +28,10 @@ function AgencyTrainings() {
   const [showDetails, setShowDetails] = useState(false);
   const [selectedTraining, setSelectedTraining] = useState(null);
   const [attendeeSearchQuery, setAttendeeSearchQuery] = useState("");
+  
+  // Action menu state
+  const [actionMenuOpen, setActionMenuOpen] = useState(null);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Fetch agency user ID and trainings
   useEffect(() => {
@@ -116,11 +120,10 @@ function AgencyTrainings() {
           }
         });
 
-        // Fetch all trainings
+        // Fetch all trainings (not filtered by created_by - agencies should see trainings where their employees are attendees)
         const { data: allTrainings, error: trainingError } = await supabase
           .from('trainings')
           .select('*')
-          .eq('created_by', user.id)
           .order('start_at', { ascending: true });
 
         if (trainingError) {
@@ -154,6 +157,7 @@ function AgencyTrainings() {
 
         const now = new Date();
         const upcoming = [];
+        const pending = [];
         const history = [];
 
         // Debug logging
@@ -277,7 +281,9 @@ function AgencyTrainings() {
             trainer: trainerName,
             attendees: formattedAttendees,
             start_at: training.start_at,
-            end_at: training.end_at
+            end_at: training.end_at,
+            schedule_type: training.schedule_type || 'onsite',
+            is_online: training.schedule_type === 'online'
           };
 
           if (start && trainingEnd) {
@@ -302,6 +308,9 @@ function AgencyTrainings() {
                   completedDate: start.toISOString().slice(0, 10),
                   attendees: historyAttendees
                 });
+              } else {
+                // Past training without attendance → Pending Attendance
+                pending.push(formattedTraining);
               }
             } else {
               // Upcoming training
@@ -314,15 +323,15 @@ function AgencyTrainings() {
         });
 
         setUpcomingTrainings(upcoming);
+        setPendingAttendance(pending);
         setTrainingHistory(history);
-        // Orientation schedule can be filtered similarly if needed
-        setOrientationSchedule([]);
         
         // Final debug summary
         console.log('=== Matching Summary ===');
         console.log('Upcoming trainings matched:', upcoming.length);
+        console.log('Pending attendance trainings matched:', pending.length);
         console.log('History trainings matched:', history.length);
-        console.log('Total matched:', upcoming.length + history.length);
+        console.log('Total matched:', upcoming.length + pending.length + history.length);
         console.log('========================');
       } catch (error) {
         console.error('Error fetching trainings:', error);
@@ -333,185 +342,6 @@ function AgencyTrainings() {
 
     fetchData();
   }, []);
-
-  // Mock data - Training-centric (one training can have multiple attendees) - REMOVED, using real data now
-  const _upcomingTrainings = [
-    { 
-      id: 1, 
-      training: 'Defensive Driving Course', 
-      date: '2024-12-05', 
-      time: '9:00 AM - 4:00 PM', 
-      location: 'Makati Training Center',
-      trainer: 'Engr. Roberto Cruz',
-      attendees: [
-        { id: 'EMP-001', name: 'Juan Dela Cruz' },
-        { id: 'EMP-005', name: 'Carlos Mendoza' },
-        { id: 'EMP-008', name: 'Roberto Santos' },
-        { id: 'EMP-015', name: 'Marco Reyes' },
-      ]
-    },
-    { 
-      id: 2, 
-      training: 'Safety Protocol Training', 
-      date: '2024-12-06', 
-      time: '1:00 PM - 5:00 PM', 
-      location: 'BGC Training Hub',
-      trainer: 'Safety Officer Team',
-      attendees: [
-        { id: 'EMP-002', name: 'Maria Santos' },
-        { id: 'EMP-003', name: 'Pedro Garcia' },
-      ]
-    },
-    { 
-      id: 3, 
-      training: 'Vehicle Maintenance Basics', 
-      date: '2024-12-07', 
-      time: '10:00 AM - 3:00 PM', 
-      location: 'Quezon City Depot',
-      trainer: 'Tech. Jose Villanueva',
-      attendees: [
-        { id: 'EMP-003', name: 'Pedro Garcia' },
-        { id: 'EMP-006', name: 'Elena Cruz' },
-        { id: 'EMP-009', name: 'Antonio Reyes' },
-      ]
-    },
-    { 
-      id: 4, 
-      training: 'Customer Service Excellence', 
-      date: '2024-12-08', 
-      time: '2:00 PM - 4:00 PM', 
-      location: 'Online - Zoom',
-      trainer: 'HR Training Team',
-      attendees: [
-        { id: 'EMP-004', name: 'Ana Reyes' },
-      ]
-    },
-    { 
-      id: 5, 
-      training: 'First Aid & Emergency Response', 
-      date: '2024-12-10', 
-      time: '8:00 AM - 12:00 PM', 
-      location: 'Red Cross Training Center',
-      trainer: 'Red Cross Certified Trainers',
-      attendees: [
-        { id: 'EMP-001', name: 'Juan Dela Cruz' },
-        { id: 'EMP-002', name: 'Maria Santos' },
-        { id: 'EMP-007', name: 'Diana Torres' },
-        { id: 'EMP-010', name: 'Ricardo Fernandez' },
-        { id: 'EMP-011', name: 'Lucia Villanueva' },
-        { id: 'EMP-012', name: 'Miguel Torres' },
-      ]
-    },
-  ];
-
-  const _orientationSchedule = [
-    { 
-      id: 1, 
-      title: 'New Hire Orientation - Batch A',
-      date: '2024-12-04', 
-      time: '8:00 AM - 5:00 PM', 
-      location: 'Head Office - Makati', 
-      conductor: 'HR Team',
-      attendees: [
-        { id: 'EMP-010', name: 'Ricardo Fernandez' },
-        { id: 'EMP-011', name: 'Lucia Villanueva' },
-        { id: 'EMP-013', name: 'Gabriel Santos' },
-      ]
-    },
-    { 
-      id: 2, 
-      title: 'New Hire Orientation - Batch B',
-      date: '2024-12-06', 
-      time: '8:00 AM - 5:00 PM', 
-      location: 'BGC Office', 
-      conductor: 'Operations Team',
-      attendees: [
-        { id: 'EMP-012', name: 'Miguel Torres' },
-        { id: 'EMP-014', name: 'Sofia Reyes' },
-      ]
-    },
-    { 
-      id: 3, 
-      title: 'Safety & Compliance Orientation',
-      date: '2024-12-09', 
-      time: '9:00 AM - 12:00 PM', 
-      location: 'Head Office - Makati', 
-      conductor: 'Compliance Officer',
-      attendees: [
-        { id: 'EMP-010', name: 'Ricardo Fernandez' },
-        { id: 'EMP-011', name: 'Lucia Villanueva' },
-        { id: 'EMP-012', name: 'Miguel Torres' },
-        { id: 'EMP-013', name: 'Gabriel Santos' },
-        { id: 'EMP-014', name: 'Sofia Reyes' },
-      ]
-    },
-  ];
-
-  const _trainingHistory = [
-    { 
-      id: 1, 
-      training: 'Basic Safety Training', 
-      completedDate: '2024-11-15', 
-      location: 'Makati Training Center',
-      trainer: 'Safety Officer Team',
-      attendees: [
-        { id: 'EMP-001', name: 'Juan Dela Cruz', score: '95%', certificate: true, status: 'completed' },
-        { id: 'EMP-002', name: 'Maria Santos', score: '88%', certificate: true, status: 'completed' },
-        { id: 'EMP-003', name: 'Pedro Garcia', score: '92%', certificate: true, status: 'completed' },
-        { id: 'EMP-008', name: 'Roberto Santos', score: null, certificate: false, status: 'absent' }, // Failed to attend
-      ]
-    },
-    { 
-      id: 2, 
-      training: 'First Aid Certification', 
-      completedDate: '2024-11-10', 
-      location: 'Red Cross Training Center',
-      trainer: 'Red Cross Certified Trainers',
-      attendees: [
-        { id: 'EMP-002', name: 'Maria Santos', score: '88%', certificate: true, status: 'completed' },
-        { id: 'EMP-004', name: 'Ana Reyes', score: '90%', certificate: true, status: 'completed' },
-        { id: 'EMP-009', name: 'Antonio Reyes', score: null, certificate: false, status: 'pending' }, // Not yet updated by HR
-      ]
-    },
-    { 
-      id: 3, 
-      training: 'Defensive Driving Course', 
-      completedDate: '2024-11-08', 
-      location: 'Makati Training Center',
-      trainer: 'Engr. Roberto Cruz',
-      attendees: [
-        { id: 'EMP-003', name: 'Pedro Garcia', score: '92%', certificate: true, status: 'completed' },
-        { id: 'EMP-005', name: 'Carlos Mendoza', score: '87%', certificate: true, status: 'completed' },
-        { id: 'EMP-006', name: 'Elena Cruz', score: '91%', certificate: true, status: 'completed' },
-        { id: 'EMP-015', name: 'Marco Reyes', score: null, certificate: false, status: 'absent' }, // Failed to attend
-        { id: 'EMP-016', name: 'Teresa Garcia', score: null, certificate: false, status: 'pending' }, // Not yet updated by HR
-      ]
-    },
-    { 
-      id: 4, 
-      training: 'Customer Service Basics', 
-      completedDate: '2024-11-05', 
-      location: 'Online - Zoom',
-      trainer: 'HR Training Team',
-      attendees: [
-        { id: 'EMP-004', name: 'Ana Reyes', score: '90%', certificate: true, status: 'completed' },
-        { id: 'EMP-007', name: 'Diana Torres', score: '85%', certificate: true, status: 'completed' },
-        { id: 'EMP-017', name: 'Ramon Cruz', score: null, certificate: false, status: 'pending' }, // Not yet updated by HR
-      ]
-    },
-  ];
-
-  // Stats - count total attendees across all sessions
-  const stats = {
-    upcomingTrainings: upcomingTrainings.reduce((sum, t) => sum + (t.attendees?.length || 0), 0),
-    pendingOrientation: orientationSchedule.reduce((sum, o) => sum + (o.attendees?.length || 0), 0),
-    completedThisMonth: trainingHistory.filter(t => {
-      if (!t.completedDate) return false;
-      const date = new Date(t.completedDate);
-      const now = new Date();
-      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
-    }).reduce((sum, t) => sum + (t.attendees?.length || 0), 0),
-  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -536,8 +366,8 @@ function AgencyTrainings() {
       case 'upcoming':
         data = upcomingTrainings;
         break;
-      case 'orientation':
-        data = orientationSchedule;
+      case 'pending':
+        data = pendingAttendance;
         break;
       case 'history':
         data = trainingHistory;
@@ -603,6 +433,22 @@ function AgencyTrainings() {
       return `${hour12}:${minutes} ${ampm}`;
     } catch {
       return timeStr;
+    }
+  };
+
+  // Format start time from start_at timestamp
+  const formatStartTime = (startAtTimestamp) => {
+    if (!startAtTimestamp) return "N/A";
+    try {
+      const date = new Date(startAtTimestamp);
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const displayHour = hours % 12 || 12;
+      const displayMinutes = minutes.toString().padStart(2, '0');
+      return `${displayHour}:${displayMinutes} ${ampm}`;
+    } catch {
+      return "N/A";
     }
   };
 
@@ -776,57 +622,6 @@ function AgencyTrainings() {
           <p className="text-gray-500 mt-1">Track and manage training schedules and orientation for your deployed employees</p>
         </div>
 
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          {/* Upcoming Trainings */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Training Attendees</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.upcomingTrainings}</p>
-              </div>
-              <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-xs text-blue-600 mt-3 font-medium">{upcomingTrainings.length} sessions scheduled</p>
-          </div>
-
-          {/* Pending Orientation */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Orientation Attendees</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.pendingOrientation}</p>
-              </div>
-              <div className="w-12 h-12 bg-orange-50 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-xs text-orange-600 mt-3 font-medium">{orientationSchedule.length} sessions scheduled</p>
-          </div>
-
-          {/* Completed This Month */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md transition-shadow">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-500 font-medium">Completed This Month</p>
-                <p className="text-2xl font-bold text-gray-800 mt-1">{stats.completedThisMonth}</p>
-              </div>
-              <div className="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
-                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-            </div>
-            <p className="text-xs text-green-600 mt-3 font-medium">Employees trained</p>
-          </div>
-        </div>
-
         {/* Main Content Card */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
           {/* Tabs */}
@@ -849,19 +644,19 @@ function AgencyTrainings() {
                 </div>
               </button>
               <button
-                onClick={() => { setActiveTab('orientation'); setCurrentPage(1); }}
+                onClick={() => { setActiveTab('pending'); setCurrentPage(1); }}
                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'orientation'
+                  activeTab === 'pending'
                     ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
                 <div className="flex items-center gap-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Orientation Schedule
-                  <span className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">{orientationSchedule.length}</span>
+                  Pending Attendance
+                  <span className="bg-orange-100 text-orange-700 text-xs px-2 py-0.5 rounded-full">{pendingAttendance.length}</span>
                 </div>
               </button>
               <button
@@ -921,444 +716,135 @@ function AgencyTrainings() {
           {!loading && (
           <div className="overflow-x-auto">
             {activeTab === 'upcoming' && (
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Training</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date & Time</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Location</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Trainer</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendees</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {paginatedData.length > 0 ? paginatedData.map((item) => (
-                    <React.Fragment key={item.id}>
-                      <tr 
-                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${expandedRow === item.id ? 'bg-[#800000]/10/30' : ''}`}
-                        onClick={() => {
-                          if (expandedRow === item.id) {
-                            setExpandedRow(null);
-                          } else {
-                            setExpandedRow(item.id);
-                          }
-                        }}
-                        onDoubleClick={() => viewDetails(item)}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center text-white shadow-sm">
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                              </svg>
+              <div className="h-[500px] overflow-y-auto no-scrollbar p-4 space-y-3">
+                {paginatedData.length > 0 ? paginatedData.map((training) => (
+                  <div
+                    key={training.id}
+                    className="group border border-blue-200 rounded-xl p-5 hover:shadow-md hover:border-blue-300 transition-all bg-white cursor-pointer"
+                    onClick={() => viewDetails(training)}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-4 flex-1">
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center text-white shadow-md flex-shrink-0">
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-base font-bold text-gray-900 group-hover:text-blue-600 transition-colors mb-3">{training.title}</h3>
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                            <span className="font-medium">{formatDate(training.start_at)}</span>
+                            <span className="text-gray-300">•</span>
+                            <span>{formatStartTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
+                            <span className="text-gray-300">•</span>
+                            <div className="inline-block px-2 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full">
+                              {training.is_online ? 'Online' : 'Onsite'}
                             </div>
-                            <p className="text-sm font-medium text-gray-800">{item.training}</p>
+                            <span className="text-gray-300">•</span>
+                            <span className="font-semibold text-blue-600">{training.attendees?.length || 0} attendees</span>
                           </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-800">{formatDate(item.date)}</p>
-                          <p className="text-xs text-gray-500">{item.time}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-600">{item.location}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-600">{item.trainer}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            {/* Avatar Stack */}
-                            <div className="flex -space-x-2">
-                              {item.attendees.slice(0, 4).map((attendee, idx) => (
-                                <div 
-                                  key={attendee.id}
-                                  className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(attendee.name)} flex items-center justify-center text-white text-xs font-medium border-2 border-white shadow-sm`}
-                                  title={attendee.name}
-                                >
-                                  {getInitials(attendee.name)}
-                                </div>
-                              ))}
-                              {item.attendees.length > 4 && (
-                                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-xs font-medium border-2 border-white">
-                                  +{item.attendees.length - 4}
-                                </div>
-                              )}
-                            </div>
-                            <span className="text-sm text-gray-500">{item.attendees.length} attendee{item.attendees.length !== 1 ? 's' : ''}</span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                viewDetails(item);
-                              }}
-                              className="ml-2 px-3 py-1 text-xs font-medium text-[#800000] bg-[#800000]/10 hover:bg-[#800000]/20 rounded-lg transition-colors"
-                            >
-                              View Details
-                            </button>
-                            <svg className={`w-4 h-4 text-gray-400 transition-transform ${expandedRow === item.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-                        </td>
-                      </tr>
-                      {/* Expanded Row - Attendee List */}
-                      {expandedRow === item.id && (
-                        <tr>
-                          <td colSpan="5" className="px-6 py-4 bg-gray-50/80">
-                            <div className="ml-12">
-                              <p className="text-xs font-semibold text-gray-500 uppercase mb-3">Assigned Attendees ({item.attendees.length})</p>
-                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                {item.attendees.map((attendee) => (
-                                  <div key={attendee.id} className="flex items-center gap-2 bg-white rounded-lg p-2 border border-gray-100 shadow-sm">
-                                    <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(attendee.name)} flex items-center justify-center text-white text-xs font-medium`}>
-                                      {getInitials(attendee.name)}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium text-gray-800 truncate">{attendee.name}</p>
-                                      <p className="text-xs text-gray-500">{attendee.id}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  )) : (
-                    <tr>
-                      <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
-                        <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="font-medium">No trainings found</p>
-                        <p className="text-sm mt-1">Try adjusting your search criteria</p>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="h-full flex flex-col items-center justify-center">
+                    <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="font-medium text-gray-600">No trainings found</p>
+                    <p className="text-sm text-gray-500">Try adjusting your search criteria</p>
+                  </div>
+                )}
+              </div>
             )}
 
-            {activeTab === 'orientation' && (
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Orientation</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date & Time</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Location</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Conductor</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendees</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {paginatedData.length > 0 ? paginatedData.map((item) => (
-                    <React.Fragment key={item.id}>
-                      <tr 
-                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${expandedRow === `orientation-${item.id}` ? 'bg-orange-50/30' : ''}`}
-                        onClick={() => setExpandedRow(expandedRow === `orientation-${item.id}` ? null : `orientation-${item.id}`)}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg flex items-center justify-center text-white shadow-sm">
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                              </svg>
+            {activeTab === 'pending' && (
+              <div className="h-[500px] overflow-y-auto no-scrollbar p-4 space-y-3">
+                {paginatedData.length > 0 ? paginatedData.map((training) => (
+                  <div
+                    key={training.id}
+                    className="group border border-orange-200 rounded-xl p-5 hover:shadow-md hover:border-orange-300 transition-all bg-white cursor-pointer"
+                    onClick={() => viewDetails(training)}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3 flex-1">
+                        <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center text-white flex-shrink-0">
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="text-base font-bold text-gray-900 group-hover:text-orange-600 transition-colors truncate mb-3">{training.title}</h3>
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                            <span className="font-medium">{formatDate(training.start_at)}</span>
+                            <span className="text-gray-300">•</span>
+                            <span>{formatStartTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
+                            <span className="text-gray-300">•</span>
+                            <div className="inline-block px-2 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full">
+                              {training.is_online ? 'Online' : 'Onsite'}
                             </div>
-                            <p className="text-sm font-medium text-gray-800">{item.title}</p>
+                            <span className="text-gray-300">•</span>
+                            <span className="font-medium text-orange-600">{training.attendees?.length || 0} attendees</span>
                           </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-800">{formatDate(item.date)}</p>
-                          <p className="text-xs text-gray-500">{item.time}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-600">{item.location}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-600">{item.conductor}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            {/* Avatar Stack */}
-                            <div className="flex -space-x-2">
-                              {item.attendees.slice(0, 4).map((attendee, idx) => (
-                                <div 
-                                  key={attendee.id}
-                                  className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(attendee.name)} flex items-center justify-center text-white text-xs font-medium border-2 border-white shadow-sm`}
-                                  title={attendee.name}
-                                >
-                                  {getInitials(attendee.name)}
-                                </div>
-                              ))}
-                              {item.attendees.length > 4 && (
-                                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-xs font-medium border-2 border-white">
-                                  +{item.attendees.length - 4}
-                                </div>
-                              )}
-                            </div>
-                            <span className="text-sm text-gray-500">{item.attendees.length} attendee{item.attendees.length !== 1 ? 's' : ''}</span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                viewDetails(item);
-                              }}
-                              className="ml-2 px-3 py-1 text-xs font-medium text-[#800000] bg-[#800000]/10 hover:bg-[#800000]/20 rounded-lg transition-colors"
-                            >
-                              View Details
-                            </button>
-                            <svg className={`w-4 h-4 text-gray-400 transition-transform ${expandedRow === `orientation-${item.id}` ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-                        </td>
-                      </tr>
-                      {/* Expanded Row - Attendee List */}
-                      {expandedRow === `orientation-${item.id}` && (
-                        <tr>
-                          <td colSpan="5" className="px-6 py-4 bg-orange-50/50">
-                            <div className="ml-12">
-                              <p className="text-xs font-semibold text-gray-500 uppercase mb-3">New Hires Attending ({item.attendees.length})</p>
-                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-                                {item.attendees.map((attendee) => (
-                                  <div key={attendee.id} className="flex items-center gap-2 bg-white rounded-lg p-2 border border-gray-100 shadow-sm">
-                                    <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${getAvatarColor(attendee.name)} flex items-center justify-center text-white text-xs font-medium`}>
-                                      {getInitials(attendee.name)}
-                                    </div>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium text-gray-800 truncate">{attendee.name}</p>
-                                      <p className="text-xs text-gray-500">{attendee.id}</p>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  )) : (
-                    <tr>
-                      <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
-                        <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="font-medium">No orientation schedules found</p>
-                        <p className="text-sm mt-1">Try adjusting your search criteria</p>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="h-full flex flex-col items-center justify-center">
+                    <svg className="w-12 h-12 text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="font-medium text-gray-600">No pending attendance</p>
+                    <p className="text-sm text-gray-500">All completed trainings have been marked.</p>
+                  </div>
+                )}
+              </div>
             )}
 
             {activeTab === 'history' && (
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Training</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Completed Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Location</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Trainer</th>
-                    <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Attendees</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {paginatedData.length > 0 ? paginatedData.map((item) => (
-                    <React.Fragment key={item.id}>
-                      <tr 
-                        className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${expandedRow === `history-${item.id}` ? 'bg-green-50/30' : ''}`}
-                        onClick={() => setExpandedRow(expandedRow === `history-${item.id}` ? null : `history-${item.id}`)}
-                      >
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 bg-gradient-to-br from-green-500 to-green-600 rounded-lg flex items-center justify-center text-white shadow-sm">
-                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
+              <div className="h-[500px] overflow-y-auto no-scrollbar p-4 space-y-3">
+                {paginatedData.length > 0 ? paginatedData.map((training) => (
+                  <div
+                    key={training.id}
+                    className="group border border-green-200 rounded-xl p-5 hover:shadow-md hover:border-green-300 transition-all bg-white cursor-pointer"
+                    onClick={() => viewDetails(training)}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-4 flex-1">
+                        <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center text-white shadow-md flex-shrink-0">
+                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-base font-bold text-gray-900 group-hover:text-green-600 transition-colors mb-3">{training.title}</h3>
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-gray-600">
+                            <span className="font-medium">{formatDate(training.end_at)}</span>
+                            <span className="text-gray-300">•</span>
+                            <span>{formatStartTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
+                            <span className="text-gray-300">•</span>
+                            <div className="inline-block px-2 py-1 bg-gray-100 text-gray-700 text-xs font-semibold rounded-full">
+                              {training.is_online ? 'Online' : 'Onsite'}
                             </div>
-                            <p className="text-sm font-medium text-gray-800">{item.training}</p>
+                            <span className="text-gray-300">•</span>
+                            <span className="font-semibold text-green-600">{training.attendees?.length || 0} attendees</span>
                           </div>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-800">{formatDate(item.completedDate)}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-600">{item.location}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <p className="text-sm text-gray-600">{item.trainer}</p>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2">
-                            {/* Avatar Stack with status indicators */}
-                            <div className="flex -space-x-2">
-                              {item.attendees.slice(0, 4).map((attendee, idx) => (
-                                <div 
-                                  key={attendee.id}
-                                  className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium border-2 border-white shadow-sm ${
-                                    attendee.status === 'completed' 
-                                      ? `bg-gradient-to-br ${getAvatarColor(attendee.name)}`
-                                      : attendee.status === 'absent'
-                                      ? 'bg-[#990000]'
-                                      : 'bg-yellow-400'
-                                  }`}
-                                  title={`${attendee.name}${attendee.status !== 'completed' ? ` (${attendee.status})` : ''}`}
-                                >
-                                  {attendee.status === 'completed' ? getInitials(attendee.name) : 
-                                   attendee.status === 'absent' ? '✕' : '?'}
-                                </div>
-                              ))}
-                              {item.attendees.length > 4 && (
-                                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 text-xs font-medium border-2 border-white">
-                                  +{item.attendees.length - 4}
-                                </div>
-                              )}
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-sm text-gray-600">{item.attendees.length} assigned</span>
-                              {(item.attendees.filter(a => a.status === 'absent').length > 0 || item.attendees.filter(a => a.status === 'pending').length > 0) && (
-                                <span className="text-xs text-gray-400">
-                                  {item.attendees.filter(a => a.status === 'completed').length} completed
-                                  {item.attendees.filter(a => a.status === 'absent').length > 0 && (
-                                    <span className="text-[#800000]"> · {item.attendees.filter(a => a.status === 'absent').length} absent</span>
-                                  )}
-                                  {item.attendees.filter(a => a.status === 'pending').length > 0 && (
-                                    <span className="text-yellow-600"> · {item.attendees.filter(a => a.status === 'pending').length} pending</span>
-                                  )}
-                                </span>
-                              )}
-                            </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                viewDetails(item);
-                              }}
-                              className="ml-2 px-3 py-1 text-xs font-medium text-[#800000] bg-[#800000]/10 hover:bg-[#800000]/20 rounded-lg transition-colors"
-                            >
-                              View Details
-                            </button>
-                            <svg className={`w-4 h-4 text-gray-400 transition-transform ${expandedRow === `history-${item.id}` ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-                        </td>
-                      </tr>
-                      {/* Expanded Row - Attendee List with Scores */}
-                      {expandedRow === `history-${item.id}` && (
-                        <tr>
-                          <td colSpan="5" className="px-6 py-4 bg-green-50/50">
-                            <div className="ml-12">
-                              {/* Summary badges */}
-                              <div className="flex items-center gap-4 mb-4">
-                                <p className="text-xs font-semibold text-gray-500 uppercase">Training Results ({item.attendees.length} employees)</p>
-                                <div className="flex items-center gap-2">
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
-                                    {item.attendees.filter(a => a.status === 'completed').length} Completed
-                                  </span>
-                                  {item.attendees.filter(a => a.status === 'absent').length > 0 && (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#800000]/20 text-[#800000]">
-                                      {item.attendees.filter(a => a.status === 'absent').length} Absent
-                                    </span>
-                                  )}
-                                  {item.attendees.filter(a => a.status === 'pending').length > 0 && (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700">
-                                      {item.attendees.filter(a => a.status === 'pending').length} Pending
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                {item.attendees.map((attendee) => (
-                                  <div 
-                                    key={attendee.id} 
-                                    className={`flex items-center justify-between rounded-lg p-3 border shadow-sm ${
-                                      attendee.status === 'completed' 
-                                        ? 'bg-white border-gray-100' 
-                                        : attendee.status === 'absent'
-                                        ? 'bg-[#800000]/10 border-[#800000]/20'
-                                        : 'bg-yellow-50 border-yellow-200'
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-medium ${
-                                        attendee.status === 'completed'
-                                          ? `bg-gradient-to-br ${getAvatarColor(attendee.name)}`
-                                          : attendee.status === 'absent'
-                                          ? 'bg-[#990000]'
-                                          : 'bg-yellow-400'
-                                      }`}>
-                                        {attendee.status === 'absent' ? (
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                          </svg>
-                                        ) : attendee.status === 'pending' ? (
-                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                          </svg>
-                                        ) : (
-                                          getInitials(attendee.name)
-                                        )}
-                                      </div>
-                                      <div className="min-w-0">
-                                        <p className={`text-sm font-medium truncate ${
-                                          attendee.status === 'completed' ? 'text-gray-800' : 
-                                          attendee.status === 'absent' ? 'text-[#800000]' : 'text-yellow-800'
-                                        }`}>{attendee.name}</p>
-                                        <p className={`text-xs ${
-                                          attendee.status === 'completed' ? 'text-gray-500' : 
-                                          attendee.status === 'absent' ? 'text-[#800000]' : 'text-yellow-600'
-                                        }`}>
-                                          {attendee.status === 'absent' ? 'Did not attend' : 
-                                           attendee.status === 'pending' ? 'Awaiting HR update' : 
-                                           attendee.id}
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      {attendee.status === 'completed' && (
-                                        <>
-                                          <span className="text-sm font-semibold text-green-600">{attendee.score}</span>
-                                          {attendee.certificate && (
-                                            <button className="text-blue-600 hover:text-blue-700" title="Download Certificate">
-                                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                              </svg>
-                                            </button>
-                                          )}
-                                        </>
-                                      )}
-                                      {attendee.status === 'absent' && (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#800000]/20 text-[#800000] border border-[#800000]/20">
-                                          ABSENT
-                                        </span>
-                                      )}
-                                      {attendee.status === 'pending' && (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-700 border border-yellow-200">
-                                          PENDING
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  )) : (
-                    <tr>
-                      <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
-                        <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="font-medium">No training history found</p>
-                        <p className="text-sm mt-1">Try adjusting your search criteria</p>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="h-full flex flex-col items-center justify-center">
+                    <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="font-medium text-gray-600">No training history found</p>
+                    <p className="text-sm text-gray-500">Try adjusting your search criteria</p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
           )}
