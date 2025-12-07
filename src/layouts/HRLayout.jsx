@@ -201,6 +201,15 @@ export default function HRLayout() {
                           ? `${hrUser.first_name} ${hrUser.last_name}`
                           : hrUser?.email || "User"}
                       </div>
+                      <NavLink
+                        to="/hr/account-settings"
+                        onClick={() => setShowProfileDropdown(false)}
+                        className={({ isActive }) =>
+                          `block w-full text-left px-4 py-2 text-sm ${isActive ? "bg-gray-100 text-red-600" : "text-gray-700 hover:bg-gray-100"}`
+                        }
+                      >
+                        Account Settings
+                      </NavLink>
                       <button
                         onClick={handleLogout}
                         className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"

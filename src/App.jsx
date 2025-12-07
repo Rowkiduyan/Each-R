@@ -42,6 +42,9 @@ import ApplicantLayout from "./layouts/ApplicantLayout";
 import AdminCreate from "./AdminCreate";
 import AdminEnableDisable from "./AdminEnableDisable";
 import TermsAndPrivacy from "./TermsAndPrivacy";
+import AccountSettings from "./AccountSettings";
+import AgencyAccountSettings from "./AgencyAccountSettings";
+import AgencyProfile from "./AgencyProfile";
 
 
 
@@ -74,6 +77,7 @@ function App() {
         <Route path="create/job" element={<HrCreateJob />} />
         <Route path="recruitment/applicant/:id" element={<ApplicantDetails />} />
         <Route path="employees" element={<Employees />} />
+        <Route path="account-settings" element={<AccountSettings />} />
       </Route>
       
       
@@ -97,6 +101,7 @@ function App() {
         <Route path="separation" element={<EmployeeSeparation />} />
         <Route path="notif" element={<EmployeeNotif />} />
         <Route path="profile" element={<EmProfile />} />
+        <Route path="account-settings" element={<AccountSettings />} />
       </Route>
 
       {/* Admin protected routes */}
@@ -111,6 +116,7 @@ function App() {
         <Route path="home" element={<AdminHome />} />
         <Route path="create" element={<AdminCreate />} />
         <Route path="enable-disable" element={<AdminEnableDisable />} />
+        <Route path="account-settings" element={<AccountSettings />} />
       </Route>
 
       {/* Applicant routes (public, but with layout) */}
@@ -127,6 +133,7 @@ function App() {
       <Route element={<ApplicantLayout />}>
         <Route path="/applicantl/home" element={<ApplicantLHome />} />
         <Route path="/applicant/applications" element={<ApplicantApplications />} />
+        <Route path="/applicant/account-settings" element={<AccountSettings />} />
       </Route>
 
       {/* Public routes (no protection) */}
@@ -147,6 +154,8 @@ function App() {
         <Route path="trainings" element={<AgencyTrainings />} />
         <Route path="evaluation" element={<AgencyEval />} />
         <Route path="separation" element={<AgencySeparation />} />
+        <Route path="profile" element={<AgencyProfile />} />
+        <Route path="account-settings" element={<AgencyAccountSettings />} />
       </Route>
 
       {/* Default */}
