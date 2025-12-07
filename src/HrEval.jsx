@@ -177,7 +177,9 @@ function HrEval() {
     // Validate all records
     for (let i = 0; i < uploadRecords.length; i++) {
       const record = uploadRecords[i];
-      if (!record.file || !record.evaluatorName || !record.reason || !record.dateEvaluated || !record.totalScore || !record.remarks) {
+      // For probationary employees, auto-set reason to Regularization
+      const reason = selectedEmployee?.employmentType === 'probationary' ? 'Regularization' : record.reason;
+      if (!record.file || !record.evaluatorName || !reason || !record.dateEvaluated || !record.totalScore || !record.remarks) {
         showAlert(`Please fill in all required fields for Record ${i + 1}.`, "warning");
         return;
       }
@@ -191,9 +193,12 @@ function HrEval() {
       // Process each record
       for (const record of uploadRecords) {
         try {
+          // For probationary employees, use Regularization as reason
+          const finalReason = selectedEmployee?.employmentType === 'probationary' ? 'Regularization' : record.reason;
+          
           // Calculate next_due based on reason and date_evaluated
           let nextDueDate = null;
-          if (record.reason === 'Annual' && record.dateEvaluated) {
+          if (finalReason === 'Annual' && record.dateEvaluated) {
             const evalDate = new Date(record.dateEvaluated);
             evalDate.setFullYear(evalDate.getFullYear() + 1);
             nextDueDate = evalDate.toISOString().split('T')[0];
@@ -221,7 +226,7 @@ function HrEval() {
               {
                 employee_id: selectedEmployee.id,
                 evaluator_name: record.evaluatorName,
-                reason: record.reason || null,
+                reason: finalReason || null,
                 date_evaluated: record.dateEvaluated,
                 total_score: parseFloat(record.totalScore),
                 remarks: record.remarks,
@@ -240,6 +245,45 @@ function HrEval() {
         } catch (err) {
           console.error("Error processing record:", err);
           failCount++;
+        }
+      }
+
+      // Check if we need to change employee type from Probationary to Regular
+      // This happens when a probationary employee gets a "Retained" remark
+      if (selectedEmployee?.employmentType === 'probationary') {
+        // Check if any of the uploaded records have "Retained" remark
+        const hasRetainedRemark = uploadRecords.some(record => record.remarks === 'Retained');
+        
+        if (hasRetainedRemark) {
+          // Update employee status to Regular
+          const { error: empUpdateError } = await supabase
+            .from('employees')
+            .update({ status: 'Regular' })
+            .eq('id', selectedEmployee.id);
+
+          if (empUpdateError) {
+            console.error('Error updating employee type:', empUpdateError);
+          } else {
+            // Calculate next due date for regular employee (1 year from now)
+            const nextDueDate = new Date();
+            nextDueDate.setFullYear(nextDueDate.getFullYear() + 1);
+            const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
+
+            // Update the most recent evaluation's next_due and employee_type
+            const { error: evalUpdateError } = await supabase
+              .from('evaluations')
+              .update({ 
+                employee_type: 'Regular',
+                next_due: nextDueDateStr
+              })
+              .eq('employee_id', selectedEmployee.id)
+              .order('date_evaluated', { ascending: false })
+              .limit(1);
+
+            if (evalUpdateError) {
+              console.error('Error updating evaluation type:', evalUpdateError);
+            }
+          }
         }
       }
 
@@ -264,6 +308,12 @@ function HrEval() {
           nextEvaluation = nextDueDate.toISOString().split('T')[0];
         }
         
+        // Check if employee type was changed to Regular
+        const hasRetainedRemark = uploadRecords.some(record => record.remarks === 'Retained');
+        const newEmploymentType = (selectedEmployee?.employmentType === 'probationary' && hasRetainedRemark) 
+          ? 'regular' 
+          : (mostRecent?.employee_type?.toLowerCase() || selectedEmployee.employmentType);
+        
         setEmployees((prev) =>
           prev.map((emp) =>
             emp.id === selectedEmployee.id
@@ -271,7 +321,7 @@ function HrEval() {
                   ...emp,
                   evaluations: updatedEvals || [],
                   lastEvaluation: mostRecent?.date_evaluated || null,
-                  employmentType: mostRecent?.type || emp.employmentType,
+                  employmentType: newEmploymentType,
                   nextEvaluation: nextEvaluation,
                 }
               : emp
@@ -918,20 +968,17 @@ function HrEval() {
                                 {employee.depot}
                               </p>
                             </td>
-                            <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                            <td className="px-6 py-4">
                               <div className="flex flex-col items-center">
-                                <select
-                                  value={employee.employmentType}
-                                  onChange={(e) => handleUpdateEmployeeType(employee.id, e.target.value)}
-                                  className={`text-sm font-medium border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 ${
+                                <span
+                                  className={`text-sm font-medium capitalize ${
                                     employee.employmentType === "regular"
                                       ? "text-blue-600"
                                       : "text-purple-600"
                                   }`}
                                 >
-                                  <option value="regular">Regular</option>
-                                  <option value="probationary">Probationary</option>
-                                </select>
+                                  {employee.employmentType || "N/A"}
+                                </span>
                               </div>
                             </td>
                             <td className="px-6 py-4">
@@ -947,16 +994,11 @@ function HrEval() {
                                 )}
                               </div>
                             </td>
-                            <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                            <td className="px-6 py-4">
                               <div className="flex flex-col items-center">
-                                <input
-                                  type="date"
-                                  value={employee.nextEvaluation || ""}
-                                  min={new Date().toISOString().split('T')[0]}
-                                  onChange={(e) => handleUpdateNextDue(employee.id, e.target.value)}
-                                  className="text-sm text-gray-800 border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
-                                  title={employee.employmentType === "probationary" ? "Automatically set to 90 days when TYPE is Probationary" : "Automatically set to 1 year when TYPE is Regular"}
-                                />
+                                <p className="text-sm text-gray-800">
+                                  {formatDate(employee.nextEvaluation)}
+                                </p>
                               </div>
                             </td>
                             <td className="px-6 py-4">
@@ -1397,19 +1439,40 @@ function HrEval() {
                           Reason <span className="text-red-600">*</span>
                         </label>
                         <select
-                          value={record.reason}
+                          value={selectedEmployee?.employmentType === 'probationary' ? 'Regularization' : record.reason}
                           onChange={(e) => {
                             const newRecords = [...uploadRecords];
                             newRecords[index].reason = e.target.value;
                             setUploadRecords(newRecords);
                           }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
+                          disabled={selectedEmployee?.employmentType === 'probationary'}
+                          className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm ${
+                            selectedEmployee?.employmentType === 'probationary' ? 'bg-gray-100 cursor-not-allowed' : ''
+                          }`}
                         >
                           <option value="">Select reason</option>
-                          <option value="Regularization">Regularization</option>
-                          <option value="Annual">Annual</option>
-                          <option value="Semi-Annual">Semi-Annual</option>
+                          {selectedEmployee?.employmentType === 'probationary' && (
+                            <option value="Regularization">Regularization</option>
+                          )}
+                          {selectedEmployee?.employmentType === 'regular' && (
+                            <>
+                              <option value="Annual">Annual</option>
+                              <option value="Semi-Annual">Semi-Annual</option>
+                            </>
+                          )}
+                          {!selectedEmployee?.employmentType && (
+                            <>
+                              <option value="Regularization">Regularization</option>
+                              <option value="Annual">Annual</option>
+                              <option value="Semi-Annual">Semi-Annual</option>
+                            </>
+                          )}
                         </select>
+                        {selectedEmployee?.employmentType === 'probationary' && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Auto-filled for probationary employees
+                          </p>
+                        )}
                       </div>
                     </div>
 
