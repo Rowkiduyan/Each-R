@@ -6,7 +6,6 @@ import Employees from "./Employees";
 import ApplicantGHome from "./ApplicantGHome";
 import ApplicantLHome from "./ApplicantLHome";
 import EmployeeLogin from "./EmployeeLogin";
-import EmHome from "./EmHome";
 import AdminHome from "./AdminHome";
 import HrTrainings from "./HrTrainings";
 import EmployeeTrainings from "./EmployeeTrainings";
@@ -43,7 +42,6 @@ import AdminCreate from "./AdminCreate";
 import AdminEnableDisable from "./AdminEnableDisable";
 import TermsAndPrivacy from "./TermsAndPrivacy";
 import AccountSettings from "./AccountSettings";
-import AgencyAccountSettings from "./AgencyAccountSettings";
 import AgencyProfile from "./AgencyProfile";
 
 
@@ -94,7 +92,7 @@ function App() {
           </RequireRole>
         }
       >
-        <Route path="home" element={<EmHome />} />
+        <Route index element={<EmployeeRequirements />} />
         <Route path="requirements" element={<EmployeeRequirements />} />
         <Route path="trainings" element={<EmployeeTrainings />} />
         <Route path="evaluation" element={<EmployeeEval />} />
@@ -155,7 +153,7 @@ function App() {
         <Route path="evaluation" element={<AgencyEval />} />
         <Route path="separation" element={<AgencySeparation />} />
         <Route path="profile" element={<AgencyProfile />} />
-        <Route path="account-settings" element={<AgencyAccountSettings />} />
+        <Route path="account-settings" element={<AccountSettings />} />
       </Route>
 
       {/* Default */}

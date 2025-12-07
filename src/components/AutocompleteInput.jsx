@@ -32,13 +32,16 @@ function AutocompleteInput({
     }
   }, [value]);
 
-  // Ensure options is an array
+  // Filter options based on search value - updates in real-time as user types
   useEffect(() => {
     const validOptions = Array.isArray(options) ? options : [];
     const searchValue = internalValue || value || '';
+    
     if (!searchValue || searchValue.trim() === '') {
+      // Show first 50 options when field is empty
       setFilteredOptions(validOptions.slice(0, 50));
     } else {
+      // Filter options that match the search term (case-insensitive)
       const searchTerm = searchValue.toLowerCase().trim();
       try {
         const filtered = validOptions
@@ -46,13 +49,14 @@ function AutocompleteInput({
             const optName = typeof opt === 'string' ? opt : opt.name || opt.value || '';
             return optName.toLowerCase().includes(searchTerm);
           })
-          .slice(0, 50);
+          .slice(0, 100); // Show more results when filtering
         setFilteredOptions(filtered);
       } catch (e) {
         console.error("Error filtering autocomplete options:", e);
         setFilteredOptions([]);
       }
     }
+    // Don't automatically show suggestions here - let handleInputChange, onFocus, onClick control visibility
   }, [internalValue, value, options]);
 
   // Close suggestions when clicking outside
@@ -93,6 +97,10 @@ function AutocompleteInput({
     // DO NOT preventDefault - it blocks input!
     const newValue = e.target.value;
     console.log('AutocompleteInput handleInputChange - extracted value:', newValue, 'type:', typeof newValue);
+    
+    // Update internal value immediately for filtering
+    setInternalValue(newValue);
+    
     // Always call onChange to allow typing - this is critical for controlled inputs
     if (onChange && typeof onChange === 'function') {
       try {
@@ -115,13 +123,17 @@ function AutocompleteInput({
     const optionValue = getOptionValue(option);
     console.log('Option value:', optionValue);
     
-    // Update the input's value directly (since it's uncontrolled)
-    if (inputRef.current) {
-      inputRef.current.value = optionValue;
-    }
+    // Close suggestions FIRST before updating value to prevent reopening
+    setShowSuggestions(false);
+    setHighlightedIndex(-1);
     
     // Update internal state
     setInternalValue(optionValue);
+    
+    // Update the input's value
+    if (inputRef.current) {
+      inputRef.current.value = optionValue;
+    }
     
     // Call onChange to notify parent
     if (onChange && typeof onChange === 'function') {
@@ -129,8 +141,10 @@ function AutocompleteInput({
       onChange(optionValue);
     }
     
-    setShowSuggestions(false);
-    setHighlightedIndex(-1);
+    // Blur the input to ensure suggestions stay closed
+    if (inputRef.current) {
+      inputRef.current.blur();
+    }
     
     if (onSelect && typeof onSelect === 'function') {
       onSelect(option);
@@ -187,7 +201,7 @@ function AutocompleteInput({
         <input
           ref={inputRef}
           type="text"
-          defaultValue={value ?? ''}
+          value={internalValue}
           onChange={handleInputChange}
           onInput={handleInputChange}
           onFocus={(e) => {
@@ -195,9 +209,7 @@ function AutocompleteInput({
             e.stopPropagation();
             if (!disabled) {
               setShowSuggestions(true);
-              // Reset filtered options to show all when focusing
-              const validOptions = Array.isArray(options) ? options : [];
-              setFilteredOptions(validOptions.slice(0, 50));
+              // Filter will be handled by useEffect based on current value
             }
           }}
           onClick={(e) => {
@@ -206,9 +218,7 @@ function AutocompleteInput({
             if (!disabled && inputRef.current) {
               inputRef.current.focus();
               setShowSuggestions(true);
-              // Reset filtered options to show all when clicking
-              const validOptions = Array.isArray(options) ? options : [];
-              setFilteredOptions(validOptions.slice(0, 50));
+              // Filter will be handled by useEffect based on current value
             }
           }}
           onKeyDown={(e) => {

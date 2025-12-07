@@ -146,8 +146,8 @@ function EmployeeLogin() {
     if (roleForRedirect === "hr" || roleForRedirect === "hrc") {
       navigate("/hr/recruitment");
     } else if (roleForRedirect === "employee") {
-      console.log("✅ Redirecting to employee home...");
-      navigate("/employee/home");
+      console.log("✅ Redirecting to employee requirements...");
+      navigate("/employee/requirements");
     } else if (roleForRedirect === "agency") {
       navigate("/agency/home");
     } else if (roleForRedirect === "admin") {

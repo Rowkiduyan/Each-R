@@ -235,28 +235,47 @@ const handleRegister = async (e) => {
                     Date of Birth <span className="text-red-600">*</span>
                   </label>
                   <input 
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all" 
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all cursor-pointer" 
                     type="date" 
                     value={birthday}
-                    onChange={(e) => setBirthday(e.target.value)} 
+                    onChange={(e) => setBirthday(e.target.value)}
+                    max={new Date().toISOString().split('T')[0]}
+                    min="1900-01-01"
                     required
                   />
+                  <p className="text-xs text-gray-500 mt-1">Click to select your date of birth</p>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     Sex <span className="text-red-600">*</span>
                   </label>
-                  <select 
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all text-gray-700"
-                    value={sex}
-                    onChange={(e) => setSex(e.target.value)}
-                    required
-                  >
-                    <option value="">Select your sex</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                  </select>
+                  <div className="flex items-center gap-6 mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="sex"
+                        value="Male"
+                        checked={sex === "Male"}
+                        onChange={(e) => setSex(e.target.value)}
+                        className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500 focus:ring-2"
+                        required
+                      />
+                      <span className="text-gray-700">Male</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="radio" 
+                        name="sex"
+                        value="Female"
+                        checked={sex === "Female"}
+                        onChange={(e) => setSex(e.target.value)}
+                        className="w-4 h-4 text-red-600 border-gray-300 focus:ring-red-500 focus:ring-2"
+                        required
+                      />
+                      <span className="text-gray-700">Female</span>
+                    </label>
+                  </div>
                 </div>
               </div>
             </div>

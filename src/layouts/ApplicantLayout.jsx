@@ -191,7 +191,7 @@ function ApplicantLayout() {
                   `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
                 }
               >
-                Home
+                Job Search
               </NavLink>
               <NavLink
                 to="/applicant/applications"
@@ -240,6 +240,7 @@ function ApplicantLayout() {
                       <div className="px-4 py-3 border-b">
                         <p className="text-sm font-semibold text-gray-800">{getUserDisplayName()}</p>
                         <p className="text-xs text-gray-500 mt-1">{applicantUser?.email}</p>
+                        <p className="text-xs text-red-600 mt-1 font-medium">Applicant</p>
                       </div>
                       <button
                         onClick={() => {
