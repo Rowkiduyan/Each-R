@@ -271,7 +271,7 @@ function ApplicantGHome() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="w-full px-6 py-8">
         {loading ? (
           <div className="text-gray-600">Loading job postings…</div>
         ) : jobs.length === 0 ? (

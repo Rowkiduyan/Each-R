@@ -91,7 +91,7 @@ function EmpProfile() {
     return (
     <>
         <div className="min-h-screen bg-gray-50">
-            <div className="max-w-7xl mx-auto px-6 py-8">
+            <div className="w-full py-8">
                 {/* Employee Card Header - Option 3 */}
                 <div className="bg-white rounded-xl shadow-sm border-l-4 border-l-red-500 border border-gray-200 p-6 mb-6">
                     <div className="flex items-center gap-6">

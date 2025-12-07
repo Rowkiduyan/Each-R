@@ -1104,7 +1104,7 @@ function HrTrainings() {
   return (
     <>
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="w-full py-8">
         {/* Page Header */}
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>

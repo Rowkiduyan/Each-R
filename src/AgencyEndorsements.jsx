@@ -796,7 +796,7 @@ function AgencyEndorsements() {
       
       {/* Header (hidden because AgencyLayout provides the main header) */}
       <div className="bg-white shadow-sm sticky top-0 z-50 hidden">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="w-full py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <img
@@ -904,7 +904,7 @@ function AgencyEndorsements() {
 
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-y-auto">
-        <div className="max-w-7xl mx-auto px-6 py-4 w-full flex flex-col flex-1">
+        <div className="w-full py-4 flex flex-col flex-1">
           {/* Page Header */}
           <div className="mb-4">
             <h1 className="text-2xl font-bold text-gray-800">Endorsements</h1>

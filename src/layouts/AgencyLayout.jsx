@@ -138,7 +138,7 @@ function AgencyLayout() {
                   `pb-1 ${isActive ? "text-[#800000] border-b-2 border-[#800000]" : "hover:text-gray-900 transition-colors"}`
                 }
               >
-                Home
+                Job Search
               </NavLink>
               <NavLink
                 to="/agency/endorsements"
@@ -235,7 +235,9 @@ function AgencyLayout() {
 
       {/* Main Content */}
       <main className="flex-1">
-        <Outlet />
+        <div className="w-full px-6">
+          <Outlet />
+        </div>
       </main>
 
       {/* Footer */}

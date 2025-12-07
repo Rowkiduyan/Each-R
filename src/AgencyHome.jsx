@@ -265,7 +265,7 @@ function AgencyHome() {
       
       {/* Header (hidden because AgencyLayout provides the main header) */}
       <div className="bg-white shadow-sm sticky top-0 z-50 hidden">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="w-full py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
               <img
@@ -374,7 +374,7 @@ function AgencyHome() {
 
       {/* Search Bar with Photo Banner - Only show on Job Postings tab */}
       {activeTab === "Job Postings" && (
-        <div className="w-full">
+        <div className="relative -mx-6" style={{ width: 'calc(100% + 3rem)' }}>
           <div className="relative">
             <img
               src={Roadwise}
@@ -450,10 +450,9 @@ function AgencyHome() {
 
       {/* Content */}
       <div className="flex flex-col items-center flex-1">
-        <div className="max-w-7xl mx-auto px-6 py-8 w-full">
+        <div className="w-full px-6 py-8">
           {/* Job Postings */}
-          <section className={`p-4 ${activeTab === "Job Postings" ? "" : "hidden"}`}>
-            <div className="max-w-7xl mx-auto px-6 py-8">
+          <section className={`${activeTab === "Job Postings" ? "" : "hidden"}`}>
               {jobsLoading ? (
                 <div className="text-gray-600">Loading job postings…</div>
               ) : jobsError ? (
@@ -573,11 +572,10 @@ function AgencyHome() {
                   ))}
                 </div>
               )}
-            </div>
           </section>
 
         {/* Employees Hired */}
-        <section className={`p-4 ${activeTab === "Hired" ? "" : "hidden"}`}>
+        <section className={`${activeTab === "Hired" ? "" : "hidden"}`}>
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
             <h2 className="text-2xl font-bold text-gray-800 mb-6">Employees Hired</h2>
 

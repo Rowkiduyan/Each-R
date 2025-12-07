@@ -276,7 +276,9 @@ function ApplicantLayout() {
 
       {/* Main Content */}
       <main className="flex-1 w-full">
-        <Outlet />
+        <div className="w-full px-6">
+          <Outlet />
+        </div>
       </main>
 
       {/* Footer */}

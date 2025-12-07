@@ -198,7 +198,7 @@ function HrSched() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6">
+    <div className="w-full py-6">
       {/* Header with Return Button */}
       <div className="mb-6">
         <div className="flex items-center justify-between">

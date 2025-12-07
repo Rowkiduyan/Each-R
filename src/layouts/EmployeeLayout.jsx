@@ -355,13 +355,15 @@ function EmployeeLayout() {
 
             {/* Main Content */}
             <main className="flex-1">
-                <EmployeeUserContext.Provider value={{ 
-                    userId: currentUserId, 
-                    userEmail: currentUserEmail,
-                    employeeData: employeeUser 
-                }}>
-                    <Outlet />
-                </EmployeeUserContext.Provider>
+                <div className="w-full px-6">
+                    <EmployeeUserContext.Provider value={{ 
+                        userId: currentUserId, 
+                        userEmail: currentUserEmail,
+                        employeeData: employeeUser 
+                    }}>
+                        <Outlet />
+                    </EmployeeUserContext.Provider>
+                </div>
             </main>
 
             {/* Footer */}

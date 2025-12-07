@@ -988,9 +988,9 @@ function HrSeperation() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 -mx-6">
       {/* Left Sidebar - Employee List */}
-      <div className="w-1/3 border-r border-gray-200 bg-white flex flex-col">
+      <div className="w-1/3 border-r border-gray-200 bg-white flex flex-col ml-6">
         <div className="p-4 border-b border-gray-200">
           <h1 className="text-2xl font-bold text-gray-800 mb-4">Employee Separation</h1>
           
@@ -1102,7 +1102,7 @@ function HrSeperation() {
       </div>
 
       {/* Right Side - Detail View */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto pr-6">
         {selectedEmployee ? (
           <div className="p-6">
             <div className="mb-6">

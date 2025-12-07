@@ -2226,8 +2226,8 @@ function HrRecruitment() {
   return (
     <>
       {/* Main Content */}
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-7xl mx-auto">
+      <div className="min-h-screen bg-gray-50 py-6">
+        <div className="w-full">
           {/* Page Title (always visible, even when viewing details) */}
           <div className="mb-4">
             <h1 className="text-2xl font-bold text-gray-800">Recruitment</h1>

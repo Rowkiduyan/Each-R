@@ -1017,7 +1017,7 @@ function Employees() {
 
       {/* Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="max-w-7xl mx-auto px-6 py-4 w-full flex flex-col flex-1 overflow-hidden">
+        <div className="w-full py-4 flex flex-col flex-1 overflow-hidden">
           {/* Page Header */}
           <div className="mb-4">
             <h1 className="text-2xl font-bold text-gray-800">Employees</h1>

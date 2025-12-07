@@ -318,7 +318,7 @@ function ApplicantApplications() {
 
   return (
     <div className="flex-1">
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="w-full py-6">
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-xl font-bold text-gray-800">My Applications</h2>

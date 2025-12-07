@@ -5,7 +5,7 @@ function EmHome() {
     const { userId, userEmail } = useEmployeeUser();
     return(
      <>
-        <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row gap-6">
+        <div className="w-full flex flex-col md:flex-row gap-6">
             <div className="md:w-1/3 w-full">
             <div className="bg-white rounded-lg shadow-md p-6">
                 <h2 className="text-2xl font-bold text-black-600 mb-2">Welcome to your Homepage!</h2>

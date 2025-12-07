@@ -1532,7 +1532,7 @@ const formatDateForInput = (dateString) => {
         `}</style>
         {/* Search Bar with Photo Banner */}
         {activeTab === 'Home' && (
-          <div className="w-full">
+          <div className="relative -mx-6" style={{ width: 'calc(100% + 3rem)' }}>
             <div className="relative">
               <img
                 src={Roadwise}
@@ -1638,7 +1638,7 @@ const formatDateForInput = (dateString) => {
 
         <div className="flex-1 flex flex-col overflow-y-auto">
           <section className={`w-full ${activeTab === 'Home' ? '' : 'hidden'}`}>
-            <div className="max-w-7xl mx-auto px-6 py-8 w-full">
+            <div className="w-full px-6 py-8">
               {/* Profile Incomplete Warning */}
               {!isProfileComplete && (
                   <div className="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg">

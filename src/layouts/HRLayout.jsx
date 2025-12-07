@@ -218,7 +218,9 @@ export default function HRLayout() {
 
       {/* Main Content */}
       <main className="flex-1">
-        <Outlet />
+        <div className="w-full px-6">
+          <Outlet />
+        </div>
       </main>
 
       {/* Footer */}
