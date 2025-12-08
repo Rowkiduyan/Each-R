@@ -4,6 +4,7 @@ import { useLocation, useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
 import SkillsInput from './components/SkillsInput';
+import AutocompleteInput from './components/AutocompleteInput';
 
 function AgencyEndorse() {
   const [step, setStep] = useState(1);
@@ -67,9 +68,11 @@ function AgencyEndorse() {
     birthday: "",
     maritalStatus: "",
     sex: "",
-    residenceNo: "",
+    unit_house_number: "",
     street: "",
+    barangay: "",
     city: "",
+    province: "",
     zip: "",
     residenceNoAlt: "",
     streetAlt: "",
@@ -129,12 +132,166 @@ function AgencyEndorse() {
   const [isDraggingCsv, setIsDraggingCsv] = useState(false);
   const csvInputRef = useRef(null);
 
+  // PSGC API states for location dropdowns
+  const [provinces, setProvinces] = useState([]);
+  const [cities, setCities] = useState({}); // Object keyed by applicant ID
+  const [barangays, setBarangays] = useState({}); // Object keyed by applicant ID
+  const [loadingProvinces, setLoadingProvinces] = useState(false);
+  const [loadingCities, setLoadingCities] = useState({}); // Object keyed by applicant ID
+  const [loadingBarangays, setLoadingBarangays] = useState({}); // Object keyed by applicant ID
+
+  // Cache for API responses
+  const cityCache = useRef({});
+  const barangayCache = useRef({});
+
   // Ensure step doesn't exceed totalSteps when job changes
   useEffect(() => {
     if (step > totalSteps) {
       setStep(totalSteps);
     }
   }, [totalSteps, step]);
+
+  // Fetch all provinces from PSGC API on mount
+  useEffect(() => {
+    const fetchProvinces = async () => {
+      setLoadingProvinces(true);
+      try {
+        const response = await fetch('https://psgc.gitlab.io/api/provinces/');
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        const data = await response.json();
+        
+        // Add Metro Manila (NCR) to the provinces list since it's not included as a province
+        const metroManila = {
+          code: '130000000',
+          name: 'Metro Manila',
+          regionCode: '13',
+          regionName: 'National Capital Region'
+        };
+        
+        // Combine fetched provinces with Metro Manila, placing Metro Manila at the beginning
+        const allProvinces = [metroManila, ...(Array.isArray(data) ? data : [])];
+        setProvinces(allProvinces);
+      } catch (error) {
+        console.error('Error fetching provinces:', error);
+        // Even if API fails, include Metro Manila
+        const metroManila = {
+          code: '130000000',
+          name: 'Metro Manila',
+          regionCode: '13',
+          regionName: 'National Capital Region'
+        };
+        setProvinces([metroManila]);
+      } finally {
+        setLoadingProvinces(false);
+      }
+    };
+    fetchProvinces();
+  }, []);
+
+  // Fetch cities when province is selected for any applicant
+  useEffect(() => {
+    Object.keys(formValues).forEach((appId) => {
+      const vals = formValues[appId] || makeEmptyValues();
+      if (vals.province && provinces.length > 0) {
+        const fetchCities = async () => {
+          setLoadingCities(prev => ({ ...prev, [appId]: true }));
+          try {
+            // Find the province code from the province name (case-insensitive match)
+            const selectedProvince = provinces.find(p => 
+              p.name && p.name.toLowerCase().trim() === vals.province.toLowerCase().trim()
+            );
+            
+            // Special handling for Metro Manila - fetch from NCR endpoint
+            if (selectedProvince && selectedProvince.name === 'Metro Manila') {
+              const response = await fetch('https://psgc.gitlab.io/api/regions/130000000/cities-municipalities/');
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              const data = await response.json();
+              setCities(prev => ({ ...prev, [appId]: Array.isArray(data) ? data : [] }));
+              cityCache.current['130000000'] = Array.isArray(data) ? data : [];
+              setLoadingCities(prev => ({ ...prev, [appId]: false }));
+              return;
+            }
+            
+            if (selectedProvince && selectedProvince.code) {
+              // Check cache first
+              if (cityCache.current[selectedProvince.code]) {
+                setCities(prev => ({ ...prev, [appId]: cityCache.current[selectedProvince.code] }));
+                setLoadingCities(prev => ({ ...prev, [appId]: false }));
+                return;
+              }
+
+              const response = await fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.code}/cities-municipalities/`);
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              const data = await response.json();
+              cityCache.current[selectedProvince.code] = data;
+              setCities(prev => ({ ...prev, [appId]: Array.isArray(data) ? data : [] }));
+            } else {
+              setCities(prev => ({ ...prev, [appId]: [] }));
+            }
+          } catch (error) {
+            console.error('Error fetching cities:', error);
+            setCities(prev => ({ ...prev, [appId]: [] }));
+          } finally {
+            setLoadingCities(prev => ({ ...prev, [appId]: false }));
+          }
+        };
+        fetchCities();
+      } else if (!vals.province) {
+        setCities(prev => ({ ...prev, [appId]: [] }));
+        setBarangays(prev => ({ ...prev, [appId]: [] }));
+      }
+    });
+  }, [formValues, provinces]);
+
+  // Fetch barangays when city is selected for any applicant
+  useEffect(() => {
+    Object.keys(formValues).forEach((appId) => {
+      const vals = formValues[appId] || makeEmptyValues();
+      const applicantCities = cities[appId] || [];
+      if (vals.city && applicantCities.length > 0) {
+        const fetchBarangays = async () => {
+          setLoadingBarangays(prev => ({ ...prev, [appId]: true }));
+          try {
+            const selectedCity = applicantCities.find(c => 
+              c.name && c.name.toLowerCase().trim() === vals.city.toLowerCase().trim()
+            );
+            if (selectedCity && selectedCity.code) {
+              // Check cache first
+              if (barangayCache.current[selectedCity.code]) {
+                setBarangays(prev => ({ ...prev, [appId]: barangayCache.current[selectedCity.code] }));
+                setLoadingBarangays(prev => ({ ...prev, [appId]: false }));
+                return;
+              }
+
+              const response = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${selectedCity.code}/barangays/`);
+              if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+              }
+              const data = await response.json();
+              barangayCache.current[selectedCity.code] = data;
+              setBarangays(prev => ({ ...prev, [appId]: Array.isArray(data) ? data : [] }));
+            } else {
+              setBarangays(prev => ({ ...prev, [appId]: [] }));
+            }
+          } catch (error) {
+            console.error('Error fetching barangays:', error);
+            setBarangays(prev => ({ ...prev, [appId]: [] }));
+          } finally {
+            setLoadingBarangays(prev => ({ ...prev, [appId]: false }));
+          }
+        };
+        fetchBarangays();
+      } else if (!vals.city) {
+        setBarangays(prev => ({ ...prev, [appId]: [] }));
+      }
+    });
+  }, [formValues, cities]);
 
   // Auto-fill depot and position from job when available
   useEffect(() => {
@@ -182,6 +339,9 @@ function AgencyEndorse() {
       newValues.position = job.title;
     }
     setFormValues((prev) => ({ ...prev, [newId]: newValues }));
+    // Initialize cities and barangays arrays for the new applicant
+    setCities((prev) => ({ ...prev, [newId]: [] }));
+    setBarangays((prev) => ({ ...prev, [newId]: [] }));
     setActiveApplicant(newId);
   };
 
@@ -281,9 +441,13 @@ function AgencyEndorse() {
       'birthday': 'birthday', 'birthdate': 'birthday', 'birth_date': 'birthday', 'date of birth': 'birthday',
       'sex': 'sex', 'gender': 'sex',
       'marital status': 'maritalStatus', 'maritalstatus': 'maritalStatus', 'civil status': 'maritalStatus',
-      'street': 'street', 'address': 'street',
-      'city': 'city', 'municipality': 'city',
-      'zip': 'zip', 'zipcode': 'zip', 'zip_code': 'zip', 'postal': 'zip',
+      'unit house number': 'unit_house_number', 'unit_house_number': 'unit_house_number', 'unit house no': 'unit_house_number',
+      'house number': 'unit_house_number', 'house_no': 'unit_house_number', 'house no': 'unit_house_number',
+      'street': 'street', 'street name': 'street', 'street_name': 'street', 'address': 'street',
+      'barangay': 'barangay', 'barangay/village': 'barangay', 'village': 'barangay',
+      'province': 'province',
+      'city': 'city', 'municipality': 'city', 'city/municipality': 'city',
+      'zip': 'zip', 'zipcode': 'zip', 'zip_code': 'zip', 'postal': 'zip', 'postal code': 'zip',
       'education': 'education', 'educational attainment': 'education',
       'school': 'tertiarySchool', 'institution': 'tertiarySchool',
       'course': 'tertiaryProgram', 'program': 'tertiaryProgram',
@@ -1088,22 +1252,113 @@ function AgencyEndorse() {
                   <h2 className="text-base font-semibold text-gray-800">Address</h2>
                 </div>
                 <div className="p-6 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">House/Unit No.</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 123" value={fv.residenceNo} onChange={(e) => handleChange(activeApplicant, "residenceNo", e.target.value)} />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Unit/House Number & Street Name
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                          placeholder="Unit/House No."
+                          value={fv.unit_house_number || ''}
+                          onChange={(e) => handleChange(activeApplicant, "unit_house_number", e.target.value)}
+                        />
+                        <input
+                          type="text"
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                          placeholder="Street Name"
+                          value={fv.street || ''}
+                          onChange={(e) => handleChange(activeApplicant, "street", e.target.value)}
+                        />
+                      </div>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Street/Village</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter street" value={fv.street} onChange={(e) => handleChange(activeApplicant, "street", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Province
+                      </label>
+                      <AutocompleteInput
+                        value={fv.province || ''}
+                        onChange={(value) => {
+                          const oldProvince = fv.province;
+                          handleChange(activeApplicant, "province", value);
+                          // Clear city and barangay when province changes
+                          if (oldProvince !== value) {
+                            handleChange(activeApplicant, "city", "");
+                            handleChange(activeApplicant, "barangay", "");
+                          }
+                        }}
+                        options={Array.isArray(provinces) ? provinces : []}
+                        placeholder="Select or type to search province"
+                        loading={loadingProvinces}
+                        listId={`endorse-province-list-${activeApplicant}`}
+                        onSelect={(option) => {
+                          if (option && option.name) {
+                            handleChange(activeApplicant, "province", option.name);
+                            handleChange(activeApplicant, "city", "");
+                            handleChange(activeApplicant, "barangay", "");
+                          }
+                        }}
+                      />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">City/Municipality</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter city" value={fv.city} onChange={(e) => handleChange(activeApplicant, "city", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        City / Municipality
+                      </label>
+                      <AutocompleteInput
+                        value={fv.city || ''}
+                        onChange={(value) => {
+                          handleChange(activeApplicant, "city", value);
+                          // Clear barangay when city changes
+                          if (fv.city !== value) {
+                            handleChange(activeApplicant, "barangay", "");
+                          }
+                        }}
+                        options={Array.isArray(cities[activeApplicant]) ? cities[activeApplicant] : []}
+                        placeholder={fv.province ? "Select or type to search city" : "Select province first"}
+                        disabled={!fv.province}
+                        loading={loadingCities[activeApplicant] || false}
+                        listId={`endorse-city-list-${activeApplicant}`}
+                        helperText={!fv.province ? "Please select a province first" : cities[activeApplicant]?.length > 0 ? `${cities[activeApplicant].length} cities available` : "Loading cities..."}
+                        onSelect={(option) => {
+                          if (option && option.name) {
+                            handleChange(activeApplicant, "city", option.name);
+                            handleChange(activeApplicant, "barangay", "");
+                          }
+                        }}
+                      />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Zip Code</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 1600" value={fv.zip} onChange={(e) => handleChange(activeApplicant, "zip", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Barangay / Village / Subdivision
+                      </label>
+                      <AutocompleteInput
+                        value={fv.barangay || ''}
+                        onChange={(value) => handleChange(activeApplicant, "barangay", value)}
+                        options={Array.isArray(barangays[activeApplicant]) ? barangays[activeApplicant] : []}
+                        placeholder={fv.city ? "Select or type to search barangay" : "Select city first"}
+                        disabled={!fv.city}
+                        loading={loadingBarangays[activeApplicant] || false}
+                        listId={`endorse-barangay-list-${activeApplicant}`}
+                        helperText={!fv.city ? "Please select a city first" : ""}
+                        onSelect={(option) => {
+                          if (option && option.name) {
+                            handleChange(activeApplicant, "barangay", option.name);
+                          }
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">ZIP Code</label>
+                      <input
+                        type="text"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                        placeholder="e.g. 1600"
+                        value={fv.zip || ''}
+                        onChange={(e) => handleChange(activeApplicant, "zip", e.target.value)}
+                        maxLength={10}
+                      />
                     </div>
                   </div>
             </div>
@@ -1855,7 +2110,7 @@ function AgencyEndorse() {
                     <p className="text-sm font-medium text-blue-800 mb-1">CSV Format Requirements</p>
                     <p className="text-xs text-blue-700">Your CSV file should include column headers. Supported columns:</p>
                     <p className="text-xs text-blue-600 mt-1 font-mono bg-blue-100 px-2 py-1 rounded">
-                      firstname, lastname, middlename, email, contact, position, department, depot, birthday, sex
+                      firstname, lastname, middlename, email, contact, position, department, depot, birthday, sex, unit_house_number, street, barangay, city, province, zip
                     </p>
                   </div>
                 </div>
@@ -1987,7 +2242,7 @@ function AgencyEndorse() {
                 </div>
                 <button 
                   onClick={() => {
-                    const template = 'firstname,lastname,middlename,email,contact,position,department,depot,birthday,sex\nJuan,Dela Cruz,Santos,juan@email.com,09171234567,Delivery Driver,Delivery Crew,Makati,1990-05-15,Male\nMaria,Santos,,maria@email.com,09181234567,Helper,Delivery Crew,BGC,1992-08-20,Female';
+                    const template = 'firstname,lastname,middlename,email,contact,position,department,depot,birthday,sex,unit_house_number,street,barangay,city,province,zip\nJuan,Dela Cruz,Santos,juan@email.com,09171234567,Delivery Driver,Delivery Crew,Makati,1990-05-15,Male,123,Main Street,Barangay 1,Makati,Metro Manila,1200\nMaria,Santos,,maria@email.com,09181234567,Helper,Delivery Crew,BGC,1992-08-20,Female,456,Ortigas Avenue,Barangay 2,Pasig,Metro Manila,1600';
                     const blob = new Blob([template], { type: 'text/csv' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
