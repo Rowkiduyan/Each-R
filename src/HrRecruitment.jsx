@@ -4400,7 +4400,7 @@ function HrRecruitment() {
                                 type="button"
                                 onClick={() => {
                                   setConfirmMessage(`Are you sure you want to remove the job post "${job.title}"? This action cannot be undone.`);
-                                  setConfirmCallback(async () => {
+                                  setConfirmCallback(() => async () => {
                                     try {
                                       const { error } = await supabase
                                         .from('job_posts')
