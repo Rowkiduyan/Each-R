@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useEmployeeUser } from "./layouts/EmployeeLayout";
 import { supabase } from "./supabaseClient";
 
 function EmployeeEval() {
+    const navigate = useNavigate();
     const { userId, userEmail, employeeUser } = useEmployeeUser();
     const [loading, setLoading] = useState(true);
     const [expandedEval, setExpandedEval] = useState(null);
     const [evaluations, setEvaluations] = useState([]);
     const [employeeInfo, setEmployeeInfo] = useState(null);
+    const [showDismissedModal, setShowDismissedModal] = useState(false);
+    const [dismissedEvaluation, setDismissedEvaluation] = useState(null);
 
     useEffect(() => {
         if (userEmail) {
@@ -46,6 +50,15 @@ function EmployeeEval() {
                 setEvaluations([]);
             } else {
                 setEvaluations(evalData || []);
+                
+                // Check if the most recent evaluation has "Dismissed" remark
+                if (evalData && evalData.length > 0) {
+                    const mostRecent = evalData[0];
+                    if (mostRecent.remarks === 'Dismissed') {
+                        setDismissedEvaluation(mostRecent);
+                        setShowDismissedModal(true);
+                    }
+                }
             }
 
         } catch (error) {
@@ -456,6 +469,57 @@ function EmployeeEval() {
                     </div>
                 </div>
             </div>
+
+            {/* Dismissed Modal */}
+            {showDismissedModal && dismissedEvaluation && (
+                <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg max-w-md w-full p-6 border border-black">
+                        <div className="flex items-start gap-3 mb-4">
+                            <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+                            <div className="flex-1">
+                                <h3 className="text-lg font-semibold text-red-800 mb-2">Evaluation Result: Dismissed</h3>
+                                <p className="text-sm text-gray-700 mb-3">
+                                    Your recent evaluation conducted on <strong>{formatDate(dismissedEvaluation.date_evaluated)}</strong> has resulted in a dismissal decision.
+                                </p>
+                                <div className="bg-red-50 rounded-lg p-3 mb-4 border border-red-100">
+                                    <p className="text-sm text-red-800">
+                                        <strong>What happens next:</strong>
+                                    </p>
+                                    <ul className="text-sm text-red-700 mt-2 space-y-1 list-disc list-inside">
+                                        <li>You are required to submit a resignation letter</li>
+                                        <li>Navigate to the Separation section to complete the process</li>
+                                        <li>HR will guide you through the exit procedures</li>
+                                    </ul>
+                                </div>
+                                <p className="text-xs text-gray-600">
+                                    If you have any questions or concerns about this decision, please contact HR immediately.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowDismissedModal(false)}
+                                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowDismissedModal(false);
+                                    navigate('/employee/separation');
+                                }}
+                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+                            >
+                                Go to Separation
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 }

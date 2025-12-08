@@ -727,9 +727,8 @@ const formatDateForInput = (dateString) => {
 
     const prefillApplicationForm = (profile) => {
       if (!profile) return;
-      const skillsValue = Array.isArray(profile.skills)
-        ? profile.skills.join(', ')
-        : profile.skills || '';
+      // Normalize skills to array format
+      const skillsValue = normalizeSkills(profile.skills);
       const { unit_house_number, street, barangay, city, province, zip } = parseAddressParts(profile);
 
       // Get resume name from path if available
@@ -918,6 +917,12 @@ const formatDateForInput = (dateString) => {
             return;
           }
         }
+        // Validate skills
+        const validSkills = normalizeSkills(form.skills);
+        if (validSkills.length === 0) {
+          setErrorMessage('Please add at least one skill.');
+          return;
+        }
       }
 
       if (applicationTab === 'experience' || isLastTab) {
@@ -1034,11 +1039,11 @@ const formatDateForInput = (dateString) => {
         setForm((prev) => ({ ...prev, resumePath: resumeStoragePath }));
       }
 
-      const skillsArray = parseSkills(form.skills);
+      const skillsArray = normalizeSkills(form.skills);
       const formPayload = {
         ...form,
         skills: skillsArray,
-        skills_text: form.skills,
+        skills_text: skillsArray.join(', '),
       };
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
@@ -3126,15 +3131,12 @@ const formatDateForInput = (dateString) => {
                               Please list your skills
                             </span>
                           </label>
-                            <input
-                              type="text"
-                            placeholder="e.g., Driving, Customer Service, Logistics"
-                            name="skills"
-                            value={form.skills}
-                              onChange={handleInput}
-                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                          />
-                          <p className="text-xs text-gray-500 mt-1">Separate skills with commas.</p>
+                          <div className="mt-2">
+                            <SkillsInput
+                              skills={normalizeSkills(form.skills)}
+                              onChange={(skillsArray) => setForm(prev => ({ ...prev, skills: skillsArray }))}
+                            />
+                          </div>
                         </div>
 
                         {/* License */}
@@ -3515,7 +3517,7 @@ const formatDateForInput = (dateString) => {
                     <div>
                       <h3 className="text-lg font-semibold text-gray-800 mb-2">Skills</h3>
                       <div className="border border-gray-300 p-2">
-                        {parseSkills(form.skills).join(', ') || '-'}
+                        {normalizeSkills(form.skills).join(', ') || '-'}
                       </div>
                     </div>
 

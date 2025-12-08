@@ -532,13 +532,6 @@ function EmployeeTrainings() {
             return;
         }
 
-        // Validate that all files have titles
-        const filesWithoutTitles = selectedFiles.filter(item => !item.title || item.title.trim() === '');
-        if (filesWithoutTitles.length > 0) {
-            alert("Please provide a title for all certificates before uploading.");
-            return;
-        }
-
         if (!userId) {
             alert('User ID not available. Please try again.');
             return;
@@ -551,9 +544,9 @@ function EmployeeTrainings() {
         setIsUploading(true);
 
         try {
-            const uploadPromises = selectedFiles.map(async (item) => {
-                const file = item.file;
-                const title = item.title.trim();
+            const uploadPromises = selectedFiles.map(async (file) => {
+                // Use filename without extension as title
+                const title = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
                 
                 // Generate unique filename
                 const timestamp = Date.now();
@@ -631,11 +624,8 @@ function EmployeeTrainings() {
             const isValidSize = file.size <= maxSize;
             
             if (isValidType && isValidSize) {
-                // Store file with title field
-                validFiles.push({
-                    file: file,
-                    title: ''
-                });
+                // Store file without title field
+                validFiles.push(file);
             } else {
                 let reason;
                 if (!isValidType && !isValidSize) {
@@ -662,12 +652,6 @@ function EmployeeTrainings() {
 
     const removeFile = (index) => {
         setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-    };
-
-    const updateFileTitle = (index, title) => {
-        setSelectedFiles(prev => prev.map((item, i) => 
-            i === index ? { ...item, title } : item
-        ));
     };
 
     // Delete certificate - show confirmation modal
@@ -740,6 +724,12 @@ function EmployeeTrainings() {
             alert('User ID not available. Please try again.');
             return;
         }
+
+        if (isUploading) {
+            return; // Prevent double submission
+        }
+
+        setIsUploading(true);
 
         try {
             // Get employee name for attendance update
@@ -858,6 +848,8 @@ function EmployeeTrainings() {
         } catch (error) {
             console.error('Error uploading certificate:', error);
             alert(`Error uploading certificate: ${error.message}`);
+        } finally {
+            setIsUploading(false);
         }
     };
 
@@ -1206,13 +1198,30 @@ function EmployeeTrainings() {
                                         {training.attendance && (() => {
                                             const attendanceStatus = getEmployeeAttendanceStatus(training);
                                             if (attendanceStatus.isPresent === true) {
+                                                // Check if certificate URL is valid (not null, not empty, and is a string)
+                                                const hasCertificate = attendanceStatus.certificateUrl && 
+                                                                      typeof attendanceStatus.certificateUrl === 'string' && 
+                                                                      attendanceStatus.certificateUrl.trim().length > 0 &&
+                                                                      (attendanceStatus.certificateUrl.startsWith('http://') || 
+                                                                       attendanceStatus.certificateUrl.startsWith('https://'));
+                                                
                                                 return (
                                                     <div className="flex items-center gap-2 flex-shrink-0">
-                                                        {attendanceStatus.certificateUrl && (
+                                                        {hasCertificate && (
                                                             <button
-                                                                onClick={(e) => {
+                                                                onClick={async (e) => {
                                                                     e.stopPropagation();
-                                                                    window.open(attendanceStatus.certificateUrl, '_blank');
+                                                                    try {
+                                                                        // Try to open the certificate
+                                                                        const newWindow = window.open(attendanceStatus.certificateUrl, '_blank');
+                                                                        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+                                                                            // Popup was blocked
+                                                                            alert('Please allow popups for this website to view the certificate.');
+                                                                        }
+                                                                    } catch (error) {
+                                                                        console.error('Error opening certificate:', error);
+                                                                        alert('Unable to open certificate. The file may have been deleted.');
+                                                                    }
                                                                 }}
                                                                 className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2"
                                                                 title="View certificate"
@@ -1232,7 +1241,7 @@ function EmployeeTrainings() {
                                                                 setShowTrainingCertUpload(true);
                                                             }}
                                                             className={`px-4 py-2 rounded-lg transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2 ${
-                                                                attendanceStatus.certificateUrl
+                                                                hasCertificate
                                                                     ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
                                                                     : 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white hover:from-indigo-600 hover:to-indigo-700'
                                                             }`}
@@ -1240,7 +1249,7 @@ function EmployeeTrainings() {
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                                                             </svg>
-                                                            {attendanceStatus.certificateUrl ? 'Update Certificate' : 'Upload Certificate'}
+                                                            {hasCertificate ? 'Update Certificate' : 'Upload Certificate'}
                                                         </button>
                                                     </div>
                                                 );
@@ -1340,6 +1349,8 @@ function EmployeeTrainings() {
                                         {selectedTraining.attendees?.map((attendee, idx) => {
                                             const name = typeof attendee === "string" ? attendee : attendee.name || "";
                                             const attendedFlag = !!selectedTraining.attendance?.[name];
+                                            // Only show attendance status for completed trainings (not active and has attendance data with at least one marked attendee)
+                                            const hasMarkedAttendance = selectedTraining.attendance && Object.keys(selectedTraining.attendance).length > 0 && Object.values(selectedTraining.attendance).some(val => val === true || val === false);
                                             return (
                                                 <div 
                                                     key={idx} 
@@ -1351,7 +1362,7 @@ function EmployeeTrainings() {
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <p className="text-xs font-medium text-gray-900 truncate">{name}</p>
-                                                            {!selectedTraining.is_active && (
+                                                            {!selectedTraining.is_active && hasMarkedAttendance && (
                                                                 <span
                                                                     className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-semibold mt-0.5 ${
                                                                         attendedFlag
@@ -1463,16 +1474,16 @@ function EmployeeTrainings() {
                                 <div className="mt-4">
                                     <h3 className="text-sm font-medium text-gray-700 mb-2">Selected Files ({selectedFiles.length})</h3>
                                     <div className="space-y-3 max-h-96 overflow-y-auto">
-                                        {selectedFiles.map((item, index) => (
-                                            <div key={index} className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+                                        {selectedFiles.map((file, index) => (
+                                            <div key={index} className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-3 flex-1 min-w-0">
                                                         <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                                         </svg>
                                                         <div className="flex-1 min-w-0">
-                                                            <p className="text-sm font-medium text-gray-900 truncate">{item.file.name}</p>
-                                                            <p className="text-xs text-gray-500">{(item.file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                            <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                                                            <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                                                         </div>
                                                     </div>
                                                     <button
@@ -1483,19 +1494,6 @@ function EmployeeTrainings() {
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                                         </svg>
                                                     </button>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                                                        Certificate Title <span className="text-red-500">*</span>
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        value={item.title}
-                                                        onChange={(e) => updateFileTitle(index, e.target.value)}
-                                                        placeholder="e.g., First Aid Certification, Safety Training"
-                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                        required
-                                                    />
                                                 </div>
                                             </div>
                                         ))}
@@ -1739,10 +1737,10 @@ function EmployeeTrainings() {
                             </button>
                             <button
                                 onClick={handleTrainingCertUpload}
-                                disabled={!trainingCertFile}
+                                disabled={!trainingCertFile || isUploading}
                                 className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium text-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
                             >
-                                Upload Certificate
+                                {isUploading ? 'Uploading...' : 'Upload Certificate'}
                             </button>
                         </div>
                     </div>
