@@ -24,9 +24,6 @@ function Employees() {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const filterMenuRef = useRef(null);
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // data
   const [employees, setEmployees] = useState([]);
@@ -128,20 +125,6 @@ function Employees() {
     return { position: p || null, depot: d || null };
   };
 
-  // Calculate items per page based on screen height
-  useEffect(() => {
-    const calculateItemsPerPage = () => {
-      const rowHeight = 60;
-      const reservedHeight = 500;
-      const availableHeight = window.innerHeight - reservedHeight;
-      const calculatedItems = Math.max(5, Math.floor(availableHeight / rowHeight));
-      setItemsPerPage(calculatedItems);
-    };
-
-    calculateItemsPerPage();
-    window.addEventListener('resize', calculateItemsPerPage);
-    return () => window.removeEventListener('resize', calculateItemsPerPage);
-  }, []);
 
   // Close filter menu when clicking outside
   useEffect(() => {
@@ -345,14 +328,6 @@ function Employees() {
       .sort((a, b) => sortOrder === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
   }, [employees, search, positionFilter, depotFilter, employmentStatusFilter, sortOrder]);
 
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
-  const paginatedEmployees = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, positionFilter, depotFilter, employmentStatusFilter]);
 
   // Stats
   const stats = {
@@ -1385,7 +1360,7 @@ function Employees() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {paginatedEmployees.map((emp) => {
+                          {filtered.map((emp) => {
                             const isSelected = selectedEmployee?.id === emp.id;
                             return (
                               <tr 
@@ -2657,34 +2632,6 @@ function Employees() {
                     )}
                   </div>
 
-                  {/* Pagination */}
-                  <div className="flex items-center justify-between pt-3 border-t border-gray-200 flex-shrink-0">
-                    <button
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      className={`px-4 py-2 text-sm rounded border ${
-                        currentPage === 1 
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      Prev
-                    </button>
-                    <span className="text-sm text-gray-600">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage >= totalPages}
-                      className={`px-4 py-2 text-sm rounded border ${
-                        currentPage >= totalPages
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      Next
-                    </button>
-                  </div>
                 </>
               )}
             </div>

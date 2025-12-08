@@ -35,9 +35,7 @@ function AgencyEndorsements() {
   // UI helpers for details
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   
-  // Pagination for endorsements
-  const [endorsementsPage, setEndorsementsPage] = useState(1);
-  const [endorsementsPerPage, setEndorsementsPerPage] = useState(10);
+  // Search and filter for endorsements
   const [endorsementsSearch, setEndorsementsSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [employeeDetailTab, setEmployeeDetailTab] = useState('profiling');
@@ -66,39 +64,6 @@ function AgencyEndorsements() {
   const [interviews, setInterviews] = useState([]);
   const [calendarActiveTab, setCalendarActiveTab] = useState('today'); // 'today', 'tomorrow', 'week'
 
-
-  // Calculate items per page based on available screen height
-  useEffect(() => {
-    const calculateItemsPerPage = () => {
-      // Approximate row height (including padding and borders)
-      const rowHeight = 45;
-      // Reserved heights:
-      // - Header: ~70px
-      // - Page title + subtitle: ~70px  
-      // - Stats cards: ~110px (with margins)
-      // - Table card header: ~55px
-      // - Table header row: ~40px
-      // - Pagination: ~55px
-      // - Various padding/margins: ~50px
-      const reservedHeight = 450;
-      const availableHeight = window.innerHeight - reservedHeight;
-      // Subtract 1 to ensure last row doesn't get cut off
-      const calculatedItems = Math.max(3, Math.floor(availableHeight / rowHeight) - 1);
-      setEndorsementsPerPage(calculatedItems);
-    };
-
-    calculateItemsPerPage();
-    window.addEventListener('resize', calculateItemsPerPage);
-    return () => window.removeEventListener('resize', calculateItemsPerPage);
-  }, []);
-
-  // Reset to page 1 if current page exceeds total pages after resize
-  useEffect(() => {
-    const totalPages = Math.ceil(endorsedEmployees.length / endorsementsPerPage);
-    if (endorsementsPage > totalPages && totalPages > 0) {
-      setEndorsementsPage(totalPages);
-    }
-  }, [endorsementsPerPage, endorsedEmployees.length, endorsementsPage]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -1271,7 +1236,6 @@ function AgencyEndorsements() {
                     value={endorsementsSearch}
                     onChange={(e) => {
                       setEndorsementsSearch(e.target.value);
-                      setEndorsementsPage(1); // Reset to page 1 when searching
                     }}
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
                   />
@@ -1280,7 +1244,7 @@ function AgencyEndorsements() {
                 {/* Status Filter */}
                 <select
                   value={statusFilter}
-                  onChange={(e) => { setStatusFilter(e.target.value); setEndorsementsPage(1); }}
+                  onChange={(e) => { setStatusFilter(e.target.value); }}
                   className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white min-w-[160px]"
                 >
                   <option value="all">All Status</option>
@@ -1347,10 +1311,6 @@ function AgencyEndorsements() {
                     String(emp.id).includes(searchLower)
                   );
                 });
-                
-                const totalFilteredPages = Math.max(1, Math.ceil(filteredEmployees.length / endorsementsPerPage));
-                const startIndex = (endorsementsPage - 1) * endorsementsPerPage;
-                const paginatedEmployees = filteredEmployees.slice(startIndex, startIndex + endorsementsPerPage);
 
                 return (
                 <>
@@ -1373,7 +1333,7 @@ function AgencyEndorsements() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {paginatedEmployees.map((emp) => {
+                          {filteredEmployees.map((emp) => {
                               // Find deployed date from hiredEmployees if this endorsement was deployed
                               const deployedEmployee = emp.endorsed_employee_id 
                                 ? hiredEmployees.find(h => h.id === emp.endorsed_employee_id)
@@ -3120,35 +3080,6 @@ function AgencyEndorsements() {
                       </div>
                       );
                     })()}
-                  </div>
-
-                  {/* Pagination */}
-                  <div className="flex items-center justify-between pt-3 border-t border-gray-200 flex-shrink-0">
-                    <button
-                      onClick={() => setEndorsementsPage(p => Math.max(1, p - 1))}
-                      disabled={endorsementsPage === 1}
-                      className={`px-4 py-2 text-sm rounded border ${
-                        endorsementsPage === 1 
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      Prev
-                    </button>
-                    <span className="text-sm text-gray-600">
-                      Page {endorsementsPage} of {totalFilteredPages}
-                    </span>
-                    <button
-                      onClick={() => setEndorsementsPage(p => Math.min(totalFilteredPages, p + 1))}
-                      disabled={endorsementsPage >= totalFilteredPages}
-                      className={`px-4 py-2 text-sm rounded border ${
-                        endorsementsPage >= totalFilteredPages
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      Next
-                    </button>
                   </div>
                 </>
                 );
