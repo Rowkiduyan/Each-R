@@ -856,6 +856,22 @@ function HrRecruitment() {
         if (typeof payloadObj === 'string') {
           try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
         }
+        
+        // Get applicant name - check applicantMap first (for regular applicants), then payload (for endorsed)
+        let applicantName = 'Unknown';
+        if (app.user_id && applicantMap[app.user_id]) {
+          applicantName = applicantMap[app.user_id];
+        } else {
+          // For endorsed applicants, get name from payload.applicant or payload.form
+          const applicantData = payloadObj.applicant || payloadObj.form || {};
+          const fname = applicantData.firstName || applicantData.fname || '';
+          const lname = applicantData.lastName || applicantData.lname || '';
+          if (fname || lname) {
+            applicantName = `${fname} ${lname}`.trim();
+          }
+        }
+        
+        // Get source for position extraction
         const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
         
         // Get position/title - prioritize job_posts.title, then payload fields
@@ -864,7 +880,7 @@ function HrRecruitment() {
         
         return {
           id: app.id,
-          applicant_name: applicantMap[app.user_id] || 'Unknown',
+          applicant_name: applicantName,
           position: position,
           time: app.interview_time || 'Not set',
           date: app.interview_date,
@@ -1066,14 +1082,68 @@ function HrRecruitment() {
       try {
         const params = {};
         params[c.param] = appId;
-        // Add position if provided and function supports it
-        if (position && (c.fn.includes("move_applicant_to_employee") || c.fn.includes("hire_applicant"))) {
-          params.p_position = position;
-        }
+        // Position and depot are now extracted from payload by the function, no need to pass them
         console.debug("[rpc-try] calling", c.fn, params);
         const { data, error } = await supabase.rpc(c.fn, params);
 
         if (error) {
+          // Check if this is a duplicate email error (non-fatal - employee already exists)
+          const isDuplicateEmail = error.code === '23505' && 
+            (error.message?.includes('employees_email_key') || error.details?.includes('email'));
+          
+          if (isDuplicateEmail) {
+            // Don't log warning - this is expected when employee already exists
+            console.log("[rpc-try] Employee already exists, fetching existing record");
+            
+            // Extract email from error details
+            const emailMatch = error.details?.match(/\(email\)=\(([^)]+)\)/);
+            const existingEmail = emailMatch ? emailMatch[1] : null;
+            
+            if (existingEmail) {
+              // Fetch the existing employee record to get all fields including department
+              try {
+                const { data: existingEmployee, error: fetchError } = await supabase
+                  .from('employees')
+                  .select('*')
+                  .eq('email', existingEmail)
+                  .single();
+                
+                if (!fetchError && existingEmployee) {
+                  console.log("[rpc-try] Found existing employee:", existingEmployee);
+                  // Return success with existing employee data
+                  return { 
+                    ok: true, 
+                    candidate: c, 
+                    data: { 
+                      ok: true, 
+                      employee_id: existingEmployee.id,
+                      department: existingEmployee.department,
+                      depot: existingEmployee.depot,
+                      position: existingEmployee.position,
+                      fname: existingEmployee.fname,
+                      lname: existingEmployee.lname,
+                      email: existingEmployee.email,
+                      existing: true 
+                    } 
+                  };
+                }
+              } catch (fetchErr) {
+                console.error("[rpc-try] Error fetching existing employee:", fetchErr);
+              }
+            }
+            
+            // Fallback: return success without data
+            return { 
+              ok: true, 
+              candidate: c, 
+              data: { 
+                ok: true, 
+                message: 'Employee already exists',
+                existing: true 
+              } 
+            };
+          }
+          
           // log and continue trying other candidates unless it's a non-existant function HTTP 404 style
           console.warn("[rpc-try] rpc returned error for", c, error);
           // sometimes PostgREST returns PGRST202 meaning function signature not found in schema cache
@@ -1082,6 +1152,10 @@ function HrRecruitment() {
         }
 
         // data came back - return which candidate worked and the returned payload
+        console.log("RPC SUCCESS - Function:", c.fn, "Data:", data);
+        console.log("Department from RPC:", data?.department);
+        console.log("Depot from RPC:", data?.depot);
+        console.log("Position from RPC:", data?.position);
         return { ok: true, candidate: c, data };
       } catch (err) {
         console.warn("[rpc-try] unexpected exception calling", c, err);
@@ -1109,9 +1183,10 @@ function HrRecruitment() {
       
       try {
         // First, get the application data to extract applicant information
+        // Include job_posts with department field
         const { data: applicationData, error: appError } = await supabase
           .from("applications")
-          .select("*")
+          .select("*, job_posts(id, title, depot, department)")
           .eq("id", applicationId)
           .single();
 
@@ -1144,6 +1219,16 @@ function HrRecruitment() {
         const middleName = source.middleName || source.mname || source.middle_name || "";
         const applicantEmail = source.email || source.contact || "";
         const birthday = source.birthday || source.birth_date || source.dateOfBirth || null;
+        
+        // Log payload structure for debugging
+        console.log("[Mark as Hired] Payload structure:", {
+          hasForm: !!payloadObj.form,
+          hasApplicant: !!payloadObj.applicant,
+          hasJob: !!payloadObj.job,
+          formDepartment: payloadObj.form?.department,
+          applicantDepartment: payloadObj.applicant?.department,
+          jobDepartment: payloadObj.job?.department
+        });
 
         if (!firstName || !lastName) {
           setErrorMessage("Cannot mark as employee: missing name information.");
@@ -1300,19 +1385,42 @@ function HrRecruitment() {
           
           // Extract additional fields from application payload
           const contactNumber = source.contact || source.contact_number || source.phone || null;
-          const depot = applicationData.job_posts?.depot || source.depot || source.preferred_depot || null;
+          // Use depot from RPC response (already extracted from payload), fallback to other sources
+          const depot = rpcData?.depot || applicationData.job_posts?.depot || source.depot || source.preferred_depot || null;
+          // Use position from RPC response (already extracted from payload)
+          const rpcPosition = rpcData?.position || position;
+          // Use department - extract from all possible locations in payload
+          const department = 
+            applicationData.job_posts?.department || // From job_posts join
+            payloadObj.job?.department ||            // From job snapshot in payload
+            payloadObj.form?.department ||           // From form data in payload
+            payloadObj.applicant?.department ||      // From applicant data (endorsed)
+            source.department ||                     // Fallback to source
+            rpcData?.department ||                   // From RPC (might be null for old records)
+            null;
+          
+          console.log("[Mark as Hired] Department extraction:", {
+            fromJobPosts: applicationData.job_posts?.department,
+            fromPayloadJob: payloadObj.job?.department,
+            fromPayloadForm: payloadObj.form?.department,
+            fromPayloadApplicant: payloadObj.applicant?.department,
+            fromRpc: rpcData?.department,
+            final: department
+          });
           
           // Build employee data with only fields that exist in the employees table
           // Based on Employees.jsx, the table has: id, email, fname, lname, mname, contact_number, 
-          // position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, personal_email
+          // position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, personal_email
           const employeeData = {
+            id: rpcData?.employee_id || applicationData.user_id, // Use the ID from RPC or application
             email: employeeEmail,
             fname: firstName,
             lname: lastName,
             mname: middleName || null,
             contact_number: contactNumber,
-            depot: depot,
-            position: position || null,
+            depot: depot, // Use depot from RPC (extracted from payload)
+            position: rpcPosition || null, // Use position from RPC (extracted from payload)
+            department: department || null, // Use department from RPC (extracted from payload)
             role: "Employee",
             hired_at: new Date().toISOString(),
             source: employeeSource,
@@ -1335,8 +1443,8 @@ function HrRecruitment() {
             .from("employees")
             .upsert(
               employeeData,
-              // De‑duplicate by email so we only keep one employee row per email
-              { onConflict: "email" }
+              // Use ID conflict to update the record created by SQL function
+              { onConflict: "id" }
             )
             .select();
 
@@ -1349,13 +1457,15 @@ function HrRecruitment() {
             
             // Retry with only essential fields
             const minimalEmployeeData = {
+              id: rpcData?.employee_id || applicationData.user_id, // Include ID
               email: employeeEmail,
               fname: firstName,
               lname: lastName,
               mname: middleName || null,
               contact_number: contactNumber,
-              depot: depot,
-              position: position || null,
+              depot: depot, // Use depot from RPC (extracted from payload)
+              position: rpcPosition || null,
+              department: department || null,
               role: "Employee",
               hired_at: new Date().toISOString(),
               source: employeeSource,
@@ -1367,7 +1477,7 @@ function HrRecruitment() {
               .from("employees")
               .upsert(
                 minimalEmployeeData,
-                { onConflict: "email" }
+                { onConflict: "id" }
               )
               .select();
 

@@ -39,7 +39,7 @@ function ApplicantGHome() {
     const fetchJobs = async () => {
       const { data, error } = await supabase
         .from('job_posts')
-        .select('id, title, depot, description, responsibilities, urgent, created_at, duration, job_type')
+        .select('id, title, depot, department, description, responsibilities, urgent, created_at, duration, job_type')
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 
@@ -153,7 +153,12 @@ function ApplicantGHome() {
         <div className="mt-4 flex flex-col flex-grow">
           <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
           <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
-            <span>{job.depot}</span>
+            <div className="flex flex-col gap-1">
+              <span>{job.depot}</span>
+              {job.department && (
+                <span className="text-xs text-gray-500">{job.department}</span>
+              )}
+            </div>
             <span>Posted {postedLabel}</span>
           </div>
           <p className="text-gray-700 line-clamp-3">{job.description}</p>

@@ -7,6 +7,7 @@ function HrCreateJob() {
   const [form, setForm] = useState({
     title: "",
     depot: "",
+    department: "",
     posted: "Just now",
     description: "",
     responsibilities: [""],
@@ -48,7 +49,41 @@ function HrCreateJob() {
     "Taytay", "Tuguegarao", "Vigan"
   ];
 
-  const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+  // Job title to department mapping
+  const jobTitleToDepartment = {
+    "Delivery Drivers": "Delivery Crew",
+    "Delivery Helpers": "Delivery Crew",
+    "Transport Coordinators": "Delivery Crew",
+    "Dispatchers": "Delivery Crew",
+    "Customer Service Representative": "Delivery Crew",
+    "POD (Proof of Delivery) Specialist": "Delivery Crew",
+    "HR Specialist": "HR Department",
+    "Recruitment Specialist": "HR Department",
+    "Safety Officer 2": "Security & Safety Department",
+    "Safety Officer 3": "Security & Safety Department",
+    "Security Officer": "Security & Safety Department",
+    "Billing & Collections Specialist": "Collections Department",
+    "Charges Specialist": "Collections Department",
+    "Diesel Mechanics": "Repairs and Maintenance Specialist",
+    "Truck Refrigeration Technician": "Repairs and Maintenance Specialist",
+    "Welders": "Repairs and Maintenance Specialist",
+    "Tinsmith": "Repairs and Maintenance Specialist",
+  };
+
+  const setField = (k, v) => {
+    setForm(prev => ({ ...prev, [k]: v }));
+    
+    // When job type changes to delivery_crew, auto-set department to "Delivery Crew"
+    if (k === "jobType" && v === "delivery_crew") {
+      setForm(prev => ({ ...prev, jobType: v, department: "Delivery Crew" }));
+      return;
+    }
+    
+    // Auto-fill department when job title is selected
+    if (k === "title" && jobTitleToDepartment[v]) {
+      setForm(prev => ({ ...prev, title: v, department: jobTitleToDepartment[v] }));
+    }
+  };
 
   const addResp = () =>
     setForm(prev => ({ ...prev, responsibilities: [...prev.responsibilities, ""] }));
@@ -71,10 +106,9 @@ function HrCreateJob() {
     const hasResponsibilities = form.responsibilities.some(r => r && r.trim() !== "");
     return hasTitle && hasDepot && hasResponsibilities;
   };
-
   // safe create + debug function
-  // call: await createJobPost({ title, depot, description, responsibilities, urgent, job_type, duration })
-  const createJobPost = async ({ title, depot, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", duration = null }) => {
+  // call: await createJobPost({ title, depot, department, description, responsibilities, urgent, job_type, duration })
+  const createJobPost = async ({ title, depot, department = null, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", duration = null }) => {
     // client-side validation (title & depot are NOT NULL in your DB)
     if (!title || String(title).trim() === "") {
       throw new Error("Job title is required.");
@@ -91,6 +125,7 @@ function HrCreateJob() {
     const payload = {
       title: String(title).trim(),
       depot: String(depot).trim(),
+      department: department ?? null,
       description: description ?? null,
       // ensure array and remove empty lines
       responsibilities: Array.isArray(responsibilities)
@@ -152,12 +187,12 @@ function HrCreateJob() {
       const days = form.durationDays ? parseInt(form.durationDays) : 0;
       duration = `${months}mo ${days}d`;
     }
-    
     try {
       // Save as draft (is_active = false)
       await createJobPost({
         title: form.title,
         depot: form.depot,
+        department: form.department || null,
         description: form.description || null,
         responsibilities: combinedResponsibilities,
         urgent: form.urgent,
@@ -197,6 +232,7 @@ function HrCreateJob() {
       await createJobPost({
         title: form.title,
         depot: form.depot,
+        department: form.department || null,
         description: form.description || null,
         responsibilities: combinedResponsibilities,
         urgent: form.urgent,
@@ -211,6 +247,7 @@ function HrCreateJob() {
       setForm({
         title: "",
         depot: "",
+        department: "",
         posted: "Just now",
         description: "",
         responsibilities: [""],
@@ -294,19 +331,39 @@ function HrCreateJob() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Job Title <span className="text-red-600">*</span></label>
-              <select
+              <input
+                list="job-title-options"
                 className="w-full border rounded px-3 py-2"
                 value={form.title}
                 onChange={(e) => setField("title", e.target.value)}
-              >
-                <option value="">Select Job Title</option>
-                <option value="Delivery Drivers">Delivery Drivers</option>
-                <option value="Delivery Helpers">Delivery Helpers</option>
-                <option value="Transport Coordinators">Transport Coordinators</option>
-                <option value="Dispatchers">Dispatchers</option>
-                <option value="Customer Service Representative">Customer Service Representative</option>
-                <option value="POD (Proof of Delivery) Specialist">POD (Proof of Delivery) Specialist</option>
-              </select>
+                placeholder="Select or type job title"
+              />
+              <datalist id="job-title-options">
+                {form.jobType === "delivery_crew" ? (
+                  <>
+                    <option value="Delivery Drivers" />
+                    <option value="Delivery Helpers" />
+                    <option value="Transport Coordinators" />
+                    <option value="Dispatchers" />
+                    <option value="Customer Service Representative" />
+                    <option value="POD (Proof of Delivery) Specialist" />
+                  </>
+                ) : (
+                  <>
+                    <option value="HR Specialist" />
+                    <option value="Recruitment Specialist" />
+                    <option value="Safety Officer 2" />
+                    <option value="Safety Officer 3" />
+                    <option value="Security Officer" />
+                    <option value="Billing & Collections Specialist" />
+                    <option value="Charges Specialist" />
+                    <option value="Diesel Mechanics" />
+                    <option value="Truck Refrigeration Technician" />
+                    <option value="Welders" />
+                    <option value="Tinsmith" />
+                  </>
+                )}
+              </datalist>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Depot</label>
@@ -328,6 +385,27 @@ function HrCreateJob() {
                 <p className="text-xs text-gray-500 mt-1">HRC users can only create jobs for their assigned depot</p>
               )}
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">Department</label>
+            <select
+              className="w-full border rounded px-3 py-2"
+              value={form.department}
+              onChange={(e) => setField("department", e.target.value)}
+              disabled={form.jobType === "delivery_crew"}
+              style={form.jobType === "delivery_crew" ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
+            >
+              <option value="">Select Department</option>
+              <option value="Delivery Crew">Delivery Crew</option>
+              <option value="HR Department">HR Department</option>
+              <option value="Security & Safety Department">Security & Safety Department</option>
+              <option value="Collections Department">Collections Department</option>
+              <option value="Repairs and Maintenance Specialist">Repairs and Maintenance Specialist</option>
+            </select>
+            {form.jobType === "delivery_crew" && (
+              <p className="text-xs text-gray-500 mt-1">Department is automatically set to "Delivery Crew" for Drivers/Delivery Crew job type</p>
+            )}
           </div>
 
           <div>
@@ -435,6 +513,7 @@ function HrCreateJob() {
           </div>
         </div>
       </div>
+
       {showConfirm && (
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 space-y-4">

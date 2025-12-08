@@ -468,6 +468,7 @@ function AgencyEndorse() {
       // Include resume in applicant data if available
       const applicantData = {
         ...vals,
+        department: job?.department || null, // Add department from job post
         ...(applicantResumePath && { resumePath: applicantResumePath })
       };
 

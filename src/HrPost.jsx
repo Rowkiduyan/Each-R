@@ -408,7 +408,12 @@ function HrPost() {
         >
           <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
           <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
-            <span>{job.depot}</span>
+            <div className="flex flex-col gap-1">
+              <span>{job.depot}</span>
+              {job.department && (
+                <span className="text-xs text-gray-500">{job.department}</span>
+              )}
+            </div>
             <span>Posted {formatPostedLabel(job)}</span>
           </div>
           <p className="text-gray-700 line-clamp-3">{job.description}</p>

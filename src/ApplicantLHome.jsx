@@ -1044,6 +1044,7 @@ const formatDateForInput = (dateString) => {
         ...form,
         skills: skillsArray,
         skills_text: skillsArray.join(', '),
+        department: job?.department || null, // Add department from job post
       };
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
@@ -1470,7 +1471,7 @@ const formatDateForInput = (dateString) => {
         setJobsLoading(true);
         const { data, error } = await supabase
           .from('job_posts')
-          .select('id, title, depot, description, responsibilities, urgent, created_at, job_type, duration')
+          .select('id, title, depot, department, description, responsibilities, urgent, created_at, job_type, duration')
           .eq('is_active', true)
           .order('created_at', { ascending: false });
 
@@ -1633,7 +1634,10 @@ const formatDateForInput = (dateString) => {
           <div className="mt-4 flex flex-col flex-grow">
             <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
             <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
-              <span className={isPreferredDepot ? 'font-semibold text-blue-600' : ''}>{job.depot}</span>
+              <div className="flex flex-col">
+                <span className={isPreferredDepot ? 'font-semibold text-blue-600' : ''}>{job.depot}</span>
+                {job.department && <span className="text-xs text-gray-500">{job.department}</span>}
+              </div>
               <span>Posted {postedLabel}</span>
             </div>
             <p className="text-gray-700 line-clamp-3">{job.description}</p>

@@ -409,6 +409,10 @@ function ApplicantDetails() {
 
       // If the RPC returned a JSON object (some implementations return jsonb with 'ok' key)
       const rpcData = rpcResult.data;
+      
+      // Log the RPC response for debugging
+      console.log("RPC Response:", rpcData);
+      console.log("Department from RPC:", rpcData?.department);
 
       // If RPC returned an error-like payload (eg. { ok: false, error: 'missing_email', message: '...' })
       if (rpcData && typeof rpcData === "object" && (rpcData.ok === false || rpcData.error)) {
