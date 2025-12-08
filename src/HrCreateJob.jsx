@@ -48,6 +48,16 @@ function HrCreateJob() {
     "Taytay", "Tuguegarao", "Vigan"
   ];
 
+  // Job title options for job posts
+  const jobTitleOptions = [
+    "Delivery Drivers",
+    "Delivery Helpers",
+    "Transport Coordinators",
+    "Dispatchers",
+    "Customer Service Representative",
+    "POD (Proof of Delivery) Specialist"
+  ];
+
   const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
   const addResp = () =>
@@ -294,19 +304,18 @@ function HrCreateJob() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Job Title <span className="text-red-600">*</span></label>
-              <select
+              <input
+                list="job-title-options"
                 className="w-full border rounded px-3 py-2"
                 value={form.title}
                 onChange={(e) => setField("title", e.target.value)}
-              >
-                <option value="">Select Job Title</option>
-                <option value="Delivery Drivers">Delivery Drivers</option>
-                <option value="Delivery Helpers">Delivery Helpers</option>
-                <option value="Transport Coordinators">Transport Coordinators</option>
-                <option value="Dispatchers">Dispatchers</option>
-                <option value="Customer Service Representative">Customer Service Representative</option>
-                <option value="POD (Proof of Delivery) Specialist">POD (Proof of Delivery) Specialist</option>
-              </select>
+                placeholder="Select or type job title"
+              />
+              <datalist id="job-title-options">
+                {jobTitleOptions.map((title) => (
+                  <option key={title} value={title} />
+                ))}
+              </datalist>
             </div>
             <div>
               <label className="block text-sm font-medium mb-1">Depot</label>
