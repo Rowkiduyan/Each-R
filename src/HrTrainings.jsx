@@ -1644,23 +1644,30 @@ function HrTrainings() {
                         })()})
                       </h3>
                     </div>
-                    {!selectedTraining.is_active && selectedTraining.attendance && (
-                      <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                          <span className="text-xs font-semibold text-gray-700">
-                            {Object.values(selectedTraining.attendance || {}).filter(Boolean).length}
-                          </span>
-                        </div>
-                        <div className="w-px h-3 bg-gray-300"></div>
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                          <span className="text-xs font-semibold text-gray-700">
-                            {Object.values(selectedTraining.attendance || {}).filter((v) => v === false).length}
-                          </span>
-                        </div>
-                      </div>
-                    )}
+                    {(() => {
+                      // Only show attendance summary for completed trainings (has marked attendance)
+                      const hasMarkedAttendance = selectedTraining.attendance && Object.keys(selectedTraining.attendance).length > 0 && Object.values(selectedTraining.attendance).some(val => val === true || val === false);
+                      if (!selectedTraining.is_active && hasMarkedAttendance) {
+                        return (
+                          <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                              <span className="text-xs font-semibold text-gray-700">
+                                {Object.values(selectedTraining.attendance || {}).filter(Boolean).length}
+                              </span>
+                            </div>
+                            <div className="w-px h-3 bg-gray-300"></div>
+                            <div className="flex items-center gap-1.5">
+                              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                              <span className="text-xs font-semibold text-gray-700">
+                                {Object.values(selectedTraining.attendance || {}).filter((v) => v === false).length}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                   
                   {/* Search Bar */}
@@ -1706,6 +1713,8 @@ function HrTrainings() {
                       return filteredAttendees.map((attendee, idx) => {
                         const name = typeof attendee === "string" ? attendee : attendee.name || "";
                         const attendedFlag = !!selectedTraining.attendance?.[name];
+                        // Only show attendance status for completed trainings (has marked attendance)
+                        const hasMarkedAttendance = selectedTraining.attendance && Object.keys(selectedTraining.attendance).length > 0 && Object.values(selectedTraining.attendance).some(val => val === true || val === false);
                         return (
                           <div 
                             key={idx} 
@@ -1717,7 +1726,7 @@ function HrTrainings() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium text-gray-900">{name}</p>
-                                {!selectedTraining.is_active && selectedTraining.attendance && (
+                                {!selectedTraining.is_active && hasMarkedAttendance && (
                                   <div className="flex items-center gap-1.5 mt-1">
                                     <span
                                       className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-semibold ${

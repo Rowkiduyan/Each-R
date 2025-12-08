@@ -163,6 +163,16 @@ function HrRecruitment() {
     "Taytay", "Tuguegarao", "Vigan"
   ];
 
+  // Job title options for job posts
+  const jobTitleOptions = [
+    "Delivery Drivers",
+    "Delivery Helpers",
+    "Transport Coordinators",
+    "Dispatchers",
+    "Customer Service Representative",
+    "POD (Proof of Delivery) Specialist"
+  ];
+
   // Get current user info from localStorage
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
@@ -194,6 +204,7 @@ function HrRecruitment() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmCallback, setConfirmCallback] = useState(null);
+  const [pendingJobDelete, setPendingJobDelete] = useState(null); // { jobId, jobTitle }
   const [isProcessingConfirm, setIsProcessingConfirm] = useState(false);
   const [isOpeningConfirmDialog, setIsOpeningConfirmDialog] = useState(false);
   
@@ -2084,6 +2095,45 @@ function HrRecruitment() {
     } catch (err) {
       console.error("reject error:", err);
       setErrorMessage("Unexpected error rejecting application. See console.");
+      setShowErrorAlert(true);
+    }
+  };
+
+  // ---- REMOVE JOB POST: Show confirmation dialog
+  const handleRemoveJobPost = (jobId, jobTitle) => {
+    // Clear any previous state
+    setPendingJobDelete(null);
+    setConfirmCallback(null);
+    setIsProcessingConfirm(false);
+    
+    // Store the job info to delete - deletion will ONLY happen when OK is clicked
+    setPendingJobDelete({ jobId, jobTitle });
+    setConfirmMessage(`Are you sure you want to remove the job post "${jobTitle}"? This action cannot be undone.`);
+    setShowConfirmDialog(true);
+  };
+
+  // Execute job post deletion - called ONLY from OK button
+  const executeJobPostDeletion = async (jobId, jobTitle) => {
+    try {
+      const { error } = await supabase
+        .from('job_posts')
+        .delete()
+        .eq('id', jobId);
+      
+      if (error) {
+        setErrorMessage(`Failed to delete job post: ${error.message}`);
+        setShowErrorAlert(true);
+      } else {
+        setSuccessMessage(`Job post "${jobTitle}" has been removed successfully.`);
+        setShowSuccessAlert(true);
+        // Reload applications and job posts to refresh the tables
+        await loadApplications();
+        if (activeSubTab === "JobPosts") {
+          await loadJobPosts();
+        }
+      }
+    } catch (err) {
+      setErrorMessage(`Error deleting job post: ${err.message}`);
       setShowErrorAlert(true);
     }
   };
@@ -4508,33 +4558,11 @@ function HrRecruitment() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setConfirmMessage(`Are you sure you want to remove the job post "${job.title}"? This action cannot be undone.`);
-                                  setConfirmCallback(() => async () => {
-                                    try {
-                                      const { error } = await supabase
-                                        .from('job_posts')
-                                        .delete()
-                                        .eq('id', job.actualJobId);
-                                      
-                                      if (error) {
-                                        setErrorMessage(`Failed to delete job post: ${error.message}`);
-                                        setShowErrorAlert(true);
-                                      } else {
-                                        setSuccessMessage(`Job post "${job.title}" has been removed successfully.`);
-                                        setShowSuccessAlert(true);
-                                        // Reload applications and job posts to refresh the tables
-                                        await loadApplications();
-                                        if (activeSubTab === "JobPosts") {
-                                          await loadJobPosts();
-                                        }
-                                      }
-                                    } catch (err) {
-                                      setErrorMessage(`Error deleting job post: ${err.message}`);
-                                      setShowErrorAlert(true);
-                                    }
-                                  });
-                                  setShowConfirmDialog(true);
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  // Only show confirmation dialog - deletion will happen when OK is clicked
+                                  handleRemoveJobPost(job.actualJobId, job.title);
                                 }}
                                 className="px-3 py-1.5 rounded-full border border-red-300 text-xs text-red-700 hover:bg-red-50"
                               >
@@ -5007,6 +5035,7 @@ function HrRecruitment() {
             if (e.target === e.currentTarget) {
               setShowConfirmDialog(false);
               setConfirmCallback(null);
+              setPendingJobDelete(null);
               setIsProcessingConfirm(false);
             }
           }}
@@ -5025,6 +5054,7 @@ function HrRecruitment() {
                   e.stopPropagation();
                   setShowConfirmDialog(false);
                   setConfirmCallback(null);
+                  setPendingJobDelete(null);
                   setIsProcessingConfirm(false);
                   setIsOpeningConfirmDialog(false);
                 }}
@@ -5034,32 +5064,38 @@ function HrRecruitment() {
               <button
                 type="button"
                 className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isProcessingConfirm || !confirmCallback}
+                disabled={isProcessingConfirm || (!confirmCallback && !pendingJobDelete)}
                 onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   
-                  // Prevent multiple clicks or execution if no callback
-                  if (isProcessingConfirm || !confirmCallback) return;
+                  // Prevent multiple clicks
+                  if (isProcessingConfirm) return;
                   
-                  // Store the callback before clearing state
-                  const callbackToExecute = confirmCallback;
-                  
-                  // Clear callback immediately to prevent double execution
-                  setConfirmCallback(null);
                   setIsProcessingConfirm(true);
                   
                   try {
-                    if (typeof callbackToExecute === "function") {
+                    // Handle job post deletion (new approach)
+                    if (pendingJobDelete) {
+                      const { jobId, jobTitle } = pendingJobDelete;
+                      setPendingJobDelete(null);
+                      await executeJobPostDeletion(jobId, jobTitle);
+                    }
+                    // Handle other confirmations with callback
+                    else if (confirmCallback && typeof confirmCallback === "function") {
+                      const callbackToExecute = confirmCallback;
+                      setConfirmCallback(null);
                       await callbackToExecute();
                     }
                   } catch (err) {
-                    console.error("Error executing confirm callback:", err);
+                    console.error("Error executing confirm action:", err);
                     setErrorMessage("An error occurred while processing your request.");
                     setShowErrorAlert(true);
                   } finally {
                     setShowConfirmDialog(false);
                     setIsProcessingConfirm(false);
+                    setPendingJobDelete(null);
+                    setConfirmCallback(null);
                   }
                 }}
               >
@@ -5163,11 +5199,17 @@ function HrRecruitment() {
                   <div>
                     <label className="block text-sm font-medium mb-1">Job Title *</label>
                     <input
+                      list="edit-job-title-options"
                       className="w-full border rounded px-3 py-2"
                       value={editJobForm.title}
                       onChange={(e) => setEditJobField("title", e.target.value)}
-                      placeholder="Delivery Driver"
+                      placeholder="Select or type job title"
                     />
+                    <datalist id="edit-job-title-options">
+                      {jobTitleOptions.map((title) => (
+                        <option key={title} value={title} />
+                      ))}
+                    </datalist>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">Depot *</label>

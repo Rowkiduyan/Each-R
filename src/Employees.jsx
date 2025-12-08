@@ -24,9 +24,6 @@ function Employees() {
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const filterMenuRef = useRef(null);
 
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // data
   const [employees, setEmployees] = useState([]);
@@ -68,6 +65,10 @@ function Employees() {
   // External certificates state
   const [externalCertificates, setExternalCertificates] = useState([]);
   const [loadingCertificates, setLoadingCertificates] = useState(false);
+  
+  // Roadwise certificates state
+  const [roadwiseCertificates, setRoadwiseCertificates] = useState([]);
+  const [loadingRoadwiseCertificates, setLoadingRoadwiseCertificates] = useState(false);
   
   // Assessment and agreement records state
   const [assessmentRecords, setAssessmentRecords] = useState([]);
@@ -128,20 +129,6 @@ function Employees() {
     return { position: p || null, depot: d || null };
   };
 
-  // Calculate items per page based on screen height
-  useEffect(() => {
-    const calculateItemsPerPage = () => {
-      const rowHeight = 60;
-      const reservedHeight = 500;
-      const availableHeight = window.innerHeight - reservedHeight;
-      const calculatedItems = Math.max(5, Math.floor(availableHeight / rowHeight));
-      setItemsPerPage(calculatedItems);
-    };
-
-    calculateItemsPerPage();
-    window.addEventListener('resize', calculateItemsPerPage);
-    return () => window.removeEventListener('resize', calculateItemsPerPage);
-  }, []);
 
   // Close filter menu when clicking outside
   useEffect(() => {
@@ -189,6 +176,7 @@ function Employees() {
         contact: row.contact_number || "",
         role: row.role || "Employee",
         hired_at: row.hired_at,
+        personal_email: row.personal_email || null, // Applicant's original email for direct hires
         employmentStatus: row.status === "Probationary" ? "Under Probation" : row.status === "Regular" ? "Regular" : "Regular", // Map status from DB to employment status
         agency: baseAgency,
         source: row.source || null,
@@ -203,7 +191,7 @@ function Employees() {
       try {
         const { data: empRows, error: empErr } = await supabase
           .from("employees")
-          .select("id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency")
+          .select("id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency, personal_email")
           .order("hired_at", { ascending: false });
 
         if (empErr) throw empErr;
@@ -345,14 +333,6 @@ function Employees() {
       .sort((a, b) => sortOrder === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
   }, [employees, search, positionFilter, depotFilter, employmentStatusFilter, sortOrder]);
 
-  // Pagination
-  const totalPages = Math.max(1, Math.ceil(filtered.length / itemsPerPage));
-  const paginatedEmployees = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
-
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, positionFilter, depotFilter, employmentStatusFilter]);
 
   // Stats
   const stats = {
@@ -415,10 +395,106 @@ function Employees() {
     }
   };
 
+  // Fetch Roadwise certificates for selected employee
+  const fetchRoadwiseCertificates = async (employee) => {
+    if (!employee || !employee.email) {
+      setRoadwiseCertificates([]);
+      return;
+    }
+    
+    setLoadingRoadwiseCertificates(true);
+    try {
+      // First, find the user_id (auth UID) from the employee's email
+      // Check profiles table first (most reliable)
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', employee.email)
+        .maybeSingle();
+
+      let userId = null;
+      
+      if (!profileError && profileData?.id) {
+        userId = profileData.id;
+      } else {
+        // Fallback: try to find in applicants table
+        const { data: applicantData, error: applicantError } = await supabase
+          .from('applicants')
+          .select('id')
+          .eq('email', employee.email)
+          .maybeSingle();
+
+        if (!applicantError && applicantData?.id) {
+          userId = applicantData.id;
+        }
+      }
+
+      if (!userId) {
+        console.log('No user_id found for employee email:', employee.email);
+        setRoadwiseCertificates([]);
+        return;
+      }
+
+      // Query certificates table joined with trainings table
+      const { data: certificatesData, error: certificatesError } = await supabase
+        .from('certificates')
+        .select('id, certificate_url, created_at, training_id')
+        .eq('employee_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (certificatesError) {
+        console.error('Error fetching Roadwise certificates:', certificatesError);
+        setRoadwiseCertificates([]);
+        return;
+      }
+
+      if (!certificatesData || certificatesData.length === 0) {
+        setRoadwiseCertificates([]);
+        return;
+      }
+
+      // Get unique training IDs
+      const trainingIds = [...new Set(certificatesData.map(c => c.training_id).filter(Boolean))];
+      
+      // Fetch training details
+      let trainingsMap = {};
+      if (trainingIds.length > 0) {
+        const { data: trainingsData, error: trainingsError } = await supabase
+          .from('trainings')
+          .select('id, title')
+          .in('id', trainingIds);
+
+        if (!trainingsError && trainingsData) {
+          trainingsMap = trainingsData.reduce((acc, training) => {
+            acc[training.id] = training.title;
+            return acc;
+          }, {});
+        }
+      }
+
+      // Transform the data to match our display format
+      const certificates = certificatesData.map(cert => ({
+        id: cert.id,
+        trainingTitle: trainingsMap[cert.training_id] || 'Unknown Training',
+        certificateUrl: cert.certificate_url,
+        uploadedAt: cert.created_at,
+        fileName: cert.certificate_url ? cert.certificate_url.split('/').pop() : null
+      }));
+      
+      setRoadwiseCertificates(certificates);
+    } catch (error) {
+      console.error('Error fetching Roadwise certificates:', error);
+      setRoadwiseCertificates([]);
+    } finally {
+      setLoadingRoadwiseCertificates(false);
+    }
+  };
+
   // Fetch certificates when employee is selected or certifications tab is active
   useEffect(() => {
     if (selectedEmployee && activeTab === 'certifications') {
       fetchExternalCertificates(selectedEmployee);
+      fetchRoadwiseCertificates(selectedEmployee);
     }
   }, [selectedEmployee, activeTab]);
 
@@ -773,76 +849,225 @@ function Employees() {
           return supabase.storage.from('application-files').getPublicUrl(filePath)?.data?.publicUrl;
         };
 
-        const employeeEmail = selectedEmployee.email;
-        let applicantUserId = null;
+        // Get the applicant's email - use personal_email (original applicant email) if available,
+        // otherwise fall back to employee email (works for agency hires)
+        const applicantEmail = selectedEmployee.personal_email?.trim() || selectedEmployee.email?.trim();
+        const employeeEmail = applicantEmail.toLowerCase();
+        const employeeName = selectedEmployee.name?.toLowerCase() || '';
+        const employeeFname = selectedEmployee.fname?.toLowerCase() || '';
+        const employeeLname = selectedEmployee.lname?.toLowerCase() || '';
+        const employeeHiredAt = selectedEmployee.hired_at;
         
-        // Approach 1: Check if selectedEmployee has user_id from the application
-        // This could be in raw.user_id (from application) or we need to find it
-        if (selectedEmployee.raw?.user_id) {
-          applicantUserId = selectedEmployee.raw.user_id;
-        }
-        
-        // Approach 2: If selectedEmployee has an id that's an application ID (not emp-xxx), 
-        // we can fetch the application directly to get user_id
-        if (!applicantUserId && selectedEmployee.id && !selectedEmployee.id.startsWith('emp-')) {
-          try {
-            const { data: appData, error: appError } = await supabase
+        let applicationsData = null;
+        const baseSelect = 'id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, status, job_posts:job_id(title, depot), payload';
+
+        console.log('Loading assessment records for employee:', {
+          email: selectedEmployee.email,
+          personal_email: selectedEmployee.personal_email,
+          name: selectedEmployee.name,
+          hired_at: employeeHiredAt
+        });
+
+        // Approach 1: Search by personal_email (applicant's original email) - this is the key for direct hires
+        if (selectedEmployee.personal_email) {
+          const emailsToTry = [
+            selectedEmployee.personal_email.trim(),
+            selectedEmployee.personal_email.trim().toLowerCase()
+          ];
+          
+          for (const emailToTry of emailsToTry) {
+            // Try payload->>email
+            let { data, error } = await supabase
               .from('applications')
-              .select('user_id')
-              .eq('id', selectedEmployee.id)
-              .maybeSingle();
+              .select(baseSelect)
+              .eq('payload->>email', emailToTry)
+              .order('created_at', { ascending: false });
             
-            if (!appError && appData?.user_id) {
-              applicantUserId = appData.user_id;
+            if (!error && data && data.length > 0) {
+              applicationsData = data;
+              console.log('Found applications by personal_email in payload->>email:', data.length);
+              break;
             }
-          } catch (err) {
-            console.error('Error fetching application user_id:', err);
+            
+            // Try payload->form->>email
+            const { data: data2, error: error2 } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->form->>email', emailToTry)
+              .order('created_at', { ascending: false });
+            
+            if (!error2 && data2 && data2.length > 0) {
+              applicationsData = data2;
+              console.log('Found applications by personal_email in payload->form->>email:', data2.length);
+              break;
+            }
+            
+            // Try payload->applicant->>email
+            const { data: data3, error: error3 } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->applicant->>email', emailToTry)
+              .order('created_at', { ascending: false });
+            
+            if (!error3 && data3 && data3.length > 0) {
+              applicationsData = data3;
+              console.log('Found applications by personal_email in payload->applicant->>email:', data3.length);
+              break;
+            }
           }
         }
-        
-        // Approach 3: If still no user_id, try to find applicant record by email
-        if (!applicantUserId) {
-          const { data: applicantData, error: applicantError } = await supabase
-            .from('applicants')
-            .select('id')
-            .eq('email', employeeEmail)
-            .maybeSingle();
 
-          if (!applicantError && applicantData?.id) {
-            applicantUserId = applicantData.id;
+        // Approach 2: Try employee email (for agency hires where email matches)
+        if (!applicationsData || applicationsData.length === 0) {
+          const emailsToTry = [
+            selectedEmployee.email.trim(),
+            selectedEmployee.email.trim().toLowerCase()
+          ];
+          
+          for (const emailToTry of emailsToTry) {
+            let { data, error } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->>email', emailToTry)
+              .order('created_at', { ascending: false });
+            
+            if (!error && data && data.length > 0) {
+              applicationsData = data;
+              console.log('Found applications by employee email in payload->>email:', data.length);
+              break;
+            }
+            
+            const { data: data2, error: error2 } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->form->>email', emailToTry)
+              .order('created_at', { ascending: false });
+            
+            if (!error2 && data2 && data2.length > 0) {
+              applicationsData = data2;
+              console.log('Found applications by employee email in payload->form->>email:', data2.length);
+              break;
+            }
           }
         }
 
-        // Build query to find all applications (not just those with assessment files)
-        // We'll check for all file types: assessment and agreement files
-        let applicationsQuery = supabase
-          .from('applications')
-          .select('id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, job_posts:job_id(title, depot)')
-          .order('created_at', { ascending: false });
+        // Approach 3: Match by name + date proximity and status "hired"
+        // This is crucial for direct hires where email doesn't match
+        if (!applicationsData || applicationsData.length === 0) {
+          console.log('Trying to match by name and date...');
+          
+          // Get all applications with status "hired" within a reasonable timeframe
+          const hiredDateStart = employeeHiredAt 
+            ? new Date(new Date(employeeHiredAt).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString() // 90 days before
+            : null;
+          const hiredDateEnd = employeeHiredAt
+            ? new Date(new Date(employeeHiredAt).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days after
+            : null;
 
-        // If we have applicant user_id, use it (most reliable)
-        if (applicantUserId) {
-          applicationsQuery = applicationsQuery.eq('user_id', applicantUserId);
-        } else {
-          // Fallback: search by email in payload using multiple paths
-          // This handles cases where applicant record doesn't exist or email doesn't match
-          applicationsQuery = applicationsQuery.or(
-            `payload->>email.eq.${employeeEmail},payload->form->>email.eq.${employeeEmail},payload->applicant->>email.eq.${employeeEmail}`
-          );
+          let query = supabase
+            .from('applications')
+            .select(baseSelect)
+            .eq('status', 'hired')
+            .order('created_at', { ascending: false })
+            .limit(500); // Limit to prevent performance issues
+
+          if (hiredDateStart && hiredDateEnd) {
+            query = query.gte('created_at', hiredDateStart).lte('created_at', hiredDateEnd);
+          }
+
+          const { data: hiredApps, error: hiredAppsError } = await query;
+
+          if (!hiredAppsError && hiredApps && hiredApps.length > 0) {
+            // Match by name in payload
+            const matchingApps = hiredApps.filter(app => {
+              if (!app.payload) return false;
+              
+              try {
+                const payload = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload;
+                const source = payload.form || payload.applicant || payload || {};
+                
+                // Extract name from payload
+                const appFname = (source.firstName || source.fname || source.first_name || '').toLowerCase().trim();
+                const appLname = (source.lastName || source.lname || source.last_name || '').toLowerCase().trim();
+                const appFullName = (source.fullName || source.name || '').toLowerCase().trim();
+                
+                // Match by first and last name
+                if (employeeFname && employeeLname && appFname && appLname) {
+                  const nameMatch = appFname === employeeFname && appLname === employeeLname;
+                  if (nameMatch) {
+                    console.log('Matched by name:', { appFname, appLname, employeeFname, employeeLname });
+                    return true;
+                  }
+                }
+                
+                // Match by full name
+                if (employeeName && appFullName) {
+                  const normalizedEmpName = employeeName.replace(/\s+/g, ' ').trim();
+                  const normalizedAppName = appFullName.replace(/\s+/g, ' ').trim();
+                  if (normalizedEmpName === normalizedAppName) {
+                    console.log('Matched by full name:', { normalizedEmpName, normalizedAppName });
+                    return true;
+                  }
+                }
+                
+                return false;
+              } catch (err) {
+                console.error('Error parsing payload for app:', app.id, err);
+                return false;
+              }
+            });
+            
+            if (matchingApps.length > 0) {
+              applicationsData = matchingApps;
+              console.log('Found applications by name matching:', matchingApps.length);
+            }
+          }
         }
 
-        const { data: applicationsData, error: applicationsError } = await applicationsQuery;
-
-        if (applicationsError) {
-          console.error('Error loading assessment records:', applicationsError);
-          setAssessmentRecords([]);
-          return;
+        // Approach 4: Case-insensitive email matching by parsing all recent applications
+        if (!applicationsData || applicationsData.length === 0) {
+          console.log('Trying case-insensitive email matching...');
+          const { data: allApps, error: allAppsError } = await supabase
+            .from('applications')
+            .select(baseSelect)
+            .order('created_at', { ascending: false })
+            .limit(1000);
+          
+          if (!allAppsError && allApps) {
+            const matchingApps = allApps.filter(app => {
+              if (!app.payload) return false;
+              try {
+                const payload = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload;
+                const source = payload.form || payload.applicant || payload || {};
+                const appEmail = (source.email || '').trim().toLowerCase();
+                return appEmail === employeeEmail && appEmail !== '';
+              } catch {
+                return false;
+              }
+            });
+            
+            if (matchingApps.length > 0) {
+              applicationsData = matchingApps;
+              console.log('Found applications by case-insensitive email:', matchingApps.length);
+            }
+          }
         }
 
         if (applicationsData && applicationsData.length > 0) {
-          // Use the most recent application to show all document types
+          // Prioritize applications with status "hired" as those are the ones that became employees
+          // Sort: hired status first, then by created_at DESC
+          const sortedApps = [...applicationsData].sort((a, b) => {
+            const aHired = (a.status || '').toLowerCase() === 'hired';
+            const bHired = (b.status || '').toLowerCase() === 'hired';
+            if (aHired && !bHired) return -1;
+            if (!aHired && bHired) return 1;
+            // If both have same hired status, sort by date
+            return new Date(b.created_at) - new Date(a.created_at);
+          });
+          
+          // Use the prioritized application (preferably hired, otherwise most recent)
           // Always show all document types, even if file doesn't exist
-          const mostRecentApp = applicationsData[0]; // Already sorted by created_at DESC
+          const mostRecentApp = sortedApps[0];
           const jobTitle = mostRecentApp.job_posts?.title || 'N/A';
           const depot = mostRecentApp.job_posts?.depot || 'N/A';
           const date = mostRecentApp.created_at;
@@ -904,7 +1129,13 @@ function Employees() {
           });
           
           setAssessmentRecords(records);
+          console.log('Successfully loaded assessment records:', records.length, 'records');
         } else {
+          console.log('No applications found for employee:', {
+            email: selectedEmployee.email,
+            personal_email: selectedEmployee.personal_email,
+            name: selectedEmployee.name
+          });
           setAssessmentRecords([]);
         }
       } catch (err) {
@@ -914,7 +1145,7 @@ function Employees() {
     };
 
     loadAssessmentRecords();
-  }, [selectedEmployee?.email, activeTab]);
+  }, [selectedEmployee?.email, selectedEmployee?.personal_email, selectedEmployee?.name, selectedEmployee?.hired_at, activeTab]);
 
   // Fetch application data when employee is selected and profiling tab is active
   useEffect(() => {
@@ -1385,7 +1616,7 @@ function Employees() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {paginatedEmployees.map((emp) => {
+                          {filtered.map((emp) => {
                             const isSelected = selectedEmployee?.id === emp.id;
                             return (
                               <tr 
@@ -2536,15 +2767,93 @@ function Employees() {
                                   Roadwise Certificates
                                 </h6>
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                  <div className="text-center py-8">
-                                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                      <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                      </svg>
+                                  {loadingRoadwiseCertificates ? (
+                                    <div className="text-center py-8">
+                                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+                                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-blue-700 font-medium">Loading certificates...</p>
                                     </div>
-                                    <p className="text-sm text-blue-700 font-medium">No company training certificates yet</p>
-                                    <p className="text-xs text-blue-600 mt-1">Certificates from completed trainings will appear here</p>
-                                  </div>
+                                  ) : roadwiseCertificates.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {roadwiseCertificates.map((cert) => (
+                                        <div 
+                                          key={cert.id} 
+                                          className="flex items-center gap-3 p-3 bg-white rounded-lg border border-blue-200 hover:bg-blue-50 hover:border-blue-300 transition-all group"
+                                        >
+                                          <svg className="w-5 h-5 text-blue-600 flex-shrink-0 group-hover:text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                          </svg>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-700">
+                                              {cert.trainingTitle}
+                                            </p>
+                                            <p className="text-xs text-gray-500">
+                                              {formatDate(cert.uploadedAt)}
+                                            </p>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  // Fetch the file and trigger download
+                                                  const response = await fetch(cert.certificateUrl);
+                                                  const blob = await response.blob();
+                                                  const url = window.URL.createObjectURL(blob);
+                                                  const link = document.createElement('a');
+                                                  link.href = url;
+                                                  const fileName = cert.fileName || cert.certificateUrl.split('/').pop() || 'certificate.pdf';
+                                                  link.download = fileName;
+                                                  document.body.appendChild(link);
+                                                  link.click();
+                                                  document.body.removeChild(link);
+                                                  window.URL.revokeObjectURL(url);
+                                                } catch (error) {
+                                                  console.error('Error downloading certificate:', error);
+                                                  // Fallback to direct download
+                                                  window.open(cert.certificateUrl, '_blank');
+                                                }
+                                              }}
+                                              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-blue-100 transition-colors"
+                                              title="Download certificate"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                              </svg>
+                                              Download
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.open(cert.certificateUrl, '_blank');
+                                              }}
+                                              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                                              title="View certificate"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                              </svg>
+                                              View
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-8">
+                                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-blue-700 font-medium">No company training certificates yet</p>
+                                      <p className="text-xs text-blue-600 mt-1">Certificates from completed trainings will appear here</p>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
@@ -2657,34 +2966,6 @@ function Employees() {
                     )}
                   </div>
 
-                  {/* Pagination */}
-                  <div className="flex items-center justify-between pt-3 border-t border-gray-200 flex-shrink-0">
-                    <button
-                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                      disabled={currentPage === 1}
-                      className={`px-4 py-2 text-sm rounded border ${
-                        currentPage === 1 
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      Prev
-                    </button>
-                    <span className="text-sm text-gray-600">
-                      Page {currentPage} of {totalPages}
-                    </span>
-                    <button
-                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                      disabled={currentPage >= totalPages}
-                      className={`px-4 py-2 text-sm rounded border ${
-                        currentPage >= totalPages
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed' 
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                      }`}
-                    >
-                      Next
-                    </button>
-                  </div>
                 </>
               )}
             </div>

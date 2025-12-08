@@ -49,6 +49,7 @@ function HrCreateJob() {
     "Taytay", "Tuguegarao", "Vigan"
   ];
 
+<<<<<<< HEAD
   // Job title to department mapping
   const jobTitleToDepartment = {
     "Delivery Drivers": "Delivery Crew",
@@ -84,6 +85,19 @@ function HrCreateJob() {
       setForm(prev => ({ ...prev, title: v, department: jobTitleToDepartment[v] }));
     }
   };
+=======
+  // Job title options for job posts
+  const jobTitleOptions = [
+    "Delivery Drivers",
+    "Delivery Helpers",
+    "Transport Coordinators",
+    "Dispatchers",
+    "Customer Service Representative",
+    "POD (Proof of Delivery) Specialist"
+  ];
+
+  const setField = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
+>>>>>>> eb7d9fa05e41297bb030750c06b1301d35a6ea11
 
   const addResp = () =>
     setForm(prev => ({ ...prev, responsibilities: [...prev.responsibilities, ""] }));
@@ -339,6 +353,7 @@ function HrCreateJob() {
                 placeholder="Select or type job title"
               />
               <datalist id="job-title-options">
+<<<<<<< HEAD
                 {form.jobType === "delivery_crew" ? (
                   <>
                     <option value="Delivery Drivers" />
@@ -363,6 +378,11 @@ function HrCreateJob() {
                     <option value="Tinsmith" />
                   </>
                 )}
+=======
+                {jobTitleOptions.map((title) => (
+                  <option key={title} value={title} />
+                ))}
+>>>>>>> eb7d9fa05e41297bb030750c06b1301d35a6ea11
               </datalist>
             </div>
             <div>

@@ -610,91 +610,186 @@ function EmployeeRequirements() {
   // Load assessment records (from when employee was an applicant)
   useEffect(() => {
     const loadAssessmentRecords = async () => {
-      if (!employeeData?.email) return;
+      const applicantEmail =
+        employeeData?.personal_email?.trim() ||
+        employeeData?.email?.trim();
+
+      if (!applicantEmail) {
+        setAssessmentRecords([]);
+        return;
+      }
 
       try {
-        // First, find the applicant record by email
-        const { data: applicantData, error: applicantError } = await supabase
-          .from('applicants')
-          .select('id')
-          .eq('email', employeeData.email)
-          .maybeSingle();
+        const normalizedEmail = applicantEmail.toLowerCase();
+        const baseSelect =
+          'id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, status, job_posts:job_id(title, depot), payload';
 
-        if (applicantError) {
-          console.error('Error loading applicant record:', applicantError);
-          setAssessmentRecords([]);
-          return;
+        let applicationsData = null;
+
+        // Approach 1: find applicant by email (original or lowercased) to get user_id
+        let applicantId = null;
+        try {
+          const { data: applicantData } = await supabase
+            .from('applicants')
+            .select('id')
+            .eq('email', applicantEmail)
+            .maybeSingle();
+
+          if (applicantData?.id) {
+            applicantId = applicantData.id;
+          } else {
+            const { data: applicantData2 } = await supabase
+              .from('applicants')
+              .select('id')
+              .eq('email', normalizedEmail)
+              .maybeSingle();
+            if (applicantData2?.id) {
+              applicantId = applicantData2.id;
+            }
+          }
+        } catch (err) {
+          console.error('Error looking up applicant by email:', err);
         }
 
-        if (!applicantData?.id) {
-          // No applicant record found - employee might have been hired directly
-          setAssessmentRecords([]);
-          return;
+        if (applicantId) {
+          const { data, error } = await supabase
+            .from('applications')
+            .select(baseSelect)
+            .eq('user_id', applicantId)
+            .order('created_at', { ascending: false });
+          if (!error && data && data.length > 0) {
+            applicationsData = data;
+          }
         }
 
-        // Find all applications for this applicant (to get all assessment and agreement files)
-        const { data: applicationsData, error: applicationsError } = await supabase
-          .from('applications')
-          .select('id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, job_posts:job_id(title, depot)')
-          .eq('user_id', applicantData.id)
-          .order('created_at', { ascending: false });
+        // Approach 2: query by email in payload paths (personal email variants)
+        if (!applicationsData || applicationsData.length === 0) {
+          const emailsToTry = [applicantEmail, normalizedEmail];
+          for (const email of emailsToTry) {
+            let { data, error } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->>email', email)
+              .order('created_at', { ascending: false });
+            if (!error && data && data.length > 0) {
+              applicationsData = data;
+              break;
+            }
 
-        if (applicationsError) {
-          console.error('Error loading assessment records:', applicationsError);
-          setAssessmentRecords([]);
-          return;
+            const { data: data2, error: error2 } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->form->>email', email)
+              .order('created_at', { ascending: false });
+            if (!error2 && data2 && data2.length > 0) {
+              applicationsData = data2;
+              break;
+            }
+
+            const { data: data3, error: error3 } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->applicant->>email', email)
+              .order('created_at', { ascending: false });
+            if (!error3 && data3 && data3.length > 0) {
+              applicationsData = data3;
+              break;
+            }
+          }
+        }
+
+        // Approach 3: case-insensitive parsing of recent applications
+        if (!applicationsData || applicationsData.length === 0) {
+          const { data: allApps } = await supabase
+            .from('applications')
+            .select(baseSelect)
+            .order('created_at', { ascending: false })
+            .limit(1000);
+
+          if (allApps) {
+            const matches = allApps.filter((app) => {
+              if (!app.payload) return false;
+              try {
+                const payload =
+                  typeof app.payload === 'string'
+                    ? JSON.parse(app.payload)
+                    : app.payload;
+                const src = payload.form || payload.applicant || payload || {};
+                const email = (src.email || '').trim().toLowerCase();
+                return email && email === normalizedEmail;
+              } catch {
+                return false;
+              }
+            });
+            if (matches.length > 0) {
+              applicationsData = matches;
+            }
+          }
         }
 
         if (applicationsData && applicationsData.length > 0) {
-          // Use the most recent application to show all document types
-          // Always show all document types, even if file doesn't exist
-          const mostRecentApp = applicationsData[0]; // Already sorted by created_at DESC
+          // Prioritize hired applications, then most recent
+          const sorted = [...applicationsData].sort((a, b) => {
+            const aHired = (a.status || '').toLowerCase() === 'hired';
+            const bHired = (b.status || '').toLowerCase() === 'hired';
+            if (aHired && !bHired) return -1;
+            if (!aHired && bHired) return 1;
+            return new Date(b.created_at) - new Date(a.created_at);
+          });
+
+          const mostRecentApp = sorted[0];
           const jobTitle = mostRecentApp.job_posts?.title || 'N/A';
           const depot = mostRecentApp.job_posts?.depot || 'N/A';
           const date = mostRecentApp.created_at;
-          
+
           const records = [];
-          
-          // Assessment Files - always show both
+
           records.push({
             id: `${mostRecentApp.id}-interview-details`,
             type: 'assessment',
             documentName: 'Interview Details',
-            fileName: mostRecentApp.interview_details_file ? mostRecentApp.interview_details_file.split('/').pop() : null,
+            fileName: mostRecentApp.interview_details_file
+              ? mostRecentApp.interview_details_file.split('/').pop()
+              : null,
             filePath: mostRecentApp.interview_details_file,
-            fileUrl: mostRecentApp.interview_details_file ? getFileUrl(mostRecentApp.interview_details_file) : null,
-            date: date,
-            jobTitle: jobTitle,
-            depot: depot,
+            fileUrl: mostRecentApp.interview_details_file
+              ? getFileUrl(mostRecentApp.interview_details_file)
+              : null,
+            date,
+            jobTitle,
+            depot,
             applicationId: mostRecentApp.id,
-            icon: 'blue'
+            icon: 'blue',
           });
-          
+
           records.push({
             id: `${mostRecentApp.id}-assessment-results`,
             type: 'assessment',
             documentName: 'In-Person Assessment Results',
-            fileName: mostRecentApp.assessment_results_file ? mostRecentApp.assessment_results_file.split('/').pop() : null,
+            fileName: mostRecentApp.assessment_results_file
+              ? mostRecentApp.assessment_results_file.split('/').pop()
+              : null,
             filePath: mostRecentApp.assessment_results_file,
-            fileUrl: mostRecentApp.assessment_results_file ? getFileUrl(mostRecentApp.assessment_results_file) : null,
-            date: date,
-            jobTitle: jobTitle,
-            depot: depot,
+            fileUrl: mostRecentApp.assessment_results_file
+              ? getFileUrl(mostRecentApp.assessment_results_file)
+              : null,
+            date,
+            jobTitle,
+            depot,
             applicationId: mostRecentApp.id,
-            icon: 'green'
+            icon: 'green',
           });
-          
-          // Agreement Files - always show all 6
+
           const agreementDocs = [
             { key: 'appointment-letter', name: 'Employee Appointment Letter', file: mostRecentApp.appointment_letter_file },
             { key: 'undertaking', name: 'Undertaking', file: mostRecentApp.undertaking_file },
             { key: 'application-form', name: 'Application Form', file: mostRecentApp.application_form_file },
             { key: 'undertaking-duties', name: 'Undertaking of Duties and Responsibilities', file: mostRecentApp.undertaking_duties_file },
             { key: 'pre-employment', name: 'Roadwise Pre Employment Requirements', file: mostRecentApp.pre_employment_requirements_file },
-            { key: 'id-form', name: 'ID Form', file: mostRecentApp.id_form_file }
+            { key: 'id-form', name: 'ID Form', file: mostRecentApp.id_form_file },
           ];
-          
-          agreementDocs.forEach(doc => {
+
+          agreementDocs.forEach((doc) => {
             records.push({
               id: `${mostRecentApp.id}-${doc.key}`,
               type: 'agreement',
@@ -702,13 +797,13 @@ function EmployeeRequirements() {
               fileName: doc.file ? doc.file.split('/').pop() : null,
               filePath: doc.file,
               fileUrl: doc.file ? getFileUrl(doc.file) : null,
-              date: date,
-              jobTitle: jobTitle,
-              depot: depot,
-              applicationId: mostRecentApp.id
+              date,
+              jobTitle,
+              depot,
+              applicationId: mostRecentApp.id,
             });
           });
-          
+
           setAssessmentRecords(records);
         } else {
           setAssessmentRecords([]);
@@ -720,7 +815,7 @@ function EmployeeRequirements() {
     };
 
     loadAssessmentRecords();
-  }, [employeeData?.email]);
+  }, [employeeData?.email, employeeData?.personal_email]);
 
   // Refresh onboarding items periodically (every 5 seconds) to catch new items from HR
   useEffect(() => {
