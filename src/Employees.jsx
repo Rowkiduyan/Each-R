@@ -69,6 +69,10 @@ function Employees() {
   const [externalCertificates, setExternalCertificates] = useState([]);
   const [loadingCertificates, setLoadingCertificates] = useState(false);
   
+  // Roadwise certificates state
+  const [roadwiseCertificates, setRoadwiseCertificates] = useState([]);
+  const [loadingRoadwiseCertificates, setLoadingRoadwiseCertificates] = useState(false);
+  
   // Assessment and agreement records state
   const [assessmentRecords, setAssessmentRecords] = useState([]);
 
@@ -415,10 +419,106 @@ function Employees() {
     }
   };
 
+  // Fetch Roadwise certificates for selected employee
+  const fetchRoadwiseCertificates = async (employee) => {
+    if (!employee || !employee.email) {
+      setRoadwiseCertificates([]);
+      return;
+    }
+    
+    setLoadingRoadwiseCertificates(true);
+    try {
+      // First, find the user_id (auth UID) from the employee's email
+      // Check profiles table first (most reliable)
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('email', employee.email)
+        .maybeSingle();
+
+      let userId = null;
+      
+      if (!profileError && profileData?.id) {
+        userId = profileData.id;
+      } else {
+        // Fallback: try to find in applicants table
+        const { data: applicantData, error: applicantError } = await supabase
+          .from('applicants')
+          .select('id')
+          .eq('email', employee.email)
+          .maybeSingle();
+
+        if (!applicantError && applicantData?.id) {
+          userId = applicantData.id;
+        }
+      }
+
+      if (!userId) {
+        console.log('No user_id found for employee email:', employee.email);
+        setRoadwiseCertificates([]);
+        return;
+      }
+
+      // Query certificates table joined with trainings table
+      const { data: certificatesData, error: certificatesError } = await supabase
+        .from('certificates')
+        .select('id, certificate_url, created_at, training_id')
+        .eq('employee_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (certificatesError) {
+        console.error('Error fetching Roadwise certificates:', certificatesError);
+        setRoadwiseCertificates([]);
+        return;
+      }
+
+      if (!certificatesData || certificatesData.length === 0) {
+        setRoadwiseCertificates([]);
+        return;
+      }
+
+      // Get unique training IDs
+      const trainingIds = [...new Set(certificatesData.map(c => c.training_id).filter(Boolean))];
+      
+      // Fetch training details
+      let trainingsMap = {};
+      if (trainingIds.length > 0) {
+        const { data: trainingsData, error: trainingsError } = await supabase
+          .from('trainings')
+          .select('id, title')
+          .in('id', trainingIds);
+
+        if (!trainingsError && trainingsData) {
+          trainingsMap = trainingsData.reduce((acc, training) => {
+            acc[training.id] = training.title;
+            return acc;
+          }, {});
+        }
+      }
+
+      // Transform the data to match our display format
+      const certificates = certificatesData.map(cert => ({
+        id: cert.id,
+        trainingTitle: trainingsMap[cert.training_id] || 'Unknown Training',
+        certificateUrl: cert.certificate_url,
+        uploadedAt: cert.created_at,
+        fileName: cert.certificate_url ? cert.certificate_url.split('/').pop() : null
+      }));
+      
+      setRoadwiseCertificates(certificates);
+    } catch (error) {
+      console.error('Error fetching Roadwise certificates:', error);
+      setRoadwiseCertificates([]);
+    } finally {
+      setLoadingRoadwiseCertificates(false);
+    }
+  };
+
   // Fetch certificates when employee is selected or certifications tab is active
   useEffect(() => {
     if (selectedEmployee && activeTab === 'certifications') {
       fetchExternalCertificates(selectedEmployee);
+      fetchRoadwiseCertificates(selectedEmployee);
     }
   }, [selectedEmployee, activeTab]);
 
@@ -2536,15 +2636,93 @@ function Employees() {
                                   Roadwise Certificates
                                 </h6>
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                  <div className="text-center py-8">
-                                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                      <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                      </svg>
+                                  {loadingRoadwiseCertificates ? (
+                                    <div className="text-center py-8">
+                                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+                                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-blue-700 font-medium">Loading certificates...</p>
                                     </div>
-                                    <p className="text-sm text-blue-700 font-medium">No company training certificates yet</p>
-                                    <p className="text-xs text-blue-600 mt-1">Certificates from completed trainings will appear here</p>
-                                  </div>
+                                  ) : roadwiseCertificates.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {roadwiseCertificates.map((cert) => (
+                                        <div 
+                                          key={cert.id} 
+                                          className="flex items-center gap-3 p-3 bg-white rounded-lg border border-blue-200 hover:bg-blue-50 hover:border-blue-300 transition-all group"
+                                        >
+                                          <svg className="w-5 h-5 text-blue-600 flex-shrink-0 group-hover:text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                          </svg>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-700">
+                                              {cert.trainingTitle}
+                                            </p>
+                                            <p className="text-xs text-gray-500">
+                                              {formatDate(cert.uploadedAt)}
+                                            </p>
+                                          </div>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  // Fetch the file and trigger download
+                                                  const response = await fetch(cert.certificateUrl);
+                                                  const blob = await response.blob();
+                                                  const url = window.URL.createObjectURL(blob);
+                                                  const link = document.createElement('a');
+                                                  link.href = url;
+                                                  const fileName = cert.fileName || cert.certificateUrl.split('/').pop() || 'certificate.pdf';
+                                                  link.download = fileName;
+                                                  document.body.appendChild(link);
+                                                  link.click();
+                                                  document.body.removeChild(link);
+                                                  window.URL.revokeObjectURL(url);
+                                                } catch (error) {
+                                                  console.error('Error downloading certificate:', error);
+                                                  // Fallback to direct download
+                                                  window.open(cert.certificateUrl, '_blank');
+                                                }
+                                              }}
+                                              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-blue-100 transition-colors"
+                                              title="Download certificate"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                              </svg>
+                                              Download
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.open(cert.certificateUrl, '_blank');
+                                              }}
+                                              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                                              title="View certificate"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                              </svg>
+                                              View
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-8">
+                                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-blue-700 font-medium">No company training certificates yet</p>
+                                      <p className="text-xs text-blue-600 mt-1">Certificates from completed trainings will appear here</p>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 

@@ -741,6 +741,12 @@ function EmployeeTrainings() {
             return;
         }
 
+        if (isUploading) {
+            return; // Prevent double submission
+        }
+
+        setIsUploading(true);
+
         try {
             // Get employee name for attendance update
             const attendanceStatus = getEmployeeAttendanceStatus(trainingForCert);
@@ -858,6 +864,8 @@ function EmployeeTrainings() {
         } catch (error) {
             console.error('Error uploading certificate:', error);
             alert(`Error uploading certificate: ${error.message}`);
+        } finally {
+            setIsUploading(false);
         }
     };
 
@@ -1206,13 +1214,30 @@ function EmployeeTrainings() {
                                         {training.attendance && (() => {
                                             const attendanceStatus = getEmployeeAttendanceStatus(training);
                                             if (attendanceStatus.isPresent === true) {
+                                                // Check if certificate URL is valid (not null, not empty, and is a string)
+                                                const hasCertificate = attendanceStatus.certificateUrl && 
+                                                                      typeof attendanceStatus.certificateUrl === 'string' && 
+                                                                      attendanceStatus.certificateUrl.trim().length > 0 &&
+                                                                      (attendanceStatus.certificateUrl.startsWith('http://') || 
+                                                                       attendanceStatus.certificateUrl.startsWith('https://'));
+                                                
                                                 return (
                                                     <div className="flex items-center gap-2 flex-shrink-0">
-                                                        {attendanceStatus.certificateUrl && (
+                                                        {hasCertificate && (
                                                             <button
-                                                                onClick={(e) => {
+                                                                onClick={async (e) => {
                                                                     e.stopPropagation();
-                                                                    window.open(attendanceStatus.certificateUrl, '_blank');
+                                                                    try {
+                                                                        // Try to open the certificate
+                                                                        const newWindow = window.open(attendanceStatus.certificateUrl, '_blank');
+                                                                        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+                                                                            // Popup was blocked
+                                                                            alert('Please allow popups for this website to view the certificate.');
+                                                                        }
+                                                                    } catch (error) {
+                                                                        console.error('Error opening certificate:', error);
+                                                                        alert('Unable to open certificate. The file may have been deleted.');
+                                                                    }
                                                                 }}
                                                                 className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2"
                                                                 title="View certificate"
@@ -1232,7 +1257,7 @@ function EmployeeTrainings() {
                                                                 setShowTrainingCertUpload(true);
                                                             }}
                                                             className={`px-4 py-2 rounded-lg transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2 ${
-                                                                attendanceStatus.certificateUrl
+                                                                hasCertificate
                                                                     ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
                                                                     : 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white hover:from-indigo-600 hover:to-indigo-700'
                                                             }`}
@@ -1240,7 +1265,7 @@ function EmployeeTrainings() {
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                                                             </svg>
-                                                            {attendanceStatus.certificateUrl ? 'Update Certificate' : 'Upload Certificate'}
+                                                            {hasCertificate ? 'Update Certificate' : 'Upload Certificate'}
                                                         </button>
                                                     </div>
                                                 );
@@ -1741,10 +1766,10 @@ function EmployeeTrainings() {
                             </button>
                             <button
                                 onClick={handleTrainingCertUpload}
-                                disabled={!trainingCertFile}
+                                disabled={!trainingCertFile || isUploading}
                                 className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium text-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
                             >
-                                Upload Certificate
+                                {isUploading ? 'Uploading...' : 'Upload Certificate'}
                             </button>
                         </div>
                     </div>
