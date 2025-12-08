@@ -44,7 +44,14 @@ function Employees() {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [terminationData, setTerminationData] = useState(null);
   const [onboardingItems, setOnboardingItems] = useState([]);
+  const onboardingFileRefs = useRef({});
   const [resumeData, setResumeData] = useState(null);
+  
+  // Alert modals
+  const [showSuccessAlert, setShowSuccessAlert] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [showErrorAlert, setShowErrorAlert] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const [applicationFormData, setApplicationFormData] = useState(null);
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [applicationData, setApplicationData] = useState(null);
@@ -61,6 +68,9 @@ function Employees() {
   // External certificates state
   const [externalCertificates, setExternalCertificates] = useState([]);
   const [loadingCertificates, setLoadingCertificates] = useState(false);
+  
+  // Assessment and agreement records state
+  const [assessmentRecords, setAssessmentRecords] = useState([]);
 
   // Helper: safely parse payload to object
   const safePayload = (p) => {
@@ -748,6 +758,164 @@ function Employees() {
     fetchEmployeeDocuments();
   }, [selectedEmployee, activeTab]);
 
+  // Load assessment and agreement records when employee is selected and documents tab is active
+  useEffect(() => {
+    const loadAssessmentRecords = async () => {
+      if (!selectedEmployee?.email || activeTab !== 'documents') {
+        setAssessmentRecords([]);
+        return;
+      }
+
+      try {
+        // Get file URL helper
+        const getFileUrl = (filePath) => {
+          if (!filePath) return null;
+          return supabase.storage.from('application-files').getPublicUrl(filePath)?.data?.publicUrl;
+        };
+
+        const employeeEmail = selectedEmployee.email;
+        let applicantUserId = null;
+        
+        // Approach 1: Check if selectedEmployee has user_id from the application
+        // This could be in raw.user_id (from application) or we need to find it
+        if (selectedEmployee.raw?.user_id) {
+          applicantUserId = selectedEmployee.raw.user_id;
+        }
+        
+        // Approach 2: If selectedEmployee has an id that's an application ID (not emp-xxx), 
+        // we can fetch the application directly to get user_id
+        if (!applicantUserId && selectedEmployee.id && !selectedEmployee.id.startsWith('emp-')) {
+          try {
+            const { data: appData, error: appError } = await supabase
+              .from('applications')
+              .select('user_id')
+              .eq('id', selectedEmployee.id)
+              .maybeSingle();
+            
+            if (!appError && appData?.user_id) {
+              applicantUserId = appData.user_id;
+            }
+          } catch (err) {
+            console.error('Error fetching application user_id:', err);
+          }
+        }
+        
+        // Approach 3: If still no user_id, try to find applicant record by email
+        if (!applicantUserId) {
+          const { data: applicantData, error: applicantError } = await supabase
+            .from('applicants')
+            .select('id')
+            .eq('email', employeeEmail)
+            .maybeSingle();
+
+          if (!applicantError && applicantData?.id) {
+            applicantUserId = applicantData.id;
+          }
+        }
+
+        // Build query to find all applications (not just those with assessment files)
+        // We'll check for all file types: assessment and agreement files
+        let applicationsQuery = supabase
+          .from('applications')
+          .select('id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, job_posts:job_id(title, depot)')
+          .order('created_at', { ascending: false });
+
+        // If we have applicant user_id, use it (most reliable)
+        if (applicantUserId) {
+          applicationsQuery = applicationsQuery.eq('user_id', applicantUserId);
+        } else {
+          // Fallback: search by email in payload using multiple paths
+          // This handles cases where applicant record doesn't exist or email doesn't match
+          applicationsQuery = applicationsQuery.or(
+            `payload->>email.eq.${employeeEmail},payload->form->>email.eq.${employeeEmail},payload->applicant->>email.eq.${employeeEmail}`
+          );
+        }
+
+        const { data: applicationsData, error: applicationsError } = await applicationsQuery;
+
+        if (applicationsError) {
+          console.error('Error loading assessment records:', applicationsError);
+          setAssessmentRecords([]);
+          return;
+        }
+
+        if (applicationsData && applicationsData.length > 0) {
+          // Use the most recent application to show all document types
+          // Always show all document types, even if file doesn't exist
+          const mostRecentApp = applicationsData[0]; // Already sorted by created_at DESC
+          const jobTitle = mostRecentApp.job_posts?.title || 'N/A';
+          const depot = mostRecentApp.job_posts?.depot || 'N/A';
+          const date = mostRecentApp.created_at;
+          
+          const records = [];
+          
+          // Assessment Files - always show both
+          records.push({
+            id: `${mostRecentApp.id}-interview-details`,
+            type: 'assessment',
+            documentName: 'Interview Details',
+            fileName: mostRecentApp.interview_details_file ? mostRecentApp.interview_details_file.split('/').pop() : null,
+            filePath: mostRecentApp.interview_details_file,
+            fileUrl: mostRecentApp.interview_details_file ? getFileUrl(mostRecentApp.interview_details_file) : null,
+            date: date,
+            jobTitle: jobTitle,
+            depot: depot,
+            applicationId: mostRecentApp.id,
+            icon: 'blue'
+          });
+          
+          records.push({
+            id: `${mostRecentApp.id}-assessment-results`,
+            type: 'assessment',
+            documentName: 'In-Person Assessment Results',
+            fileName: mostRecentApp.assessment_results_file ? mostRecentApp.assessment_results_file.split('/').pop() : null,
+            filePath: mostRecentApp.assessment_results_file,
+            fileUrl: mostRecentApp.assessment_results_file ? getFileUrl(mostRecentApp.assessment_results_file) : null,
+            date: date,
+            jobTitle: jobTitle,
+            depot: depot,
+            applicationId: mostRecentApp.id,
+            icon: 'green'
+          });
+          
+          // Agreement Files - always show all 6
+          const agreementDocs = [
+            { key: 'appointment-letter', name: 'Employee Appointment Letter', file: mostRecentApp.appointment_letter_file },
+            { key: 'undertaking', name: 'Undertaking', file: mostRecentApp.undertaking_file },
+            { key: 'application-form', name: 'Application Form', file: mostRecentApp.application_form_file },
+            { key: 'undertaking-duties', name: 'Undertaking of Duties and Responsibilities', file: mostRecentApp.undertaking_duties_file },
+            { key: 'pre-employment', name: 'Roadwise Pre Employment Requirements', file: mostRecentApp.pre_employment_requirements_file },
+            { key: 'id-form', name: 'ID Form', file: mostRecentApp.id_form_file }
+          ];
+          
+          agreementDocs.forEach(doc => {
+            records.push({
+              id: `${mostRecentApp.id}-${doc.key}`,
+              type: 'agreement',
+              documentName: doc.name,
+              fileName: doc.file ? doc.file.split('/').pop() : null,
+              filePath: doc.file,
+              fileUrl: doc.file ? getFileUrl(doc.file) : null,
+              date: date,
+              jobTitle: jobTitle,
+              depot: depot,
+              applicationId: mostRecentApp.id
+            });
+          });
+          
+          setAssessmentRecords(records);
+        } else {
+          setAssessmentRecords([]);
+        }
+      } catch (err) {
+        console.error('Error loading assessment records:', err);
+        setAssessmentRecords([]);
+      }
+    };
+
+    loadAssessmentRecords();
+  }, [selectedEmployee?.email, activeTab]);
+
   // Fetch application data when employee is selected and profiling tab is active
   useEffect(() => {
     const fetchEmployeeApplication = async () => {
@@ -866,6 +1034,9 @@ function Employees() {
     fetchEmployeeApplication();
   }, [selectedEmployee, activeTab]);
 
+  // State to trigger onboarding items refresh
+  const [onboardingRefreshTrigger, setOnboardingRefreshTrigger] = useState(0);
+
   // Fetch onboarding items when employee is selected and onboarding tab is active
   useEffect(() => {
     const fetchOnboardingItems = async () => {
@@ -875,6 +1046,7 @@ function Employees() {
       }
 
       try {
+        console.log('Fetching onboarding items for employee:', selectedEmployee.id);
         // Check if there's an onboarding table
         const { data: onboardingData, error } = await supabase
           .from('onboarding')
@@ -884,10 +1056,13 @@ function Employees() {
 
         if (error) {
           // If table doesn't exist or error, check if it's stored in employees table
-          console.log('Onboarding table not found or error:', error);
+          console.error('Onboarding fetch error:', error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
           setOnboardingItems([]);
           return;
         }
+
+        console.log('Fetched onboarding items:', onboardingData?.length || 0, 'items');
 
         if (onboardingData && onboardingData.length > 0) {
           const items = onboardingData.map(item => ({
@@ -896,13 +1071,16 @@ function Employees() {
             description: item.description || '',
             date: item.date_issued || item.date || '',
             file: item.file_path || item.filePath || null,
+            filePath: item.file_path || item.filePath || null,
             fileUrl: item.file_path || item.filePath ? (() => {
               const { data } = supabase.storage
                 .from('application-files')
                 .getPublicUrl(item.file_path || item.filePath);
               return data?.publicUrl || null;
-            })() : null
+            })() : null,
+            isNew: false
           }));
+          console.log('Mapped items:', items);
           setOnboardingItems(items);
         } else {
           setOnboardingItems([]);
@@ -914,7 +1092,7 @@ function Employees() {
     };
 
     fetchOnboardingItems();
-  }, [selectedEmployee, activeTab]);
+  }, [selectedEmployee, activeTab, onboardingRefreshTrigger]);
 
   // Fetch evaluation records when employee is selected and evaluation tab is active
   useEffect(() => {
@@ -1663,6 +1841,164 @@ function Employees() {
                                   </table>
                                 </div>
                               )}
+
+                              {/* Assessment and Agreement Records Section */}
+                              <div className="mt-6">
+                                <div className="mb-4">
+                                  <h5 className="font-semibold text-gray-800">Assessment and Agreement Records</h5>
+                                </div>
+                                
+                                {assessmentRecords.length === 0 ? (
+                                  <div className="border border-gray-200 rounded-lg p-6 text-center">
+                                    <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <p className="text-sm text-gray-500">No assessment or agreement records found.</p>
+                                    <p className="text-xs text-gray-400 mt-1">Files from the application process will appear here.</p>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-6">
+                                    {/* Assessment Files Section */}
+                                    {assessmentRecords.filter(r => r.type === 'assessment').length > 0 && (
+                                      <div>
+                                        <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
+                                        <div className="border border-gray-200 rounded-b-lg overflow-hidden">
+                                          <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                                            <div className="col-span-6">Document</div>
+                                            <div className="col-span-6">File</div>
+                                          </div>
+                                          {assessmentRecords
+                                            .filter(r => r.type === 'assessment')
+                                            .map((record) => (
+                                            <div key={record.id} className="border-b">
+                                              <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                                                <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
+                                                  {record.documentName === 'Interview Details' ? (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
+                                                      <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
+                                                    </svg>
+                                                  ) : (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
+                                                      <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                                                    </svg>
+                                                  )}
+                                                  {record.documentName}
+                                                </div>
+                                                <div className="col-span-12 md:col-span-6 text-sm">
+                                                  {record.fileUrl ? (
+                                                    <div className="flex items-center gap-2">
+                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                                                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                                      </svg>
+                                                      <a
+                                                        href={record.fileUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                                      >
+                                                        {record.fileName}
+                                                      </a>
+                                                      <button
+                                                        onClick={async () => {
+                                                          try {
+                                                            const response = await fetch(record.fileUrl);
+                                                            const blob = await response.blob();
+                                                            const url = window.URL.createObjectURL(blob);
+                                                            const link = document.createElement('a');
+                                                            link.href = url;
+                                                            link.download = record.fileName;
+                                                            document.body.appendChild(link);
+                                                            link.click();
+                                                            document.body.removeChild(link);
+                                                            window.URL.revokeObjectURL(url);
+                                                          } catch (error) {
+                                                            console.error('Error downloading file:', error);
+                                                            window.open(record.fileUrl, '_blank');
+                                                          }
+                                                        }}
+                                                        className="text-purple-600 hover:text-purple-800 underline text-sm"
+                                                      >
+                                                        Download
+                                                      </button>
+                                                    </div>
+                                                  ) : (
+                                                    <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Agreement Documents Section */}
+                                    {assessmentRecords.filter(r => r.type === 'agreement').length > 0 && (
+                                      <div>
+                                        <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
+                                        <div className="border border-gray-200 rounded-b-lg overflow-hidden">
+                                          <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                                            <div className="col-span-6">&nbsp;</div>
+                                            <div className="col-span-6">File</div>
+                                          </div>
+                                          {assessmentRecords
+                                            .filter(r => r.type === 'agreement')
+                                            .map((record) => (
+                                            <div key={record.id} className="border-b">
+                                              <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                                                <div className="col-span-12 md:col-span-6 text-sm text-gray-800">
+                                                  {record.documentName}
+                                                </div>
+                                                <div className="col-span-12 md:col-span-6 text-sm">
+                                                  {record.fileUrl ? (
+                                                    <div className="flex items-center gap-2">
+                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                                                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                                      </svg>
+                                                      <a
+                                                        href={record.fileUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                                      >
+                                                        {record.fileName}
+                                                      </a>
+                                                      <button
+                                                        onClick={async () => {
+                                                          try {
+                                                            const response = await fetch(record.fileUrl);
+                                                            const blob = await response.blob();
+                                                            const url = window.URL.createObjectURL(blob);
+                                                            const link = document.createElement('a');
+                                                            link.href = url;
+                                                            link.download = record.fileName;
+                                                            document.body.appendChild(link);
+                                                            link.click();
+                                                            document.body.removeChild(link);
+                                                            window.URL.revokeObjectURL(url);
+                                                          } catch (error) {
+                                                            console.error('Error downloading file:', error);
+                                                            window.open(record.fileUrl, '_blank');
+                                                          }
+                                                        }}
+                                                        className="text-purple-600 hover:text-purple-800 underline text-sm"
+                                                      >
+                                                        Download
+                                                      </button>
+                                                    </div>
+                                                  ) : (
+                                                    <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           )}
 
@@ -1670,97 +2006,387 @@ function Employees() {
                           {activeTab === 'onboarding' && (
                             <div className="space-y-6">
                               <div className="flex items-center justify-between mb-4">
-                                <h5 className="font-semibold text-gray-800">Onboarding Items</h5>
+                                <div>
+                                  <h5 className="font-semibold text-gray-800">Onboarding Items</h5>
+                                  <p className="text-xs text-gray-500 mt-1">Add and manage onboarding documents for this employee</p>
+                                </div>
                                 <button
                                   onClick={() => setOnboardingItems((prev) => [
                                     ...prev,
-                                    { id: Date.now(), item: "", description: "", date: new Date().toISOString().substring(0, 10), file: null, fileUrl: null }
+                                    { id: Date.now(), item: "", description: "", date: new Date().toISOString().substring(0, 10), file: null, fileUrl: null, filePath: null, isNew: true }
                                   ])}
-                                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+                                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
                                 >
-                                  + Add Item
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                  </svg>
+                                  Add Item
                                 </button>
                               </div>
 
-                              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                <table className="w-full text-sm">
-                                  <thead className="bg-gray-50">
-                                    <tr>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">Item</th>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">Description</th>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">Date Issued</th>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium">File</th>
-                                      <th className="px-4 py-3 text-left text-gray-600 font-medium w-16"></th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y divide-gray-100">
-                                    {onboardingItems.length === 0 ? (
-                                      <tr>
-                                        <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
-                                          No onboarding items found
-                                        </td>
-                                      </tr>
-                                    ) : (
-                                      onboardingItems.map((ob) => (
-                                        <tr key={ob.id} className="hover:bg-gray-50/50">
-                                          <td className="px-4 py-3">
-                                            <input
-                                              type="text"
-                                              value={ob.item}
-                                              onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, item: e.target.value } : item))}
-                                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
-                                              placeholder="Item name"
-                                            />
-                                          </td>
-                                          <td className="px-4 py-3">
-                                            <input
-                                              type="text"
-                                              value={ob.description}
-                                              onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, description: e.target.value } : item))}
-                                              className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
-                                              placeholder="Description"
-                                            />
-                                          </td>
-                                          <td className="px-4 py-3">
-                                            <input
-                                              type="date"
-                                              value={ob.date ? new Date(ob.date).toISOString().substring(0, 10) : ""}
-                                              onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, date: e.target.value } : item))}
-                                              className="px-2 py-1 border border-gray-200 rounded text-sm"
-                                            />
-                                          </td>
-                                          <td className="px-4 py-3">
-                                            {ob.fileUrl ? (
-                                              <a 
-                                                href={ob.fileUrl} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                className="text-blue-600 hover:underline text-sm"
+                              {onboardingItems.length === 0 ? (
+                                <div className="border-2 border-dashed border-gray-200 rounded-lg p-12 text-center">
+                                  <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  <p className="text-gray-500 mb-2">No onboarding items yet</p>
+                                  <p className="text-xs text-gray-400">Click "Add Item" to create a new onboarding document</p>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="space-y-4">
+                                    {onboardingItems.map((ob) => {
+                                      if (!onboardingFileRefs.current[ob.id]) {
+                                        onboardingFileRefs.current[ob.id] = React.createRef();
+                                      }
+                                      const fileInputRef = onboardingFileRefs.current[ob.id];
+                                      return (
+                                        <div key={ob.id} className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow">
+                                          <div className="grid grid-cols-12 gap-4">
+                                            {/* Item Name */}
+                                            <div className="col-span-12 md:col-span-3">
+                                              <label className="block text-xs font-medium text-gray-700 mb-1">Item Name *</label>
+                                              <input
+                                                type="text"
+                                                value={ob.item}
+                                                onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, item: e.target.value } : item))}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                placeholder="e.g., Employee ID"
+                                              />
+                                            </div>
+                                            {/* Description */}
+                                            <div className="col-span-12 md:col-span-4">
+                                              <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                                              <input
+                                                type="text"
+                                                value={ob.description}
+                                                onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, description: e.target.value } : item))}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                placeholder="Brief description"
+                                              />
+                                            </div>
+                                            {/* Date Issued */}
+                                            <div className="col-span-12 md:col-span-2">
+                                              <label className="block text-xs font-medium text-gray-700 mb-1">Date Issued</label>
+                                              <input
+                                                type="date"
+                                                value={ob.date ? new Date(ob.date).toISOString().substring(0, 10) : ""}
+                                                onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, date: e.target.value } : item))}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                              />
+                                            </div>
+                                            {/* File Upload */}
+                                            <div className="col-span-12 md:col-span-2">
+                                              <label className="block text-xs font-medium text-gray-700 mb-1">File</label>
+                                              <input
+                                                ref={fileInputRef}
+                                                type="file"
+                                                className="hidden"
+                                                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                                                onChange={(e) => {
+                                                  const file = e.target.files[0];
+                                                  if (file) {
+                                                    if (file.size > 10 * 1024 * 1024) {
+                                                      alert('File size must be less than 10MB');
+                                                      return;
+                                                    }
+                                                    setOnboardingItems((prev) => prev.map((item) => 
+                                                      item.id === ob.id 
+                                                        ? { ...item, file: file, fileUrl: URL.createObjectURL(file) }
+                                                        : item
+                                                    ));
+                                                  }
+                                                }}
+                                              />
+                                              {ob.fileUrl ? (
+                                                <div className="flex items-center gap-2">
+                                                  <a 
+                                                    href={ob.fileUrl} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="text-xs text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                                                  >
+                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                    </svg>
+                                                    {ob.file?.name || 'View File'}
+                                                  </a>
+                                                  <button
+                                                    onClick={() => {
+                                                      setOnboardingItems((prev) => prev.map((item) => 
+                                                        item.id === ob.id 
+                                                          ? { ...item, file: null, fileUrl: null, filePath: null }
+                                                          : item
+                                                      ));
+                                                      if (fileInputRef.current) fileInputRef.current.value = '';
+                                                    }}
+                                                    className="text-red-600 hover:text-red-800"
+                                                    title="Remove file"
+                                                  >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <button
+                                                  onClick={() => fileInputRef.current?.click()}
+                                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
+                                                >
+                                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                                  </svg>
+                                                  Upload
+                                                </button>
+                                              )}
+                                            </div>
+                                            {/* Delete Button */}
+                                            <div className="col-span-12 md:col-span-1 flex items-end">
+                                              <button
+                                                onClick={() => {
+                                                  if (window.confirm("Delete this onboarding item?")) {
+                                                    setOnboardingItems((prev) => prev.filter((item) => item.id !== ob.id));
+                                                    delete onboardingFileRefs.current[ob.id];
+                                                  }
+                                                }}
+                                                className="w-full px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
                                               >
-                                                {ob.file ? ob.file.split('/').pop() : 'View File'}
-                                              </a>
-                                            ) : (
-                                              <span className="text-gray-400 italic text-sm">No file</span>
-                                            )}
-                                          </td>
-                                          <td className="px-4 py-3">
-                                            <button
-                                              onClick={() => {
-                                                if (window.confirm("Delete this item?")) {
-                                                  setOnboardingItems((prev) => prev.filter((item) => item.id !== ob.id));
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                                Delete
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+
+                                  {/* Save Button */}
+                                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+                                    <button
+                                      onClick={async () => {
+                                        if (!selectedEmployee?.id) {
+                                          alert('Please select an employee first');
+                                          return;
+                                        }
+
+                                        // Validate items
+                                        const invalidItems = onboardingItems.filter(item => !item.item.trim());
+                                        if (invalidItems.length > 0) {
+                                          setErrorMessage('Please fill in the Item Name for all items');
+                                          setShowErrorAlert(true);
+                                          return;
+                                        }
+
+                                        try {
+                                          console.log('Starting to save onboarding items:', onboardingItems);
+                                          console.log('Selected employee ID:', selectedEmployee.id);
+                                          
+                                          // Track newly inserted item IDs
+                                          const newlyInsertedIds = [];
+                                          
+                                          // Process each item
+                                          for (const item of onboardingItems) {
+                                            console.log('Processing item:', item);
+                                            
+                                            // Upload file if it's a new file (has file object but no filePath)
+                                            let filePath = item.filePath;
+                                            if (item.file && !item.filePath && item.isNew) {
+                                              console.log('Uploading file for item:', item.item);
+                                              const fileExt = item.file.name.split('.').pop();
+                                              const uploadPath = `onboarding/${selectedEmployee.id}/${item.id}_${Date.now()}.${fileExt}`;
+                                              
+                                              const { data: uploadData, error: uploadError } = await supabase.storage
+                                                .from('application-files')
+                                                .upload(uploadPath, item.file, { upsert: false });
+                                              
+                                              if (uploadError) {
+                                                console.error('File upload error:', uploadError);
+                                                throw new Error(`Failed to upload file for ${item.item}: ${uploadError.message}`);
+                                              }
+                                              
+                                              console.log('File uploaded successfully:', uploadPath);
+                                              filePath = uploadPath;
+                                            }
+
+                                            // Prepare item data
+                                            const itemData = {
+                                              employee_id: selectedEmployee.id,
+                                              item: item.item.trim(),
+                                              description: item.description?.trim() || null,
+                                              date_issued: item.date || null,
+                                              file_path: filePath || null,
+                                            };
+
+                                            console.log('Item data to save:', itemData);
+
+                                            // Check if item is new (temporary ID from Date.now() or isNew flag)
+                                            const isNewItem = item.isNew || (item.id && typeof item.id === 'number');
+                                            
+                                            console.log('Is new item?', isNewItem, 'Item ID:', item.id, 'Type:', typeof item.id);
+                                            
+                                            if (isNewItem) {
+                                              // New item - insert
+                                              console.log('Inserting new item...');
+                                              console.log('Insert data:', JSON.stringify(itemData, null, 2));
+                                              const { data: insertData, error: insertError } = await supabase
+                                                .from('onboarding')
+                                                .insert(itemData)
+                                                .select();
+                                              
+                                              if (insertError) {
+                                                console.error('Insert error:', insertError);
+                                                console.error('Insert error details:', JSON.stringify(insertError, null, 2));
+                                                throw new Error(`Failed to save ${item.item}: ${insertError.message}`);
+                                              }
+                                              
+                                              if (!insertData || insertData.length === 0) {
+                                                console.error('Insert returned no data!');
+                                                throw new Error(`Failed to save ${item.item}: Insert returned no data`);
+                                              }
+                                              
+                                              console.log('Item inserted successfully:', insertData);
+                                              console.log('Inserted item ID:', insertData[0]?.id);
+                                              
+                                              // Track the newly inserted ID
+                                              if (insertData[0]?.id) {
+                                                newlyInsertedIds.push(insertData[0].id);
+                                              }
+                                            } else if (item.id) {
+                                              // Existing item - update
+                                              console.log('Updating existing item with ID:', item.id);
+                                              const { data: updateData, error: updateError } = await supabase
+                                                .from('onboarding')
+                                                .update({
+                                                  item: itemData.item,
+                                                  description: itemData.description,
+                                                  date_issued: itemData.date_issued,
+                                                  file_path: itemData.file_path,
+                                                })
+                                                .eq('id', item.id)
+                                                .select();
+                                              
+                                              if (updateError) {
+                                                console.error('Update error:', updateError);
+                                                throw new Error(`Failed to update ${item.item}: ${updateError.message}`);
+                                              }
+                                              
+                                              console.log('Item updated successfully:', updateData);
+                                            }
+                                          }
+
+                                          // Wait a moment for database to sync
+                                          await new Promise(resolve => setTimeout(resolve, 300));
+                                          
+                                          // Get all current items from DB to determine what to delete
+                                          const { data: allItems } = await supabase
+                                            .from('onboarding')
+                                            .select('id')
+                                            .eq('employee_id', selectedEmployee.id);
+                                          
+                                          console.log('All items in DB:', allItems);
+                                          console.log('Newly inserted IDs:', newlyInsertedIds);
+                                          
+                                          if (allItems) {
+                                            // Get IDs of items that should exist:
+                                            // 1. Items from current list that have non-number IDs (already in DB)
+                                            // 2. Newly inserted items (from the insert responses)
+                                            const currentDbIds = [
+                                              ...onboardingItems
+                                                .filter(item => item.id && typeof item.id !== 'number' && !item.isNew)
+                                                .map(item => item.id),
+                                              ...newlyInsertedIds
+                                            ];
+                                            
+                                            console.log('Current DB IDs to keep:', currentDbIds);
+                                            
+                                            // Only delete items that are in DB but NOT in the current list or newly inserted
+                                            const toDelete = allItems.filter(dbItem => !currentDbIds.includes(dbItem.id));
+                                            console.log('Items to delete:', toDelete);
+                                            
+                                            if (toDelete.length > 0) {
+                                              for (const deleteItem of toDelete) {
+                                                console.log('Deleting item:', deleteItem.id);
+                                                const { error: deleteError } = await supabase
+                                                  .from('onboarding')
+                                                  .delete()
+                                                  .eq('id', deleteItem.id);
+                                                
+                                                if (deleteError) {
+                                                  console.error('Error deleting item:', deleteError);
                                                 }
-                                              }}
-                                              className="w-7 h-7 rounded-full bg-red-100 hover:bg-red-200 flex items-center justify-center text-red-600"
-                                            >
-                                              ×
-                                            </button>
-                                          </td>
-                                        </tr>
-                                      ))
-                                    )}
-                                  </tbody>
-                                </table>
-                              </div>
+                                              }
+                                            }
+                                          }
+
+                                          // Wait a moment for database to sync
+                                          await new Promise(resolve => setTimeout(resolve, 500));
+                                          
+                                          // Reload items immediately after save
+                                          console.log('Reloading items for employee:', selectedEmployee.id);
+                                          const { data: refreshedItems, error: refreshError } = await supabase
+                                            .from('onboarding')
+                                            .select('*')
+                                            .eq('employee_id', selectedEmployee.id)
+                                            .order('date_issued', { ascending: false });
+
+                                          if (refreshError) {
+                                            console.error('Error refreshing items:', refreshError);
+                                            console.error('Refresh error details:', JSON.stringify(refreshError, null, 2));
+                                            setErrorMessage(`Items may have been saved but failed to reload: ${refreshError.message}. Please refresh the page.`);
+                                            setShowErrorAlert(true);
+                                          } else {
+                                            console.log('Refreshed items count:', refreshedItems?.length || 0);
+                                            console.log('Refreshed items:', refreshedItems);
+                                            if (refreshedItems && refreshedItems.length > 0) {
+                                              const items = refreshedItems.map(item => ({
+                                                id: item.id,
+                                                item: item.item || item.name || '',
+                                                description: item.description || '',
+                                                date: item.date_issued || item.date || '',
+                                                file: item.file_path || item.filePath || null,
+                                                filePath: item.file_path || item.filePath || null,
+                                                fileUrl: item.file_path || item.filePath ? (() => {
+                                                  const { data } = supabase.storage
+                                                    .from('application-files')
+                                                    .getPublicUrl(item.file_path || item.filePath);
+                                                  return data?.publicUrl || null;
+                                                })() : null,
+                                                isNew: false
+                                              }));
+                                              console.log('Setting onboarding items:', items);
+                                              setOnboardingItems(items);
+                                              // Trigger refresh of the useEffect
+                                              setOnboardingRefreshTrigger(Date.now());
+                                              setSuccessMessage(`Onboarding items saved successfully! ${items.length} item(s) loaded.`);
+                                            } else {
+                                              console.warn('No items found after save. Items may not have been saved or RLS is blocking the query.');
+                                              setOnboardingItems([]);
+                                              // Still trigger refresh in case items appear
+                                              setOnboardingRefreshTrigger(Date.now());
+                                              setSuccessMessage('Onboarding items saved successfully! If items don\'t appear, please refresh the page or check if RLS is enabled.');
+                                            }
+                                            setShowSuccessAlert(true);
+                                          }
+                                        } catch (err) {
+                                          console.error('Error saving onboarding items:', err);
+                                          setErrorMessage(`Error saving onboarding items: ${err.message}`);
+                                          setShowErrorAlert(true);
+                                        }
+                                      }}
+                                      className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                      Save All Items
+                                    </button>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           )}
 
@@ -1945,19 +2571,68 @@ function Employees() {
                                       {externalCertificates.map((cert) => (
                                         <div 
                                           key={cert.id} 
-                                          onClick={() => window.open(cert.certificate_url, '_blank')}
-                                          className="flex items-center gap-3 p-3 bg-white rounded-lg border border-purple-200 hover:bg-purple-50 hover:border-purple-300 transition-all cursor-pointer group"
+                                          className="flex items-center gap-3 p-3 bg-white rounded-lg border border-purple-200 hover:bg-purple-50 hover:border-purple-300 transition-all group"
                                         >
                                           <svg className="w-5 h-5 text-purple-600 flex-shrink-0 group-hover:text-purple-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                           </svg>
                                           <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-800 truncate group-hover:text-purple-700">{cert.name}</p>
-                                            <p className="text-xs text-gray-500">{formatDate(cert.uploaded_at)}</p>
+                                            <p className="text-sm font-medium text-gray-800 truncate group-hover:text-purple-700">
+                                              {cert.title || cert.name}
+                                            </p>
+                                            <p className="text-xs text-gray-500">
+                                              {cert.title && cert.name !== cert.title && (
+                                                <span className="text-gray-400">{cert.name} • </span>
+                                              )}
+                                              {formatDate(cert.uploaded_at)}
+                                            </p>
                                           </div>
-                                          <svg className="w-5 h-5 text-gray-400 flex-shrink-0 group-hover:text-purple-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                                          </svg>
+                                          <div className="flex items-center gap-2">
+                                            <button
+                                              onClick={async (e) => {
+                                                e.stopPropagation();
+                                                try {
+                                                  // Fetch the file and trigger download
+                                                  const response = await fetch(cert.certificate_url);
+                                                  const blob = await response.blob();
+                                                  const url = window.URL.createObjectURL(blob);
+                                                  const link = document.createElement('a');
+                                                  link.href = url;
+                                                  const fileName = cert.name || cert.certificate_url.split('/').pop() || 'certificate.pdf';
+                                                  link.download = fileName;
+                                                  document.body.appendChild(link);
+                                                  link.click();
+                                                  document.body.removeChild(link);
+                                                  window.URL.revokeObjectURL(url);
+                                                } catch (error) {
+                                                  console.error('Error downloading certificate:', error);
+                                                  // Fallback to direct download
+                                                  window.open(cert.certificate_url, '_blank');
+                                                }
+                                              }}
+                                              className="text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-purple-100 transition-colors"
+                                              title="Download certificate"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                              </svg>
+                                              Download
+                                            </button>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.open(cert.certificate_url, '_blank');
+                                              }}
+                                              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                                              title="View certificate"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                              </svg>
+                                              View
+                                            </button>
+                                          </div>
                                         </div>
                                       ))}
                                     </div>
@@ -2229,6 +2904,60 @@ function Employees() {
             >
               OK
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Success Alert Modal */}
+      {showSuccessAlert && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowSuccessAlert(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-green-600">
+                    <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">{successMessage}</div>
+              <div className="mt-4">
+                <button 
+                  type="button" 
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  onClick={() => setShowSuccessAlert(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Error Alert Modal */}
+      {showErrorAlert && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowErrorAlert(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-3">
+                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-red-600">
+                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">{errorMessage}</div>
+              <div className="mt-4">
+                <button 
+                  type="button" 
+                  className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" 
+                  onClick={() => setShowErrorAlert(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

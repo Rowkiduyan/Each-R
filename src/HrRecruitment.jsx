@@ -195,6 +195,7 @@ function HrRecruitment() {
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmCallback, setConfirmCallback] = useState(null);
   const [isProcessingConfirm, setIsProcessingConfirm] = useState(false);
+  const [isOpeningConfirmDialog, setIsOpeningConfirmDialog] = useState(false);
   
   // Filters for unified applications table
   const [positionFilter, setPositionFilter] = useState("All");
@@ -445,6 +446,7 @@ function HrRecruitment() {
     }
   }, [location.state, applicants, navigate, location.pathname]);
 
+
   // Sync selectedApplicant with fresh data from applicants list when it updates
   useEffect(() => {
     if (selectedApplicant?.id && applicants.length > 0) {
@@ -589,6 +591,24 @@ function HrRecruitment() {
 
       console.log(`Loaded ${data.length} applications from database`);
 
+      // Fetch resume_path from applicants table for all user_ids
+      const userIds = [...new Set((data || []).map(r => r.user_id).filter(Boolean))];
+      let applicantResumes = {};
+      if (userIds.length > 0) {
+        const { data: applicantsData } = await supabase
+          .from('applicants')
+          .select('id, resume_path')
+          .in('id', userIds);
+        
+        if (applicantsData) {
+          applicantsData.forEach(applicant => {
+            if (applicant.resume_path) {
+              applicantResumes[applicant.id] = applicant.resume_path;
+            }
+          });
+        }
+      }
+
       const mapped = (data || []).map((row) => {
         // normalize payload (jsonb or string)
         let payloadObj = row.payload;
@@ -610,6 +630,9 @@ function HrRecruitment() {
         const rawStatus = row.status || payloadObj.status || source.status || null;
         const statusNormalized = rawStatus ? String(rawStatus).toLowerCase() : "submitted";
 
+        // Get resume path - prioritize from applicants table, then from payload
+        const resumePath = applicantResumes[row.user_id] || source.resumePath || source.resumeName || null;
+
         return {
           id: row.id,
           user_id: row.user_id,
@@ -623,6 +646,7 @@ function HrRecruitment() {
           }),
           email: source.email || source.contact || "",
           phone: source.contact || source.phone || "",
+          resume_path: resumePath,
           raw: row,
           // surface interview fields if present (helpful in table later)
           interview_date: row.interview_date || row.payload?.interview?.date || null,
@@ -1855,15 +1879,27 @@ function HrRecruitment() {
   // ---- APPROVE: move application from Application step to Assessment step (with confirmation)
   const proceedToAssessment = (applicant) => {
     if (!applicant?.id) return;
+    
+    // Prevent if already processing or opening dialog
+    if (isProcessingConfirm || isOpeningConfirmDialog || showConfirmDialog) return;
+
+    // Set flag to prevent double-clicks
+    setIsOpeningConfirmDialog(true);
 
     // Ensure any previous alerts are closed before showing confirm dialog
     setShowSuccessAlert(false);
     setShowErrorAlert(false);
+    
+    // Reset processing state and clear any existing callback
+    setIsProcessingConfirm(false);
+    setConfirmCallback(null);
 
     setConfirmMessage(
       `Approve ${applicant.name}'s application and move to Assessment step?`
     );
-    setConfirmCallback(async () => {
+    
+    // Store the callback function - DO NOT execute it here
+    const callbackFunction = async () => {
       try {
         const { error } = await supabase
           .from("applications")
@@ -1903,8 +1939,16 @@ function HrRecruitment() {
         setErrorMessage("Unexpected error while moving to assessment. See console.");
         setShowErrorAlert(true);
       }
-    });
+    };
+    
+    // Only set the callback, do not execute it
+    setConfirmCallback(() => callbackFunction);
     setShowConfirmDialog(true);
+    
+    // Reset flag after a short delay
+    setTimeout(() => {
+      setIsOpeningConfirmDialog(false);
+    }, 100);
   };
 
   // ---- REJECT action: update DB row status -> 'rejected' and optionally save remarks
@@ -2938,6 +2982,19 @@ function HrRecruitment() {
                         <p className="text-sm text-gray-600">
                           {selectedApplicant.position || "—"} | {selectedApplicant.depot || "—"}
                         </p>
+                        {selectedApplicant.resume_path && (
+                          <a
+                            href={supabase.storage.from('resume').getPublicUrl(selectedApplicant.resume_path).data.publicUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1 mt-1"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            View Resume
+                          </a>
+                        )}
                       </div>
                       <div className="text-right space-y-1">
                         {(() => {
@@ -3125,8 +3182,8 @@ function HrRecruitment() {
                         }
                       };
 
-                      // Get resume URL
-                      const resumePath = form.resumePath || form.resumeName || null;
+                      // Get resume URL - check applicants table first, then payload
+                      const resumePath = selectedApplicant.resume_path || form.resumePath || form.resumeName || null;
                       const resumeUrl = resumePath ? supabase.storage.from('resume').getPublicUrl(resumePath)?.data?.publicUrl : null;
 
                       return (
@@ -3173,6 +3230,58 @@ function HrRecruitment() {
                                 <span className="text-gray-500">Marital Status:</span>
                                 <span className="ml-2 text-gray-800">{form.maritalStatus || form.marital_status || "—"}</span>
                               </div>
+                              <div className="md:col-span-2">
+                                <span className="text-gray-500">Resume:</span>
+                                <span className="ml-2">
+                                  {resumeUrl ? (
+                                    <div className="flex items-center gap-3">
+                                      <button
+                                        onClick={async (e) => {
+                                          e.preventDefault();
+                                          try {
+                                            // Fetch the file and trigger download
+                                            const response = await fetch(resumeUrl);
+                                            const blob = await response.blob();
+                                            const url = window.URL.createObjectURL(blob);
+                                            const link = document.createElement('a');
+                                            link.href = url;
+                                            const fileName = resumePath.split('/').pop() || form.resumeName || 'resume.pdf';
+                                            link.download = fileName;
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                            window.URL.revokeObjectURL(url);
+                                          } catch (error) {
+                                            console.error('Error downloading resume:', error);
+                                            // Fallback to direct download
+                                            window.open(resumeUrl, '_blank');
+                                          }
+                                        }}
+                                        className="text-red-600 hover:text-red-700 font-medium flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Download Resume
+                                      </button>
+                                      <a
+                                        href={resumeUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm"
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                        </svg>
+                                        View
+                                      </a>
+                                    </div>
+                                  ) : (
+                                    <span className="text-gray-500">Not available</span>
+                                  )}
+                                </span>
+                              </div>
                               <div>
                                 <span className="text-gray-500">Available Start Date:</span>
                                 <span className="ml-2 text-gray-800">{formatDate(form.startDate)}</span>
@@ -3184,21 +3293,6 @@ function HrRecruitment() {
                               <div>
                                 <span className="text-gray-500">Currently Employed?</span>
                                 <span className="ml-2 text-gray-800">{form.employed || "—"}</span>
-                              </div>
-                              <div className="md:col-span-2">
-                                <span className="text-gray-500">Resume:</span>
-                                {resumeUrl ? (
-                                  <a 
-                                    href={resumeUrl} 
-                                    target="_blank" 
-                                    rel="noopener noreferrer"
-                                    className="ml-2 text-blue-600 hover:underline"
-                                  >
-                                    {form.resumeName || 'View Resume'}
-                                  </a>
-                                ) : (
-                                  <span className="ml-2 text-gray-500">No resume uploaded</span>
-                                )}
                               </div>
                               <div className="md:col-span-2">
                                 <span className="text-gray-500">Government IDs:</span>
@@ -3382,29 +3476,44 @@ function HrRecruitment() {
                       );
                     })()}
 
-                    {/* Action: Approve to proceed to Assessment */}
-                    <div className="pt-2 flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => proceedToAssessment(selectedApplicant)}
-                        className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 transition-colors"
-                      >
-                        <span>Proceed to Assessment</span>
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M13 7l5 5m0 0l-5 5m5-5H6"
-                          />
-                        </svg>
-                      </button>
-                    </div>
+                    {/* Action: Approve to proceed to Assessment - Only show if status is still submitted/pending */}
+                    {(() => {
+                      const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
+                      const isStillInApplicationStep = ['submitted', 'pending'].includes(applicantStatus);
+                      
+                      if (!isStillInApplicationStep) {
+                        return null; // Don't show button if already moved to Assessment or beyond
+                      }
+                      
+                      return (
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              proceedToAssessment(selectedApplicant);
+                            }}
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-md text-sm font-medium hover:bg-red-700 transition-colors"
+                          >
+                            <span>Proceed to Assessment</span>
+                            <svg
+                              className="w-4 h-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M13 7l5 5m0 0l-5 5m5-5H6"
+                              />
+                            </svg>
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </section>
                 )}
 
@@ -3507,296 +3616,479 @@ function HrRecruitment() {
                       );
                     })()}
 
-                    {/* Upload Interview Details Section */}
-                    <div className="mt-4 border rounded-md p-4">
-                      <div className="text-sm font-semibold text-gray-800 mb-3">Upload Interview Details</div>
-                      {selectedApplicant.interview_details_file && (
-                        <div className="mb-3 p-2 bg-gray-50 rounded text-sm">
-                          <span className="text-gray-700">Current file: </span>
-                          <a 
-                            href={supabase.storage.from('application-files').getPublicUrl(selectedApplicant.interview_details_file)?.data?.publicUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {selectedApplicant.interview_details_file.split('/').pop()}
-                          </a>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-8">
-                          <input
-                            type="text"
-                            placeholder="File name"
-                            value={interviewFileName}
-                            onChange={(e) => setInterviewFileName(e.target.value)}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm ${
-                              interviewFile || selectedApplicant.interview_details_file 
-                                ? "text-blue-600 underline" 
-                                : ""
-                            }`}
-                            readOnly={!!(interviewFile || selectedApplicant.interview_details_file)}
-                          />
-                        </div>
-                        <div className="col-span-4 flex items-center gap-2">
-                          {!interviewFile && !selectedApplicant.interview_details_file && (
-                            <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
-                              Upload
-                              <input
-                                type="file"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    setInterviewFile(file);
-                                    if (!interviewFileName) {
-                                      setInterviewFileName(file.name);
-                                    }
-                                  }
-                                }}
-                                className="hidden"
-                              />
-                            </label>
-                          )}
-                          {uploadingInterviewFile ? (
-                            <span className="text-gray-600 text-sm">Uploading...</span>
-                          ) : interviewFile || (selectedApplicant.interview_details_file && interviewFileName) ? (
-                            <div className="flex items-center gap-2">
-                              {interviewFile ? (
-                                <button
-                                  type="button"
-                                  className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                                  onClick={async () => {
-                                  if (!interviewFile || !selectedApplicant?.id) return;
-                                
-                                setUploadingInterviewFile(true);
-                                try {
-                                  const fileExt = interviewFile.name.split('.').pop();
-                                  const fileName = interviewFileName || `interview-details-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
-                                  const filePath = `interview-details/${selectedApplicant.id}/${fileName}`;
-
-                                  const { data: uploadData, error: uploadError } = await supabase.storage
-                                    .from('application-files')
-                                    .upload(filePath, interviewFile, {
-                                      upsert: true,
-                                    });
-
-                                  if (uploadError) {
-                                    throw uploadError;
-                                  }
-
-                                  // Update application record with file path
-                                  // Try to update the column first, fallback to payload if column doesn't exist
-                                  const { error: updateError } = await supabase
-                                    .from('applications')
-                                    .update({ interview_details_file: uploadData.path })
-                                    .eq('id', selectedApplicant.id);
-
-                                  if (updateError && updateError.code === 'PGRST204') {
-                                    // Column doesn't exist, store in payload instead
-                                    console.warn('interview_details_file column not found, storing in payload');
-                                    const currentPayload = selectedApplicant.raw?.payload || {};
-                                    let payloadObj = currentPayload;
-                                    if (typeof payloadObj === 'string') {
-                                      try {
-                                        payloadObj = JSON.parse(payloadObj);
-                                      } catch {
-                                        payloadObj = {};
-                                      }
-                                    }
-                                    
-                                    const updatedPayload = {
-                                      ...payloadObj,
-                                      interview_details_file: uploadData.path
-                                    };
-                                    
-                                    const { error: payloadError } = await supabase
-                                      .from('applications')
-                                      .update({ payload: updatedPayload })
-                                      .eq('id', selectedApplicant.id);
-                                    
-                                    if (payloadError) {
-                                      throw payloadError;
-                                    }
-                                  } else if (updateError) {
-                                    throw updateError;
-                                  }
-
-                                  // Reload applications to show updated file
-                                  await loadApplications();
-                                  // Keep the file name in the field to show it was saved
-                                  setInterviewFileName(fileName);
-                                  // Clear the file object but keep the name
-                                  setInterviewFile(null);
-                                  setSuccessMessage("Interview details file uploaded successfully");
-                                  setShowSuccessAlert(true);
-                                } catch (err) {
-                                  console.error('Error uploading interview file:', err);
-                                  setErrorMessage("Failed to upload file. Please try again.");
-                                  setShowErrorAlert(true);
-                                } finally {
-                                  setUploadingInterviewFile(false);
-                                }
-                              }}
-                                >
-                                  Save
-                                </button>
-                              ) : (
-                                <span className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm border border-green-300">
-                                  Saved ✓
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-gray-400 text-sm">No file selected</span>
-                          )}
-                        </div>
+                    {/* Assessment Files Upload Section */}
+                    <div className="mt-6">
+                      <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
+                      <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                        <div className="col-span-6">Document</div>
+                        <div className="col-span-6">File</div>
                       </div>
-                    </div>
 
-                    {/* Upload In-Person Assessment Results Section */}
-                    <div className="mt-4 border rounded-md p-4">
-                      <div className="text-sm font-semibold text-gray-800 mb-3">Upload In-Person Assessment Results</div>
-                      {selectedApplicant.assessment_results_file && (
-                        <div className="mb-3 p-2 bg-gray-50 rounded text-sm">
-                          <span className="text-gray-700">Current file: </span>
-                          <a 
-                            href={supabase.storage.from('application-files').getPublicUrl(selectedApplicant.assessment_results_file)?.data?.publicUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {selectedApplicant.assessment_results_file.split('/').pop()}
-                          </a>
-                        </div>
-                      )}
-                      <div className="grid grid-cols-12 gap-2 items-center">
-                        <div className="col-span-8">
-                          <input
-                            type="text"
-                            placeholder="File name"
-                            value={assessmentFileName}
-                            onChange={(e) => setAssessmentFileName(e.target.value)}
-                            className={`w-full px-3 py-2 border border-gray-300 rounded text-sm ${
-                              assessmentFile || selectedApplicant.assessment_results_file 
-                                ? "text-blue-600 underline" 
-                                : ""
-                            }`}
-                            readOnly={!!(assessmentFile || selectedApplicant.assessment_results_file)}
-                          />
-                        </div>
-                        <div className="col-span-4 flex items-center gap-2">
-                          {!assessmentFile && !selectedApplicant.assessment_results_file && (
-                            <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
-                              Upload
-                              <input
-                                type="file"
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    setAssessmentFile(file);
-                                    if (!assessmentFileName) {
-                                      setAssessmentFileName(file.name);
-                                    }
-                                  }
-                                }}
-                                className="hidden"
-                              />
-                            </label>
-                          )}
-                          {uploadingAssessmentFile ? (
-                            <span className="text-gray-600 text-sm">Uploading...</span>
-                          ) : assessmentFile || (selectedApplicant.assessment_results_file && assessmentFileName) ? (
-                            <div className="flex items-center gap-2">
-                              {assessmentFile ? (
-                                <button
-                                  type="button"
-                                  className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                                  onClick={async () => {
-                                  if (!assessmentFile || !selectedApplicant?.id) return;
-                                
-                                setUploadingAssessmentFile(true);
-                                try {
-                                  const fileExt = assessmentFile.name.split('.').pop();
-                                  const fileName = assessmentFileName || `assessment-results-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
-                                  const filePath = `assessment-results/${selectedApplicant.id}/${fileName}`;
+                      {/* Interview Details File Row */}
+                      {(() => {
+                        // Check if interview is scheduled and confirmed
+                        const hasInterviewScheduled = !!selectedApplicant?.interview_date;
+                        const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
+                                                   selectedApplicant?.interview_confirmed === 'confirmed';
+                        const canUpload = hasInterviewScheduled && interviewConfirmed;
+                        
+                        const fileValue = selectedApplicant?.interview_details_file || (selectedApplicant?.raw?.payload ? (() => {
+                          const payload = typeof selectedApplicant.raw.payload === 'string' 
+                            ? JSON.parse(selectedApplicant.raw.payload) 
+                            : selectedApplicant.raw.payload;
+                          return payload?.interview_details_file || null;
+                        })() : null);
+                        const hasFile = !!(fileValue || interviewFile);
+                        const displayFileName = interviewFileName || (fileValue ? fileValue.split('/').pop() : "");
 
-                                  const { data: uploadData, error: uploadError } = await supabase.storage
-                                    .from('application-files')
-                                    .upload(filePath, assessmentFile, {
-                                      upsert: true,
-                                    });
+                        return (
+                          <div className="border-b">
+                            <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                              <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
+                                  <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
+                                </svg>
+                                Interview Details
+                              </div>
+                              <div className="col-span-12 md:col-span-6 text-sm">
+                                <div className="flex items-center gap-2">
+                                  {!canUpload && !hasFile ? (
+                                    <div className="flex items-center gap-2 text-gray-500 text-sm italic">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                      </svg>
+                                      {!hasInterviewScheduled 
+                                        ? "Interview must be scheduled first" 
+                                        : !interviewConfirmed 
+                                        ? "Applicant must confirm interview first" 
+                                        : "Upload unavailable"}
+                                    </div>
+                                  ) : hasFile ? (
+                                    <div className="flex items-center gap-2 w-full">
+                                      <div className="flex items-center gap-2 flex-1">
+                                        {fileValue && !interviewFile ? (
+                                          <a
+                                            href={supabase.storage.from('application-files').getPublicUrl(fileValue)?.data?.publicUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm text-blue-600 hover:underline cursor-pointer"
+                                          >
+                                            {displayFileName}
+                                          </a>
+                                        ) : (
+                                          <input
+                                            type="text"
+                                            placeholder="File name"
+                                            value={displayFileName}
+                                            onChange={(e) => setInterviewFileName(e.target.value)}
+                                            className={`flex-1 px-3 py-2 border border-gray-300 rounded text-sm ${
+                                              interviewFile || fileValue 
+                                                ? "text-blue-600" 
+                                                : ""
+                                            }`}
+                                            readOnly={!!(fileValue && !interviewFile)}
+                                          />
+                                        )}
+                                        {fileValue && !interviewFile && canUpload && (
+                                          <label className="px-2 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 cursor-pointer whitespace-nowrap flex items-center gap-1 transition-colors">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                              <path d="M9.25 3.5a2.25 2.25 0 0 0-2.15 1.6l-1.15.345a2.25 2.25 0 0 0-1.6 2.15v6.2a2.251 2.251 0 0 0 2.15 2.15h.115a6.5 6.5 0 0 1 1.194-3.567l.298-.7a.75.75 0 0 1 .695-.433h1.18a.75.75 0 0 1 .695.433l.298.7a6.5 6.5 0 0 1 1.194 3.567h.115a2.25 2.25 0 0 0 2.15-2.15V7.595a2.25 2.25 0 0 0-1.6-2.15l-1.15-.345a2.25 2.25 0 0 0-2.15-1.6H9.25ZM6.115 12a5.5 5.5 0 0 1 1.194-3.567l.298-.7A2.25 2.25 0 0 1 9.683 7.5h.634a2.25 2.25 0 0 1 2.076 1.233l.298.7A5.5 5.5 0 0 1 13.885 12H6.115Z" />
+                                            </svg>
+                                            Resubmit
+                                            <input
+                                              type="file"
+                                              onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                  setInterviewFile(file);
+                                                  setInterviewFileName(file.name);
+                                                }
+                                              }}
+                                              className="hidden"
+                                            />
+                                          </label>
+                                        )}
+                                        {interviewFile && (
+                                          <button
+                                            type="button"
+                                            className="w-6 h-6 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center flex-shrink-0 transition-colors"
+                                            onClick={() => {
+                                              setInterviewFile(null);
+                                              setInterviewFileName(fileValue ? fileValue.split('/').pop() : "");
+                                            }}
+                                            title="Cancel resubmit"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                          </button>
+                                        )}
+                                      </div>
+                                      {uploadingInterviewFile ? (
+                                        <span className="text-gray-600 text-sm whitespace-nowrap flex items-center gap-1">
+                                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                          </svg>
+                                          Uploading...
+                                        </span>
+                                      ) : interviewFile ? (
+                                        <button
+                                          type="button"
+                                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 whitespace-nowrap flex items-center gap-1"
+                                          onClick={async () => {
+                                            if (!interviewFile || !selectedApplicant?.id) return;
+                                            
+                                            setUploadingInterviewFile(true);
+                                            try {
+                                              const fileExt = interviewFile.name.split('.').pop();
+                                              const fileName = interviewFileName || `interview-details-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
+                                              const filePath = `interview-details/${selectedApplicant.id}/${fileName}`;
 
-                                  if (uploadError) {
-                                    throw uploadError;
-                                  }
+                                              const { data: uploadData, error: uploadError } = await supabase.storage
+                                                .from('application-files')
+                                                .upload(filePath, interviewFile, { upsert: true });
 
-                                  // Update application record with file path
-                                  // Try to update the column first, fallback to payload if column doesn't exist
-                                  const { error: updateError } = await supabase
-                                    .from('applications')
-                                    .update({ assessment_results_file: uploadData.path })
-                                    .eq('id', selectedApplicant.id);
+                                              if (uploadError) throw uploadError;
 
-                                  if (updateError && updateError.code === 'PGRST204') {
-                                    // Column doesn't exist, store in payload instead
-                                    console.warn('assessment_results_file column not found, storing in payload');
-                                    const currentPayload = selectedApplicant.raw?.payload || {};
-                                    let payloadObj = currentPayload;
-                                    if (typeof payloadObj === 'string') {
-                                      try {
-                                        payloadObj = JSON.parse(payloadObj);
-                                      } catch {
-                                        payloadObj = {};
-                                      }
-                                    }
-                                    
-                                    const updatedPayload = {
-                                      ...payloadObj,
-                                      assessment_results_file: uploadData.path
-                                    };
-                                    
-                                    const { error: payloadError } = await supabase
-                                      .from('applications')
-                                      .update({ payload: updatedPayload })
-                                      .eq('id', selectedApplicant.id);
-                                    
-                                    if (payloadError) {
-                                      throw payloadError;
-                                    }
-                                  } else if (updateError) {
-                                    throw updateError;
-                                  }
+                                              const { error: updateError } = await supabase
+                                                .from('applications')
+                                                .update({ interview_details_file: uploadData.path })
+                                                .eq('id', selectedApplicant.id);
 
-                                  // Reload applications to show updated file
-                                  await loadApplications();
-                                  // Keep the file name in the field to show it was saved
-                                  setAssessmentFileName(fileName);
-                                  // Clear the file object but keep the name visible
-                                  setAssessmentFile(null);
-                                  setSuccessMessage("Assessment results file uploaded successfully");
-                                  setShowSuccessAlert(true);
-                                } catch (err) {
-                                  console.error('Error uploading assessment file:', err);
-                                  setErrorMessage("Failed to upload file. Please try again.");
-                                  setShowErrorAlert(true);
-                                } finally {
-                                  setUploadingAssessmentFile(false);
-                                }
-                              }}
-                                >
-                                  Save
-                                </button>
-                              ) : (
-                                <span className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm border border-green-300">
-                                  Saved ✓
-                                </span>
-                              )}
+                                              if (updateError && updateError.code === 'PGRST204') {
+                                                const currentPayload = selectedApplicant.raw?.payload || {};
+                                                let payloadObj = typeof currentPayload === 'string' ? JSON.parse(currentPayload) : currentPayload;
+                                                const updatedPayload = { ...payloadObj, interview_details_file: uploadData.path };
+                                                const { error: payloadError } = await supabase
+                                                  .from('applications')
+                                                  .update({ payload: updatedPayload })
+                                                  .eq('id', selectedApplicant.id);
+                                                if (payloadError) throw payloadError;
+                                              } else if (updateError) {
+                                                throw updateError;
+                                              }
+
+                                              // Update selectedApplicant immediately with the new file path
+                                              setSelectedApplicant(prev => ({
+                                                ...prev,
+                                                interview_details_file: uploadData.path,
+                                                raw: {
+                                                  ...prev.raw,
+                                                  interview_details_file: uploadData.path,
+                                                  payload: updateError && updateError.code === 'PGRST204' 
+                                                    ? { ...(typeof selectedApplicant.raw?.payload === 'string' ? JSON.parse(selectedApplicant.raw.payload) : selectedApplicant.raw?.payload || {}), interview_details_file: uploadData.path }
+                                                    : prev.raw?.payload
+                                                }
+                                              }));
+                                              
+                                              await loadApplications();
+                                              
+                                              // After loadApplications, ensure selectedApplicant is updated from the fresh data
+                                              const { data: updatedApp } = await supabase
+                                                .from('applications')
+                                                .select('*, interview_details_file, payload')
+                                                .eq('id', selectedApplicant.id)
+                                                .single();
+                                              
+                                              if (updatedApp) {
+                                                let payloadObj = updatedApp.payload;
+                                                if (typeof payloadObj === 'string') {
+                                                  try {
+                                                    payloadObj = JSON.parse(payloadObj);
+                                                  } catch {
+                                                    payloadObj = {};
+                                                  }
+                                                }
+                                                
+                                                setSelectedApplicant(prev => ({
+                                                  ...prev,
+                                                  interview_details_file: updatedApp.interview_details_file || payloadObj?.interview_details_file || uploadData.path,
+                                                  raw: updatedApp
+                                                }));
+                                              }
+                                              
+                                              setInterviewFileName(fileName);
+                                              setInterviewFile(null);
+                                              setSuccessMessage("Interview details file uploaded successfully");
+                                              setShowSuccessAlert(true);
+                                            } catch (err) {
+                                              console.error('Error uploading interview file:', err);
+                                              setErrorMessage("Failed to upload file. Please try again.");
+                                              setShowErrorAlert(true);
+                                            } finally {
+                                              setUploadingInterviewFile(false);
+                                            }
+                                          }}
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                                            <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
+                                          </svg>
+                                          Save
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  ) : canUpload ? (
+                                    <label className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 text-sm font-medium transition-colors">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                        <path d="M9.25 3.5a2.25 2.25 0 0 0-2.15 1.6l-1.15.345a2.25 2.25 0 0 0-1.6 2.15v6.2a2.251 2.251 0 0 0 2.15 2.15h.115a6.5 6.5 0 0 1 1.194-3.567l.298-.7a.75.75 0 0 1 .695-.433h1.18a.75.75 0 0 1 .695.433l.298.7a6.5 6.5 0 0 1 1.194 3.567h.115a2.25 2.25 0 0 0 2.15-2.15V7.595a2.25 2.25 0 0 0-1.6-2.15l-1.15-.345a2.25 2.25 0 0 0-2.15-1.6H9.25ZM6.115 12a5.5 5.5 0 0 1 1.194-3.567l.298-.7A2.25 2.25 0 0 1 9.683 7.5h.634a2.25 2.25 0 0 1 2.076 1.233l.298.7A5.5 5.5 0 0 1 13.885 12H6.115Z" />
+                                      </svg>
+                                      Upload
+                                      <input
+                                        type="file"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                            setInterviewFile(file);
+                                            if (!interviewFileName) {
+                                              setInterviewFileName(file.name);
+                                            }
+                                          }
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                  ) : null}
+                                </div>
+                              </div>
                             </div>
-                          ) : (
-                            <span className="text-gray-400 text-sm">No file selected</span>
-                          )}
-                        </div>
-                      </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Assessment Results File Row */}
+                      {(() => {
+                        // Check if interview is scheduled and confirmed
+                        const hasInterviewScheduled = !!selectedApplicant?.interview_date;
+                        const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
+                                                   selectedApplicant?.interview_confirmed === 'confirmed';
+                        const canUpload = hasInterviewScheduled && interviewConfirmed;
+                        
+                        const fileValue = selectedApplicant?.assessment_results_file || (selectedApplicant?.raw?.payload ? (() => {
+                          const payload = typeof selectedApplicant.raw.payload === 'string' 
+                            ? JSON.parse(selectedApplicant.raw.payload) 
+                            : selectedApplicant.raw.payload;
+                          return payload?.assessment_results_file || null;
+                        })() : null);
+                        const hasFile = !!(fileValue || assessmentFile);
+                        const displayFileName = assessmentFileName || (fileValue ? fileValue.split('/').pop() : "");
+
+                        return (
+                          <div className="border-b">
+                            <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                              <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
+                                  <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                                </svg>
+                                In-Person Assessment Results
+                              </div>
+                              <div className="col-span-12 md:col-span-6 text-sm">
+                                <div className="flex items-center gap-2">
+                                  {!canUpload && !hasFile ? (
+                                    <div className="flex items-center gap-2 text-gray-500 text-sm italic">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                      </svg>
+                                      {!hasInterviewScheduled 
+                                        ? "Interview must be scheduled first" 
+                                        : !interviewConfirmed 
+                                        ? "Applicant must confirm interview first" 
+                                        : "Upload unavailable"}
+                                    </div>
+                                  ) : hasFile ? (
+                                    <div className="flex items-center gap-2 w-full">
+                                      <div className="flex items-center gap-2 flex-1">
+                                        {fileValue && !assessmentFile ? (
+                                          <a
+                                            href={supabase.storage.from('application-files').getPublicUrl(fileValue)?.data?.publicUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm text-blue-600 hover:underline cursor-pointer"
+                                          >
+                                            {displayFileName}
+                                          </a>
+                                        ) : (
+                                          <input
+                                            type="text"
+                                            placeholder="File name"
+                                            value={displayFileName}
+                                            onChange={(e) => setAssessmentFileName(e.target.value)}
+                                            className={`flex-1 px-3 py-2 border border-gray-300 rounded text-sm ${
+                                              assessmentFile || fileValue 
+                                                ? "text-blue-600" 
+                                                : ""
+                                            }`}
+                                            readOnly={!!(fileValue && !assessmentFile)}
+                                          />
+                                        )}
+                                        {fileValue && !assessmentFile && canUpload && (
+                                          <label className="px-2 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 cursor-pointer whitespace-nowrap flex items-center gap-1 transition-colors">
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                              <path d="M9.25 3.5a2.25 2.25 0 0 0-2.15 1.6l-1.15.345a2.25 2.25 0 0 0-1.6 2.15v6.2a2.251 2.251 0 0 0 2.15 2.15h.115a6.5 6.5 0 0 1 1.194-3.567l.298-.7a.75.75 0 0 1 .695-.433h1.18a.75.75 0 0 1 .695.433l.298.7a6.5 6.5 0 0 1 1.194 3.567h.115a2.25 2.25 0 0 0 2.15-2.15V7.595a2.25 2.25 0 0 0-1.6-2.15l-1.15-.345a2.25 2.25 0 0 0-2.15-1.6H9.25ZM6.115 12a5.5 5.5 0 0 1 1.194-3.567l.298-.7A2.25 2.25 0 0 1 9.683 7.5h.634a2.25 2.25 0 0 1 2.076 1.233l.298.7A5.5 5.5 0 0 1 13.885 12H6.115Z" />
+                                            </svg>
+                                            Resubmit
+                                            <input
+                                              type="file"
+                                              onChange={(e) => {
+                                                const file = e.target.files?.[0];
+                                                if (file) {
+                                                  setAssessmentFile(file);
+                                                  setAssessmentFileName(file.name);
+                                                }
+                                              }}
+                                              className="hidden"
+                                            />
+                                          </label>
+                                        )}
+                                        {assessmentFile && (
+                                          <button
+                                            type="button"
+                                            className="w-6 h-6 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center flex-shrink-0 transition-colors"
+                                            onClick={() => {
+                                              setAssessmentFile(null);
+                                              setAssessmentFileName(fileValue ? fileValue.split('/').pop() : "");
+                                            }}
+                                            title="Cancel resubmit"
+                                          >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                                            </svg>
+                                          </button>
+                                        )}
+                                      </div>
+                                      {uploadingAssessmentFile ? (
+                                        <span className="text-gray-600 text-sm whitespace-nowrap flex items-center gap-1">
+                                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                          </svg>
+                                          Uploading...
+                                        </span>
+                                      ) : assessmentFile ? (
+                                        <button
+                                          type="button"
+                                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 whitespace-nowrap flex items-center gap-1"
+                                          onClick={async () => {
+                                            if (!assessmentFile || !selectedApplicant?.id) return;
+                                            
+                                            setUploadingAssessmentFile(true);
+                                            try {
+                                              const fileExt = assessmentFile.name.split('.').pop();
+                                              const fileName = assessmentFileName || `assessment-results-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
+                                              const filePath = `assessment-results/${selectedApplicant.id}/${fileName}`;
+
+                                              const { data: uploadData, error: uploadError } = await supabase.storage
+                                                .from('application-files')
+                                                .upload(filePath, assessmentFile, { upsert: true });
+
+                                              if (uploadError) throw uploadError;
+
+                                              const { error: updateError } = await supabase
+                                                .from('applications')
+                                                .update({ assessment_results_file: uploadData.path })
+                                                .eq('id', selectedApplicant.id);
+
+                                              if (updateError && updateError.code === 'PGRST204') {
+                                                const currentPayload = selectedApplicant.raw?.payload || {};
+                                                let payloadObj = typeof currentPayload === 'string' ? JSON.parse(currentPayload) : currentPayload;
+                                                const updatedPayload = { ...payloadObj, assessment_results_file: uploadData.path };
+                                                const { error: payloadError } = await supabase
+                                                  .from('applications')
+                                                  .update({ payload: updatedPayload })
+                                                  .eq('id', selectedApplicant.id);
+                                                if (payloadError) throw payloadError;
+                                              } else if (updateError) {
+                                                throw updateError;
+                                              }
+
+                                              // Update selectedApplicant immediately with the new file path
+                                              setSelectedApplicant(prev => ({
+                                                ...prev,
+                                                assessment_results_file: uploadData.path,
+                                                raw: {
+                                                  ...prev.raw,
+                                                  assessment_results_file: uploadData.path,
+                                                  payload: updateError && updateError.code === 'PGRST204' 
+                                                    ? { ...(typeof selectedApplicant.raw?.payload === 'string' ? JSON.parse(selectedApplicant.raw.payload) : selectedApplicant.raw?.payload || {}), assessment_results_file: uploadData.path }
+                                                    : prev.raw?.payload
+                                                }
+                                              }));
+                                              
+                                              await loadApplications();
+                                              
+                                              // After loadApplications, ensure selectedApplicant is updated from the fresh data
+                                              const { data: updatedApp } = await supabase
+                                                .from('applications')
+                                                .select('*, assessment_results_file, payload')
+                                                .eq('id', selectedApplicant.id)
+                                                .single();
+                                              
+                                              if (updatedApp) {
+                                                let payloadObj = updatedApp.payload;
+                                                if (typeof payloadObj === 'string') {
+                                                  try {
+                                                    payloadObj = JSON.parse(payloadObj);
+                                                  } catch {
+                                                    payloadObj = {};
+                                                  }
+                                                }
+                                                
+                                                setSelectedApplicant(prev => ({
+                                                  ...prev,
+                                                  assessment_results_file: updatedApp.assessment_results_file || payloadObj?.assessment_results_file || uploadData.path,
+                                                  raw: updatedApp
+                                                }));
+                                              }
+                                              
+                                              setAssessmentFileName(fileName);
+                                              setAssessmentFile(null);
+                                              setSuccessMessage("Assessment results file uploaded successfully");
+                                              setShowSuccessAlert(true);
+                                            } catch (err) {
+                                              console.error('Error uploading assessment file:', err);
+                                              setErrorMessage("Failed to upload file. Please try again.");
+                                              setShowErrorAlert(true);
+                                            } finally {
+                                              setUploadingAssessmentFile(false);
+                                            }
+                                          }}
+                                        >
+                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                                            <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
+                                          </svg>
+                                          Save
+                                        </button>
+                                      ) : null}
+                                    </div>
+                                  ) : canUpload ? (
+                                    <label className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 text-sm font-medium transition-colors">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                        <path d="M9.25 3.5a2.25 2.25 0 0 0-2.15 1.6l-1.15.345a2.25 2.25 0 0 0-1.6 2.15v6.2a2.251 2.251 0 0 0 2.15 2.15h.115a6.5 6.5 0 0 1 1.194-3.567l.298-.7a.75.75 0 0 1 .695-.433h1.18a.75.75 0 0 1 .695.433l.298.7a6.5 6.5 0 0 1 1.194 3.567h.115a2.25 2.25 0 0 0 2.15-2.15V7.595a2.25 2.25 0 0 0-1.6-2.15l-1.15-.345a2.25 2.25 0 0 0-2.15-1.6H9.25ZM6.115 12a5.5 5.5 0 0 1 1.194-3.567l.298-.7A2.25 2.25 0 0 1 9.683 7.5h.634a2.25 2.25 0 0 1 2.076 1.233l.298.7A5.5 5.5 0 0 1 13.885 12H6.115Z" />
+                                      </svg>
+                                      Upload
+                                      <input
+                                        type="file"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0];
+                                          if (file) {
+                                            setAssessmentFile(file);
+                                            if (!assessmentFileName) {
+                                              setAssessmentFileName(file.name);
+                                            }
+                                          }
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </section>
                 )}
@@ -4598,16 +4890,33 @@ function HrRecruitment() {
 
       {/* Confirm Dialog Modal */}
       {showConfirmDialog && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg" onClick={(e) => e.stopPropagation()}>
+        <div 
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={(e) => {
+            // Close dialog when clicking outside (backdrop)
+            if (e.target === e.currentTarget) {
+              setShowConfirmDialog(false);
+              setConfirmCallback(null);
+              setIsProcessingConfirm(false);
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg" 
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-lg font-bold mb-4">{confirmMessage}</h3>
             <div className="flex justify-end gap-3">
               <button
                 type="button"
                 className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   setShowConfirmDialog(false);
                   setConfirmCallback(null);
+                  setIsProcessingConfirm(false);
+                  setIsOpeningConfirmDialog(false);
                 }}
               >
                 Cancel
@@ -4615,19 +4924,31 @@ function HrRecruitment() {
               <button
                 type="button"
                 className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isProcessingConfirm}
-                onClick={async () => {
-                  // Prevent multiple clicks
-                  if (isProcessingConfirm) return;
+                disabled={isProcessingConfirm || !confirmCallback}
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   
+                  // Prevent multiple clicks or execution if no callback
+                  if (isProcessingConfirm || !confirmCallback) return;
+                  
+                  // Store the callback before clearing state
+                  const callbackToExecute = confirmCallback;
+                  
+                  // Clear callback immediately to prevent double execution
+                  setConfirmCallback(null);
                   setIsProcessingConfirm(true);
+                  
                   try {
-                    if (typeof confirmCallback === "function") {
-                      await confirmCallback();
+                    if (typeof callbackToExecute === "function") {
+                      await callbackToExecute();
                     }
+                  } catch (err) {
+                    console.error("Error executing confirm callback:", err);
+                    setErrorMessage("An error occurred while processing your request.");
+                    setShowErrorAlert(true);
                   } finally {
                     setShowConfirmDialog(false);
-                    setConfirmCallback(null);
                     setIsProcessingConfirm(false);
                   }
                 }}

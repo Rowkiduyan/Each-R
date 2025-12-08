@@ -235,6 +235,24 @@ function AgencyRequirements() {
               });
             }
 
+            // Map HR requests from requirements
+            let hrRequests = [];
+            if (requirementsData?.hr_requests && Array.isArray(requirementsData.hr_requests)) {
+              hrRequests = requirementsData.hr_requests.map(req => ({
+                id: req.id || Date.now().toString(),
+                document: req.document_type || req.document || '',
+                description: req.description || req.remarks || '',
+                priority: req.priority || 'normal',
+                requested_at: req.requested_at || new Date().toISOString(),
+                requested_by: req.requested_by || 'HR',
+                status: req.status || 'pending',
+                deadline: req.deadline || null,
+                remarks: req.remarks || req.description || null,
+                file_path: req.file_path || null,
+                submitted_at: req.submitted_at || null,
+              }));
+            }
+
             // Build employee name
             const name = `${emp.fname || ''} ${emp.mname || ''} ${emp.lname || ''}`.trim() || emp.email || 'Unknown';
 
@@ -245,7 +263,7 @@ function AgencyRequirements() {
               depot: emp.depot || '—',
               deployedDate: emp.hired_at || emp.date_hired || null,
               requirements: requirements,
-              hrRequests: [], // TODO: Load HR requests from database if table exists
+              hrRequests: hrRequests,
               hasUnviewedUpdate: false, // TODO: Implement unviewed tracking
               employeeId: emp.id, // Store employee ID for updates (requirements are in employees table now)
               email: emp.email, // Store email for matching
@@ -383,6 +401,24 @@ function AgencyRequirements() {
               });
             }
 
+            // Map HR requests from requirements
+            let hrRequests = [];
+            if (requirementsData?.hr_requests && Array.isArray(requirementsData.hr_requests)) {
+              hrRequests = requirementsData.hr_requests.map(req => ({
+                id: req.id || Date.now().toString(),
+                document: req.document_type || req.document || '',
+                description: req.description || req.remarks || '',
+                priority: req.priority || 'normal',
+                requested_at: req.requested_at || new Date().toISOString(),
+                requested_by: req.requested_by || 'HR',
+                status: req.status || 'pending',
+                deadline: req.deadline || null,
+                remarks: req.remarks || req.description || null,
+                file_path: req.file_path || null,
+                submitted_at: req.submitted_at || null,
+              }));
+            }
+
             // Build employee name
             const name = `${emp.fname || ''} ${emp.mname || ''} ${emp.lname || ''}`.trim() || emp.email || 'Unknown';
 
@@ -393,7 +429,7 @@ function AgencyRequirements() {
               depot: emp.depot || '—',
               deployedDate: emp.hired_at || emp.date_hired || null,
               requirements: requirements,
-              hrRequests: [], // TODO: Load HR requests from database if table exists
+              hrRequests: hrRequests,
               hasUnviewedUpdate: false, // TODO: Implement unviewed tracking
               employeeId: emp.id, // Store employee ID for updates (requirements are in employees table now)
               email: emp.email, // Store email for matching

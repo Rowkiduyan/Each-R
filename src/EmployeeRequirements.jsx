@@ -261,6 +261,12 @@ function EmployeeRequirements() {
   // State to trigger requirement reloads
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
+  // Onboarding items state
+  const [onboardingItems, setOnboardingItems] = useState([]);
+
+  // Assessment and agreement records state
+  const [assessmentRecords, setAssessmentRecords] = useState([]);
+
   // Load employee requirements from database on mount and when employeeData changes
   useEffect(() => {
     const loadEmployeeRequirements = async () => {
@@ -454,6 +460,25 @@ function EmployeeRequirements() {
             });
           }
 
+          // Map HR requests
+          if (requirementsData.hr_requests && Array.isArray(requirementsData.hr_requests)) {
+            updated.hrRequests = requirementsData.hr_requests.map(req => ({
+              id: req.id || Date.now().toString(),
+              document: req.document_type || req.document || '',
+              description: req.description || req.remarks || '',
+              priority: req.priority || 'normal',
+              requested_at: req.requested_at || new Date().toISOString(),
+              requested_by: req.requested_by || 'HR',
+              status: req.status || 'pending',
+              deadline: req.deadline || null,
+              remarks: req.remarks || req.description || null,
+              file_path: req.file_path || null,
+              submitted_at: req.submitted_at || null,
+            }));
+          } else {
+            updated.hrRequests = [];
+          }
+
           // Map educational documents
           if (requirementsData.educationalDocuments) {
             Object.keys(requirementsData.educationalDocuments).forEach(key => {
@@ -528,6 +553,186 @@ function EmployeeRequirements() {
 
     loadEmployeeRequirements();
   }, [employeeData?.email, refreshTrigger]);
+
+  // Load onboarding items
+  useEffect(() => {
+    const loadOnboardingItems = async () => {
+      if (!employeeData?.email) return;
+
+      try {
+        // Get employee record to find employee_id
+        const { data: employeeRecord, error: empError } = await supabase
+          .from('employees')
+          .select('id')
+          .eq('email', employeeData.email)
+          .single();
+
+        if (empError || !employeeRecord?.id) {
+          console.error('Error loading employee ID:', empError);
+          return;
+        }
+
+        // Fetch onboarding items
+        const { data: onboardingData, error } = await supabase
+          .from('onboarding')
+          .select('*')
+          .eq('employee_id', employeeRecord.id)
+          .order('date_issued', { ascending: false });
+
+        if (error) {
+          console.error('Error loading onboarding items:', error);
+          setOnboardingItems([]);
+          return;
+        }
+
+        if (onboardingData && onboardingData.length > 0) {
+          const items = onboardingData.map(item => ({
+            id: item.id,
+            item: item.item || item.name || '',
+            description: item.description || '',
+            date: item.date_issued || item.date || '',
+            file: item.file_path || item.filePath || null,
+            fileUrl: item.file_path || item.filePath ? getFileUrl(item.file_path || item.filePath) : null
+          }));
+          setOnboardingItems(items);
+        } else {
+          setOnboardingItems([]);
+        }
+      } catch (err) {
+        console.error('Error loading onboarding items:', err);
+        setOnboardingItems([]);
+      }
+    };
+
+    loadOnboardingItems();
+  }, [employeeData?.email, refreshTrigger]);
+
+  // Load assessment records (from when employee was an applicant)
+  useEffect(() => {
+    const loadAssessmentRecords = async () => {
+      if (!employeeData?.email) return;
+
+      try {
+        // First, find the applicant record by email
+        const { data: applicantData, error: applicantError } = await supabase
+          .from('applicants')
+          .select('id')
+          .eq('email', employeeData.email)
+          .maybeSingle();
+
+        if (applicantError) {
+          console.error('Error loading applicant record:', applicantError);
+          setAssessmentRecords([]);
+          return;
+        }
+
+        if (!applicantData?.id) {
+          // No applicant record found - employee might have been hired directly
+          setAssessmentRecords([]);
+          return;
+        }
+
+        // Find all applications for this applicant (to get all assessment and agreement files)
+        const { data: applicationsData, error: applicationsError } = await supabase
+          .from('applications')
+          .select('id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, job_posts:job_id(title, depot)')
+          .eq('user_id', applicantData.id)
+          .order('created_at', { ascending: false });
+
+        if (applicationsError) {
+          console.error('Error loading assessment records:', applicationsError);
+          setAssessmentRecords([]);
+          return;
+        }
+
+        if (applicationsData && applicationsData.length > 0) {
+          // Use the most recent application to show all document types
+          // Always show all document types, even if file doesn't exist
+          const mostRecentApp = applicationsData[0]; // Already sorted by created_at DESC
+          const jobTitle = mostRecentApp.job_posts?.title || 'N/A';
+          const depot = mostRecentApp.job_posts?.depot || 'N/A';
+          const date = mostRecentApp.created_at;
+          
+          const records = [];
+          
+          // Assessment Files - always show both
+          records.push({
+            id: `${mostRecentApp.id}-interview-details`,
+            type: 'assessment',
+            documentName: 'Interview Details',
+            fileName: mostRecentApp.interview_details_file ? mostRecentApp.interview_details_file.split('/').pop() : null,
+            filePath: mostRecentApp.interview_details_file,
+            fileUrl: mostRecentApp.interview_details_file ? getFileUrl(mostRecentApp.interview_details_file) : null,
+            date: date,
+            jobTitle: jobTitle,
+            depot: depot,
+            applicationId: mostRecentApp.id,
+            icon: 'blue'
+          });
+          
+          records.push({
+            id: `${mostRecentApp.id}-assessment-results`,
+            type: 'assessment',
+            documentName: 'In-Person Assessment Results',
+            fileName: mostRecentApp.assessment_results_file ? mostRecentApp.assessment_results_file.split('/').pop() : null,
+            filePath: mostRecentApp.assessment_results_file,
+            fileUrl: mostRecentApp.assessment_results_file ? getFileUrl(mostRecentApp.assessment_results_file) : null,
+            date: date,
+            jobTitle: jobTitle,
+            depot: depot,
+            applicationId: mostRecentApp.id,
+            icon: 'green'
+          });
+          
+          // Agreement Files - always show all 6
+          const agreementDocs = [
+            { key: 'appointment-letter', name: 'Employee Appointment Letter', file: mostRecentApp.appointment_letter_file },
+            { key: 'undertaking', name: 'Undertaking', file: mostRecentApp.undertaking_file },
+            { key: 'application-form', name: 'Application Form', file: mostRecentApp.application_form_file },
+            { key: 'undertaking-duties', name: 'Undertaking of Duties and Responsibilities', file: mostRecentApp.undertaking_duties_file },
+            { key: 'pre-employment', name: 'Roadwise Pre Employment Requirements', file: mostRecentApp.pre_employment_requirements_file },
+            { key: 'id-form', name: 'ID Form', file: mostRecentApp.id_form_file }
+          ];
+          
+          agreementDocs.forEach(doc => {
+            records.push({
+              id: `${mostRecentApp.id}-${doc.key}`,
+              type: 'agreement',
+              documentName: doc.name,
+              fileName: doc.file ? doc.file.split('/').pop() : null,
+              filePath: doc.file,
+              fileUrl: doc.file ? getFileUrl(doc.file) : null,
+              date: date,
+              jobTitle: jobTitle,
+              depot: depot,
+              applicationId: mostRecentApp.id
+            });
+          });
+          
+          setAssessmentRecords(records);
+        } else {
+          setAssessmentRecords([]);
+        }
+      } catch (err) {
+        console.error('Error loading assessment records:', err);
+        setAssessmentRecords([]);
+      }
+    };
+
+    loadAssessmentRecords();
+  }, [employeeData?.email]);
+
+  // Refresh onboarding items periodically (every 5 seconds) to catch new items from HR
+  useEffect(() => {
+    if (!employeeData?.email) return;
+    
+    const interval = setInterval(() => {
+      // Trigger refresh by updating refreshTrigger
+      setRefreshTrigger(Date.now());
+    }, 5000); // Check every 5 seconds
+
+    return () => clearInterval(interval);
+  }, [employeeData?.email]);
 
   const getStatusStyle = (status) => {
     const styles = {
@@ -2630,6 +2835,232 @@ function EmployeeRequirements() {
                 No additional document requests from HR at the moment. Any future
                 requests will appear here.
               </p>
+            )}
+          </div>
+        </div>
+
+        {/* Onboarding Items Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-6">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+              </div>
+              <p className="text-sm font-semibold text-gray-800">Onboarding Items</p>
+            </div>
+          </div>
+          <div className="p-6">
+            {onboardingItems.length === 0 ? (
+              <div className="text-center py-8">
+                <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-sm text-gray-500">No onboarding items have been assigned yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {onboardingItems.map((item) => (
+                  <div key={item.id} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h4 className="text-sm font-semibold text-gray-800">{item.item || 'Untitled Item'}</h4>
+                        </div>
+                        {item.description && (
+                          <p className="text-xs text-gray-600 mb-2">{item.description}</p>
+                        )}
+                        <div className="flex items-center gap-4 text-xs text-gray-500">
+                          {item.date && (
+                            <div className="flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                              </svg>
+                              <span>Issued: {formatDate(item.date)}</span>
+                            </div>
+                          )}
+                          {item.fileUrl && (
+                            <div className="flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                              </svg>
+                              <a
+                                href={item.fileUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:text-blue-800 underline font-medium"
+                              >
+                                View File
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Assessment and Agreement Records Section */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-6">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <p className="text-sm font-semibold text-gray-800">Assessment and Agreement Records</p>
+            </div>
+          </div>
+          <div className="p-6">
+            {assessmentRecords.length === 0 ? (
+              <div className="text-center py-8">
+                <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <p className="text-sm text-gray-500">No assessment or agreement records found.</p>
+                <p className="text-xs text-gray-400 mt-1">Files from your application process will appear here.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Assessment Files Section */}
+                {assessmentRecords.filter(r => r.type === 'assessment').length > 0 && (
+                  <div>
+                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
+                    <div className="border border-gray-200 rounded-b-lg overflow-hidden">
+                      <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                        <div className="col-span-6">Document</div>
+                        <div className="col-span-6">File</div>
+                      </div>
+                      {assessmentRecords
+                        .filter(r => r.type === 'assessment')
+                        .map((record) => (
+                        <div key={record.id} className="border-b">
+                          <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                            <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
+                              {record.documentName === 'Interview Details' ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
+                                  <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
+                                </svg>
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
+                                  <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                              {record.documentName}
+                            </div>
+                            <div className="col-span-12 md:col-span-6 text-sm">
+                              {record.fileUrl ? (
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={record.fileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                  >
+                                    {record.fileName}
+                                  </a>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const response = await fetch(record.fileUrl);
+                                        const blob = await response.blob();
+                                        const url = window.URL.createObjectURL(blob);
+                                        const link = document.createElement('a');
+                                        link.href = url;
+                                        link.download = record.fileName;
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                        window.URL.revokeObjectURL(url);
+                                      } catch (error) {
+                                        console.error('Error downloading file:', error);
+                                        window.open(record.fileUrl, '_blank');
+                                      }
+                                    }}
+                                    className="text-purple-600 hover:text-purple-800 underline text-sm"
+                                  >
+                                    Download
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Agreement Documents Section */}
+                {assessmentRecords.filter(r => r.type === 'agreement').length > 0 && (
+                  <div>
+                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
+                    <div className="border border-gray-200 rounded-b-lg overflow-hidden">
+                      <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                        <div className="col-span-6">&nbsp;</div>
+                        <div className="col-span-6">File</div>
+                      </div>
+                      {assessmentRecords
+                        .filter(r => r.type === 'agreement')
+                        .map((record) => (
+                        <div key={record.id} className="border-b">
+                          <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                            <div className="col-span-12 md:col-span-6 text-sm text-gray-800">
+                              {record.documentName}
+                            </div>
+                            <div className="col-span-12 md:col-span-6 text-sm">
+                              {record.fileUrl ? (
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={record.fileUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                  >
+                                    {record.fileName}
+                                  </a>
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        const response = await fetch(record.fileUrl);
+                                        const blob = await response.blob();
+                                        const url = window.URL.createObjectURL(blob);
+                                        const link = document.createElement('a');
+                                        link.href = url;
+                                        link.download = record.fileName;
+                                        document.body.appendChild(link);
+                                        link.click();
+                                        document.body.removeChild(link);
+                                        window.URL.revokeObjectURL(url);
+                                      } catch (error) {
+                                        console.error('Error downloading file:', error);
+                                        window.open(record.fileUrl, '_blank');
+                                      }
+                                    }}
+                                    className="text-purple-600 hover:text-purple-800 underline text-sm"
+                                  >
+                                    Download
+                                  </button>
+                                </div>
+                              ) : (
+                                <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>

@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
-import { createInterviewScheduledNotification, createInterviewRescheduledNotification } from './notifications';
+import { createInterviewScheduledNotification, createInterviewRescheduledNotification, notifyHRAboutInterviewResponse, notifyHRAboutApplicationRetraction } from './notifications';
 
 function ApplicantApplications() {
   const navigate = useNavigate();
@@ -99,10 +99,10 @@ function ApplicantApplications() {
         }
         userId = user.id;
 
-        // Fetch application for current user
+        // Fetch application for current user - include all file fields from both columns and payload
         const { data: application, error: appError } = await supabase
           .from('applications')
-          .select('*')
+          .select('*, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, payload')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -157,19 +157,54 @@ function ApplicantApplications() {
             requirements = {};
           }
 
-          // Update application data with parsed requirements
+          // Update application data with parsed requirements and all file fields
+          // Priority: column value > payload value > null
           setApplicationData({
             ...application,
             requirements: requirements,
-            payload: payloadObj
+            payload: payloadObj,
+            // Include file fields from both column and payload - column takes priority
+            interview_details_file: application.interview_details_file || payloadObj?.interview_details_file || null,
+            assessment_results_file: application.assessment_results_file || payloadObj?.assessment_results_file || null,
+            appointment_letter_file: application.appointment_letter_file || payloadObj?.appointment_letter_file || null,
+            undertaking_file: application.undertaking_file || payloadObj?.undertaking_file || null,
+            application_form_file: application.application_form_file || payloadObj?.application_form_file || null,
+            undertaking_duties_file: application.undertaking_duties_file || payloadObj?.undertaking_duties_file || null,
+            pre_employment_requirements_file: application.pre_employment_requirements_file || payloadObj?.pre_employment_requirements_file || null,
+            id_form_file: application.id_form_file || payloadObj?.id_form_file || null,
           });
 
-          // Check if interview is confirmed using the new text-based status
+          // Determine step statuses based on application progress
           const interviewStatus = application.interview_confirmed || payloadObj?.interview_confirmed || 'Idle';
+          const hasInterview = !!application.interview_date || !!payloadObj?.interview?.date;
+          const applicationStatus = application.status?.toLowerCase() || 'submitted';
           
-          if (interviewStatus === 'Confirmed') {
-            setStepStatus((s) => ({ ...s, Assessment: "done" }));
+          // Update step statuses based on application state
+          let newStepStatus = {
+            Application: "done", // Always done if application exists
+            Assessment: "waiting",
+            Agreements: "waiting"
+          };
+          
+          // Assessment step: pending if interview scheduled, done if confirmed
+          if (hasInterview) {
+            if (interviewStatus === 'Confirmed') {
+              newStepStatus.Assessment = "done";
+              // If assessment is done, Agreements becomes pending
+              newStepStatus.Agreements = "pending";
+            } else {
+              newStepStatus.Assessment = "pending";
+            }
           }
+          
+          // Agreements step: done if hired
+          if (applicationStatus === 'hired') {
+            newStepStatus.Agreements = "done";
+          } else if (['agreement', 'agreements', 'final_agreement'].includes(applicationStatus)) {
+            newStepStatus.Agreements = "pending";
+          }
+          
+          setStepStatus(newStepStatus);
 
           if (requirements.id_numbers) {
             const idNums = requirements.id_numbers;
@@ -286,6 +321,25 @@ function ApplicantApplications() {
       setRetracting(true);
       setRetractError('');
       
+      // Get applicant info before deleting for notification
+      const payloadObj = typeof applicationData.payload === 'string' 
+        ? JSON.parse(applicationData.payload) 
+        : applicationData.payload || {};
+      const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
+      const applicantName = `${form.firstName || ''} ${form.middleName || ''} ${form.lastName || ''}`.trim() || 
+                           applicationData.name || 
+                           'Applicant';
+      const position = jobData?.title || payloadObj.job?.title || form.position || 'Position';
+      const depot = jobData?.depot || payloadObj.job?.depot || form.depot || '';
+      
+      // Notify HR before deleting the application
+      await notifyHRAboutApplicationRetraction({
+        applicationId: applicationData.id,
+        applicantName,
+        position,
+        depot
+      });
+      
       // Now we can simply delete the application
       // The database will automatically set application_id to NULL in notifications
       const { error } = await supabase
@@ -327,46 +381,149 @@ function ApplicantApplications() {
           <Link to="/applicantl/home" className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors">Back</Link>
         </div>
 
-        {/* Steps header */}
-        <div className="flex items-center gap-3 mb-6 overflow-x-auto">
-          {steps.map((step) => {
-            const isActive = activeStep === step;
-            const status = stepStatus[step];
-            let bgColor = 'bg-gray-200 text-gray-800 hover:bg-gray-300';
-            
-            if (isActive) {
-              bgColor = 'bg-red-600 text-white';
-            } else if (status === 'done') {
-              bgColor = 'bg-green-100 text-green-800 hover:bg-green-200';
-            } else if (status === 'pending') {
-              bgColor = 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200';
-            } else if (status === 'waiting') {
-              bgColor = 'bg-orange-100 text-orange-800 hover:bg-orange-200';
-            }
-            
-            return (
-              <button
-                key={step}
-                type="button"
-                onClick={() => setActiveStep(step)}
-                className={`px-4 py-2 rounded ${bgColor}`}
-              >
-                {step}
-              </button>
-            );
-          })}
+        {/* Enhanced Steps Progress Indicator */}
+        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-6">
+          <div className="flex items-center justify-between">
+            {steps.map((step, index) => {
+              const isActive = activeStep === step;
+              const status = stepStatus[step];
+              const isCompleted = status === 'done';
+              const isPending = status === 'pending';
+              const isWaiting = status === 'waiting';
+              const isLast = index === steps.length - 1;
+              
+              // Step number and icon
+              const getStepIcon = () => {
+                if (isCompleted) {
+                  return (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  );
+                }
+                if (isActive) {
+                  return (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  );
+                }
+                return (
+                  <div className="w-6 h-6 rounded-full border-2 flex items-center justify-center text-sm font-semibold">
+                    {index + 1}
+                  </div>
+                );
+              };
+
+              // Step colors based on status
+              let stepColors = {
+                bg: 'bg-gray-100',
+                text: 'text-gray-600',
+                border: 'border-gray-300',
+                icon: 'text-gray-400'
+              };
+
+              if (isActive) {
+                stepColors = {
+                  bg: 'bg-red-50',
+                  text: 'text-red-700',
+                  border: 'border-red-500',
+                  icon: 'text-red-600'
+                };
+              } else if (isCompleted) {
+                stepColors = {
+                  bg: 'bg-green-50',
+                  text: 'text-green-700',
+                  border: 'border-green-500',
+                  icon: 'text-green-600'
+                };
+              } else if (isPending) {
+                stepColors = {
+                  bg: 'bg-yellow-50',
+                  text: 'text-yellow-700',
+                  border: 'border-yellow-400',
+                  icon: 'text-yellow-600'
+                };
+              } else if (isWaiting) {
+                stepColors = {
+                  bg: 'bg-orange-50',
+                  text: 'text-orange-700',
+                  border: 'border-orange-300',
+                  icon: 'text-orange-500'
+                };
+              }
+
+              // Status label
+              const getStatusLabel = () => {
+                if (isCompleted) return 'Completed';
+                if (isActive) return 'Current';
+                if (isPending) return 'In Progress';
+                if (isWaiting) return 'Waiting';
+                return 'Not Started';
+              };
+
+              return (
+                <div key={step} className="flex items-center flex-1">
+                  <div className="flex flex-col items-center flex-1">
+                    <button
+                      type="button"
+                      onClick={() => setActiveStep(step)}
+                      className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all hover:shadow-md ${stepColors.bg} ${stepColors.border} ${isActive ? 'ring-2 ring-red-300 ring-offset-2' : ''}`}
+                    >
+                      <div className={`${stepColors.icon} ${isActive ? 'scale-110' : ''} transition-transform`}>
+                        {getStepIcon()}
+                      </div>
+                      <div className={`font-semibold text-sm ${stepColors.text}`}>
+                        {step}
+                      </div>
+                      <div className={`text-xs px-2 py-1 rounded-full ${stepColors.bg} ${stepColors.text} border ${stepColors.border}`}>
+                        {getStatusLabel()}
+                      </div>
+                    </button>
+                  </div>
+                  {!isLast && (
+                    <div className={`flex-1 h-1 mx-2 rounded-full ${
+                      isCompleted || (isActive && index > 0) 
+                        ? 'bg-green-500' 
+                        : isPending && index === 0
+                        ? 'bg-yellow-400'
+                        : 'bg-gray-300'
+                    }`} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
 
         {/* Content */}
-        <div className="bg-white border rounded-md shadow-sm">
+        <div className="bg-white border border-gray-200 rounded-lg shadow-md overflow-hidden">
           {loading ? (
-            <div className="p-8 text-center text-gray-600">Loading application data...</div>
+            <div className="p-12 text-center">
+              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mb-4"></div>
+              <p className="text-gray-600 font-medium">Loading application data...</p>
+            </div>
           ) : !applicationData ? (
-            <div className="p-8 text-center text-gray-600">No application found.</div>
+            <div className="p-12 text-center">
+              <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="text-gray-600 font-medium text-lg">No application found.</p>
+              <p className="text-gray-500 text-sm mt-2">Start by applying for a job from the home page.</p>
+            </div>
           ) : (
             <>
               {/* Application */}
-              <section className={`p-4 ${activeStep === "Application" ? "" : "hidden"}`}>
+              <section className={`${activeStep === "Application" ? "" : "hidden"}`}>
+                <div className="bg-gradient-to-r from-red-50 to-orange-50 border-b border-gray-200 px-6 py-4">
+                  <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Application Details
+                  </h3>
+                </div>
+                <div className="p-6">
                 {/* Header row */}
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-start gap-3">
@@ -395,75 +552,83 @@ function ApplicantApplications() {
                   </div>
                 </div>
 
-                {/* Steps bar already above; show details below */}
-                <div className="border rounded-md overflow-hidden">
-                  {/* Job Details */}
-                  <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Job Details</div>
-                  <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1 border-b">
-                    <div><span className="font-semibold">Position Applying For:</span> {jobData?.title || applicationData.payload?.job?.title || 'N/A'}</div>
-                    <div><span className="font-semibold">Current Employment Status:</span> {applicationData.payload?.form?.employed === 'Yes' ? 'Employed' : 'Unemployed'}</div>
-                    <div><span className="font-semibold">Available Start Date:</span> {applicationData.payload?.form?.startDate ? new Date(applicationData.payload.form.startDate).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A'}</div>
-                    <div><span className="font-semibold">Depot:</span> {jobData?.depot || applicationData.payload?.job?.depot || 'N/A'}</div>
-                    <div>
-                      <span className="font-semibold">Resume:</span>{' '}
-                      {resumePublicUrl ? (
-                        <a 
-                          href={resumePublicUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          {applicationData.payload.form.resumeName || 'View Resume'}
-                        </a>
-                      ) : (
-                        <span className="text-gray-500">No resume uploaded</span>
-                      )}
+                {/* Application Details */}
+                <div className="space-y-4">
+                  {/* Job Details Card */}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Job Details</div>
+                    <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                      <div><span className="font-semibold text-gray-600">Position Applying For:</span> <span className="text-gray-800">{jobData?.title || applicationData.payload?.job?.title || 'N/A'}</span></div>
+                      <div><span className="font-semibold text-gray-600">Current Employment Status:</span> <span className="text-gray-800">{applicationData.payload?.form?.employed === 'Yes' ? 'Employed' : 'Unemployed'}</span></div>
+                      <div><span className="font-semibold text-gray-600">Available Start Date:</span> <span className="text-gray-800">{applicationData.payload?.form?.startDate ? new Date(applicationData.payload.form.startDate).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A'}</span></div>
+                      <div><span className="font-semibold text-gray-600">Depot:</span> <span className="text-gray-800">{jobData?.depot || applicationData.payload?.job?.depot || 'N/A'}</span></div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Resume:</span>{' '}
+                        {resumePublicUrl ? (
+                          <a 
+                            href={resumePublicUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                          >
+                            {applicationData.payload.form.resumeName || 'View Resume'}
+                          </a>
+                        ) : (
+                          <span className="text-gray-500">No resume uploaded</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Personal Information */}
-                  <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border-b">Personal Information</div>
-                  <div className="p-3 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
-                    <div>
-                      <span className="font-semibold">Full Name:</span>{' '}
-                      {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
-                    </div>
-                    <div><span className="font-semibold">Sex:</span> {applicationData.payload?.form?.sex || 'N/A'}</div>
-                    <div>
-                      <span className="font-semibold">Address:</span>{' '}
-                      {(() => {
-                        const addressParts = profileData
-                          ? [
-                              profileData.street,
-                              profileData.barangay,
-                              profileData.city,
-                              profileData.zip,
-                            ]
-                          : [
-                              applicationData.payload?.form?.street,
-                              applicationData.payload?.form?.barangay,
-                              applicationData.payload?.form?.city,
-                              applicationData.payload?.form?.zip,
-                            ];
-                        return addressParts.filter(Boolean).join(', ') || 'N/A';
-                      })()}
-                    </div>
-                    <div>
-                      <span className="font-semibold">Birthday:</span>{' '}
-                      {applicationData.payload?.form?.birthday ? new Date(applicationData.payload.form.birthday).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A'}
-                    </div>
-                    <div><span className="font-semibold">Contact Number:</span> {applicationData.payload?.form?.contact || 'N/A'}</div>
-                    <div>
-                      <span className="font-semibold">Age:</span>{' '}
-                      {applicationData.payload?.form?.birthday ? 
-                        Math.floor((new Date() - new Date(applicationData.payload.form.birthday)) / (365.25 * 24 * 60 * 60 * 1000)) : 'N/A'}
-                    </div>
-                    <div><span className="font-semibold">Email:</span> {applicationData.payload?.form?.email || 'N/A'}</div>
-                    <div>
-                      <span className="font-semibold">Marital Status:</span>{' '}
-                      {applicationData.payload?.form?.maritalStatus || 'N/A'}
+                  {/* Personal Information Card */}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Personal Information</div>
+                    <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                      <div>
+                        <span className="font-semibold text-gray-600">Full Name:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}</span>
+                      </div>
+                      <div><span className="font-semibold text-gray-600">Sex:</span> <span className="text-gray-800">{applicationData.payload?.form?.sex || 'N/A'}</span></div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Address:</span>{' '}
+                        <span className="text-gray-800">{(() => {
+                          const addressParts = profileData
+                            ? [
+                                profileData.street,
+                                profileData.barangay,
+                                profileData.city,
+                                profileData.zip,
+                              ]
+                            : [
+                                applicationData.payload?.form?.street,
+                                applicationData.payload?.form?.barangay,
+                                applicationData.payload?.form?.city,
+                                applicationData.payload?.form?.zip,
+                              ];
+                          return addressParts.filter(Boolean).join(', ') || 'N/A';
+                        })()}</span>
+                      </div>
+                      <div><span className="font-semibold text-gray-600">Contact Number:</span> <span className="text-gray-800">{applicationData.payload?.form?.contact || 'N/A'}</span></div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Email:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.email || 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Birthday:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.birthday ? new Date(applicationData.payload.form.birthday).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Age:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.birthday ? 
+                          Math.floor((new Date() - new Date(applicationData.payload.form.birthday)) / (365.25 * 24 * 60 * 60 * 1000)) : 'N/A'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Marital Status:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.maritalStatus || 'N/A'}</span>
+                      </div>
                     </div>
                   </div>
+                </div>
                 </div>
               </section>
             </>
@@ -471,37 +636,18 @@ function ApplicantApplications() {
 
           {/* Assessment */}
           {applicationData && (
-            <section className={`p-4 ${activeStep === "Assessment" ? "" : "hidden"}`}>
-              {/* Header summary */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                    {applicationData.payload?.form?.firstName?.[0] || ''}{applicationData.payload?.form?.lastName?.[0] || ''}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-800">
-                      {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Applied: {new Date(applicationData.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
-                  <button 
-                    type="button" 
-                    className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
-                    onClick={() => setShowRetractDialog(true)}
-                    disabled={applicationRetracted || retracting}
-                  >
-                    {applicationRetracted ? "Application Retracted" : "Retract Application"}
-                  </button>
-                </div>
+            <section className={`${activeStep === "Assessment" ? "" : "hidden"}`}>
+              <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border-b border-gray-200 px-6 py-4">
+                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                  </svg>
+                  Assessment & Interview
+                </h3>
               </div>
-
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-lg font-semibold text-gray-800">Assessment</h2>
+              <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold text-gray-800">Interview Schedule</h2>
                 {(() => {
                   // Get interview status from database
                   const interviewStatus = applicationData?.interview_confirmed || applicationData?.payload?.interview_confirmed || 'Idle';
@@ -560,73 +706,131 @@ function ApplicantApplications() {
                 </div>
               </div>
 
-              {/* In-Person Assessments - shown after interview confirmation */}
-              {stepStatus.Assessment === "done" && (
-                <div className="mt-4">
-                  <div className="text-sm font-semibold text-gray-800 mb-2">In-Person Assessments</div>
-                  <div className="bg-gray-50 border rounded-md p-3 space-y-2">
-                    {/* Interview Details File */}
-                    {(() => {
-                      const interviewFile = applicationData?.interview_details_file || applicationData?.payload?.interview_details_file;
-                      if (interviewFile) {
-                        const fileUrl = supabase.storage.from('application-files').getPublicUrl(interviewFile)?.data?.publicUrl;
-                        const fileName = interviewFile.split('/').pop() || 'Interview Details';
-                        return (
-                    <div className="flex items-center gap-2">
+              {/* Assessment Files - Always show file status */}
+              <div className="mt-6">
+                <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
+                <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                  <div className="col-span-6">Document</div>
+                  <div className="col-span-6">File</div>
+                </div>
+
+                {/* Interview Details File Row */}
+                <div className="border-b">
+                  <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                    <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
-                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                        <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
                       </svg>
-                            <a 
-                              href={fileUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:underline text-sm"
-                            >
-                              {fileName}
-                            </a>
+                      Interview Details
                     </div>
-                        );
-                      }
-                      return null;
-                    })()}
-                    
-                    {/* Assessment Results File */}
-                    {(() => {
-                      const assessmentFile = applicationData?.assessment_results_file || applicationData?.payload?.assessment_results_file;
-                      if (assessmentFile) {
-                        const fileUrl = supabase.storage.from('application-files').getPublicUrl(assessmentFile)?.data?.publicUrl;
-                        const fileName = assessmentFile.split('/').pop() || 'Assessment Results';
+                    <div className="col-span-12 md:col-span-6 text-sm">
+                      {(() => {
+                        // Check both direct field and payload - column takes priority
+                        const interviewFile = applicationData?.interview_details_file || 
+                                             (applicationData?.payload && typeof applicationData.payload === 'object' ? applicationData.payload.interview_details_file : null) ||
+                                             (typeof applicationData?.payload === 'string' ? (() => {
+                                               try {
+                                                 const parsed = JSON.parse(applicationData.payload);
+                                                 return parsed?.interview_details_file || null;
+                                               } catch {
+                                                 return null;
+                                               }
+                                             })() : null);
+                        if (interviewFile) {
+                          const fileUrl = supabase.storage.from('application-files').getPublicUrl(interviewFile)?.data?.publicUrl;
+                          const fileName = interviewFile.split('/').pop() || 'Interview Details';
+                          return (
+                            <div className="flex items-center gap-2">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
+                                <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                              </svg>
+                              <a 
+                                href={fileUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline text-sm flex items-center gap-1"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
+                                </svg>
+                                {fileName}
+                              </a>
+                            </div>
+                          );
+                        }
                         return (
                           <div className="flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
                               <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
                             </svg>
-                            <a 
-                              href={fileUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:underline text-sm"
-                            >
-                              {fileName}
-                            </a>
+                            <span className="text-sm text-gray-500 italic">No file uploaded yet</span>
                           </div>
                         );
-                      }
-                      return null;
-                    })()}
-                    
-                    {/* Show message if no files uploaded yet */}
-                    {!applicationData?.interview_details_file && 
-                     !applicationData?.assessment_results_file &&
-                     !applicationData?.payload?.interview_details_file &&
-                     !applicationData?.payload?.assessment_results_file && (
-                      <div className="text-sm text-gray-500 italic">
-                        No assessment files uploaded yet. Please wait for HR to upload your assessment results.
-                      </div>
-                    )}
+                      })()}
+                    </div>
                   </div>
                 </div>
-              )}
+                
+                {/* Assessment Results File Row */}
+                <div className="border-b">
+                  <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                    <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
+                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                      </svg>
+                      In-Person Assessment Results
+                    </div>
+                    <div className="col-span-12 md:col-span-6 text-sm">
+                      {(() => {
+                        // Check both direct field and payload - column takes priority
+                        const assessmentFile = applicationData?.assessment_results_file || 
+                                              (applicationData?.payload && typeof applicationData.payload === 'object' ? applicationData.payload.assessment_results_file : null) ||
+                                              (typeof applicationData?.payload === 'string' ? (() => {
+                                                try {
+                                                  const parsed = JSON.parse(applicationData.payload);
+                                                  return parsed?.assessment_results_file || null;
+                                                } catch {
+                                                  return null;
+                                                }
+                                              })() : null);
+                        if (assessmentFile) {
+                          const fileUrl = supabase.storage.from('application-files').getPublicUrl(assessmentFile)?.data?.publicUrl;
+                          const fileName = assessmentFile.split('/').pop() || 'Assessment Results';
+                          return (
+                            <div className="flex items-center gap-2">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
+                                <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                              </svg>
+                              <a 
+                                href={fileUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-600 hover:underline text-sm flex items-center gap-1"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
+                                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
+                                </svg>
+                                {fileName}
+                              </a>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                              <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                            </svg>
+                            <span className="text-sm text-gray-500 italic">No file uploaded yet</span>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              </div>
             </section>
           )}
 
@@ -1171,91 +1375,92 @@ function ApplicantApplications() {
 
           {/* Agreements */}
           {applicationData && (
-            <section className={`p-4 ${activeStep === "Agreements" ? "" : "hidden"}`}>
-              {/* Header summary */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                    {applicationData.payload?.form?.firstName?.[0] || ''}{applicationData.payload?.form?.lastName?.[0] || ''}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-800">
-                      {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Applied: {new Date(applicationData.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
-                  <button 
-                    type="button" 
-                    className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
-                    onClick={() => setShowRetractDialog(true)}
-                    disabled={applicationRetracted || retracting}
-                  >
-                    {applicationRetracted ? "Application Retracted" : "Retract Application"}
-                  </button>
+            <section className={`${activeStep === "Agreements" ? "" : "hidden"}`}>
+              <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-b border-gray-200 px-6 py-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Final Agreements & Documents
+                  </h3>
                   {applicationData.status === 'hired' && (
-                    <>
-                      <div className="text-lg font-bold text-green-600 mt-1">HIRED</div>
-                      <div className="text-xs text-gray-500">
-                        {applicationData.updated_at ? new Date(applicationData.updated_at).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : ''}
-                      </div>
-                    </>
+                    <div className="flex items-center gap-2">
+                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-lg font-bold text-green-600">HIRED</span>
+                      {applicationData.updated_at && (
+                        <span className="text-xs text-gray-500">
+                          {new Date(applicationData.updated_at).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
-
-            <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
-            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
-              <div className="col-span-6">&nbsp;</div>
-              <div className="col-span-3">File</div>
-              <div className="col-span-3">&nbsp;</div>
-            </div>
-
-            <div className="border-b">
-              <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                <div className="col-span-12 md:col-span-6 text-sm text-gray-800">Employee Appointment Letter</div>
-                <div className="col-span-12 md:col-span-3 text-sm">
-                  {(() => {
-                    const appointmentLetter = applicationData?.appointment_letter_file || applicationData?.payload?.appointment_letter_file;
-                    if (appointmentLetter) {
-                      const fileUrl = supabase.storage.from('application-files').getPublicUrl(appointmentLetter)?.data?.publicUrl;
-                      const fileName = appointmentLetter.split('/').pop() || 'Appointment Letter';
-                      const uploadDate = applicationData.updated_at || applicationData.created_at;
-                      return (
-                        <>
-                          <a 
-                            href={fileUrl} 
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 hover:underline"
-                          >
-                            {fileName}
-                          </a>
-                          {uploadDate && (
-                            <span className="ml-2 text-xs text-gray-500">
-                              {new Date(uploadDate).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })}
-                            </span>
-                          )}
-                        </>
-                      );
-                    }
-                    return (
-                      <span className="text-gray-400 italic">No appointment letter uploaded yet</span>
-                    );
-                  })()}
+              <div className="p-6">
+                <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
+                <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
+                  <div className="col-span-6">&nbsp;</div>
+                  <div className="col-span-3">File</div>
+                  <div className="col-span-3">&nbsp;</div>
                 </div>
-                <div className="col-span-12 md:col-span-3" />
-              </div>
-            </div>
 
-            <div className="text-xs text-gray-600 italic mt-4">
-              Important: You have been successfully hired! Please see your email for your employee account details and you may login as an employee. Thank you.
-            </div>
-          </section>
+                {/* Helper function to render agreement document row */}
+                {(() => {
+                  const renderAgreementRow = (documentName, fileKey) => {
+                    const filePath = applicationData?.[fileKey] || applicationData?.payload?.[fileKey];
+                    const hasFile = !!filePath;
+                    
+                    return (
+                      <div key={fileKey} className="border-b">
+                        <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                          <div className="col-span-12 md:col-span-6 text-sm text-gray-800">{documentName}</div>
+                          <div className="col-span-12 md:col-span-3 text-sm">
+                            {hasFile ? (
+                              <>
+                                <a 
+                                  href={supabase.storage.from('application-files').getPublicUrl(filePath)?.data?.publicUrl} 
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:underline"
+                                >
+                                  {filePath.split('/').pop() || documentName}
+                                </a>
+                                {applicationData.updated_at && (
+                                  <span className="ml-2 text-xs text-gray-500">
+                                    {new Date(applicationData.updated_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-gray-400 italic">No file uploaded yet</span>
+                            )}
+                          </div>
+                          <div className="col-span-12 md:col-span-3" />
+                        </div>
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <>
+                      {renderAgreementRow("Employee Appointment Letter", "appointment_letter_file")}
+                      {renderAgreementRow("Undertaking", "undertaking_file")}
+                      {renderAgreementRow("Application Form", "application_form_file")}
+                      {renderAgreementRow("Undertaking of Duties and Responsibilities", "undertaking_duties_file")}
+                      {renderAgreementRow("Roadwise Pre Employment Requirements", "pre_employment_requirements_file")}
+                      {renderAgreementRow("ID Form", "id_form_file")}
+                    </>
+                  );
+                })()}
+
+                <div className="text-xs text-gray-600 italic mt-4">
+                  Important: You have been successfully hired! Please see your email for your employee account details and you may login as an employee. Thank you.
+                </div>
+              </div>
+            </section>
           )}
         </div>
       </div>
@@ -1284,6 +1489,18 @@ function ApplicantApplications() {
                   try {
                     const confirmedAt = new Date().toISOString();
                     
+                    // Get applicant and interview info for notification
+                    const payloadObj = typeof applicationData.payload === 'string' 
+                      ? JSON.parse(applicationData.payload) 
+                      : applicationData.payload || {};
+                    const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
+                    const applicantName = `${form.firstName || ''} ${form.middleName || ''} ${form.lastName || ''}`.trim() || 
+                                         applicationData.name || 
+                                         'Applicant';
+                    const position = jobData?.title || payloadObj.job?.title || form.position || 'Position';
+                    const interviewDate = applicationData.interview_date || payloadObj.interview?.date || null;
+                    const interviewTime = applicationData.interview_time || payloadObj.interview?.time || null;
+                    
                     // Update with new text-based status
                     const { error: updateError } = await supabase
                       .from('applications')
@@ -1298,6 +1515,16 @@ function ApplicantApplications() {
                       alert('Failed to confirm interview. Please try again.');
                       return;
                     }
+
+                    // Notify HR about interview confirmation
+                    await notifyHRAboutInterviewResponse({
+                      applicationId: applicationData.id,
+                      applicantName,
+                      position,
+                      responseType: 'confirmed',
+                      interviewDate,
+                      interviewTime
+                    });
 
                     // Update local state
                     setApplicationData((prev) => ({

@@ -142,6 +142,7 @@ import SkillsInput from './components/SkillsInput';
     const [workExperiences, setWorkExperiences] = useState([{}]);
     const [characterReferences, setCharacterReferences] = useState([{}, {}, {}]);
     const [resumeFile, setResumeFile] = useState(null);
+    const [profileResumeFile, setProfileResumeFile] = useState(null);
     const [userApplication, setUserApplication] = useState(null);
 
     // PSGC API states for location dropdowns
@@ -224,7 +225,8 @@ import SkillsInput from './components/SkillsInput';
               skills: normalizeSkills(mergedProfile.skills),
               work_experiences: mergedProfile.work_experiences || [],
               character_references: mergedProfile.character_references || [],
-              preferred_depot: mergedProfile.preferred_depot || ''
+              preferred_depot: mergedProfile.preferred_depot || '',
+              resume_path: mergedProfile.resume_path || ''
             });
             prefillApplicationForm(mergedProfile);
           }
@@ -517,6 +519,29 @@ const handleSave = async () => {
       .filter(Boolean)
       .join(', ');
 
+    // Handle resume upload if a new file was selected
+    let resumePathToSave = profileForm.resume_path || null;
+    if (profileResumeFile) {
+      const sanitizedFileName = profileResumeFile.name.replace(/\s+/g, '_');
+      const filePath = `${user.id}/${Date.now()}-${sanitizedFileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('resume')
+        .upload(filePath, profileResumeFile, {
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error('Error uploading resume:', uploadError);
+        setErrorMessage('Failed to upload resume: ' + uploadError.message);
+        setSaving(false);
+        return;
+      }
+
+      resumePathToSave = uploadData.path;
+      setProfileResumeFile(null);
+    }
+
     const { error } = await supabase
       .from('applicants')
       .update({
@@ -537,7 +562,8 @@ const handleSave = async () => {
         skills: Array.isArray(profileForm.skills) ? profileForm.skills : normalizeSkills(profileForm.skills),
         work_experiences: profileForm.work_experiences || [],
         character_references: profileForm.character_references || [],
-        preferred_depot: profileForm.preferred_depot || null
+        preferred_depot: profileForm.preferred_depot || null,
+        resume_path: resumePathToSave
       })
       .ilike('email', user.email);
 
@@ -577,7 +603,8 @@ const handleSave = async () => {
         skills: normalizeSkills(merged.skills),
         work_experiences: merged.work_experiences || [],
         character_references: merged.character_references || [],
-        preferred_depot: merged.preferred_depot || ''
+        preferred_depot: merged.preferred_depot || '',
+        resume_path: merged.resume_path || ''
       });
       prefillApplicationForm(merged);
     }
@@ -598,28 +625,30 @@ const handleSave = async () => {
 // Handle cancel
 const handleCancel = () => {
   if (profileData) {
-    setProfileForm({
-      address: profileData.address || '',
-      unit_house_number: profileData.unit_house_number || '',
-      street: profileData.street || '',
-      barangay: profileData.barangay || '',
-      city: profileData.city || '',
-      province: profileData.province || '',
-      postal_code: profileData.postal_code || profileData.zip || '',
-      zip: profileData.zip || profileData.postal_code || '',
-      sex: profileData.sex || '',
-      birthday: profileData.birthday || '',
-      age: profileData.age || '',
-      marital_status: profileData.marital_status || '',
-      educational_attainment: profileData.educational_attainment || '',
-      institution_name: profileData.institution_name || '',
-      year_graduated: profileData.year_graduated || '',
-      skills: normalizeSkills(profileData.skills),
-      work_experiences: profileData.work_experiences || [],
-      character_references: profileData.character_references || [],
-      preferred_depot: profileData.preferred_depot || ''
-    });
+      setProfileForm({
+        address: profileData.address || '',
+        unit_house_number: profileData.unit_house_number || '',
+        street: profileData.street || '',
+        barangay: profileData.barangay || '',
+        city: profileData.city || '',
+        province: profileData.province || '',
+        postal_code: profileData.postal_code || profileData.zip || '',
+        zip: profileData.zip || profileData.postal_code || '',
+        sex: profileData.sex || '',
+        birthday: profileData.birthday || '',
+        age: profileData.age || '',
+        marital_status: profileData.marital_status || '',
+        educational_attainment: profileData.educational_attainment || '',
+        institution_name: profileData.institution_name || '',
+        year_graduated: profileData.year_graduated || '',
+        skills: normalizeSkills(profileData.skills),
+        work_experiences: profileData.work_experiences || [],
+        character_references: profileData.character_references || [],
+        preferred_depot: profileData.preferred_depot || '',
+        resume_path: profileData.resume_path || ''
+      });
   }
+  setProfileResumeFile(null);
   setBirthdayError('');
   setIsEditMode(false);
 };
@@ -703,6 +732,9 @@ const formatDateForInput = (dateString) => {
         : profile.skills || '';
       const { unit_house_number, street, barangay, city, province, zip } = parseAddressParts(profile);
 
+      // Get resume name from path if available
+      const resumeName = profile.resume_path ? profile.resume_path.split('/').pop() : '';
+
       setForm((prev) => ({
         ...prev,
         firstName: profile.fname || '',
@@ -723,6 +755,8 @@ const formatDateForInput = (dateString) => {
         edu1Level: profile.educational_attainment || prev.edu1Level,
         edu1Institution: profile.institution_name || '',
         edu1Year: profile.year_graduated || '',
+        resumePath: profile.resume_path || prev.resumePath || '',
+        resumeName: resumeName || prev.resumeName || '',
       }));
     };
 
@@ -962,6 +996,22 @@ const formatDateForInput = (dateString) => {
       const job = selectedJob || newJob || null;
 
       let resumeStoragePath = form.resumePath || null;
+
+      // If no resume file was uploaded in the form, try to get it from profile
+      if (!resumeFile && !resumeStoragePath) {
+        // Fetch profile to get resume_path
+        const { data: applicantData } = await supabase
+          .from('applicants')
+          .select('resume_path')
+          .eq('id', userId)
+          .maybeSingle();
+        
+        if (applicantData?.resume_path) {
+          resumeStoragePath = applicantData.resume_path;
+          // Update form state to reflect the profile resume
+          setForm((prev) => ({ ...prev, resumePath: resumeStoragePath }));
+        }
+      }
 
       if (resumeFile) {
         const sanitizedFileName = resumeFile.name.replace(/\s+/g, '_');
@@ -2033,6 +2083,56 @@ const formatDateForInput = (dateString) => {
                                 <div className="text-gray-900">{profileForm.preferred_depot || 'Not provided'}</div>
                               )}
                             </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Resume</label>
+                              {isEditMode ? (
+                                <div className="space-y-2">
+                                  {profileForm.resume_path && !profileResumeFile && (
+                                    <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
+                                      <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                      </svg>
+                                      <a
+                                        href={supabase.storage.from('resume').getPublicUrl(profileForm.resume_path).data.publicUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-red-600 hover:text-red-700 font-medium text-sm"
+                                      >
+                                        View Current Resume
+                                      </a>
+                                    </div>
+                                  )}
+                                  <input
+                                    type="file"
+                                    accept=".pdf,.doc,.docx"
+                                    onChange={(e) => {
+                                      const file = e.target.files?.[0];
+                                      setProfileResumeFile(file || null);
+                                    }}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                  />
+                                  {profileResumeFile && (
+                                    <p className="text-sm text-gray-600">New file selected: {profileResumeFile.name}</p>
+                                  )}
+                                  <p className="text-xs text-gray-500">Upload a PDF, DOC, or DOCX file. This resume will be auto-filled when you apply for jobs.</p>
+                                </div>
+                              ) : (
+                                <div>
+                                  {profileForm.resume_path ? (
+                                    <a
+                                      href={supabase.storage.from('resume').getPublicUrl(profileForm.resume_path).data.publicUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-red-600 hover:text-red-700 font-medium"
+                                    >
+                                      View Resume
+                                    </a>
+                                  ) : (
+                                    <div className="text-gray-500">Not uploaded</div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -2810,6 +2910,21 @@ const formatDateForInput = (dateString) => {
                           <label className="block text-sm font-medium text-gray-700 mb-1">
                             Upload Resume:
                           </label>
+                          {form.resumePath && !resumeFile && (
+                            <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded-md">
+                              <p className="text-xs text-green-700">
+                                ✓ Resume from profile will be used: {form.resumePath.split('/').pop()}
+                              </p>
+                              <a
+                                href={supabase.storage.from('resume').getPublicUrl(form.resumePath).data.publicUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-green-600 hover:text-green-800 underline"
+                              >
+                                View Profile Resume
+                              </a>
+                            </div>
+                          )}
                           <input
                             type="file"
                             accept=".pdf,.docx"
@@ -2817,7 +2932,7 @@ const formatDateForInput = (dateString) => {
                             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                           />
                           <p className="text-xs text-gray-500 mt-1">
-                            PDF/DOCX file. Max 10MB
+                            PDF/DOCX file. Max 10MB {form.resumePath && !resumeFile && '(Leave empty to use profile resume)'}
                           </p>
                         </div>
 
@@ -3279,7 +3394,19 @@ const formatDateForInput = (dateString) => {
                         </div>
                         <div className="grid grid-cols-2 bg-gray-100 p-2">
                           <div>Resume</div>
-                          <div>{form.resumeName || 'Not uploaded'}</div>
+                          <div>
+                            {resumeFile ? form.resumeName : 
+                             form.resumePath ? 
+                               <a
+                                 href={supabase.storage.from('resume').getPublicUrl(form.resumePath).data.publicUrl}
+                                 target="_blank"
+                                 rel="noopener noreferrer"
+                                 className="text-red-600 hover:text-red-700 underline"
+                               >
+                                 {form.resumePath.split('/').pop()} (from profile)
+                               </a> : 
+                               'Not uploaded'}
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 p-2">
                           <div>Government IDs</div>

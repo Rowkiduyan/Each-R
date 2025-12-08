@@ -446,9 +446,34 @@ function AgencyEndorse() {
         console.warn("job.id present but not a valid UUID; sending null for job_id to avoid DB error", job);
       }
 
+      // Fetch resume from applicant profile if available
+      let applicantResumePath = null;
+      if (email) {
+        try {
+          const { data: applicantProfile } = await supabase
+            .from('applicants')
+            .select('resume_path')
+            .ilike('email', email)
+            .maybeSingle();
+          
+          if (applicantProfile?.resume_path) {
+            applicantResumePath = applicantProfile.resume_path;
+          }
+        } catch (e) {
+          console.warn("Error fetching applicant resume from profile:", e);
+          // Continue without resume
+        }
+      }
+
+      // Include resume in applicant data if available
+      const applicantData = {
+        ...vals,
+        ...(applicantResumePath && { resumePath: applicantResumePath })
+      };
+
       // prepare payload
       const payload = {
-        applicant: vals,
+        applicant: applicantData,
         workExperiences,
         meta: {
           source: "agency",
@@ -460,6 +485,31 @@ function AgencyEndorse() {
       };
 
       // ---------- PRE-CHECK: avoid duplicates ----------
+      // Check if email already exists in employees table
+      if (email) {
+        try {
+          const { data: existingEmployee, error: empCheckErr } = await supabase
+            .from("employees")
+            .select("id, email, fname, lname, status")
+            .eq("email", email)
+            .maybeSingle();
+
+          if (empCheckErr && empCheckErr.code !== 'PGRST116') {
+            console.warn("Employee check error:", empCheckErr);
+          } else if (existingEmployee) {
+            setErrorMessage(
+              `Cannot endorse: The email "${email}" already exists in the system as an employee (${existingEmployee.fname || ''} ${existingEmployee.lname || ''}). ` +
+              `Employees cannot be endorsed as new applicants.`
+            );
+            setShowErrorAlert(true);
+            return;
+          }
+        } catch (e) {
+          console.warn("Error checking employees table:", e);
+          // Continue with other checks
+        }
+      }
+
       // Check applications for same job + applicant email
       let existingApp = null;
       if (jobIdToSend && email) {
@@ -467,7 +517,7 @@ function AgencyEndorse() {
           // Get all applications for this job and check payload manually
           const { data: allApps, error: errAppCheck } = await supabase
             .from("applications")
-            .select("id, created_at, endorsed, status, payload")
+            .select("id, created_at, endorsed, status, payload, job_posts:job_posts(title, depot)")
             .eq("job_id", jobIdToSend);
 
           if (errAppCheck) {
@@ -488,11 +538,14 @@ function AgencyEndorse() {
             }
 
             if (existingApp) {
-              // If already endorsed, show success message
+              // If already endorsed, show informative message
               if (existingApp.endorsed) {
-                setSuccessMessage("This applicant has already been endorsed for this position. ✅");
-                setSuccessNavigatePath("/agency/endorsements");
-                setShowSuccessAlert(true);
+                const jobTitle = existingApp.job_posts?.title || 'this position';
+                setErrorMessage(
+                  `Cannot endorse: This applicant (${email}) has already been endorsed for ${jobTitle}. ` +
+                  `Please check your endorsements list or choose a different job posting.`
+                );
+                setShowErrorAlert(true);
                 return;
               }
               // If exists but not endorsed, we can still try to update it
@@ -501,6 +554,40 @@ function AgencyEndorse() {
         } catch (e) {
           console.warn("Error checking for existing applications:", e);
           // Continue with insert
+        }
+      }
+
+      // Check if email exists in applications for other jobs (to provide better error message)
+      if (email && !existingApp) {
+        try {
+          const { data: otherApps, error: otherAppsErr } = await supabase
+            .from("applications")
+            .select("id, job_id, status, endorsed, payload, job_posts:job_posts(title, depot)")
+            .neq("status", "hired")
+            .neq("status", "rejected");
+
+          if (!otherAppsErr && otherApps && otherApps.length > 0) {
+            for (const app of otherApps) {
+              let payloadObj = app.payload;
+              if (typeof payloadObj === 'string') {
+                try { payloadObj = JSON.parse(payloadObj); } catch { continue; }
+              }
+              const appEmail = payloadObj?.applicant?.email || payloadObj?.form?.email || '';
+              if (appEmail && appEmail.toLowerCase().trim() === email.toLowerCase().trim()) {
+                const jobTitle = app.job_posts?.title || 'another position';
+                const status = app.status || 'unknown';
+                setErrorMessage(
+                  `Cannot endorse: This email "${email}" already has an active application for ${jobTitle} (Status: ${status}). ` +
+                  `Please wait for that application to be processed or use a different email address.`
+                );
+                setShowErrorAlert(true);
+                return;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Error checking other applications:", e);
+          // Continue with insert attempt
         }
       }
 
@@ -541,13 +628,17 @@ function AgencyEndorse() {
           .select("id");
 
         if (errAppInsert) {
-          // Check if it's a 409 conflict but the record was actually created
-          if (errAppInsert.code === '23505' || errAppInsert.code === 'PGRST116' || errAppInsert.status === 409 || errAppInsert.code === 'PGRST204') {
+          // Check for specific error codes
+          const errorCode = errAppInsert.code || errAppInsert.status;
+          const errorMessage = errAppInsert.message || String(errAppInsert);
+          
+          // Check if it's a duplicate/conflict error
+          if (errorCode === '23505' || errorCode === 'PGRST116' || errorCode === 409 || errorCode === 'PGRST204') {
             // Try to verify if the application was actually created by checking all apps for this job
             try {
               const { data: allApps } = await supabase
                 .from("applications")
-                .select("id, endorsed, payload")
+                .select("id, endorsed, status, payload, job_posts:job_posts(title)")
                 .eq("job_id", jobIdToSend);
 
               if (allApps && allApps.length > 0) {
@@ -558,28 +649,60 @@ function AgencyEndorse() {
                     try { payloadObj = JSON.parse(payloadObj); } catch { continue; }
                   }
                   const appEmail = payloadObj?.applicant?.email || payloadObj?.form?.email || '';
-                  if (appEmail && appEmail.toLowerCase().trim() === email.toLowerCase().trim() && app.endorsed) {
-                    // Application exists and is endorsed - treat as success
-                    insertSuccess = true;
-                    break;
+                  if (appEmail && appEmail.toLowerCase().trim() === email.toLowerCase().trim()) {
+                    if (app.endorsed) {
+                      // Application exists and is endorsed - show error instead of success
+                      const jobTitle = app.job_posts?.title || 'this position';
+                      setErrorMessage(
+                        `Cannot endorse: This applicant (${email}) has already been endorsed for ${jobTitle}. ` +
+                        `Please check your endorsements list.`
+                      );
+                      setShowErrorAlert(true);
+                      return;
+                    } else {
+                      // Application exists but not endorsed - treat as success (will be updated)
+                      insertSuccess = true;
+                      break;
+                    }
                   }
                 }
               }
 
               if (!insertSuccess) {
-                console.error("Failed to create application (409 conflict, but not found):", errAppInsert);
-                setErrorMessage("Failed to create endorsement. The application may already exist. Please check the endorsements list.");
+                console.error("Failed to create application (conflict, but not found):", errAppInsert);
+                setErrorMessage(
+                  `Failed to create endorsement: Duplicate entry detected. ` +
+                  `The email "${email}" may already exist in the system. ` +
+                  `Please check if this applicant has already been endorsed or exists as an employee.`
+                );
                 setShowErrorAlert(true);
                 return;
               }
             } catch (verifyErr) {
-              console.error("Error verifying application after 409:", verifyErr);
-              // If verification fails, still treat as potential success since 409 might mean it was created
-              insertSuccess = true;
+              console.error("Error verifying application after conflict:", verifyErr);
+              setErrorMessage(
+                `Failed to create endorsement: Database conflict detected. ` +
+                `The email "${email}" may already exist. ` +
+                `Please verify the applicant doesn't already exist in the system.`
+              );
+              setShowErrorAlert(true);
+              return;
             }
+          } else if (errorMessage.includes('duplicate') || errorMessage.includes('already exists') || errorMessage.includes('unique constraint')) {
+            // Generic duplicate error
+            setErrorMessage(
+              `Cannot endorse: The email "${email}" already exists in the system. ` +
+              `Please use a different email address or check if this applicant has already been endorsed.`
+            );
+            setShowErrorAlert(true);
+            return;
           } else {
+            // Other database errors
             console.error("Failed to create application:", errAppInsert);
-            setErrorMessage(`Failed to create endorsement: ${errAppInsert.message || 'Unknown error'}. See console for details.`);
+            setErrorMessage(
+              `Failed to create endorsement: ${errorMessage}. ` +
+              `Please check the information and try again. If the problem persists, contact support.`
+            );
             setShowErrorAlert(true);
             return;
           }

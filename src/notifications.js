@@ -265,11 +265,11 @@ export async function notifyHRAboutInterviewResponse({
   interviewTime
 }) {
   try {
-    // Get all HR users
+    // Get all HR users (including Admin)
     const { data: hrUsers, error: hrError } = await supabase
       .from('profiles')
-      .select('user_id')
-      .eq('role', 'HR');
+      .select('id')
+      .or('role.eq.HR,role.eq.Admin');
 
     if (hrError) {
       console.error('Error fetching HR users:', hrError);
@@ -282,21 +282,21 @@ export async function notifyHRAboutInterviewResponse({
     }
 
     // Format the message
-    const formattedDate = new Date(interviewDate).toLocaleDateString('en-US', {
+    const formattedDate = interviewDate ? new Date(interviewDate).toLocaleDateString('en-US', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
       day: 'numeric'
-    });
+    }) : 'scheduled date';
 
     const title = `Interview ${responseType === 'confirmed' ? 'Confirmed' : 'Rejected'}`;
-    const message = `${applicantName} has ${responseType} the interview for ${position} position scheduled on ${formattedDate} at ${interviewTime}.`;
+    const message = `${applicantName} has ${responseType} the interview for ${position} position${interviewDate ? ` scheduled on ${formattedDate}${interviewTime ? ` at ${interviewTime}` : ''}` : ''}.`;
 
     // Create notifications for all HR users
     const notifications = await Promise.all(
       hrUsers.map(hrUser =>
         createNotification({
-          userId: hrUser.user_id,
+          userId: hrUser.id,
           applicationId,
           type: `interview_${responseType}`,
           title,
@@ -490,4 +490,61 @@ export async function createAccountTerminationNotification({
     message: `Your account has been terminated. You will have access to your account until ${formattedDate}. After this time, your account will be automatically closed.`,
     userType: 'employee'
   });
+}
+
+// Helper function to notify HR when an applicant retracts their application
+export async function notifyHRAboutApplicationRetraction({
+  applicationId,
+  applicantName,
+  position,
+  depot
+}) {
+  try {
+    // Get all HR users
+    const { data: hrUsers, error: hrError } = await supabase
+      .from('profiles')
+      .select('id')
+      .or('role.eq.HR,role.eq.Admin');
+
+    if (hrError) {
+      console.error('Error fetching HR users:', hrError);
+      return { success: false, error: hrError };
+    }
+
+    if (!hrUsers || hrUsers.length === 0) {
+      console.log('No HR users found');
+      return { success: true, message: 'No HR users to notify' };
+    }
+
+    const title = 'Application Retracted';
+    const message = `${applicantName} has retracted their application for ${position}${depot ? ` (${depot})` : ''}.`;
+
+    // Create notifications for all HR users
+    const notifications = await Promise.all(
+      hrUsers.map(hrUser =>
+        createNotification({
+          userId: hrUser.id,
+          applicationId: null, // Application is deleted, so no application_id
+          type: 'application_retracted',
+          title,
+          message
+        })
+      )
+    );
+
+    const successful = notifications.filter(n => n.success).length;
+    const failed = notifications.filter(n => !n.success).length;
+
+    console.log(`Notified ${successful} HR users about application retraction, ${failed} failed`);
+    return { 
+      success: true, 
+      notified: successful, 
+      failed,
+      details: notifications 
+    };
+
+  } catch (err) {
+    console.error('Unexpected error notifying HR about application retraction:', err);
+    return { success: false, error: err };
+  }
 }
