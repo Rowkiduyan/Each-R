@@ -306,7 +306,6 @@ function AgencyEndorsements() {
           status,
           payload,
           endorsed,
-          applicants:applicants ( fname, lname ),
           job_posts:job_posts ( title )
         `)
         .eq('endorsed', true)
@@ -316,11 +315,25 @@ function AgencyEndorsements() {
       if (error) throw error;
 
       const formatted = (data || []).map(app => {
-        const source = app.payload || {};
-        const payloadObj = typeof source === 'string' ? JSON.parse(source) : source;
+        // Parse payload if it's a string
+        let payloadObj = app.payload || {};
+        if (typeof payloadObj === 'string') {
+          try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+        }
         
-        const applicant = app.applicants || {};
-        const applicant_name = `${applicant.fname || ''} ${applicant.lname || ''}`.trim() || 'Unknown';
+        // For endorsed applicants, get name from payload.applicant or payload.form
+        let applicant_name = 'Unknown';
+        const applicantData = payloadObj.applicant || payloadObj.form || {};
+        const fname = applicantData.firstName || applicantData.fname || '';
+        const lname = applicantData.lastName || applicantData.lname || '';
+        if (fname || lname) {
+          applicant_name = `${fname} ${lname}`.trim();
+        }
+        
+        // Get source for position extraction
+        const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
+        
+        // Get position/title - prioritize job_posts.title, then payload fields
         const position = app.job_posts?.title ?? source.position ?? source.title ?? 'Position Not Set';
         const interview_type = payloadObj.interview_type || source.interview_type || 'onsite';
         

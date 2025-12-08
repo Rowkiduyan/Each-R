@@ -816,6 +816,7 @@ function HrRecruitment() {
   }, []);
 
   const fetchInterviews = async () => {
+    console.log('[fetchInterviews] Starting to fetch interviews...');
     try {
       // First get applications with interview dates, join with job_posts to get title
       const { data: applicationsData, error: appsError } = await supabase
@@ -824,6 +825,9 @@ function HrRecruitment() {
         .not('interview_date', 'is', null)
         .order('interview_date', { ascending: true });
       
+      console.log('[fetchInterviews] Applications with interviews:', applicationsData);
+      console.log('[fetchInterviews] Query error:', appsError);
+      
       if (appsError) {
         console.error('Error fetching applications:', appsError);
         setInterviews([]);
@@ -831,14 +835,17 @@ function HrRecruitment() {
       }
 
       if (!applicationsData || applicationsData.length === 0) {
+        console.log('[fetchInterviews] No applications with interview dates found');
         setInterviews([]);
         return;
       }
 
       // Get all unique applicant IDs
       const applicantIds = [...new Set(applicationsData.map(app => app.user_id).filter(Boolean))];
+      console.log('[fetchInterviews] Applicant IDs:', applicantIds);
 
       if (applicantIds.length === 0) {
+        console.log('[fetchInterviews] No applicant IDs found');
         setInterviews([]);
         return;
       }
@@ -848,6 +855,9 @@ function HrRecruitment() {
         .from('applicants')
         .select('id, fname, lname')
         .in('id', applicantIds);
+
+      console.log('[fetchInterviews] Applicants data:', applicantsData);
+      console.log('[fetchInterviews] Applicants error:', applicantsError);
 
       if (applicantsError) {
         console.error('Error fetching applicants:', applicantsError);
@@ -860,6 +870,8 @@ function HrRecruitment() {
           applicantMap[applicant.id] = `${applicant.fname} ${applicant.lname}`;
         });
       }
+
+      console.log('[fetchInterviews] Applicant map:', applicantMap);
 
       // Transform the data
       const transformedData = applicationsData.map(app => {
@@ -900,6 +912,8 @@ function HrRecruitment() {
         };
       });
       
+      console.log('[fetchInterviews] Transformed data:', transformedData);
+      console.log('[fetchInterviews] Setting interviews state with', transformedData.length, 'interviews');
       setInterviews(transformedData);
     } catch (error) {
       console.error('Error fetching interviews:', error);
@@ -1754,6 +1768,7 @@ function HrRecruitment() {
 
       // success -> reload applications so updated interview fields show
       await loadApplications();
+      await fetchInterviews(); // Refresh interview calendar
       setShowInterviewModal(false);
       
       // Format interview summary
