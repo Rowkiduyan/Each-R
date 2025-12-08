@@ -69,6 +69,10 @@ function Employees() {
   // External certificates state
   const [externalCertificates, setExternalCertificates] = useState([]);
   const [loadingCertificates, setLoadingCertificates] = useState(false);
+  
+  // Training certificates state
+  const [trainingCertificates, setTrainingCertificates] = useState([]);
+  const [loadingTrainingCertificates, setLoadingTrainingCertificates] = useState(false);
 
   // Helper: safely parse payload to object
   const safePayload = (p) => {
@@ -413,10 +417,85 @@ function Employees() {
     }
   };
 
+  // Fetch training certificates for selected employee
+  const fetchTrainingCertificates = async (employee) => {
+    if (!employee || !employee.fname || !employee.lname) {
+      setTrainingCertificates([]);
+      return;
+    }
+    
+    setLoadingTrainingCertificates(true);
+    try {
+      // Fetch all trainings
+      const { data: trainings, error } = await supabase
+        .from('trainings')
+        .select('*')
+        .order('start_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching trainings:', error);
+        setTrainingCertificates([]);
+        return;
+      }
+
+      // Generate name variations for the employee
+      const { fname, lname, mname } = employee;
+      const nameVariations = [];
+      
+      const lastFirst = [lname, fname].filter(Boolean).join(", ");
+      const full = [lastFirst, mname].filter(Boolean).join(" ").trim();
+      if (full) nameVariations.push(full);
+      if (lastFirst) nameVariations.push(lastFirst);
+      
+      const firstMiddleLast = [fname, mname, lname].filter(Boolean).join(" ").trim();
+      if (firstMiddleLast) nameVariations.push(firstMiddleLast);
+      
+      const firstLast = [fname, lname].filter(Boolean).join(" ").trim();
+      if (firstLast) nameVariations.push(firstLast);
+
+      // Find trainings where this employee has a certificate
+      const certificatesFound = [];
+      
+      if (trainings) {
+        for (const training of trainings) {
+          if (!training.attendance) continue;
+          
+          // Check each name variation
+          for (const name of nameVariations) {
+            const attendanceData = training.attendance[name];
+            if (attendanceData && typeof attendanceData === 'object') {
+              // Check if certificate_url exists
+              if (attendanceData.certificate_url) {
+                certificatesFound.push({
+                  id: `${training.id}-${name}`,
+                  training_id: training.id,
+                  training_title: training.title,
+                  training_date: training.date,
+                  certificate_url: attendanceData.certificate_url,
+                  employee_name: name,
+                  uploaded_at: training.updated_at || training.created_at
+                });
+                break; // Found certificate for this training, no need to check other name variations
+              }
+            }
+          }
+        }
+      }
+
+      setTrainingCertificates(certificatesFound);
+    } catch (error) {
+      console.error('Error fetching training certificates:', error);
+      setTrainingCertificates([]);
+    } finally {
+      setLoadingTrainingCertificates(false);
+    }
+  };
+
   // Fetch certificates when employee is selected or certifications tab is active
   useEffect(() => {
     if (selectedEmployee && activeTab === 'certifications') {
       fetchExternalCertificates(selectedEmployee);
+      fetchTrainingCertificates(selectedEmployee);
     }
   }, [selectedEmployee, activeTab]);
 
@@ -2143,15 +2222,47 @@ function Employees() {
                                   Roadwise Certificates
                                 </h6>
                                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                  <div className="text-center py-8">
-                                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                      <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                      </svg>
+                                  {loadingTrainingCertificates ? (
+                                    <div className="text-center py-8">
+                                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+                                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-blue-700 font-medium">Loading certificates...</p>
                                     </div>
-                                    <p className="text-sm text-blue-700 font-medium">No company training certificates yet</p>
-                                    <p className="text-xs text-blue-600 mt-1">Certificates from completed trainings will appear here</p>
-                                  </div>
+                                  ) : trainingCertificates.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {trainingCertificates.map((cert) => (
+                                        <div 
+                                          key={cert.id} 
+                                          onClick={() => window.open(cert.certificate_url, '_blank')}
+                                          className="flex items-center gap-3 p-3 bg-white rounded-lg border border-blue-200 hover:bg-blue-50 hover:border-blue-300 transition-all cursor-pointer group"
+                                        >
+                                          <svg className="w-5 h-5 text-blue-600 flex-shrink-0 group-hover:text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                          </svg>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-700">{cert.training_title}</p>
+                                            <p className="text-xs text-gray-500">{formatDate(cert.training_date)}</p>
+                                          </div>
+                                          <svg className="w-5 h-5 text-gray-400 flex-shrink-0 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                          </svg>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-8">
+                                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-blue-700 font-medium">No company training certificates yet</p>
+                                      <p className="text-xs text-blue-600 mt-1">Certificates from completed trainings will appear here</p>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
 
