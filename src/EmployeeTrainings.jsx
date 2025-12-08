@@ -24,6 +24,7 @@ function EmployeeTrainings() {
     const [certificateToDelete, setCertificateToDelete] = useState(null);
     const [showSuccessModal, setShowSuccessModal] = useState(false);
     const [successMessage, setSuccessMessage] = useState({ title: '', description: '' });
+    const [isUploading, setIsUploading] = useState(false);
     
     // Training certificate upload state
     const [showTrainingCertUpload, setShowTrainingCertUpload] = useState(false);
@@ -543,6 +544,12 @@ function EmployeeTrainings() {
             return;
         }
 
+        if (isUploading) {
+            return; // Prevent multiple simultaneous uploads
+        }
+
+        setIsUploading(true);
+
         try {
             const uploadPromises = selectedFiles.map(async (item) => {
                 const file = item.file;
@@ -606,6 +613,8 @@ function EmployeeTrainings() {
         } catch (error) {
             console.error('Error uploading files:', error);
             alert(`Error uploading files: ${error.message}`);
+        } finally {
+            setIsUploading(false);
         }
     };
 
@@ -1503,16 +1512,17 @@ function EmployeeTrainings() {
                                     setSelectedFiles([]);
                                     setUploadError(null);
                                 }}
-                                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
+                                disabled={isUploading}
+                                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 Cancel
                             </button>
                             <button
                                 onClick={handleUploadTraining}
-                                disabled={selectedFiles.length === 0}
+                                disabled={selectedFiles.length === 0 || isUploading}
                                 className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
                             >
-                                Upload {selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}
+                                {isUploading ? 'Uploading...' : `Upload ${selectedFiles.length > 0 ? `(${selectedFiles.length})` : ''}`}
                             </button>
                         </div>
                     </div>

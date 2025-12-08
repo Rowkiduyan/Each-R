@@ -1175,10 +1175,29 @@ const formatDateForInput = (dateString) => {
           }
           const data = await response.json();
           console.log('Provinces loaded:', data.length);
-          setProvinces(Array.isArray(data) ? data : []);
+          
+          // Add Metro Manila (NCR) to the provinces list since it's not included as a province
+          // Metro Manila is the National Capital Region
+          const metroManila = {
+            code: '130000000',
+            name: 'Metro Manila',
+            regionCode: '13',
+            regionName: 'National Capital Region'
+          };
+          
+          // Combine fetched provinces with Metro Manila, placing Metro Manila at the beginning
+          const allProvinces = [metroManila, ...(Array.isArray(data) ? data : [])];
+          setProvinces(allProvinces);
         } catch (error) {
           console.error('Error fetching provinces:', error);
-          setProvinces([]);
+          // Even if API fails, include Metro Manila
+          const metroManila = {
+            code: '130000000',
+            name: 'Metro Manila',
+            regionCode: '13',
+            regionName: 'National Capital Region'
+          };
+          setProvinces([metroManila]);
         } finally {
           setLoadingProvinces(false);
         }
@@ -1204,6 +1223,28 @@ const formatDateForInput = (dateString) => {
               p.name && p.name.toLowerCase().trim() === profileForm.province.toLowerCase().trim()
             );
             console.log('🔥 Selected province object:', selectedProvince);
+            
+            // Special handling for Metro Manila - fetch from NCR endpoint
+            if (selectedProvince && selectedProvince.name === 'Metro Manila') {
+              setLoadingProfileCities(true);
+              try {
+                // Metro Manila cities are fetched from the NCR region endpoint
+                const response = await fetch('https://psgc.gitlab.io/api/regions/130000000/cities-municipalities/');
+                if (!response.ok) {
+                  throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                setProfileCities(Array.isArray(data) ? data : []);
+                cityCache.current['130000000'] = Array.isArray(data) ? data : [];
+              } catch (error) {
+                console.error('Error fetching Metro Manila cities:', error);
+                setProfileCities([]);
+              } finally {
+                setLoadingProfileCities(false);
+              }
+              return;
+            }
+            
             if (selectedProvince && selectedProvince.code) {
               // Check cache first
               if (cityCache.current[selectedProvince.code]) {
@@ -1287,6 +1328,28 @@ const formatDateForInput = (dateString) => {
             const selectedProvince = provinces.find(p => 
               p.name && p.name.toLowerCase().trim() === form.province.toLowerCase().trim()
             );
+            
+            // Special handling for Metro Manila - fetch from NCR endpoint
+            if (selectedProvince && selectedProvince.name === 'Metro Manila') {
+              setLoadingApplicationCities(true);
+              try {
+                // Metro Manila cities are fetched from the NCR region endpoint
+                const response = await fetch('https://psgc.gitlab.io/api/regions/130000000/cities-municipalities/');
+                if (!response.ok) {
+                  throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                setApplicationCities(Array.isArray(data) ? data : []);
+                cityCache.current['130000000'] = Array.isArray(data) ? data : [];
+              } catch (error) {
+                console.error('Error fetching Metro Manila cities:', error);
+                setApplicationCities([]);
+              } finally {
+                setLoadingApplicationCities(false);
+              }
+              return;
+            }
+            
             if (selectedProvince && selectedProvince.code) {
               // Check cache first
               if (cityCache.current[selectedProvince.code]) {
@@ -2155,22 +2218,25 @@ const formatDateForInput = (dateString) => {
                                 Unit/House Number & Street Name
                               </label>
                               {isEditMode ? (
-                                <div className="grid grid-cols-2 gap-3">
-                                  <input
-                                    type="text"
-                                    value={profileForm.unit_house_number || ''}
-                                    onChange={(e) => handleFormChange('unit_house_number', e.target.value)}
-                                    placeholder="Unit/House No."
-                                    className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                                  />
-                                  <input
-                                    type="text"
-                                    value={profileForm.street || ''}
-                                    onChange={(e) => handleFormChange('street', e.target.value)}
-                                    placeholder="Street Name"
-                                    className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                                  />
-                                </div>
+                                <input
+                                  type="text"
+                                  value={
+                                    [profileForm.unit_house_number, profileForm.street]
+                                      .filter(Boolean)
+                                      .join(' ') || ''
+                                  }
+                                  onChange={(e) => {
+                                    const value = e.target.value;
+                                    // Update both fields in a single state update
+                                    setProfileForm(prev => ({
+                                      ...prev,
+                                      street: value,
+                                      unit_house_number: '' // Clear unit_house_number since we're combining
+                                    }));
+                                  }}
+                                  placeholder="e.g., Unit 123 Main Street"
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                />
                               ) : (
                                 <div className="text-gray-900">
                                   {profileForm.unit_house_number && profileForm.street
