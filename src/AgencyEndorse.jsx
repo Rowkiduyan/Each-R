@@ -70,6 +70,7 @@ function AgencyEndorse() {
     residenceNo: "",
     street: "",
     city: "",
+    province: "",
     zip: "",
     residenceNoAlt: "",
     streetAlt: "",
@@ -1088,7 +1089,7 @@ function AgencyEndorse() {
                   <h2 className="text-base font-semibold text-gray-800">Address</h2>
                 </div>
                 <div className="p-6 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">House/Unit No.</label>
                       <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 123" value={fv.residenceNo} onChange={(e) => handleChange(activeApplicant, "residenceNo", e.target.value)} />
@@ -1100,6 +1101,10 @@ function AgencyEndorse() {
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">City/Municipality</label>
                       <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter city" value={fv.city} onChange={(e) => handleChange(activeApplicant, "city", e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Province</label>
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter province" value={fv.province} onChange={(e) => handleChange(activeApplicant, "province", e.target.value)} />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Zip Code</label>

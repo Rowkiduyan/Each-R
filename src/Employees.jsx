@@ -189,6 +189,7 @@ function Employees() {
         contact: row.contact_number || "",
         role: row.role || "Employee",
         hired_at: row.hired_at,
+        personal_email: row.personal_email || null, // Applicant's original email for direct hires
         employmentStatus: row.status === "Probationary" ? "Under Probation" : row.status === "Regular" ? "Regular" : "Regular", // Map status from DB to employment status
         agency: baseAgency,
         source: row.source || null,
@@ -203,7 +204,7 @@ function Employees() {
       try {
         const { data: empRows, error: empErr } = await supabase
           .from("employees")
-          .select("id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency")
+          .select("id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency, personal_email")
           .order("hired_at", { ascending: false });
 
         if (empErr) throw empErr;
@@ -773,76 +774,225 @@ function Employees() {
           return supabase.storage.from('application-files').getPublicUrl(filePath)?.data?.publicUrl;
         };
 
-        const employeeEmail = selectedEmployee.email;
-        let applicantUserId = null;
+        // Get the applicant's email - use personal_email (original applicant email) if available,
+        // otherwise fall back to employee email (works for agency hires)
+        const applicantEmail = selectedEmployee.personal_email?.trim() || selectedEmployee.email?.trim();
+        const employeeEmail = applicantEmail.toLowerCase();
+        const employeeName = selectedEmployee.name?.toLowerCase() || '';
+        const employeeFname = selectedEmployee.fname?.toLowerCase() || '';
+        const employeeLname = selectedEmployee.lname?.toLowerCase() || '';
+        const employeeHiredAt = selectedEmployee.hired_at;
         
-        // Approach 1: Check if selectedEmployee has user_id from the application
-        // This could be in raw.user_id (from application) or we need to find it
-        if (selectedEmployee.raw?.user_id) {
-          applicantUserId = selectedEmployee.raw.user_id;
-        }
-        
-        // Approach 2: If selectedEmployee has an id that's an application ID (not emp-xxx), 
-        // we can fetch the application directly to get user_id
-        if (!applicantUserId && selectedEmployee.id && !selectedEmployee.id.startsWith('emp-')) {
-          try {
-            const { data: appData, error: appError } = await supabase
+        let applicationsData = null;
+        const baseSelect = 'id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, status, job_posts:job_id(title, depot), payload';
+
+        console.log('Loading assessment records for employee:', {
+          email: selectedEmployee.email,
+          personal_email: selectedEmployee.personal_email,
+          name: selectedEmployee.name,
+          hired_at: employeeHiredAt
+        });
+
+        // Approach 1: Search by personal_email (applicant's original email) - this is the key for direct hires
+        if (selectedEmployee.personal_email) {
+          const emailsToTry = [
+            selectedEmployee.personal_email.trim(),
+            selectedEmployee.personal_email.trim().toLowerCase()
+          ];
+          
+          for (const emailToTry of emailsToTry) {
+            // Try payload->>email
+            let { data, error } = await supabase
               .from('applications')
-              .select('user_id')
-              .eq('id', selectedEmployee.id)
-              .maybeSingle();
+              .select(baseSelect)
+              .eq('payload->>email', emailToTry)
+              .order('created_at', { ascending: false });
             
-            if (!appError && appData?.user_id) {
-              applicantUserId = appData.user_id;
+            if (!error && data && data.length > 0) {
+              applicationsData = data;
+              console.log('Found applications by personal_email in payload->>email:', data.length);
+              break;
             }
-          } catch (err) {
-            console.error('Error fetching application user_id:', err);
+            
+            // Try payload->form->>email
+            const { data: data2, error: error2 } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->form->>email', emailToTry)
+              .order('created_at', { ascending: false });
+            
+            if (!error2 && data2 && data2.length > 0) {
+              applicationsData = data2;
+              console.log('Found applications by personal_email in payload->form->>email:', data2.length);
+              break;
+            }
+            
+            // Try payload->applicant->>email
+            const { data: data3, error: error3 } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->applicant->>email', emailToTry)
+              .order('created_at', { ascending: false });
+            
+            if (!error3 && data3 && data3.length > 0) {
+              applicationsData = data3;
+              console.log('Found applications by personal_email in payload->applicant->>email:', data3.length);
+              break;
+            }
           }
         }
-        
-        // Approach 3: If still no user_id, try to find applicant record by email
-        if (!applicantUserId) {
-          const { data: applicantData, error: applicantError } = await supabase
-            .from('applicants')
-            .select('id')
-            .eq('email', employeeEmail)
-            .maybeSingle();
 
-          if (!applicantError && applicantData?.id) {
-            applicantUserId = applicantData.id;
+        // Approach 2: Try employee email (for agency hires where email matches)
+        if (!applicationsData || applicationsData.length === 0) {
+          const emailsToTry = [
+            selectedEmployee.email.trim(),
+            selectedEmployee.email.trim().toLowerCase()
+          ];
+          
+          for (const emailToTry of emailsToTry) {
+            let { data, error } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->>email', emailToTry)
+              .order('created_at', { ascending: false });
+            
+            if (!error && data && data.length > 0) {
+              applicationsData = data;
+              console.log('Found applications by employee email in payload->>email:', data.length);
+              break;
+            }
+            
+            const { data: data2, error: error2 } = await supabase
+              .from('applications')
+              .select(baseSelect)
+              .eq('payload->form->>email', emailToTry)
+              .order('created_at', { ascending: false });
+            
+            if (!error2 && data2 && data2.length > 0) {
+              applicationsData = data2;
+              console.log('Found applications by employee email in payload->form->>email:', data2.length);
+              break;
+            }
           }
         }
 
-        // Build query to find all applications (not just those with assessment files)
-        // We'll check for all file types: assessment and agreement files
-        let applicationsQuery = supabase
-          .from('applications')
-          .select('id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, job_posts:job_id(title, depot)')
-          .order('created_at', { ascending: false });
+        // Approach 3: Match by name + date proximity and status "hired"
+        // This is crucial for direct hires where email doesn't match
+        if (!applicationsData || applicationsData.length === 0) {
+          console.log('Trying to match by name and date...');
+          
+          // Get all applications with status "hired" within a reasonable timeframe
+          const hiredDateStart = employeeHiredAt 
+            ? new Date(new Date(employeeHiredAt).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString() // 90 days before
+            : null;
+          const hiredDateEnd = employeeHiredAt
+            ? new Date(new Date(employeeHiredAt).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString() // 30 days after
+            : null;
 
-        // If we have applicant user_id, use it (most reliable)
-        if (applicantUserId) {
-          applicationsQuery = applicationsQuery.eq('user_id', applicantUserId);
-        } else {
-          // Fallback: search by email in payload using multiple paths
-          // This handles cases where applicant record doesn't exist or email doesn't match
-          applicationsQuery = applicationsQuery.or(
-            `payload->>email.eq.${employeeEmail},payload->form->>email.eq.${employeeEmail},payload->applicant->>email.eq.${employeeEmail}`
-          );
+          let query = supabase
+            .from('applications')
+            .select(baseSelect)
+            .eq('status', 'hired')
+            .order('created_at', { ascending: false })
+            .limit(500); // Limit to prevent performance issues
+
+          if (hiredDateStart && hiredDateEnd) {
+            query = query.gte('created_at', hiredDateStart).lte('created_at', hiredDateEnd);
+          }
+
+          const { data: hiredApps, error: hiredAppsError } = await query;
+
+          if (!hiredAppsError && hiredApps && hiredApps.length > 0) {
+            // Match by name in payload
+            const matchingApps = hiredApps.filter(app => {
+              if (!app.payload) return false;
+              
+              try {
+                const payload = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload;
+                const source = payload.form || payload.applicant || payload || {};
+                
+                // Extract name from payload
+                const appFname = (source.firstName || source.fname || source.first_name || '').toLowerCase().trim();
+                const appLname = (source.lastName || source.lname || source.last_name || '').toLowerCase().trim();
+                const appFullName = (source.fullName || source.name || '').toLowerCase().trim();
+                
+                // Match by first and last name
+                if (employeeFname && employeeLname && appFname && appLname) {
+                  const nameMatch = appFname === employeeFname && appLname === employeeLname;
+                  if (nameMatch) {
+                    console.log('Matched by name:', { appFname, appLname, employeeFname, employeeLname });
+                    return true;
+                  }
+                }
+                
+                // Match by full name
+                if (employeeName && appFullName) {
+                  const normalizedEmpName = employeeName.replace(/\s+/g, ' ').trim();
+                  const normalizedAppName = appFullName.replace(/\s+/g, ' ').trim();
+                  if (normalizedEmpName === normalizedAppName) {
+                    console.log('Matched by full name:', { normalizedEmpName, normalizedAppName });
+                    return true;
+                  }
+                }
+                
+                return false;
+              } catch (err) {
+                console.error('Error parsing payload for app:', app.id, err);
+                return false;
+              }
+            });
+            
+            if (matchingApps.length > 0) {
+              applicationsData = matchingApps;
+              console.log('Found applications by name matching:', matchingApps.length);
+            }
+          }
         }
 
-        const { data: applicationsData, error: applicationsError } = await applicationsQuery;
-
-        if (applicationsError) {
-          console.error('Error loading assessment records:', applicationsError);
-          setAssessmentRecords([]);
-          return;
+        // Approach 4: Case-insensitive email matching by parsing all recent applications
+        if (!applicationsData || applicationsData.length === 0) {
+          console.log('Trying case-insensitive email matching...');
+          const { data: allApps, error: allAppsError } = await supabase
+            .from('applications')
+            .select(baseSelect)
+            .order('created_at', { ascending: false })
+            .limit(1000);
+          
+          if (!allAppsError && allApps) {
+            const matchingApps = allApps.filter(app => {
+              if (!app.payload) return false;
+              try {
+                const payload = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload;
+                const source = payload.form || payload.applicant || payload || {};
+                const appEmail = (source.email || '').trim().toLowerCase();
+                return appEmail === employeeEmail && appEmail !== '';
+              } catch {
+                return false;
+              }
+            });
+            
+            if (matchingApps.length > 0) {
+              applicationsData = matchingApps;
+              console.log('Found applications by case-insensitive email:', matchingApps.length);
+            }
+          }
         }
 
         if (applicationsData && applicationsData.length > 0) {
-          // Use the most recent application to show all document types
+          // Prioritize applications with status "hired" as those are the ones that became employees
+          // Sort: hired status first, then by created_at DESC
+          const sortedApps = [...applicationsData].sort((a, b) => {
+            const aHired = (a.status || '').toLowerCase() === 'hired';
+            const bHired = (b.status || '').toLowerCase() === 'hired';
+            if (aHired && !bHired) return -1;
+            if (!aHired && bHired) return 1;
+            // If both have same hired status, sort by date
+            return new Date(b.created_at) - new Date(a.created_at);
+          });
+          
+          // Use the prioritized application (preferably hired, otherwise most recent)
           // Always show all document types, even if file doesn't exist
-          const mostRecentApp = applicationsData[0]; // Already sorted by created_at DESC
+          const mostRecentApp = sortedApps[0];
           const jobTitle = mostRecentApp.job_posts?.title || 'N/A';
           const depot = mostRecentApp.job_posts?.depot || 'N/A';
           const date = mostRecentApp.created_at;
@@ -904,7 +1054,13 @@ function Employees() {
           });
           
           setAssessmentRecords(records);
+          console.log('Successfully loaded assessment records:', records.length, 'records');
         } else {
+          console.log('No applications found for employee:', {
+            email: selectedEmployee.email,
+            personal_email: selectedEmployee.personal_email,
+            name: selectedEmployee.name
+          });
           setAssessmentRecords([]);
         }
       } catch (err) {
@@ -914,7 +1070,7 @@ function Employees() {
     };
 
     loadAssessmentRecords();
-  }, [selectedEmployee?.email, activeTab]);
+  }, [selectedEmployee?.email, selectedEmployee?.personal_email, selectedEmployee?.name, selectedEmployee?.hired_at, activeTab]);
 
   // Fetch application data when employee is selected and profiling tab is active
   useEffect(() => {

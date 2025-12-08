@@ -91,7 +91,7 @@ function EmployeeLayout() {
                     // First try to find by auth user id if that's how it's linked
                     let { data: employee, error: empError } = await supabase
                         .from('employees')
-                        .select('id, fname, mname, lname, email')
+                        .select('id, fname, mname, lname, email, personal_email, hired_at, position, depot')
                         .eq('id', user.id)
                         .maybeSingle();
                     
@@ -99,7 +99,7 @@ function EmployeeLayout() {
                     if (!employee && !empError) {
                         const result = await supabase
                             .from('employees')
-                            .select('id, fname, mname, lname, email')
+                            .select('id, fname, mname, lname, email, personal_email, hired_at, position, depot')
                             .eq('email', user.email)
                             .maybeSingle();
                         
