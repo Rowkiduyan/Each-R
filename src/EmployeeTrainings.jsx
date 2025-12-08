@@ -532,13 +532,6 @@ function EmployeeTrainings() {
             return;
         }
 
-        // Validate that all files have titles
-        const filesWithoutTitles = selectedFiles.filter(item => !item.title || item.title.trim() === '');
-        if (filesWithoutTitles.length > 0) {
-            alert("Please provide a title for all certificates before uploading.");
-            return;
-        }
-
         if (!userId) {
             alert('User ID not available. Please try again.');
             return;
@@ -551,9 +544,9 @@ function EmployeeTrainings() {
         setIsUploading(true);
 
         try {
-            const uploadPromises = selectedFiles.map(async (item) => {
-                const file = item.file;
-                const title = item.title.trim();
+            const uploadPromises = selectedFiles.map(async (file) => {
+                // Use filename without extension as title
+                const title = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
                 
                 // Generate unique filename
                 const timestamp = Date.now();
@@ -631,11 +624,8 @@ function EmployeeTrainings() {
             const isValidSize = file.size <= maxSize;
             
             if (isValidType && isValidSize) {
-                // Store file with title field
-                validFiles.push({
-                    file: file,
-                    title: ''
-                });
+                // Store file without title field
+                validFiles.push(file);
             } else {
                 let reason;
                 if (!isValidType && !isValidSize) {
@@ -662,12 +652,6 @@ function EmployeeTrainings() {
 
     const removeFile = (index) => {
         setSelectedFiles(prev => prev.filter((_, i) => i !== index));
-    };
-
-    const updateFileTitle = (index, title) => {
-        setSelectedFiles(prev => prev.map((item, i) => 
-            i === index ? { ...item, title } : item
-        ));
     };
 
     // Delete certificate - show confirmation modal
@@ -1490,16 +1474,16 @@ function EmployeeTrainings() {
                                 <div className="mt-4">
                                     <h3 className="text-sm font-medium text-gray-700 mb-2">Selected Files ({selectedFiles.length})</h3>
                                     <div className="space-y-3 max-h-96 overflow-y-auto">
-                                        {selectedFiles.map((item, index) => (
-                                            <div key={index} className="p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2">
+                                        {selectedFiles.map((file, index) => (
+                                            <div key={index} className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
                                                 <div className="flex items-center justify-between">
                                                     <div className="flex items-center gap-3 flex-1 min-w-0">
                                                         <svg className="w-5 h-5 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                                         </svg>
                                                         <div className="flex-1 min-w-0">
-                                                            <p className="text-sm font-medium text-gray-900 truncate">{item.file.name}</p>
-                                                            <p className="text-xs text-gray-500">{(item.file.size / 1024 / 1024).toFixed(2)} MB</p>
+                                                            <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                                                            <p className="text-xs text-gray-500">{(file.size / 1024 / 1024).toFixed(2)} MB</p>
                                                         </div>
                                                     </div>
                                                     <button
@@ -1510,19 +1494,6 @@ function EmployeeTrainings() {
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                                         </svg>
                                                     </button>
-                                                </div>
-                                                <div>
-                                                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                                                        Certificate Title <span className="text-red-500">*</span>
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        value={item.title}
-                                                        onChange={(e) => updateFileTitle(index, e.target.value)}
-                                                        placeholder="e.g., First Aid Certification, Safety Training"
-                                                        className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                        required
-                                                    />
                                                 </div>
                                             </div>
                                         ))}
