@@ -461,6 +461,86 @@ function HrRequirements() {
     }
   };
 
+  // Helper function to check if employee has ANY pending items (regardless of overall status)
+  const hasPendingItems = (employee) => {
+    if (!employee || !employee.requirements) return false;
+    const reqs = employee.requirements;
+    const isAgency = employee.isAgency;
+    
+    if (isAgency) {
+      // Agency employees: check ID number requirements
+      const hasPendingReqs = Object.values(reqs).some(r => r && typeof r === 'object' && r.status === 'pending');
+      const hasPendingHrRequests = employee.hrRequests && employee.hrRequests.length > 0 
+        ? employee.hrRequests.some(r => r && (r.status === 'pending' || r.status === 'submitted'))
+        : false;
+      return hasPendingReqs || hasPendingHrRequests;
+    } else {
+      // Direct applicants: check all document sections
+      const idNums = reqs.id_numbers || {};
+      const license = reqs.license || {};
+      const medicalExams = reqs.medicalExams || {};
+      const personalDocs = reqs.personalDocuments || {};
+      const clearances = reqs.clearances || {};
+      const educationalDocs = reqs.educationalDocuments || {};
+      const documents = reqs.documents || [];
+      
+      // Helper function to get status from a document object
+      const getDocStatus = (doc) => {
+        if (!doc) return 'missing';
+        if (typeof doc === 'string') return doc;
+        return doc.status || 'missing';
+      };
+      
+      // Check ID numbers for pending
+      const hasIdPending = Object.values(idNums).some(id => {
+        const status = id?.status || 'missing';
+        return status === 'Submitted' || status === 'pending';
+      });
+      
+      // Check license for pending
+      const licenseStatus = getDocStatus(license);
+      const hasLicensePending = licenseStatus === 'pending' || licenseStatus === 'Submitted';
+      
+      // Check medical exams for pending
+      const hasMedicalPending = Object.values(medicalExams).some(doc => {
+        const status = getDocStatus(doc);
+        return status === 'pending' || status === 'Submitted';
+      });
+      
+      // Check personal documents for pending
+      const hasPersonalPending = Object.values(personalDocs).some(doc => {
+        const status = getDocStatus(doc);
+        return status === 'pending' || status === 'Submitted';
+      });
+      
+      // Check clearances for pending
+      const hasClearancePending = Object.values(clearances).some(doc => {
+        const status = getDocStatus(doc);
+        return status === 'pending' || status === 'Submitted';
+      });
+      
+      // Check educational documents for pending
+      const hasEducationalPending = Object.values(educationalDocs).some(doc => {
+        const status = getDocStatus(doc);
+        return status === 'pending' || status === 'Submitted';
+      });
+      
+      // Check legacy documents for pending
+      const hasDocPending = documents.some(doc => {
+        const status = doc?.status || 'No File';
+        return status === 'Submitted' || status === 'pending';
+      });
+      
+      // Check HR requests for pending
+      const hasPendingHrRequests = employee.hrRequests && employee.hrRequests.length > 0 
+        ? employee.hrRequests.some(r => r && (r.status === 'pending' || r.status === 'submitted'))
+        : false;
+      
+      return hasIdPending || hasLicensePending || hasMedicalPending || hasPersonalPending || 
+             hasClearancePending || hasEducationalPending || hasDocPending || hasPendingHrRequests;
+    }
+  };
+
   // Calculate stats
   const stats = useMemo(() => {
     // Filter employees by depot for HRC users
@@ -472,7 +552,7 @@ function HrRequirements() {
     return {
       actionRequired: filteredEmployees.filter(e => getEmployeeStatus(e) === 'action_required').length,
       incomplete: filteredEmployees.filter(e => getEmployeeStatus(e) === 'incomplete').length,
-      pending: filteredEmployees.filter(e => getEmployeeStatus(e) === 'pending').length,
+      pending: filteredEmployees.filter(e => hasPendingItems(e)).length,
       complete: filteredEmployees.filter(e => getEmployeeStatus(e) === 'complete').length,
       total: filteredEmployees.length,
     };
@@ -518,7 +598,12 @@ function HrRequirements() {
 
     // Filter by status tab
     if (activeTab !== 'all') {
-      data = data.filter(e => getEmployeeStatus(e) === activeTab);
+      if (activeTab === 'pending') {
+        // For pending tab, check if employee has ANY pending items
+        data = data.filter(e => hasPendingItems(e));
+      } else {
+        data = data.filter(e => getEmployeeStatus(e) === activeTab);
+      }
     }
 
     // Filter by position

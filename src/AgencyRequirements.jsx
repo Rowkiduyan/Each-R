@@ -41,6 +41,29 @@ function AgencyRequirements() {
     { key: 'philhealth', name: 'PhilHealth', type: 'id_with_copy' },
   ];
 
+  // Helper function to normalize requirement status from database to internal status
+  const normalizeRequirementStatus = (dbStatus) => {
+    if (!dbStatus) return 'missing';
+    const status = String(dbStatus).trim();
+    const statusLower = status.toLowerCase();
+    
+    if (status === 'Validated' || statusLower === 'validated' || statusLower === 'approved') {
+      return 'approved';
+    }
+    if (status === 'Re-submit' || statusLower === 're-submit' || statusLower === 'resubmit') {
+      return 'resubmit';
+    }
+    if (status === 'Submitted' || status === 'Pending' || statusLower === 'pending' || statusLower === 'submitted') {
+      return 'pending';
+    }
+    // If status exists but doesn't match known values, check if it's clearly missing
+    if (statusLower === 'missing' || statusLower === '') {
+      return 'missing';
+    }
+    // Default: if there's a status value we don't recognize, treat as pending (safer assumption)
+    return 'pending';
+  };
+
   // Real data - Employees with their requirements
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -149,9 +172,7 @@ function AgencyRequirements() {
                   idNumber: idNums.sss.value || '',
                   hasFile: false,
                   filePath: null,
-                  status: idNums.sss.status === 'Validated' ? 'approved' : 
-                          idNums.sss.status === 'Re-submit' ? 'resubmit' :
-                          idNums.sss.status === 'Submitted' ? 'pending' : 'missing',
+                  status: normalizeRequirementStatus(idNums.sss.status),
                   submittedDate: idNums.sss.validated_at || requirementsData.submitted_at || null,
                   remarks: idNums.sss.remarks || null,
                 };
@@ -163,9 +184,7 @@ function AgencyRequirements() {
                   idNumber: idNums.tin.value || '',
                   hasFile: false,
                   filePath: null,
-                  status: idNums.tin.status === 'Validated' ? 'approved' : 
-                          idNums.tin.status === 'Re-submit' ? 'resubmit' :
-                          idNums.tin.status === 'Submitted' ? 'pending' : 'missing',
+                  status: normalizeRequirementStatus(idNums.tin.status),
                   submittedDate: idNums.tin.validated_at || requirementsData.submitted_at || null,
                   remarks: idNums.tin.remarks || null,
                 };
@@ -177,9 +196,7 @@ function AgencyRequirements() {
                   idNumber: idNums.pagibig.value || '',
                   hasFile: false,
                   filePath: null,
-                  status: idNums.pagibig.status === 'Validated' ? 'approved' : 
-                          idNums.pagibig.status === 'Re-submit' ? 'resubmit' :
-                          idNums.pagibig.status === 'Submitted' ? 'pending' : 'missing',
+                  status: normalizeRequirementStatus(idNums.pagibig.status),
                   submittedDate: idNums.pagibig.validated_at || requirementsData.submitted_at || null,
                   remarks: idNums.pagibig.remarks || null,
                 };
@@ -191,9 +208,7 @@ function AgencyRequirements() {
                   idNumber: idNums.philhealth.value || '',
                   hasFile: false,
                   filePath: null,
-                  status: idNums.philhealth.status === 'Validated' ? 'approved' : 
-                          idNums.philhealth.status === 'Re-submit' ? 'resubmit' :
-                          idNums.philhealth.status === 'Submitted' ? 'pending' : 'missing',
+                  status: normalizeRequirementStatus(idNums.philhealth.status),
                   submittedDate: idNums.philhealth.validated_at || requirementsData.submitted_at || null,
                   remarks: idNums.philhealth.remarks || null,
                 };
@@ -315,9 +330,7 @@ function AgencyRequirements() {
                   idNumber: idNums.sss.value || '',
                   hasFile: false,
                   filePath: null,
-                  status: idNums.sss.status === 'Validated' ? 'approved' : 
-                          idNums.sss.status === 'Re-submit' ? 'resubmit' :
-                          idNums.sss.status === 'Submitted' ? 'pending' : 'missing',
+                  status: normalizeRequirementStatus(idNums.sss.status),
                   submittedDate: idNums.sss.validated_at || requirementsData.submitted_at || null,
                   remarks: idNums.sss.remarks || null,
                 };
@@ -329,9 +342,7 @@ function AgencyRequirements() {
                   idNumber: idNums.tin.value || '',
                   hasFile: false,
                   filePath: null,
-                  status: idNums.tin.status === 'Validated' ? 'approved' : 
-                          idNums.tin.status === 'Re-submit' ? 'resubmit' :
-                          idNums.tin.status === 'Submitted' ? 'pending' : 'missing',
+                  status: normalizeRequirementStatus(idNums.tin.status),
                   submittedDate: idNums.tin.validated_at || requirementsData.submitted_at || null,
                   remarks: idNums.tin.remarks || null,
                 };
@@ -343,9 +354,7 @@ function AgencyRequirements() {
                   idNumber: idNums.pagibig.value || '',
                   hasFile: false,
                   filePath: null,
-                  status: idNums.pagibig.status === 'Validated' ? 'approved' : 
-                          idNums.pagibig.status === 'Re-submit' ? 'resubmit' :
-                          idNums.pagibig.status === 'Submitted' ? 'pending' : 'missing',
+                  status: normalizeRequirementStatus(idNums.pagibig.status),
                   submittedDate: idNums.pagibig.validated_at || requirementsData.submitted_at || null,
                   remarks: idNums.pagibig.remarks || null,
                 };
@@ -357,9 +366,7 @@ function AgencyRequirements() {
                   idNumber: idNums.philhealth.value || '',
                   hasFile: false,
                   filePath: null,
-                  status: idNums.philhealth.status === 'Validated' ? 'approved' : 
-                          idNums.philhealth.status === 'Re-submit' ? 'resubmit' :
-                          idNums.philhealth.status === 'Submitted' ? 'pending' : 'missing',
+                  status: normalizeRequirementStatus(idNums.philhealth.status),
                   submittedDate: idNums.philhealth.validated_at || requirementsData.submitted_at || null,
                   remarks: idNums.philhealth.remarks || null,
                 };
@@ -480,11 +487,22 @@ function AgencyRequirements() {
     return 'pending';
   };
 
+  // Helper function to check if employee has pending items
+  const hasPendingItems = (employee) => {
+    if (!employee || !employee.requirements) return false;
+    const reqs = Object.values(employee.requirements);
+    const hasPendingReqs = reqs.some(r => r && r.status === 'pending');
+    const hasPendingHrRequests = employee.hrRequests && employee.hrRequests.length > 0 
+      ? employee.hrRequests.some(r => r && (r.status === 'pending' || r.status === 'submitted'))
+      : false;
+    return hasPendingReqs || hasPendingHrRequests;
+  };
+
   // Calculate stats (memoized to avoid recalculating on every render)
   const stats = React.useMemo(() => ({
     actionRequired: employees.filter(e => getEmployeeStatus(e) === 'action_required').length,
     incomplete: employees.filter(e => getEmployeeStatus(e) === 'incomplete').length,
-    pending: employees.filter(e => getEmployeeStatus(e) === 'pending').length,
+    pending: employees.filter(e => hasPendingItems(e)).length,
     complete: employees.filter(e => getEmployeeStatus(e) === 'complete').length,
     total: employees.length,
   }), [employees]);
@@ -1027,7 +1045,7 @@ function AgencyRequirements() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                All Employees
+                All ({stats.total})
               </button>
               <button
                 onClick={() => { setActiveTab('action_required'); setCurrentPage(1); setExpandedRow(null); }}
@@ -1037,7 +1055,7 @@ function AgencyRequirements() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                Action Required
+                Action Required ({stats.actionRequired})
                 {unviewedCounts.action_required > 0 && (
                   <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
@@ -1050,7 +1068,7 @@ function AgencyRequirements() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                Incomplete
+                Incomplete ({stats.incomplete})
                 {unviewedCounts.incomplete > 0 && (
                   <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
@@ -1063,7 +1081,7 @@ function AgencyRequirements() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                Pending Review
+                Pending Review ({stats.pending})
                 {unviewedCounts.pending > 0 && (
                   <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
@@ -1076,7 +1094,7 @@ function AgencyRequirements() {
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                Complete
+                Complete ({stats.complete})
                 {unviewedCounts.complete > 0 && (
                   <span className="absolute top-3 right-3 w-2 h-2 bg-[#800000] rounded-full"></span>
                 )}
