@@ -1300,6 +1300,33 @@ function EmployeeTrainings() {
                                     <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{selectedTraining.description || 'No description provided'}</p>
                                 </div>
 
+                                {/* Training Image */}
+                                {selectedTraining.image_url && (
+                                    <div className="mb-4">
+                                        <img 
+                                            src={selectedTraining.image_url} 
+                                            alt={selectedTraining.title}
+                                            className="w-full h-auto object-contain rounded-lg shadow-md border border-gray-200 max-h-96"
+                                            onError={(e) => {
+                                                console.error('Failed to load image:', selectedTraining.image_url);
+                                                e.target.style.display = 'none';
+                                            }}
+                                            onLoad={() => console.log('Image loaded successfully:', selectedTraining.image_url)}
+                                        />
+                                    </div>
+                                )}
+                                {!selectedTraining.image_url && (
+                                    <div className="mb-4 p-4 bg-gray-100 rounded-lg border border-gray-200 text-center">
+                                        <svg className="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <p className="text-xs text-gray-500">No image available</p>
+                                    </div>
+                                )}
+
+                                {/* Divider */}
+                                <div className="my-6 border-t border-gray-200"></div>
+
                                 {/* Basic Info */}
                                 <div className="space-y-3">
                                     {/* Date */}
