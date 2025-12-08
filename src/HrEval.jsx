@@ -1515,17 +1515,27 @@ function HrEval() {
                         </label>
                         <input
                           type="number"
-                          min="0"
+                          min="1"
                           max="100"
-                          step="0.01"
+                          step="1"
                           value={record.totalScore}
                           onChange={(e) => {
-                            const newRecords = [...uploadRecords];
-                            newRecords[index].totalScore = e.target.value;
-                            setUploadRecords(newRecords);
+                            const value = e.target.value;
+                            // Only allow whole numbers between 1 and 100
+                            if (value === '' || (Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 100)) {
+                              const newRecords = [...uploadRecords];
+                              newRecords[index].totalScore = value;
+                              setUploadRecords(newRecords);
+                            }
+                          }}
+                          onKeyPress={(e) => {
+                            // Prevent decimal point and negative sign
+                            if (e.key === '.' || e.key === '-' || e.key === 'e' || e.key === 'E') {
+                              e.preventDefault();
+                            }
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"
-                          placeholder="e.g., 85.5"
+                          placeholder="e.g., 85"
                         />
                       </div>
                     </div>
