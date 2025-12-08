@@ -1188,7 +1188,7 @@ function HrRecruitment() {
     setConfirmMessage(
       `Mark ${applicantName} as Employee? This will create or update their employee record and mark the application as hired.`
     );
-    setConfirmCallback(async () => {
+    setConfirmCallback(() => async () => {
       // Guard against duplicate execution
       let emailSent = false;
       
@@ -4664,7 +4664,7 @@ function HrRecruitment() {
                       const remarks = rejectionRemarks.trim() || null;
                       if (remarks === null) {
                         setConfirmMessage("Reject without remarks?");
-                        setConfirmCallback(async () => {
+                        setConfirmCallback(() => async () => {
                           setShowConfirmDialog(false);
                           await rejectApplication(
                             selectedApplicant.id,
