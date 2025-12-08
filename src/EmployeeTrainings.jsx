@@ -1340,6 +1340,8 @@ function EmployeeTrainings() {
                                         {selectedTraining.attendees?.map((attendee, idx) => {
                                             const name = typeof attendee === "string" ? attendee : attendee.name || "";
                                             const attendedFlag = !!selectedTraining.attendance?.[name];
+                                            // Only show attendance status for completed trainings (not active and has attendance data with at least one marked attendee)
+                                            const hasMarkedAttendance = selectedTraining.attendance && Object.keys(selectedTraining.attendance).length > 0 && Object.values(selectedTraining.attendance).some(val => val === true || val === false);
                                             return (
                                                 <div 
                                                     key={idx} 
@@ -1351,7 +1353,7 @@ function EmployeeTrainings() {
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <p className="text-xs font-medium text-gray-900 truncate">{name}</p>
-                                                            {!selectedTraining.is_active && (
+                                                            {!selectedTraining.is_active && hasMarkedAttendance && (
                                                                 <span
                                                                     className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-semibold mt-0.5 ${
                                                                         attendedFlag
