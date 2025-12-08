@@ -614,14 +614,10 @@ function AgencyEval() {
                                             <span className="text-sm font-semibold text-gray-800">{evaluation.type}</span>
                                             <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{evaluation.period}</span>
                                           </div>
-                                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                                          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                                             <div>
                                               <span className="text-gray-500">Date:</span>
                                               <span className="ml-2 text-gray-800">{formatDate(evaluation.date)}</span>
-                                            </div>
-                                            <div>
-                                              <span className="text-gray-500">Rating:</span>
-                                              <span className={`ml-2 font-medium ${getRatingColor(evaluation.rating)}`}>{evaluation.rating}</span>
                                             </div>
                                             <div>
                                               <span className="text-gray-500">Score:</span>
