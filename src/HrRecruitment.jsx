@@ -205,6 +205,7 @@ function HrRecruitment() {
   const [confirmMessage, setConfirmMessage] = useState("");
   const [confirmCallback, setConfirmCallback] = useState(null);
   const [pendingJobDelete, setPendingJobDelete] = useState(null); // { jobId, jobTitle }
+  const [pendingJobApprove, setPendingJobApprove] = useState(null); // { jobId, jobTitle }
   const [isProcessingConfirm, setIsProcessingConfirm] = useState(false);
   const [isOpeningConfirmDialog, setIsOpeningConfirmDialog] = useState(false);
   
@@ -699,7 +700,7 @@ function HrRecruitment() {
     try {
       let query = supabase
         .from("job_posts")
-        .select("id, title, depot, description, created_at, urgent, is_active, job_type, duration")
+        .select("id, title, depot, description, created_at, urgent, is_active, job_type, duration, approval_status, created_by")
         .order("created_at", { ascending: false });
 
       // Filter by depot if user is HRC
@@ -740,9 +741,14 @@ function HrRecruitment() {
           const hired = applications.filter((app) => app.status === "hired").length;
           const waitlisted = 0; // You can add waitlisted logic if needed
 
-          // Determine status based on is_active
-          // Draft = is_active is false, Active = is_active is true
+          // Determine status based on is_active and approval_status
+          // Pending = approval_status is 'pending' (HRC posts waiting for HR approval)
+          // Draft = is_active is false
+          // Active = is_active is true and approval_status is 'approved'
           let status = jobPost.is_active ? "Active" : "Draft";
+          if (jobPost.approval_status === 'pending') {
+            status = "Pending";
+          }
 
           return {
             id: jobPost.id,
@@ -756,6 +762,8 @@ function HrRecruitment() {
             created_at: jobPost.created_at,
             urgent: jobPost.urgent,
             is_active: jobPost.is_active,
+            approval_status: jobPost.approval_status,
+            created_by: jobPost.created_by,
           };
         })
       );
@@ -2149,6 +2157,41 @@ function HrRecruitment() {
       }
     } catch (err) {
       setErrorMessage(`Error deleting job post: ${err.message}`);
+      setShowErrorAlert(true);
+    }
+  };
+
+  // ---- APPROVE JOB POST: Show confirmation modal
+  const handleApproveJobPost = (jobId, jobTitle) => {
+    // Clear any previous state
+    setPendingJobApprove(null);
+    setIsProcessingConfirm(false);
+    
+    // Store the job info to approve
+    setPendingJobApprove({ jobId, jobTitle });
+    setConfirmMessage(`Are you sure you want to approve the job post "${jobTitle}"? This will make it visible to applicants.`);
+    setShowConfirmDialog(true);
+  };
+
+  // Execute job post approval - called ONLY from OK button
+  const executeJobPostApproval = async (jobId, jobTitle) => {
+    try {
+      const { error } = await supabase
+        .from('job_posts')
+        .update({ approval_status: 'approved' })
+        .eq('id', jobId);
+      
+      if (error) {
+        setErrorMessage(`Failed to approve job post: ${error.message}`);
+        setShowErrorAlert(true);
+      } else {
+        setSuccessMessage(`Job post "${jobTitle}" has been approved successfully.`);
+        setShowSuccessAlert(true);
+        // Reload job posts to refresh the table
+        await loadJobPosts();
+      }
+    } catch (err) {
+      setErrorMessage(`Error approving job post: ${err.message}`);
       setShowErrorAlert(true);
     }
   };
@@ -4549,6 +4592,8 @@ function HrRecruitment() {
                           <span className={`inline-flex items-center justify-center px-2.5 py-1 text-[11px] rounded-full border w-20 ${
                             job.status === "Active"
                               ? "bg-green-50 text-green-700 border-green-200"
+                              : job.status === "Pending"
+                              ? "bg-yellow-50 text-yellow-700 border-yellow-200"
                               : "bg-gray-50 text-gray-700 border-gray-200"
                           }`}>
                             {job.status}
@@ -4564,6 +4609,16 @@ function HrRecruitment() {
                         <div className="w-40 flex justify-end gap-2">
                           {job.actualJobId ? (
                             <>
+                              {/* Show Approve button for HR if job is pending approval */}
+                              {job.status === "Pending" && currentUser?.role?.toUpperCase() === 'HR' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveJobPost(job.actualJobId, job.title)}
+                                  className="px-3 py-1.5 rounded-full border border-green-300 text-xs text-green-700 hover:bg-green-50"
+                                >
+                                  Approve
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() => handleEditJobPost(job.actualJobId)}
@@ -5044,19 +5099,20 @@ function HrRecruitment() {
       {/* Confirm Dialog Modal */}
       {showConfirmDialog && (
         <div 
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
           onClick={(e) => {
             // Close dialog when clicking outside (backdrop)
             if (e.target === e.currentTarget) {
               setShowConfirmDialog(false);
               setConfirmCallback(null);
               setPendingJobDelete(null);
+              setPendingJobApprove(null);
               setIsProcessingConfirm(false);
             }
           }}
         >
           <div 
-            className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg" 
+            className="bg-white rounded-lg border border-solid border-gray-300 p-6 w-full max-w-md shadow-lg" 
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold mb-4">{confirmMessage}</h3>
@@ -5070,6 +5126,7 @@ function HrRecruitment() {
                   setShowConfirmDialog(false);
                   setConfirmCallback(null);
                   setPendingJobDelete(null);
+                  setPendingJobApprove(null);
                   setIsProcessingConfirm(false);
                   setIsOpeningConfirmDialog(false);
                 }}
@@ -5079,7 +5136,7 @@ function HrRecruitment() {
               <button
                 type="button"
                 className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isProcessingConfirm || (!confirmCallback && !pendingJobDelete)}
+                disabled={isProcessingConfirm || (!confirmCallback && !pendingJobDelete && !pendingJobApprove)}
                 onClick={async (e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -5090,8 +5147,14 @@ function HrRecruitment() {
                   setIsProcessingConfirm(true);
                   
                   try {
+                    // Handle job post approval
+                    if (pendingJobApprove) {
+                      const { jobId, jobTitle } = pendingJobApprove;
+                      setPendingJobApprove(null);
+                      await executeJobPostApproval(jobId, jobTitle);
+                    }
                     // Handle job post deletion (new approach)
-                    if (pendingJobDelete) {
+                    else if (pendingJobDelete) {
                       const { jobId, jobTitle } = pendingJobDelete;
                       setPendingJobDelete(null);
                       await executeJobPostDeletion(jobId, jobTitle);
@@ -5110,6 +5173,7 @@ function HrRecruitment() {
                     setShowConfirmDialog(false);
                     setIsProcessingConfirm(false);
                     setPendingJobDelete(null);
+                    setPendingJobApprove(null);
                     setConfirmCallback(null);
                   }
                 }}

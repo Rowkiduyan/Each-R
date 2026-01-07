@@ -28,10 +28,18 @@ function ApplicantRegister() {
   // Calculate password strength
   const calculatePasswordStrength = (pwd) => {
     if (!pwd) return '';
-    if (pwd.length < 6) return 'weak';
-    if (pwd.length < 8) return 'fair';
-    if (/[A-Z]/.test(pwd) && /[a-z]/.test(pwd) && /[0-9]/.test(pwd)) return 'strong';
-    return 'fair';
+    
+    const hasUppercase = /[A-Z]/.test(pwd);
+    const hasLowercase = /[a-z]/.test(pwd);
+    const hasNumber = /[0-9]/.test(pwd);
+    const hasSymbol = /[!@#$%^&*(),.?":{}|<>]/.test(pwd);
+    const hasMinLength = pwd.length >= 6;
+    
+    const criteriaCount = [hasUppercase, hasLowercase, hasNumber, hasSymbol, hasMinLength].filter(Boolean).length;
+    
+    if (criteriaCount < 3) return 'weak';
+    if (criteriaCount < 5) return 'fair';
+    return 'strong';
   };
 
   // Update password strength when password changes
@@ -45,8 +53,39 @@ const handleRegister = async (e) => {
   setErrorMessage('');
   setSuccessMessage('');
 
-  if (password.length < 6) {
+  // Validate password requirements
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasLowercase = /[a-z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSymbol = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+  const hasMinLength = password.length >= 6;
+
+  if (!hasMinLength) {
     setErrorMessage("Password must be at least 6 characters long");
+    setIsSubmitting(false);
+    return;
+  }
+
+  if (!hasUppercase) {
+    setErrorMessage("Password must contain at least one uppercase letter (A-Z)");
+    setIsSubmitting(false);
+    return;
+  }
+
+  if (!hasLowercase) {
+    setErrorMessage("Password must contain at least one lowercase letter (a-z)");
+    setIsSubmitting(false);
+    return;
+  }
+
+  if (!hasNumber) {
+    setErrorMessage("Password must contain at least one number (0-9)");
+    setIsSubmitting(false);
+    return;
+  }
+
+  if (!hasSymbol) {
+    setErrorMessage("Password must contain at least one special character (!@#$%^&*(),.?\"{}|<>)");
     setIsSubmitting(false);
     return;
   }
@@ -395,7 +434,7 @@ const handleRegister = async (e) => {
                           passwordStrength === 'strong' ? 'bg-green-500' : 'bg-gray-200'
                         }`}></div>
                       </div>
-                      <p className={`text-xs ${
+                      <p className={`text-xs mb-2 ${
                         passwordStrength === 'weak' ? 'text-red-600' : 
                         passwordStrength === 'fair' ? 'text-yellow-600' : 
                         passwordStrength === 'strong' ? 'text-green-600' : 'text-gray-500'
@@ -403,8 +442,35 @@ const handleRegister = async (e) => {
                         {passwordStrength === 'weak' && 'Weak password'}
                         {passwordStrength === 'fair' && 'Fair password'}
                         {passwordStrength === 'strong' && 'Strong password'}
-                        {!passwordStrength && 'At least 6 characters'}
+                        {!passwordStrength && 'Password requirements:'}
                       </p>
+                      <ul className="text-xs space-y-1">
+                        <li className={`flex items-center gap-1 ${
+                          /[A-Z]/.test(password) ? 'text-green-600' : 'text-gray-500'
+                        }`}>
+                          {/[A-Z]/.test(password) ? '✓' : '○'} One uppercase letter
+                        </li>
+                        <li className={`flex items-center gap-1 ${
+                          /[a-z]/.test(password) ? 'text-green-600' : 'text-gray-500'
+                        }`}>
+                          {/[a-z]/.test(password) ? '✓' : '○'} One lowercase letter
+                        </li>
+                        <li className={`flex items-center gap-1 ${
+                          /[0-9]/.test(password) ? 'text-green-600' : 'text-gray-500'
+                        }`}>
+                          {/[0-9]/.test(password) ? '✓' : '○'} One number
+                        </li>
+                        <li className={`flex items-center gap-1 ${
+                          /[!@#$%^&*(),.?":{}|<>]/.test(password) ? 'text-green-600' : 'text-gray-500'
+                        }`}>
+                          {/[!@#$%^&*(),.?":{}|<>]/.test(password) ? '✓' : '○'} One special character
+                        </li>
+                        <li className={`flex items-center gap-1 ${
+                          password.length >= 6 ? 'text-green-600' : 'text-gray-500'
+                        }`}>
+                          {password.length >= 6 ? '✓' : '○'} At least 6 characters
+                        </li>
+                      </ul>
                     </div>
                   )}
                 </div>

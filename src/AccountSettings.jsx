@@ -12,6 +12,7 @@ function AccountSettings() {
     const [userId, setUserId] = useState(null);
     const [userEmail, setUserEmail] = useState("");
     const [userRole, setUserRole] = useState(null);
+    const [passwordStrength, setPasswordStrength] = useState("");
     const fileInputRef = useRef(null);
     
     const [formData, setFormData] = useState({
@@ -20,6 +21,19 @@ function AccountSettings() {
         newPassword: "",
         confirmPassword: "",
     });
+
+    const calculatePasswordStrength = (password) => {
+        let criteriaCount = 0;
+        if (/[A-Z]/.test(password)) criteriaCount++;
+        if (/[a-z]/.test(password)) criteriaCount++;
+        if (/[0-9]/.test(password)) criteriaCount++;
+        if (/[!@#$%^&*(),.?":{}|<>]/.test(password)) criteriaCount++;
+        if (password.length >= 6) criteriaCount++;
+        
+        if (criteriaCount < 3) return 'weak';
+        if (criteriaCount < 5) return 'fair';
+        return 'strong';
+    };
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -80,6 +94,12 @@ function AccountSettings() {
             ...prev,
             [name]: value
         }));
+        
+        // Calculate password strength for new password field
+        if (name === 'newPassword') {
+            setPasswordStrength(calculatePasswordStrength(value));
+        }
+        
         // Clear messages when user starts typing
         if (successMessage) setSuccessMessage("");
         if (errorMessage) setErrorMessage("");
@@ -222,7 +242,31 @@ function AccountSettings() {
         }
 
         if (formData.newPassword.length < 6) {
-            setErrorMessage("New password must be at least 6 characters long.");
+            setErrorMessage("Password must be at least 6 characters long.");
+            setSaving(false);
+            return;
+        }
+
+        if (!/[A-Z]/.test(formData.newPassword)) {
+            setErrorMessage("Password must contain at least one uppercase letter.");
+            setSaving(false);
+            return;
+        }
+
+        if (!/[a-z]/.test(formData.newPassword)) {
+            setErrorMessage("Password must contain at least one lowercase letter.");
+            setSaving(false);
+            return;
+        }
+
+        if (!/[0-9]/.test(formData.newPassword)) {
+            setErrorMessage("Password must contain at least one number.");
+            setSaving(false);
+            return;
+        }
+
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(formData.newPassword)) {
+            setErrorMessage("Password must contain at least one special character.");
             setSaving(false);
             return;
         }
@@ -473,9 +517,61 @@ function AccountSettings() {
                                             placeholder="Enter your new password"
                                             minLength={6}
                                         />
-                                        <p className="mt-2 text-sm text-gray-500">
-                                            Password must be at least 6 characters long.
-                                        </p>
+                                        {formData.newPassword && (
+                                            <div className="mt-2">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <div className={`flex-1 h-1.5 rounded-full ${
+                                                        passwordStrength === 'weak' ? 'bg-red-500' : 
+                                                        passwordStrength === 'fair' ? 'bg-yellow-500' : 
+                                                        passwordStrength === 'strong' ? 'bg-green-500' : 'bg-gray-200'
+                                                    }`}></div>
+                                                    <div className={`flex-1 h-1.5 rounded-full ${
+                                                        passwordStrength === 'fair' ? 'bg-yellow-500' : 
+                                                        passwordStrength === 'strong' ? 'bg-green-500' : 'bg-gray-200'
+                                                    }`}></div>
+                                                    <div className={`flex-1 h-1.5 rounded-full ${
+                                                        passwordStrength === 'strong' ? 'bg-green-500' : 'bg-gray-200'
+                                                    }`}></div>
+                                                </div>
+                                                <p className={`text-xs mb-2 ${
+                                                    passwordStrength === 'weak' ? 'text-red-600' : 
+                                                    passwordStrength === 'fair' ? 'text-yellow-600' : 
+                                                    passwordStrength === 'strong' ? 'text-green-600' : 'text-gray-500'
+                                                }`}>
+                                                    {passwordStrength === 'weak' && 'Weak password'}
+                                                    {passwordStrength === 'fair' && 'Fair password'}
+                                                    {passwordStrength === 'strong' && 'Strong password'}
+                                                    {!passwordStrength && 'Password requirements:'}
+                                                </p>
+                                                <ul className="text-xs space-y-1">
+                                                    <li className={`flex items-center gap-1 ${
+                                                        /[A-Z]/.test(formData.newPassword) ? 'text-green-600' : 'text-gray-500'
+                                                    }`}>
+                                                        {/[A-Z]/.test(formData.newPassword) ? '✓' : '○'} One uppercase letter
+                                                    </li>
+                                                    <li className={`flex items-center gap-1 ${
+                                                        /[a-z]/.test(formData.newPassword) ? 'text-green-600' : 'text-gray-500'
+                                                    }`}>
+                                                        {/[a-z]/.test(formData.newPassword) ? '✓' : '○'} One lowercase letter
+                                                    </li>
+                                                    <li className={`flex items-center gap-1 ${
+                                                        /[0-9]/.test(formData.newPassword) ? 'text-green-600' : 'text-gray-500'
+                                                    }`}>
+                                                        {/[0-9]/.test(formData.newPassword) ? '✓' : '○'} One number
+                                                    </li>
+                                                    <li className={`flex items-center gap-1 ${
+                                                        /[!@#$%^&*(),.?":{}|<>]/.test(formData.newPassword) ? 'text-green-600' : 'text-gray-500'
+                                                    }`}>
+                                                        {/[!@#$%^&*(),.?":{}|<>]/.test(formData.newPassword) ? '✓' : '○'} One special character
+                                                    </li>
+                                                    <li className={`flex items-center gap-1 ${
+                                                        formData.newPassword.length >= 6 ? 'text-green-600' : 'text-gray-500'
+                                                    }`}>
+                                                        {formData.newPassword.length >= 6 ? '✓' : '○'} At least 6 characters
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        )}
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-2">

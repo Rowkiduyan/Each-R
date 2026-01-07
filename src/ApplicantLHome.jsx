@@ -1446,22 +1446,20 @@ const formatDateForInput = (dateString) => {
     }, [profileForm.city, cities]);
 
     // NEW: Load job posts from DB and subscribe to realtime inserts
-    // Helper to check if job is expired based on duration
+    // Helper to check if job is expired based on expires_at date
     const isJobExpired = (job) => {
-      if (!job.duration || !job.created_at) return false;
+      if (!job.expires_at) return false;
       
-      // Parse duration (format: "Xh Ym")
-      const match = job.duration.match(/(\d+)h\s*(\d+)m/);
-      if (!match) return false;
+      // Get today's date at start of day (00:00:00)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
       
-      const hours = parseInt(match[1]) || 0;
-      const minutes = parseInt(match[2]) || 0;
-      const durationMs = (hours * 60 * 60 * 1000) + (minutes * 60 * 1000);
+      // Get expiration date at start of day
+      const expiresAt = new Date(job.expires_at);
+      expiresAt.setHours(0, 0, 0, 0);
       
-      const createdAt = new Date(job.created_at).getTime();
-      const now = Date.now();
-      
-      return (now - createdAt) > durationMs;
+      // Job is expired if today is equal to or past the expiration date
+      return today >= expiresAt;
     };
 
     useEffect(() => {
@@ -1471,7 +1469,7 @@ const formatDateForInput = (dateString) => {
         setJobsLoading(true);
         const { data, error } = await supabase
           .from('job_posts')
-          .select('id, title, depot, department, description, responsibilities, urgent, created_at, job_type, duration')
+          .select('id, title, depot, department, description, responsibilities, urgent, created_at, job_type, expires_at')
           .eq('is_active', true)
           .order('created_at', { ascending: false });
 

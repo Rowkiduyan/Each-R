@@ -4,6 +4,13 @@ import { supabase } from "./supabaseClient";
 
 function HrCreateJob() {
   const navigate = useNavigate();
+  
+  // Get today's date in YYYY-MM-DD format
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+  
   const [form, setForm] = useState({
     title: "",
     depot: "",
@@ -14,31 +21,44 @@ function HrCreateJob() {
     others: [""],
     urgent: true,
     jobType: "delivery_crew", // "delivery_crew" or "office_employee"
-    durationMonths: "",
-    durationDays: "",
+    startDate: getTodayDate(),
+    endDate: "",
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
 
-  // Get current user info from localStorage
+  // Get current user info from localStorage and Supabase
   const [currentUser, setCurrentUser] = useState(null);
+  const [userId, setUserId] = useState(null);
+  
   useEffect(() => {
-    const stored = localStorage.getItem("loggedInHR");
-    if (stored) {
-      try {
-        const user = JSON.parse(stored);
-        setCurrentUser(user);
-        
-        // If user is HRC, auto-fill depot
-        if (user.role?.toUpperCase() === 'HRC' && user.depot) {
-          setForm(prev => ({ ...prev, depot: user.depot }));
+    const fetchUser = async () => {
+      // Get user role from localStorage
+      const stored = localStorage.getItem("loggedInHR");
+      if (stored) {
+        try {
+          const user = JSON.parse(stored);
+          setCurrentUser(user);
+          
+          // If user is HRC, auto-fill depot
+          if (user.role?.toUpperCase() === 'HRC' && user.depot) {
+            setForm(prev => ({ ...prev, depot: user.depot }));
+          }
+        } catch (err) {
+          console.error("Failed to parse loggedInHR:", err);
         }
-      } catch (err) {
-        console.error("Failed to parse loggedInHR:", err);
       }
-    }
+      
+      // Get user UUID from Supabase auth
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setUserId(user.id);
+      }
+    };
+    
+    fetchUser();
   }, []);
 
   const depotOptions = [
@@ -107,8 +127,8 @@ function HrCreateJob() {
     return hasTitle && hasDepot && hasResponsibilities;
   };
   // safe create + debug function
-  // call: await createJobPost({ title, depot, department, description, responsibilities, urgent, job_type, duration })
-  const createJobPost = async ({ title, depot, department = null, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", duration = null }) => {
+  // call: await createJobPost({ title, depot, department, description, responsibilities, urgent, job_type, expires_at, created_by_uuid, created_by_role })
+  const createJobPost = async ({ title, depot, department = null, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", expires_at = null, created_by_uuid = null, created_by_role = null }) => {
     // client-side validation (title & depot are NOT NULL in your DB)
     if (!title || String(title).trim() === "") {
       throw new Error("Job title is required.");
@@ -122,6 +142,10 @@ function HrCreateJob() {
       throw new Error("Invalid depot selected. Please choose from the dropdown list.");
     }
 
+    // Determine approval status based on user role
+    // HRC posts need approval, HR posts are auto-approved
+    const approvalStatus = created_by_role?.toUpperCase() === 'HRC' ? 'pending' : 'approved';
+    
     const payload = {
       title: String(title).trim(),
       depot: String(depot).trim(),
@@ -134,7 +158,9 @@ function HrCreateJob() {
       urgent: Boolean(urgent),
       is_active: Boolean(is_active),
       job_type: String(job_type).trim(), // Add job_type to payload
-      duration: duration ?? null, // Add duration to payload
+      expires_at: expires_at ?? null, // Job post expiration date
+      created_by: created_by_uuid ?? null, // UUID of the user who created the job post
+      approval_status: approvalStatus, // HRC posts are 'pending', HR posts are 'approved'
     };
 
     // VERY IMPORTANT: log the payload so you can see what is being sent
@@ -180,13 +206,15 @@ function HrCreateJob() {
       ...form.others,
     ].filter(Boolean);
     
-    // Format duration if both months and days are provided
-    let duration = null;
-    if (form.durationMonths || form.durationDays) {
-      const months = form.durationMonths ? parseInt(form.durationMonths) : 0;
-      const days = form.durationDays ? parseInt(form.durationDays) : 0;
-      duration = `${months}mo ${days}d`;
+    // Validate that start and end dates are not the same
+    if (form.startDate && form.endDate && form.startDate === form.endDate) {
+      setError("Start date and end date cannot be the same.");
+      setSaving(false);
+      return;
     }
+    
+    // Use endDate for expires_at field
+    const expiresAt = form.endDate || null;
     try {
       // Save as draft (is_active = false)
       await createJobPost({
@@ -198,7 +226,9 @@ function HrCreateJob() {
         urgent: form.urgent,
         is_active: false, // Draft
         job_type: form.jobType,
-        duration: duration,
+        expires_at: expiresAt,
+        created_by_uuid: userId,
+        created_by_role: currentUser?.role,
       });
 
       // Redirect to recruitment page
@@ -219,13 +249,15 @@ function HrCreateJob() {
       ...form.others,
     ];
     
-    // Format duration if months or days are provided
-    let duration = null;
-    if (form.durationMonths || form.durationDays) {
-      const months = form.durationMonths ? parseInt(form.durationMonths) : 0;
-      const days = form.durationDays ? parseInt(form.durationDays) : 0;
-      duration = `${months}mo ${days}d`;
+    // Validate that start and end dates are not the same
+    if (form.startDate && form.endDate && form.startDate === form.endDate) {
+      setError("Start date and end date cannot be the same.");
+      setSaving(false);
+      return;
     }
+    
+    // Use endDate for expires_at field
+    const expiresAt = form.endDate || null;
     
     try {
       // attempt to create a job post (this will throw if validations fail)
@@ -238,7 +270,9 @@ function HrCreateJob() {
         urgent: form.urgent,
         is_active: true, // Active
         job_type: form.jobType, // Add job_type to the payload
-        duration: duration, // Add duration to the payload
+        expires_at: expiresAt, // Job post expiration date
+        created_by_uuid: userId,
+        created_by_role: currentUser?.role,
       });
 
       // Redirect to recruitment page after successful post
@@ -254,8 +288,8 @@ function HrCreateJob() {
         others: [""],
         urgent: true,
         jobType: "delivery_crew",
-        durationMonths: "",
-        durationDays: "",
+        startDate: "",
+        endDate: "",
       });
       setShowConfirm(false);
     } catch (err) {
@@ -412,30 +446,31 @@ function HrCreateJob() {
             <label className="block text-sm font-medium mb-1">Duration (Optional)</label>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Months</label>
+                <label className="block text-xs text-gray-600 mb-1">Start Date</label>
                 <input
-                  type="number"
-                  min="0"
-                  className="w-full border rounded px-3 py-2"
-                  value={form.durationMonths}
-                  onChange={(e) => setField("durationMonths", e.target.value)}
-                  placeholder="e.g., 3"
+                  type="date"
+                  className="w-full border rounded px-3 py-2 bg-gray-100 cursor-not-allowed"
+                  value={form.startDate}
+                  readOnly
+                  disabled
                 />
-                
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Days (0-30)</label>
+                <label className="block text-xs text-gray-600 mb-1">End Date</label>
                 <input
-                  type="number"
-                  min="0"
-                  max="30"
+                  type="date"
                   className="w-full border rounded px-3 py-2"
-                  value={form.durationDays}
-                  onChange={(e) => setField("durationDays", e.target.value)}
-                  placeholder="e.g., 15"
+                  value={form.endDate}
+                  onChange={(e) => setField("endDate", e.target.value)}
+                  min={form.startDate ? new Date(new Date(form.startDate).getTime() + 86400000).toISOString().split('T')[0] : undefined}
                 />
               </div>
             </div>
+            {form.startDate && form.endDate && (
+              <p className="text-xs text-gray-500 mt-1">
+                Duration: {form.startDate} to {form.endDate}
+              </p>
+            )}
           </div>
 
           <div>
@@ -495,13 +530,16 @@ function HrCreateJob() {
 
           <div className="flex justify-end gap-3 pt-4 border-t">
             <button onClick={() => navigate("/hr/recruitment")} className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300">Cancel</button>
-            <button
-              onClick={handleSaveDraft}
-              className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-60"
-              disabled={saving || !form.title || !form.depot}
-            >
-              {saving ? "Saving..." : "Save as Draft"}
-            </button>
+            {/* Hide Save as Draft button for HRC users */}
+            {currentUser?.role?.toUpperCase() !== 'HRC' && (
+              <button
+                onClick={handleSaveDraft}
+                className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-60"
+                disabled={saving || !form.title || !form.depot}
+              >
+                {saving ? "Saving..." : "Save as Draft"}
+              </button>
+            )}
             <button
               onClick={() => setShowConfirm(true)}
               className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
@@ -516,9 +554,13 @@ function HrCreateJob() {
 
       {showConfirm && (
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 space-y-4">
+          <div className="bg-white rounded-lg border border-solid border-gray-300 shadow-lg w-full max-w-md p-6 space-y-4">
             <h2 className="text-lg font-semibold text-gray-800">Post Job?</h2>
-            <p className="text-sm text-gray-600">Please confirm you want to publish this job posting. It will be marked as Active and visible to applicants.</p>
+            <p className="text-sm text-gray-600">
+              {currentUser?.role?.toUpperCase() === 'HRC'
+                ? 'Please confirm you want to submit this job posting. It will be marked as Pending Approval until HR approves it.'
+                : 'Please confirm you want to publish this job posting. It will be marked as Active and visible to applicants.'}
+            </p>
             <div className="flex justify-end gap-3">
               <button
                 className="px-4 py-2 rounded border border-gray-300 text-gray-700 hover:bg-gray-100"
