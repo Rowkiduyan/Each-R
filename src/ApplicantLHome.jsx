@@ -61,6 +61,9 @@ import SkillsInput from './components/SkillsInput';
     const [yearErrors, setYearErrors] = useState({ edu1Year: '', edu2Year: '' });
     const [employmentPeriodErrors, setEmploymentPeriodErrors] = useState([]);
     const [referenceContactErrors, setReferenceContactErrors] = useState([]);
+    const [referenceNameErrors, setReferenceNameErrors] = useState([]);
+    const [contactError, setContactError] = useState('');
+    const [emailError, setEmailError] = useState('');
     const [showAllResponsibilities, setShowAllResponsibilities] = useState(false);
     const [selectedJobFromGuest, setSelectedJobFromGuest] = useState(null);
     const [profileForm, setProfileForm] = useState({
@@ -416,12 +419,21 @@ useEffect(() => {
       return '';
     };
 
-    // Validate employment period format (e.g., 2015-2020 or 2015-Present)
+    // Validate employment period format - accepts Month Year or Year format
     const validateEmploymentPeriod = (period) => {
       if (!period || period.trim() === '') return ''; // Allow empty
-      const periodPattern = /^\d{4}(-\d{4}|-Present)?$/i;
-      if (!periodPattern.test(period.trim())) {
-        return 'Please use format: yyyy-yyyy or yyyy-Present (e.g., 2015-2020 or 2015-Present)';
+      
+      // Accept formats:
+      // 1. Month Year - Month Year (e.g., January 2020 - June 2021 or Jan 2020 - Jun 2021)
+      // 2. Month Year - Present (e.g., June 2021 - Present)
+      // 3. Year - Year (e.g., 2020 - 2025)
+      // 4. Year - Present (e.g., 2020 - Present)
+      
+      const monthYearFormat = /^[A-Za-z]{3,9}\s\d{4}\s-\s([A-Za-z]{3,9}\s\d{4}|Present)$/i;
+      const yearOnlyFormat = /^\d{4}\s-\s(\d{4}|Present)$/i;
+      
+      if (!monthYearFormat.test(period.trim()) && !yearOnlyFormat.test(period.trim())) {
+        return 'Use format: January 2020 - June 2021, June 2021 - Present, or 2020 - 2025';
       }
       return '';
     };
@@ -433,6 +445,33 @@ useEffect(() => {
       if (!phonePattern.test(phone)) {
         return 'Please enter a valid Philippine mobile number (09XXXXXXXXX)';
       }
+      return '';
+    };
+
+    // Validate reference name - should not match applicant's name
+    const validateReferenceName = (refName) => {
+      if (!refName || refName.trim() === '') return ''; // Allow empty for validation, required check happens on submit
+      
+      const applicantFullName = `${form.firstName} ${form.lastName}`.toLowerCase().trim();
+      const refFullName = refName.toLowerCase().trim();
+      
+      // Check if reference name matches applicant's full name or individual names
+      if (refFullName === applicantFullName) {
+        return 'Reference cannot be the applicant';
+      }
+      
+      // Check if it matches first and last name combination in any order
+      const firstName = form.firstName.toLowerCase().trim();
+      const lastName = form.lastName.toLowerCase().trim();
+      
+      if (firstName && lastName && 
+          (refFullName === `${firstName} ${lastName}` || 
+           refFullName === `${lastName} ${firstName}` ||
+           refFullName.includes(`${firstName} ${lastName}`) ||
+           refFullName.includes(`${lastName} ${firstName}`))) {
+        return 'Reference cannot be the applicant';
+      }
+      
       return '';
     };
 
@@ -762,6 +801,22 @@ const formatDateForInput = (dateString) => {
     // helpers
     const handleInput = (e) => {
       const { name, value } = e.target;
+      
+      // Handle contact number - only allow numbers and max 11 digits
+      if (name === 'contact') {
+        const numericValue = value.replace(/\D/g, '');
+        const limitedValue = numericValue.slice(0, 11);
+        setForm((f) => ({ ...f, [name]: limitedValue }));
+        
+        // Validate contact number length
+        if (limitedValue.length > 0 && limitedValue.length !== 11) {
+          setContactError('Contact number must be exactly 11 digits');
+        } else {
+          setContactError('');
+        }
+        return;
+      }
+      
       setForm((f) => ({ ...f, [name]: value }));
       
       if (name === 'birthday') {
@@ -769,6 +824,16 @@ const formatDateForInput = (dateString) => {
       }
       if (name === 'startDate') {
         validateStartDate(value);
+      }
+      if (name === 'email') {
+        // Validate email format - check for @ and domain
+        if (value.trim() === '') {
+          setEmailError('');
+        } else if (!value.includes('@') || !value.split('@')[1]?.includes('.')) {
+          setEmailError('Please enter a valid email address');
+        } else {
+          setEmailError('');
+        }
       }
     };
 
@@ -2604,10 +2669,10 @@ const formatDateForInput = (dateString) => {
                 onClick={() => setShowModal(false)}
               >
                 <div
-                  className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] border-2 border-black overflow-hidden"
+                  className="bg-white rounded-lg max-w-2xl w-full mx-4 h-[90vh] border-2 border-black flex flex-col"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="flex justify-between items-center p-4 border-b">
+                  <div className="flex justify-between items-center p-4 border-b flex-shrink-0">
                     <h2 className="text-xl font-bold text-gray-800">
                       Submit Application{selectedJob ? ` — ${selectedJob.title} (${selectedJob.depot})` : ''}
                     </h2>
@@ -2620,17 +2685,17 @@ const formatDateForInput = (dateString) => {
                   </div>
 
                   <form
-                    className="flex flex-col max-h-[80vh]"
+                    className="flex flex-col flex-1 overflow-hidden"
                     onSubmit={onSubmitApplication}
                   >
                     {errorMessage && (
-                      <div className="px-4 pt-4">
+                      <div className="px-4 pt-4 flex-shrink-0">
                         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
                           {errorMessage}
                         </div>
                       </div>
                     )}
-                    <div className="px-4 pt-4 border-b bg-gray-50">
+                    <div className="px-4 pt-4 border-b bg-gray-50 flex-shrink-0">
                       <div className="flex flex-wrap gap-2">
                         {formTabs.map((tab) => (
                           <button
@@ -2660,9 +2725,9 @@ const formatDateForInput = (dateString) => {
                               type="text"
                               name="firstName"
                               value={form.firstName}
-                              onChange={handleInput}
+                              readOnly
                               required
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 bg-gray-100 cursor-not-allowed"
                             />
                           </div>
                           <div>
@@ -2673,8 +2738,8 @@ const formatDateForInput = (dateString) => {
                               type="text"
                               name="middleName"
                               value={form.middleName}
-                              onChange={handleInput}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                              readOnly
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 bg-gray-100 cursor-not-allowed"
                             />
                           </div>
                           <div>
@@ -2685,9 +2750,9 @@ const formatDateForInput = (dateString) => {
                               type="text"
                               name="lastName"
                               value={form.lastName}
-                              onChange={handleInput}
+                              readOnly
                               required
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 bg-gray-100 cursor-not-allowed"
                             />
                           </div>
                         </div>
@@ -2830,8 +2895,17 @@ const formatDateForInput = (dateString) => {
                               value={form.contact}
                               onChange={handleInput}
                               required
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                              maxLength={11}
+                              placeholder="09XXXXXXXXX"
+                              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                                contactError ? 'border-red-500' : 'border-gray-300'
+                              }`}
                             />
+                            {contactError && (
+                              <div className="mt-1 text-sm text-red-600">
+                                {contactError}
+                              </div>
+                            )}
                           </div>
                           <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -2843,8 +2917,15 @@ const formatDateForInput = (dateString) => {
                               value={form.email}
                               onChange={handleInput}
                               required
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                              className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                                emailError ? 'border-red-500' : 'border-gray-300'
+                              }`}
                             />
+                            {emailError && (
+                              <div className="mt-1 text-sm text-red-600">
+                                {emailError}
+                              </div>
+                            )}
                           </div>
                         </div>
 
@@ -2927,6 +3008,7 @@ const formatDateForInput = (dateString) => {
                               name="startDate"
                               value={form.startDate}
                               onChange={handleInput}
+                              min={new Date().toISOString().split('T')[0]}
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                             />
                           </div>
@@ -3054,7 +3136,6 @@ const formatDateForInput = (dateString) => {
                             Educational Attainment:
                           </label>
 
-                          {/* Row 1 */}
                           <select
                             name="edu1Level"
                             value={form.edu1Level}
@@ -3066,16 +3147,16 @@ const formatDateForInput = (dateString) => {
                             <option>Secondary School Graduate</option>
                             <option>College Graduate</option>
                           </select>
-                          <div className="flex gap-1">
+                          <div className="flex gap-2 items-start">
                             <input
                               type="text"
                               placeholder="Institution"
                               name="edu1Institution"
                               value={form.edu1Institution}
                               onChange={handleInput}
-                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                              className="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
                             />
-                            <div className="flex-1">
+                            <div className="w-70 flex-shrink-0">
                               <input
                                 type="text"
                                 placeholder="Year Finished (yyyy)"
@@ -3087,40 +3168,10 @@ const formatDateForInput = (dateString) => {
                                   setYearErrors(prev => ({ ...prev, edu1Year: error }));
                                 }}
                                 maxLength="4"
-                                className="w-full mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
                               />
                               {yearErrors.edu1Year && (
                                 <p className="text-xs text-red-600 mt-1">{yearErrors.edu1Year}</p>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Row 2 */}
-                          <div className="flex gap-1 mb-2">
-                            <input
-                              type="text"
-                              placeholder="Institution"
-                              name="edu2Institution"
-                              value={form.edu2Institution}
-                              onChange={handleInput}
-                              className="mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                            />
-                            <div className="flex-1">
-                              <input
-                                type="text"
-                                placeholder="Year Finished (yyyy)"
-                                name="edu2Year"
-                                value={form.edu2Year}
-                                onChange={(e) => {
-                                  handleInput(e);
-                                  const error = validateYear(e.target.value);
-                                  setYearErrors(prev => ({ ...prev, edu2Year: error }));
-                                }}
-                                maxLength="4"
-                                className="w-full mr-2 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                              />
-                              {yearErrors.edu2Year && (
-                                <p className="text-xs text-red-600 mt-1">{yearErrors.edu2Year}</p>
                               )}
                             </div>
                           </div>
@@ -3211,11 +3262,11 @@ const formatDateForInput = (dateString) => {
                               </div>
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Year Employed (period)
+                                  Employment Period
                                 </label>
                                 <input
                                   type="text"
-                                  placeholder="e.g., 2015-2020 or 2015-Present"
+                                  placeholder="January 2020 - June 2021 or 2020 - Present"
                                   value={exp.period || ''}
                                   onChange={(e) => {
                                     updateWork(index, 'period', e.target.value);
@@ -3228,6 +3279,9 @@ const formatDateForInput = (dateString) => {
                                   }}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                                 />
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Examples: January 2020 - June 2021, Jun 2021 - Present, or 2020 - 2025
+                                </p>
                                 {employmentPeriodErrors[index] && (
                                   <p className="text-xs text-red-600 mt-1">{employmentPeriodErrors[index]}</p>
                                 )}
@@ -3278,10 +3332,22 @@ const formatDateForInput = (dateString) => {
                                   </label>
                                   <input
                                     type="text"
+                                    placeholder="e.g, Juan Dela Cruz"
                                     value={ref.name || ''}
-                                    onChange={(e) => updateRef(index, 'name', e.target.value)}
+                                    onChange={(e) => {
+                                      updateRef(index, 'name', e.target.value);
+                                      const error = validateReferenceName(e.target.value);
+                                      setReferenceNameErrors(prev => {
+                                        const newErrors = [...prev];
+                                        newErrors[index] = error;
+                                        return newErrors;
+                                      });
+                                    }}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                                   />
+                                  {referenceNameErrors[index] && (
+                                    <p className="text-xs text-red-600 mt-1">{referenceNameErrors[index]}</p>
+                                  )}
                                 </div>
                                 <div>
                                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -3331,7 +3397,7 @@ const formatDateForInput = (dateString) => {
                         </div>
                       </div>
                     </div>
-                    <div className="flex justify-between px-4 py-3 border-t">
+                    <div className="flex justify-between px-4 py-3 border-t bg-gray-50 flex-shrink-0">
                       <button
                         type="button"
                         onClick={() => setShowModal(false)}
@@ -3346,7 +3412,7 @@ const formatDateForInput = (dateString) => {
                         Proceed
                       </button>
                     </div>
-                    <p className="text-xs text-gray-600 px-4 pb-4">
+                    <p className="text-xs text-gray-600 px-4 pb-4 flex-shrink-0">
                       By submitting an application for this position, you consent to
                       Roadwise collecting and storing your personal information as part of
                       the recruitment process. <Link to="/terms-and-privacy" className="text-red-600 hover:underline">

@@ -431,11 +431,17 @@ function HrCreateJob() {
               style={form.jobType === "delivery_crew" ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
             >
               <option value="">Select Department</option>
-              <option value="Delivery Crew">Delivery Crew</option>
-              <option value="HR Department">HR Department</option>
-              <option value="Security & Safety Department">Security & Safety Department</option>
-              <option value="Collections Department">Collections Department</option>
-              <option value="Repairs and Maintenance Specialist">Repairs and Maintenance Specialist</option>
+              {form.jobType === "delivery_crew" && (
+                <option value="Delivery Crew">Delivery Crew</option>
+              )}
+              {form.jobType === "office_employee" && (
+                <>
+                  <option value="HR Department">HR Department</option>
+                  <option value="Security & Safety Department">Security & Safety Department</option>
+                  <option value="Collections Department">Collections Department</option>
+                  <option value="Repairs and Maintenance Specialist">Repairs and Maintenance Specialist</option>
+                </>
+              )}
             </select>
             {form.jobType === "delivery_crew" && (
               <p className="text-xs text-gray-500 mt-1">Department is automatically set to "Delivery Crew" for Drivers/Delivery Crew job type</p>
