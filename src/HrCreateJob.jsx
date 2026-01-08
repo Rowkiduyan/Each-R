@@ -22,8 +22,7 @@ function HrCreateJob() {
     urgent: true,
     jobType: "delivery_crew", // "delivery_crew" or "office_employee"
     startDate: getTodayDate(),
-    endDate: "",
-  });
+    endDate: "",    positions_needed: 1,  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState("");
@@ -127,8 +126,8 @@ function HrCreateJob() {
     return hasTitle && hasDepot && hasResponsibilities;
   };
   // safe create + debug function
-  // call: await createJobPost({ title, depot, department, description, responsibilities, urgent, job_type, expires_at, created_by_uuid, created_by_role })
-  const createJobPost = async ({ title, depot, department = null, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", expires_at = null, created_by_uuid = null, created_by_role = null }) => {
+  // call: await createJobPost({ title, depot, department, description, responsibilities, urgent, job_type, expires_at, created_by_uuid, created_by_role, positions_needed })
+  const createJobPost = async ({ title, depot, department = null, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", expires_at = null, created_by_uuid = null, created_by_role = null, positions_needed = 1 }) => {
     // client-side validation (title & depot are NOT NULL in your DB)
     if (!title || String(title).trim() === "") {
       throw new Error("Job title is required.");
@@ -161,6 +160,7 @@ function HrCreateJob() {
       expires_at: expires_at ?? null, // Job post expiration date
       created_by: created_by_uuid ?? null, // UUID of the user who created the job post
       approval_status: approvalStatus, // HRC posts are 'pending', HR posts are 'approved'
+      positions_needed: Number(positions_needed) || 1, // Number of positions to hire
     };
 
     // VERY IMPORTANT: log the payload so you can see what is being sent
@@ -229,6 +229,7 @@ function HrCreateJob() {
         expires_at: expiresAt,
         created_by_uuid: userId,
         created_by_role: currentUser?.role,
+        positions_needed: form.positions_needed,
       });
 
       // Redirect to recruitment page
@@ -273,6 +274,7 @@ function HrCreateJob() {
         expires_at: expiresAt, // Job post expiration date
         created_by_uuid: userId,
         created_by_role: currentUser?.role,
+        positions_needed: form.positions_needed,
       });
 
       // Redirect to recruitment page after successful post
@@ -289,8 +291,7 @@ function HrCreateJob() {
         urgent: true,
         jobType: "delivery_crew",
         startDate: "",
-        endDate: "",
-      });
+        endDate: "",        positions_needed: 1,      });
       setShowConfirm(false);
     } catch (err) {
       // show user-friendly message, but console contains full details
@@ -399,6 +400,20 @@ function HrCreateJob() {
                 )}
               </datalist>
             </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Employees Needed <span className="text-red-600">*</span></label>
+              <input
+                type="number"
+                min="1"
+                className="w-full border rounded px-3 py-2"
+                value={form.positions_needed}
+                onChange={(e) => setField("positions_needed", parseInt(e.target.value) || 1)}
+                placeholder="Number of employees"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium mb-1">Depot</label>
               <input

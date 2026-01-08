@@ -700,7 +700,7 @@ function HrRecruitment() {
     try {
       let query = supabase
         .from("job_posts")
-        .select("id, title, depot, description, created_at, urgent, is_active, job_type, duration, approval_status, created_by")
+        .select("id, title, depot, description, created_at, urgent, is_active, job_type, duration, approval_status, created_by, positions_needed")
         .order("created_at", { ascending: false });
 
       // Filter by depot if user is HRC
@@ -764,6 +764,7 @@ function HrRecruitment() {
             is_active: jobPost.is_active,
             approval_status: jobPost.approval_status,
             created_by: jobPost.created_by,
+            positions_needed: jobPost.positions_needed || 1,
           };
         })
       );
@@ -3350,11 +3351,11 @@ function HrRecruitment() {
                       <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                         <div>
                           <span className="text-gray-500">Position Applying For:</span>
-                          <span className="ml-2 text-gray-800">{selectedApplicant.position || "—"}</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.position || <span className="text-gray-500 italic">None</span>}</span>
                         </div>
                         <div>
                           <span className="text-gray-500">Depot:</span>
-                          <span className="ml-2 text-gray-800">{selectedApplicant.depot || "—"}</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.depot || <span className="text-gray-500 italic">None</span>}</span>
                         </div>
                         <div>
                           <span className="text-gray-500">Date Applied:</span>
@@ -3378,7 +3379,7 @@ function HrRecruitment() {
                       
                       // Calculate age from birthday
                       const calculateAge = (birthday) => {
-                        if (!birthday) return '—';
+                        if (!birthday) return <span className="text-gray-500 italic">None</span>;
                         const today = new Date();
                         const birthDate = new Date(birthday);
                         let age = today.getFullYear() - birthDate.getFullYear();
@@ -3391,7 +3392,7 @@ function HrRecruitment() {
 
                       // Format date
                       const formatDate = (dateStr) => {
-                        if (!dateStr) return '—';
+                        if (!dateStr) return <span className="text-gray-500 italic">None</span>;
                         try {
                           const date = new Date(dateStr);
                           return date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -3414,23 +3415,23 @@ function HrRecruitment() {
                             <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                               <div>
                                 <span className="text-gray-500">First Name:</span>
-                                <span className="ml-2 text-gray-800">{form.firstName || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.firstName || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Middle Name:</span>
-                                <span className="ml-2 text-gray-800">{form.middleName || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.middleName || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Last Name:</span>
-                                <span className="ml-2 text-gray-800">{form.lastName || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.lastName || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Email:</span>
-                                <span className="ml-2 text-gray-800">{form.email || selectedApplicant.email || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.email || selectedApplicant.email || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Contact Number:</span>
-                                <span className="ml-2 text-gray-800">{form.contact || selectedApplicant.phone || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.contact || selectedApplicant.phone || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Birthday:</span>
@@ -3442,11 +3443,11 @@ function HrRecruitment() {
                               </div>
                               <div>
                                 <span className="text-gray-500">Sex:</span>
-                                <span className="ml-2 text-gray-800">{form.sex || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.sex || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Marital Status:</span>
-                                <span className="ml-2 text-gray-800">{form.maritalStatus || form.marital_status || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.maritalStatus || form.marital_status || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div className="md:col-span-2">
                                 <span className="text-gray-500">Resume:</span>
@@ -3506,11 +3507,11 @@ function HrRecruitment() {
                               </div>
                               <div>
                                 <span className="text-gray-500">How did you learn about our company?</span>
-                                <span className="ml-2 text-gray-800">{form.heardFrom || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.heardFrom || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Currently Employed?</span>
-                                <span className="ml-2 text-gray-800">{form.employed || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.employed || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div className="md:col-span-2">
                                 <span className="text-gray-500">Government IDs:</span>
@@ -3518,7 +3519,7 @@ function HrRecruitment() {
                                   {form.hasSSS && <div className="text-gray-800">• SSS</div>}
                                   {form.hasPhilHealth && <div className="text-gray-800">• PhilHealth</div>}
                                   {form.hasTIN && <div className="text-gray-800">• TIN</div>}
-                                  {!form.hasSSS && !form.hasPhilHealth && !form.hasTIN && <span className="text-gray-500">None</span>}
+                                  {!form.hasSSS && !form.hasPhilHealth && !form.hasTIN && <span className="text-gray-500 italic">None</span>}
                                 </div>
                               </div>
                             </div>
@@ -3532,27 +3533,27 @@ function HrRecruitment() {
                             <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                               <div>
                                 <span className="text-gray-500">Unit/House Number:</span>
-                                <span className="ml-2 text-gray-800">{form.unit_house_number || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.unit_house_number || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Street Name:</span>
-                                <span className="ml-2 text-gray-800">{form.street || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.street || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Barangay:</span>
-                                <span className="ml-2 text-gray-800">{form.barangay || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.barangay || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">City/Municipality:</span>
-                                <span className="ml-2 text-gray-800">{form.city || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.city || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Province:</span>
-                                <span className="ml-2 text-gray-800">{form.province || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.province || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                               <div>
                                 <span className="text-gray-500">ZIP Code:</span>
-                                <span className="ml-2 text-gray-800">{form.zip || "—"}</span>
+                                <span className="ml-2 text-gray-800">{form.zip || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                             </div>
                           </div>
@@ -3570,15 +3571,15 @@ function HrRecruitment() {
                                   <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-2">
                                     <div>
                                       <span className="text-gray-500">Level:</span>
-                                      <span className="ml-2 text-gray-800">{form.edu1Level || "—"}</span>
+                                      <span className="ml-2 text-gray-800">{form.edu1Level || <span className="text-gray-500 italic">None</span>}</span>
                                     </div>
                                     <div>
                                       <span className="text-gray-500">Institution:</span>
-                                      <span className="ml-2 text-gray-800">{form.edu1Institution || "—"}</span>
+                                      <span className="ml-2 text-gray-800">{form.edu1Institution || <span className="text-gray-500 italic">None</span>}</span>
                                     </div>
                                     <div>
                                       <span className="text-gray-500">Year Finished:</span>
-                                      <span className="ml-2 text-gray-800">{form.edu1Year || "—"}</span>
+                                      <span className="ml-2 text-gray-800">{form.edu1Year || <span className="text-gray-500 italic">None</span>}</span>
                                     </div>
                                   </div>
                                 </div>
@@ -3591,15 +3592,15 @@ function HrRecruitment() {
                                   <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-2">
                                     <div>
                                       <span className="text-gray-500">Level:</span>
-                                      <span className="ml-2 text-gray-800">{form.edu2Level || "—"}</span>
+                                      <span className="ml-2 text-gray-800">{form.edu2Level || <span className="text-gray-500 italic">None</span>}</span>
                                     </div>
                                     <div>
                                       <span className="text-gray-500">Institution:</span>
-                                      <span className="ml-2 text-gray-800">{form.edu2Institution || "—"}</span>
+                                      <span className="ml-2 text-gray-800">{form.edu2Institution || <span className="text-gray-500 italic">None</span>}</span>
                                     </div>
                                     <div>
                                       <span className="text-gray-500">Year Finished:</span>
-                                      <span className="ml-2 text-gray-800">{form.edu2Year || "—"}</span>
+                                      <span className="ml-2 text-gray-800">{form.edu2Year || <span className="text-gray-500 italic">None</span>}</span>
                                     </div>
                                   </div>
                                 </div>
@@ -3620,7 +3621,7 @@ function HrRecruitment() {
                                   ) : form.skills_text ? (
                                     <span className="text-gray-800">{form.skills_text}</span>
                                   ) : (
-                                    <span className="text-gray-500">—</span>
+                                    <span className="text-gray-500 italic">None</span>
                                   )}
                                 </div>
                               </div>
@@ -3640,19 +3641,19 @@ function HrRecruitment() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                       <div>
                                         <span className="text-gray-500">Company:</span>
-                                        <span className="ml-2 text-gray-800">{exp.company || "—"}</span>
+                                        <span className="ml-2 text-gray-800">{exp.company || <span className="text-gray-500 italic">None</span>}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Role/Title:</span>
-                                        <span className="ml-2 text-gray-800">{exp.role || exp.title || "—"}</span>
+                                        <span className="ml-2 text-gray-800">{exp.role || exp.title || <span className="text-gray-500 italic">None</span>}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Year Employed:</span>
-                                        <span className="ml-2 text-gray-800">{exp.year || exp.period || "—"}</span>
+                                        <span className="ml-2 text-gray-800">{exp.year || exp.period || <span className="text-gray-500 italic">None</span>}</span>
                                       </div>
                                       <div className="md:col-span-2">
                                         <span className="text-gray-500">Reason for Leaving:</span>
-                                        <span className="ml-2 text-gray-800">{exp.reason || "—"}</span>
+                                        <span className="ml-2 text-gray-800">{exp.reason || <span className="text-gray-500 italic">None</span>}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -3674,15 +3675,15 @@ function HrRecruitment() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                       <div>
                                         <span className="text-gray-500">Name:</span>
-                                        <span className="ml-2 text-gray-800">{ref.name || "—"}</span>
+                                        <span className="ml-2 text-gray-800">{ref.name || <span className="text-gray-500 italic">None</span>}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Contact Number:</span>
-                                        <span className="ml-2 text-gray-800">{ref.contact || ref.contactNumber || "—"}</span>
+                                        <span className="ml-2 text-gray-800">{ref.contact || ref.contactNumber || <span className="text-gray-500 italic">None</span>}</span>
                                       </div>
                                       <div className="md:col-span-2">
                                         <span className="text-gray-500">Remarks:</span>
-                                        <span className="ml-2 text-gray-800">{ref.remarks || "—"}</span>
+                                        <span className="ml-2 text-gray-800">{ref.remarks || <span className="text-gray-500 italic">None</span>}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -3814,9 +3815,9 @@ function HrRecruitment() {
                           </div>
                           <div className="text-sm text-gray-700 space-y-1">
                             <div><span className="font-medium">Date:</span> {selectedApplicant.interview_date}</div>
-                            <div><span className="font-medium">Time:</span> {selectedApplicant.interview_time || "—"}</div>
-                            <div><span className="font-medium">{interviewType === 'online' ? 'Meeting Link' : 'Location'}:</span> {selectedApplicant.interview_location || "—"}</div>
-                            <div><span className="font-medium">Interviewer:</span> {selectedApplicant.interviewer || "—"}</div>
+                            <div><span className="font-medium">Time:</span> {selectedApplicant.interview_time || <span className="text-gray-500 italic">None</span>}</div>
+                            <div><span className="font-medium">{interviewType === 'online' ? 'Meeting Link' : 'Location'}:</span> {selectedApplicant.interview_location || <span className="text-gray-500 italic">None</span>}</div>
+                            <div><span className="font-medium">Interviewer:</span> {selectedApplicant.interviewer || <span className="text-gray-500 italic">None</span>}</div>
                           </div>
                           <div className="mt-3 flex items-center justify-end">
                             <button
@@ -4568,6 +4569,7 @@ function HrRecruitment() {
                     <span className="w-20">Status</span>
                     <span className="w-48">Job</span>
                     <span className="w-32">Depot</span>
+                    <span className="w-24 text-center">Employees Needed</span>
                     <span className="w-24 text-center">Applied</span>
                     <span className="w-24 text-center">Hired</span>
                     <span className="w-28 text-center">Waitlisted</span>
@@ -4602,6 +4604,7 @@ function HrRecruitment() {
                             <p className="font-medium text-gray-800 truncate">{job.title}</p>
                           </div>
                           <div className="w-32 text-gray-700">{job.depot}</div>
+                          <div className="w-24 text-center text-gray-800">{job.positions_needed || 1}</div>
                           <div className="w-24 text-center text-gray-800">{job.applied}</div>
                           <div className="w-24 text-center text-gray-800">{job.hired}</div>
                           <div className="w-28 text-center text-gray-800">{job.waitlisted}</div>

@@ -3498,35 +3498,35 @@ const formatDateForInput = (dateString) => {
                         </div>
                         <div className="grid grid-cols-2 bg-gray-100 p-2">
                           <div>Contact Number</div>
-                          <div>{form.contact || '-'}</div>
+                          <div>{form.contact || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                         <div className="grid grid-cols-2 p-2">
                           <div>Email</div>
-                          <div>{form.email || '-'}</div>
+                          <div>{form.email || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                         <div className="grid grid-cols-2 bg-gray-100 p-2">
                           <div>Birthday</div>
-                          <div>{form.birthday || '-'}</div>
+                          <div>{form.birthday || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                         <div className="grid grid-cols-2 p-2">
                           <div>Marital Status</div>
-                          <div>{form.maritalStatus || '-'}</div>
+                          <div>{form.maritalStatus || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                         <div className="grid grid-cols-2 bg-gray-100 p-2">
                           <div>Sex</div>
-                          <div>{form.sex || '-'}</div>
+                          <div>{form.sex || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                         <div className="grid grid-cols-2 p-2">
                           <div>Available Start Date</div>
-                          <div>{form.startDate || '-'}</div>
+                          <div>{form.startDate || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                         <div className="grid grid-cols-2 bg-gray-100 p-2">
                           <div>How did you learn about our company?</div>
-                          <div>{form.heardFrom || '-'}</div>
+                          <div>{form.heardFrom || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                         <div className="grid grid-cols-2 p-2">
                           <div>Currently Employed?</div>
-                          <div>{form.employed || '-'}</div>
+                          <div>{form.employed || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                         <div className="grid grid-cols-2 bg-gray-100 p-2">
                           <div>Resume</div>
@@ -3553,7 +3553,7 @@ const formatDateForInput = (dateString) => {
                               form.hasTIN ? 'TIN' : null,
                             ]
                               .filter(Boolean)
-                              .join(', ') || 'None'}
+                              .join(', ') || <span className="text-gray-500 italic">None</span>}
                           </div>
                         </div>
                       </div>
@@ -3569,14 +3569,9 @@ const formatDateForInput = (dateString) => {
                           <div>Year Finished</div>
                         </div>
                         <div className="grid grid-cols-3 p-2">
-                          <div>{form.edu1Level || '-'}</div>
-                          <div>{form.edu1Institution || '-'}</div>
-                          <div>{form.edu1Year || '-'}</div>
-                        </div>
-                        <div className="grid grid-cols-3 bg-gray-100 p-2">
-                          <div>{form.edu2Level || '-'}</div>
-                          <div>{form.edu2Institution || '-'}</div>
-                          <div>{form.edu2Year || '-'}</div>
+                          <div>{form.edu1Level || <span className="text-gray-500 italic">None</span>}</div>
+                          <div>{form.edu1Institution || <span className="text-gray-500 italic">None</span>}</div>
+                          <div>{form.edu1Year || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                       </div>
                     </div>
@@ -3585,7 +3580,7 @@ const formatDateForInput = (dateString) => {
                     <div>
                       <h3 className="text-lg font-semibold text-gray-800 mb-2">Skills</h3>
                       <div className="border border-gray-300 p-2">
-                        {normalizeSkills(form.skills).join(', ') || '-'}
+                        {normalizeSkills(form.skills).join(', ') || <span className="text-gray-500 italic">None</span>}
                       </div>
                     </div>
 
@@ -3600,8 +3595,8 @@ const formatDateForInput = (dateString) => {
                           <div>Expiry Date</div>
                         </div>
                         <div className="grid grid-cols-2 p-2">
-                          <div>{form.licenseType || '-'}</div>
-                          <div>{form.licenseExpiry || '-'}</div>
+                          <div>{form.licenseType || <span className="text-gray-500 italic">None</span>}</div>
+                          <div>{form.licenseExpiry || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                       </div>
                     </div>
@@ -3619,7 +3614,7 @@ const formatDateForInput = (dateString) => {
                           <div>Reason for Leaving</div>
                         </div>
                         {workExperiences.length === 0 ? (
-                          <div className="p-2">-</div>
+                          <div className="p-2"><span className="text-gray-500 italic">None</span></div>
                         ) : (
                           workExperiences.map((w, i) => (
                             <div
@@ -3628,10 +3623,10 @@ const formatDateForInput = (dateString) => {
                                 i % 2 === 1 ? 'bg-gray-100' : ''
                               }`}
                             >
-                              <div>{w.company || '-'}</div>
-                              <div>{w.role || '-'}</div>
-                              <div>{w.period || '-'}</div>
-                              <div>{w.reason || '-'}</div>
+                              <div>{w.company || <span className="text-gray-500 italic">None</span>}</div>
+                              <div>{w.role || <span className="text-gray-500 italic">None</span>}</div>
+                              <div>{w.period || <span className="text-gray-500 italic">None</span>}</div>
+                              <div>{w.reason || <span className="text-gray-500 italic">None</span>}</div>
                             </div>
                           ))
                         )}
@@ -3650,20 +3645,22 @@ const formatDateForInput = (dateString) => {
                           <div>Remarks</div>
                         </div>
                         {characterReferences.length === 0 ? (
-                          <div className="p-2">-</div>
+                          <div className="p-2"><span className="text-gray-500 italic">None</span></div>
                         ) : (
-                          characterReferences.map((r, i) => (
-                            <div
-                              key={i}
-                              className={`grid grid-cols-3 p-2 ${
-                                i % 2 === 1 ? 'bg-gray-100' : ''
-                              }`}
-                            >
-                              <div>{r.name || '-'}</div>
-                              <div>{r.contact || '-'}</div>
-                              <div>{r.remarks || '-'}</div>
-                            </div>
-                          ))
+                          characterReferences
+                            .filter((r) => r.name || r.contact || r.remarks)
+                            .map((r, i) => (
+                              <div
+                                key={i}
+                                className={`grid grid-cols-3 p-2 ${
+                                  i % 2 === 1 ? 'bg-gray-100' : ''
+                                }`}
+                              >
+                                <div>{r.name || <span className="text-gray-500 italic">None</span>}</div>
+                                <div>{r.contact || <span className="text-gray-500 italic">None</span>}</div>
+                                <div>{r.remarks || <span className="text-gray-500 italic">None</span>}</div>
+                              </div>
+                            ))
                         )}
                       </div>
                     </div>
