@@ -572,41 +572,42 @@ function ApplicantApplications() {
                       </div>
                       <div>
                         <span className="font-semibold text-gray-600">Address:</span>{' '}
-                        <span className="text-gray-800">{(() => {
+                        {(() => {
                           const addressParts = [
                             applicationData.payload?.form?.street,
                             applicationData.payload?.form?.barangay,
                             applicationData.payload?.form?.city,
                             applicationData.payload?.form?.zip,
                           ];
-                          return addressParts.filter(Boolean).join(', ') || 'None';
-                        })()}</span>
+                          const address = addressParts.filter(Boolean).join(', ');
+                          return address ? <span className="text-gray-800">{address}</span> : <span className="text-gray-400 italic">None</span>;
+                        })()}
                       </div>
-                      <div><span className="font-semibold text-gray-600">Contact Number:</span> <span className="text-gray-800">{applicationData.payload?.form?.contact || 'None'}</span></div>
+                      <div><span className="font-semibold text-gray-600">Contact Number:</span> {applicationData.payload?.form?.contact ? <span className="text-gray-800">{applicationData.payload.form.contact}</span> : <span className="text-gray-400 italic">None</span>}</div>
                       <div>
                         <span className="font-semibold text-gray-600">Email:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.email || 'None'}</span>
+                        {applicationData.payload?.form?.email ? <span className="text-gray-800">{applicationData.payload.form.email}</span> : <span className="text-gray-400 italic">None</span>}
                       </div>
                       <div>
                         <span className="font-semibold text-gray-600">Birthday:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.birthday ? new Date(applicationData.payload.form.birthday).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'None'}</span>
+                        {applicationData.payload?.form?.birthday ? <span className="text-gray-800">{new Date(applicationData.payload.form.birthday).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span> : <span className="text-gray-400 italic">None</span>}
                       </div>
                       <div>
                         <span className="font-semibold text-gray-600">Age:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.birthday ? 
-                          Math.floor((new Date() - new Date(applicationData.payload.form.birthday)) / (365.25 * 24 * 60 * 60 * 1000)) : 'None'}</span>
+                        {applicationData.payload?.form?.birthday ? 
+                          <span className="text-gray-800">{Math.floor((new Date() - new Date(applicationData.payload.form.birthday)) / (365.25 * 24 * 60 * 60 * 1000))}</span> : <span className="text-gray-400 italic">None</span>}
                       </div>
                       <div>
                         <span className="font-semibold text-gray-600">Marital Status:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.maritalStatus || 'None'}</span>
+                        {applicationData.payload?.form?.maritalStatus ? <span className="text-gray-800">{applicationData.payload.form.maritalStatus}</span> : <span className="text-gray-400 italic">None</span>}
                       </div>
-                      <div><span className="font-semibold text-gray-600">Sex:</span> <span className="text-gray-800">{applicationData.payload?.form?.sex || 'None'}</span></div>
-                      <div><span className="font-semibold text-gray-600">Available Start Date:</span> <span className="text-gray-800">{applicationData.payload?.form?.startDate ? new Date(applicationData.payload.form.startDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'None'}</span></div>
+                      <div><span className="font-semibold text-gray-600">Sex:</span> {applicationData.payload?.form?.sex ? <span className="text-gray-800">{applicationData.payload.form.sex}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                      <div><span className="font-semibold text-gray-600">Available Start Date:</span> {applicationData.payload?.form?.startDate ? <span className="text-gray-800">{new Date(applicationData.payload.form.startDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span> : <span className="text-gray-400 italic">None</span>}</div>
                       <div>
                         <span className="font-semibold text-gray-600">How did you learn about the company?:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.sourceOfInfo || 'None'}</span>
+                        {applicationData.payload?.form?.sourceOfInfo ? <span className="text-gray-800">{applicationData.payload.form.sourceOfInfo}</span> : <span className="text-gray-400 italic">None</span>}
                       </div>
-                      <div><span className="font-semibold text-gray-600">Currently Employed?:</span> <span className="text-gray-800">{applicationData.payload?.form?.employed || 'None'}</span></div>
+                      <div><span className="font-semibold text-gray-600">Currently Employed?:</span> {applicationData.payload?.form?.employed ? <span className="text-gray-800">{applicationData.payload.form.employed}</span> : <span className="text-gray-400 italic">None</span>}</div>
                       <div>
                         <span className="font-semibold text-gray-600">Resume:</span>{' '}
                         {resumePublicUrl ? (
@@ -619,21 +620,19 @@ function ApplicantApplications() {
                             {applicationData.payload.form.resumeName || 'View Resume'}
                           </a>
                         ) : (
-                          <span className="text-gray-500">None</span>
+                          <span className="text-gray-400 italic">None</span>
                         )}
                       </div>
                       <div>
                         <span className="font-semibold text-gray-600">Government IDs:</span>{' '}
-                        <span className="text-gray-800">
-                          {(() => {
-                            const ids = [];
-                            if (applicationData.payload?.form?.sss) ids.push(`SSS: ${applicationData.payload.form.sss}`);
-                            if (applicationData.payload?.form?.tin) ids.push(`TIN: ${applicationData.payload.form.tin}`);
-                            if (applicationData.payload?.form?.philhealth) ids.push(`PhilHealth: ${applicationData.payload.form.philhealth}`);
-                            if (applicationData.payload?.form?.pagibig) ids.push(`Pag-IBIG: ${applicationData.payload.form.pagibig}`);
-                            return ids.length > 0 ? ids.join(', ') : 'None';
-                          })()}
-                        </span>
+                        {(() => {
+                          const ids = [];
+                          if (applicationData.payload?.form?.sss) ids.push(`SSS: ${applicationData.payload.form.sss}`);
+                          if (applicationData.payload?.form?.tin) ids.push(`TIN: ${applicationData.payload.form.tin}`);
+                          if (applicationData.payload?.form?.philhealth) ids.push(`PhilHealth: ${applicationData.payload.form.philhealth}`);
+                          if (applicationData.payload?.form?.pagibig) ids.push(`Pag-IBIG: ${applicationData.payload.form.pagibig}`);
+                          return ids.length > 0 ? <span className="text-gray-800">{ids.join(', ')}</span> : <span className="text-gray-400 italic">None</span>;
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -656,15 +655,15 @@ function ApplicantApplications() {
                             {edu1 && (
                               <div className="border-b pb-3 last:border-b-0">
                                 <div><span className="font-semibold text-gray-600">Highest Educational Attainment:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu1Level || 'Education 1'}</span></div>
-                                <div><span className="font-semibold text-gray-600">Institution:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu1Institution || 'None'}</span></div>
-                                <div><span className="font-semibold text-gray-600">Year Finished:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu1Year || 'None'}</span></div>
+                                <div><span className="font-semibold text-gray-600">Institution:</span> {applicationData.payload?.form?.edu1Institution ? <span className="text-gray-800">{applicationData.payload.form.edu1Institution}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                                <div><span className="font-semibold text-gray-600">Year Finished:</span> {applicationData.payload?.form?.edu1Year ? <span className="text-gray-800">{applicationData.payload.form.edu1Year}</span> : <span className="text-gray-400 italic">None</span>}</div>
                               </div>
                             )}
                             {edu2 && (
                               <div className="border-b pb-3 last:border-b-0">
                                 <div><span className="font-semibold text-gray-600">Highest Educational Attainment:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu2Level || 'Education 2'}</span></div>
-                                <div><span className="font-semibold text-gray-600">Institution:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu2Institution || 'None'}</span></div>
-                                <div><span className="font-semibold text-gray-600">Year Finished:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu2Year || 'None'}</span></div>
+                                <div><span className="font-semibold text-gray-600">Institution:</span> {applicationData.payload?.form?.edu2Institution ? <span className="text-gray-800">{applicationData.payload.form.edu2Institution}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                                <div><span className="font-semibold text-gray-600">Year Finished:</span> {applicationData.payload?.form?.edu2Year ? <span className="text-gray-800">{applicationData.payload.form.edu2Year}</span> : <span className="text-gray-400 italic">None</span>}</div>
                               </div>
                             )}
                           </div>
@@ -689,20 +688,28 @@ function ApplicantApplications() {
                     </div>
                   </div>
 
-                  {/* License Information Card */}
-                  <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">License Information</div>
-                    <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                      <div>
-                        <span className="font-semibold text-gray-600">License Type:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.licenseType || 'None'}</span>
-                      </div>
-                      <div>
-                        <span className="font-semibold text-gray-600">Expiry Date:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.licenseExpiry ? new Date(applicationData.payload.form.licenseExpiry).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'None'}</span>
-                      </div>
-                    </div>
-                  </div>
+                  {/* License Information Card (only for Delivery Crew) */}
+                  {(() => {
+                    const jobTitle = (applicationData.payload?.job?.title || '').toLowerCase();
+                    if (jobTitle.includes('delivery crew')) {
+                      return (
+                        <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                          <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">License Information</div>
+                          <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                            <div>
+                              <span className="font-semibold text-gray-600">License Type:</span>{' '}
+                              {applicationData.payload?.form?.licenseType ? <span className="text-gray-800">{applicationData.payload.form.licenseType}</span> : <span className="text-gray-400 italic">None</span>}
+                            </div>
+                            <div>
+                              <span className="font-semibold text-gray-600">Expiry Date:</span>{' '}
+                              {applicationData.payload?.form?.licenseExpiry ? <span className="text-gray-800">{new Date(applicationData.payload.form.licenseExpiry).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span> : <span className="text-gray-400 italic">None</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
 
                   {/* Work Experience Card */}
                   <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
@@ -712,10 +719,10 @@ function ApplicantApplications() {
                         <div className="space-y-3">
                           {applicationData.payload.workExperiences.map((exp, idx) => (
                             <div key={idx} className="border-b pb-3 last:border-b-0">
-                              <div><span className="font-semibold text-gray-600">Company:</span> <span className="text-gray-800">{exp.company || 'None'}</span></div>
-                              <div><span className="font-semibold text-gray-600">Role:</span> <span className="text-gray-800">{exp.position || 'None'}</span></div>
-                              <div><span className="font-semibold text-gray-600">Period:</span> <span className="text-gray-800">{exp.period || 'None'}</span></div>
-                              <div><span className="font-semibold text-gray-600">Reason for leaving:</span> <span className="text-gray-800">{exp.reason || 'None'}</span></div>
+                              <div><span className="font-semibold text-gray-600">Company:</span> {exp.company ? <span className="text-gray-800">{exp.company}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                              <div><span className="font-semibold text-gray-600">Role:</span> {exp.position ? <span className="text-gray-800">{exp.position}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                              <div><span className="font-semibold text-gray-600">Period:</span> {exp.period ? <span className="text-gray-800">{exp.period}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                              <div><span className="font-semibold text-gray-600">Reason for leaving:</span> {exp.reason ? <span className="text-gray-800">{exp.reason}</span> : <span className="text-gray-400 italic">None</span>}</div>
                             </div>
                           ))}
                         </div>
@@ -739,14 +746,14 @@ function ApplicantApplications() {
                           <div className="space-y-3">
                             {validReferences.map((ref, idx) => (
                               <div key={idx} className="border-b pb-3 last:border-b-0">
-                                <div><span className="font-semibold text-gray-600">Name:</span> <span className="text-gray-800">{ref.name || 'None'}</span></div>
-                                <div><span className="font-semibold text-gray-600">Contact:</span> <span className="text-gray-800">{ref.contact || ref.contactNumber || 'None'}</span></div>
-                                <div><span className="font-semibold text-gray-600">Remarks:</span> <span className="text-gray-800">{ref.company || ref.remarks || 'None'}</span></div>
+                                <div><span className="font-semibold text-gray-600">Name:</span> {ref.name ? <span className="text-gray-800">{ref.name}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                                <div><span className="font-semibold text-gray-600">Contact:</span> {(ref.contact || ref.contactNumber) ? <span className="text-gray-800">{ref.contact || ref.contactNumber}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                                <div><span className="font-semibold text-gray-600">Remarks:</span> {(ref.company || ref.remarks) ? <span className="text-gray-800">{ref.company || ref.remarks}</span> : <span className="text-gray-400 italic">None</span>}</div>
                               </div>
                             ))}
                           </div>
                         ) : (
-                          <div className="text-gray-500 italic">None</div>
+                          <div className="text-gray-400 italic">None</div>
                         );
                       })()}
                     </div>
