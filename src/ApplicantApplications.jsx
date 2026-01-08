@@ -159,6 +159,12 @@ function ApplicantApplications() {
 
           // Update application data with parsed requirements and all file fields
           // Priority: column value > payload value > null
+          console.log('Application Data Debug:', {
+            payload: payloadObj,
+            form: payloadObj?.form,
+            workExperiences: payloadObj?.workExperiences,
+            characterReferences: payloadObj?.characterReferences
+          });
           setApplicationData({
             ...application,
             requirements: requirements,
@@ -381,9 +387,10 @@ function ApplicantApplications() {
           <Link to="/applicantl/home" className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors">Back</Link>
         </div>
 
-        {/* Enhanced Steps Progress Indicator */}
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between">
+        {/* Enhanced Steps Progress Indicator - Only show when application exists */}
+        {!loading && applicationData && (
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6 mb-6">
+            <div className="flex items-center justify-between">
             {steps.map((step, index) => {
               const isActive = activeStep === step;
               const status = stepStatus[step];
@@ -495,6 +502,7 @@ function ApplicantApplications() {
             })}
           </div>
         </div>
+        )}
 
         {/* Content */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-md overflow-hidden">
@@ -554,14 +562,51 @@ function ApplicantApplications() {
 
                 {/* Application Details */}
                 <div className="space-y-4">
-                  {/* Job Details Card */}
+                  {/* Personal Details Card */}
                   <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Job Details</div>
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Personal Details</div>
                     <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                      <div><span className="font-semibold text-gray-600">Position Applying For:</span> <span className="text-gray-800">{jobData?.title || applicationData.payload?.job?.title || 'N/A'}</span></div>
-                      <div><span className="font-semibold text-gray-600">Current Employment Status:</span> <span className="text-gray-800">{applicationData.payload?.form?.employed === 'Yes' ? 'Employed' : 'Unemployed'}</span></div>
-                      <div><span className="font-semibold text-gray-600">Available Start Date:</span> <span className="text-gray-800">{applicationData.payload?.form?.startDate ? new Date(applicationData.payload.form.startDate).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A'}</span></div>
-                      <div><span className="font-semibold text-gray-600">Depot:</span> <span className="text-gray-800">{jobData?.depot || applicationData.payload?.job?.depot || 'N/A'}</span></div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Name:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''} {applicationData.payload?.form?.lastName || ''}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Address:</span>{' '}
+                        <span className="text-gray-800">{(() => {
+                          const addressParts = [
+                            applicationData.payload?.form?.street,
+                            applicationData.payload?.form?.barangay,
+                            applicationData.payload?.form?.city,
+                            applicationData.payload?.form?.zip,
+                          ];
+                          return addressParts.filter(Boolean).join(', ') || 'None';
+                        })()}</span>
+                      </div>
+                      <div><span className="font-semibold text-gray-600">Contact Number:</span> <span className="text-gray-800">{applicationData.payload?.form?.contact || 'None'}</span></div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Email:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.email || 'None'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Birthday:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.birthday ? new Date(applicationData.payload.form.birthday).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'None'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Age:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.birthday ? 
+                          Math.floor((new Date() - new Date(applicationData.payload.form.birthday)) / (365.25 * 24 * 60 * 60 * 1000)) : 'None'}</span>
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Marital Status:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.maritalStatus || 'None'}</span>
+                      </div>
+                      <div><span className="font-semibold text-gray-600">Sex:</span> <span className="text-gray-800">{applicationData.payload?.form?.sex || 'None'}</span></div>
+                      <div><span className="font-semibold text-gray-600">Available Start Date:</span> <span className="text-gray-800">{applicationData.payload?.form?.startDate ? new Date(applicationData.payload.form.startDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'None'}</span></div>
+                      <div>
+                        <span className="font-semibold text-gray-600">How did you learn about the company?:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.sourceOfInfo || 'None'}</span>
+                      </div>
+                      <div><span className="font-semibold text-gray-600">Currently Employed?:</span> <span className="text-gray-800">{applicationData.payload?.form?.employed || 'None'}</span></div>
                       <div>
                         <span className="font-semibold text-gray-600">Resume:</span>{' '}
                         {resumePublicUrl ? (
@@ -574,58 +619,136 @@ function ApplicantApplications() {
                             {applicationData.payload.form.resumeName || 'View Resume'}
                           </a>
                         ) : (
-                          <span className="text-gray-500">No resume uploaded</span>
+                          <span className="text-gray-500">None</span>
                         )}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-gray-600">Government IDs:</span>{' '}
+                        <span className="text-gray-800">
+                          {(() => {
+                            const ids = [];
+                            if (applicationData.payload?.form?.sss) ids.push(`SSS: ${applicationData.payload.form.sss}`);
+                            if (applicationData.payload?.form?.tin) ids.push(`TIN: ${applicationData.payload.form.tin}`);
+                            if (applicationData.payload?.form?.philhealth) ids.push(`PhilHealth: ${applicationData.payload.form.philhealth}`);
+                            if (applicationData.payload?.form?.pagibig) ids.push(`Pag-IBIG: ${applicationData.payload.form.pagibig}`);
+                            return ids.length > 0 ? ids.join(', ') : 'None';
+                          })()}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Personal Information Card */}
+                  {/* Education Card */}
                   <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Personal Information</div>
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Educational Background</div>
+                    <div className="p-4 text-sm text-gray-800">
+                      {(() => {
+                        const edu1 = applicationData.payload?.form?.edu1Institution || applicationData.payload?.form?.edu1Year;
+                        const edu2 = applicationData.payload?.form?.edu2Institution || applicationData.payload?.form?.edu2Year;
+                        const hasAnyEducation = edu1 || edu2;
+
+                        if (!hasAnyEducation) {
+                          return <div className="text-gray-500 italic">None</div>;
+                        }
+
+                        return (
+                          <div className="space-y-3">
+                            {edu1 && (
+                              <div className="border-b pb-3 last:border-b-0">
+                                <div><span className="font-semibold text-gray-600">Highest Educational Attainment:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu1Level || 'Education 1'}</span></div>
+                                <div><span className="font-semibold text-gray-600">Institution:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu1Institution || 'None'}</span></div>
+                                <div><span className="font-semibold text-gray-600">Year Finished:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu1Year || 'None'}</span></div>
+                              </div>
+                            )}
+                            {edu2 && (
+                              <div className="border-b pb-3 last:border-b-0">
+                                <div><span className="font-semibold text-gray-600">Highest Educational Attainment:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu2Level || 'Education 2'}</span></div>
+                                <div><span className="font-semibold text-gray-600">Institution:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu2Institution || 'None'}</span></div>
+                                <div><span className="font-semibold text-gray-600">Year Finished:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu2Year || 'None'}</span></div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Skills Card */}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Skills</div>
+                    <div className="p-4 text-sm text-gray-800">
+                      {applicationData.payload?.form?.skills && applicationData.payload.form.skills.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {applicationData.payload.form.skills.map((skill, idx) => (
+                            <span key={idx} className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">{skill}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-gray-500 italic">None</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* License Information Card */}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">License Information</div>
                     <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                       <div>
-                        <span className="font-semibold text-gray-600">Full Name:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}</span>
-                      </div>
-                      <div><span className="font-semibold text-gray-600">Sex:</span> <span className="text-gray-800">{applicationData.payload?.form?.sex || 'N/A'}</span></div>
-                      <div>
-                        <span className="font-semibold text-gray-600">Address:</span>{' '}
-                        <span className="text-gray-800">{(() => {
-                          const addressParts = profileData
-                            ? [
-                                profileData.street,
-                                profileData.barangay,
-                                profileData.city,
-                                profileData.zip,
-                              ]
-                            : [
-                                applicationData.payload?.form?.street,
-                                applicationData.payload?.form?.barangay,
-                                applicationData.payload?.form?.city,
-                                applicationData.payload?.form?.zip,
-                              ];
-                          return addressParts.filter(Boolean).join(', ') || 'N/A';
-                        })()}</span>
-                      </div>
-                      <div><span className="font-semibold text-gray-600">Contact Number:</span> <span className="text-gray-800">{applicationData.payload?.form?.contact || 'N/A'}</span></div>
-                      <div>
-                        <span className="font-semibold text-gray-600">Email:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.email || 'N/A'}</span>
+                        <span className="font-semibold text-gray-600">License Type:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.licenseType || 'None'}</span>
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-600">Birthday:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.birthday ? new Date(applicationData.payload.form.birthday).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' }) : 'N/A'}</span>
+                        <span className="font-semibold text-gray-600">Expiry Date:</span>{' '}
+                        <span className="text-gray-800">{applicationData.payload?.form?.licenseExpiry ? new Date(applicationData.payload.form.licenseExpiry).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'None'}</span>
                       </div>
-                      <div>
-                        <span className="font-semibold text-gray-600">Age:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.birthday ? 
-                          Math.floor((new Date() - new Date(applicationData.payload.form.birthday)) / (365.25 * 24 * 60 * 60 * 1000)) : 'N/A'}</span>
-                      </div>
-                      <div>
-                        <span className="font-semibold text-gray-600">Marital Status:</span>{' '}
-                        <span className="text-gray-800">{applicationData.payload?.form?.maritalStatus || 'N/A'}</span>
-                      </div>
+                    </div>
+                  </div>
+
+                  {/* Work Experience Card */}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Work Experience</div>
+                    <div className="p-4 text-sm text-gray-800">
+                      {applicationData.payload?.workExperiences && applicationData.payload.workExperiences.length > 0 ? (
+                        <div className="space-y-3">
+                          {applicationData.payload.workExperiences.map((exp, idx) => (
+                            <div key={idx} className="border-b pb-3 last:border-b-0">
+                              <div><span className="font-semibold text-gray-600">Company:</span> <span className="text-gray-800">{exp.company || 'None'}</span></div>
+                              <div><span className="font-semibold text-gray-600">Role:</span> <span className="text-gray-800">{exp.position || 'None'}</span></div>
+                              <div><span className="font-semibold text-gray-600">Period:</span> <span className="text-gray-800">{exp.period || 'None'}</span></div>
+                              <div><span className="font-semibold text-gray-600">Reason for leaving:</span> <span className="text-gray-800">{exp.reason || 'None'}</span></div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-gray-500 italic">None</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Character References Card */}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Character References</div>
+                    <div className="p-4 text-sm text-gray-800">
+                      {(() => {
+                        // Filter out empty references (only show if name or contact exists)
+                        const validReferences = applicationData.payload?.characterReferences?.filter(ref => 
+                          (ref.name && ref.name.trim() !== '') || (ref.contact && ref.contact.trim() !== '') || (ref.contactNumber && ref.contactNumber.trim() !== '')
+                        ) || [];
+                        
+                        return validReferences.length > 0 ? (
+                          <div className="space-y-3">
+                            {validReferences.map((ref, idx) => (
+                              <div key={idx} className="border-b pb-3 last:border-b-0">
+                                <div><span className="font-semibold text-gray-600">Name:</span> <span className="text-gray-800">{ref.name || 'None'}</span></div>
+                                <div><span className="font-semibold text-gray-600">Contact:</span> <span className="text-gray-800">{ref.contact || ref.contactNumber || 'None'}</span></div>
+                                <div><span className="font-semibold text-gray-600">Remarks:</span> <span className="text-gray-800">{ref.company || ref.remarks || 'None'}</span></div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-gray-500 italic">None</div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
