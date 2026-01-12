@@ -263,7 +263,7 @@ function HrRecruitment() {
   
   // Interview calendar state
   const [interviews, setInterviews] = useState([]);
-  const [activeTab, setActiveTab] = useState('today'); // 'today', 'tomorrow', 'week'
+  const [activeTab, setActiveTab] = useState('today'); // 'today', 'tomorrow', 'week', 'past'
   
   // Requirements state
   const [_documentStatus, setDocumentStatus] = useState({});
@@ -310,7 +310,12 @@ function HrRecruitment() {
 
     (async () => {
       try {
-        const { data, error } = await supabase
+        // Some environments may not have the `rejection_remarks` column yet.
+        // Try selecting it first; if PostgREST says the column doesn't exist, retry without it.
+        let data = null;
+        let error = null;
+
+        ({ data, error } = await supabase
           .from("applications")
           .select(`
             id,
@@ -320,7 +325,25 @@ function HrRecruitment() {
             job_posts:job_posts ( id, title, depot )
           `)
           .eq("status", "rejected")
-          .order("created_at", { ascending: false });
+          .order("created_at", { ascending: false }));
+
+        const missingRemarksColumn =
+          error &&
+          (error.code === 'PGRST204' ||
+            String(error.message || '').toLowerCase().includes('rejection_remarks'));
+
+        if (missingRemarksColumn) {
+          ({ data, error } = await supabase
+            .from("applications")
+            .select(`
+              id,
+              created_at,
+              payload,
+              job_posts:job_posts ( id, title, depot )
+            `)
+            .eq("status", "rejected")
+            .order("created_at", { ascending: false }));
+        }
 
         if (error) {
           console.error("Failed to load rejected applicants:", error);
@@ -982,11 +1005,23 @@ function HrRecruitment() {
     });
   };
 
+  const getPastInterviews = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const pastInterviews = interviews.filter(interview => interview.date && interview.date < todayStr);
+    return pastInterviews.sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      if (!a.time || a.time === 'Not set') return 1;
+      if (!b.time || b.time === 'Not set') return -1;
+      return b.time.localeCompare(a.time);
+    });
+  };
+
   const getActiveInterviews = () => {
     switch (activeTab) {
       case 'today': return getTodayInterviews();
       case 'tomorrow': return getTomorrowInterviews();
       case 'week': return getThisWeekInterviews();
+      case 'past': return getPastInterviews();
       default: return getTodayInterviews();
     }
   };
@@ -996,6 +1031,7 @@ function HrRecruitment() {
       case 'today': return "Today's Interviews";
       case 'tomorrow': return "Tomorrow's Interviews";
       case 'week': return "This Week's Interviews";
+      case 'past': return "Past Interviews";
       default: return "Today's Interviews";
     }
   };
@@ -1010,7 +1046,7 @@ function HrRecruitment() {
           day: 'numeric', 
           year: 'numeric' 
         });
-      case 'tomorrow':
+      case 'tomorrow': {
         const tomorrow = new Date(today);
         tomorrow.setDate(today.getDate() + 1);
         return tomorrow.toLocaleDateString('en-US', { 
@@ -1019,10 +1055,14 @@ function HrRecruitment() {
           day: 'numeric', 
           year: 'numeric' 
         });
-      case 'week':
+      }
+      case 'week': {
         const nextWeek = new Date(today);
         nextWeek.setDate(today.getDate() + 7);
         return `${today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${nextWeek.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+      }
+      case 'past':
+        return "Previous interviews";
       default:
         return today.toLocaleDateString('en-US', { 
           weekday: 'long', 
@@ -1032,6 +1072,13 @@ function HrRecruitment() {
         });
     }
   };
+
+  const openRejectForApplicant = useCallback((applicantLike) => {
+    if (!applicantLike?.id) return;
+    setSelectedApplicant(applicantLike);
+    setShowActionModal(true);
+    setActionType("reject");
+  }, []);
 
   // ---- Buckets based on application status
   const getStatus = (a) => {
@@ -1111,7 +1158,7 @@ function HrRecruitment() {
   ];
 
   // Return a best-effort attempt: which candidate worked and the rpc response.
-  async function tryRpcMoveToEmployee(appId, position = null) {
+  async function tryRpcMoveToEmployee(appId) {
     // attempt the candidates in sequence
     for (const c of rpcCandidates) {
       try {
@@ -1304,7 +1351,7 @@ function HrRecruitment() {
         const position = applicationData.job_posts?.title || source.position || selectedApplicant?.position || null;
         
         // call the best RPC available to create employee record (with position if available)
-        const rpcResult = await tryRpcMoveToEmployee(applicationId, position);
+        const rpcResult = await tryRpcMoveToEmployee(applicationId);
 
         if (!rpcResult.ok) {
           // no candidate matched or all failed
@@ -2107,7 +2154,21 @@ function HrRecruitment() {
     try {
       const updates = { status: "rejected" };
       if (reason && reason.trim()) updates.rejection_remarks = reason.trim();
-      const { error } = await supabase.from("applications").update(updates).eq("id", applicationId);
+      let { error } = await supabase.from("applications").update(updates).eq("id", applicationId);
+
+      // If the DB doesn't have `rejection_remarks`, retry without it so rejection still works.
+      const missingRemarksColumn =
+        error &&
+        (error.code === 'PGRST204' ||
+          String(error.message || '').toLowerCase().includes('rejection_remarks'));
+
+      if (missingRemarksColumn) {
+        ({ error } = await supabase
+          .from("applications")
+          .update({ status: "rejected" })
+          .eq("id", applicationId));
+      }
+
       if (error) {
         console.error("reject update error:", error);
         setErrorMessage("Failed to reject application. See console.");
@@ -2115,7 +2176,12 @@ function HrRecruitment() {
         return;
       }
       await loadApplications();
-      setSuccessMessage(`Application rejected for ${name}.`);
+
+      if (missingRemarksColumn && reason && reason.trim()) {
+        setSuccessMessage(`Application rejected for ${name}. (Remarks not saved — database missing rejection_remarks)`);
+      } else {
+        setSuccessMessage(`Application rejected for ${name}.`);
+      }
       setShowSuccessAlert(true);
     } catch (err) {
       console.error("reject error:", err);
@@ -2607,7 +2673,7 @@ function HrRecruitment() {
   // Combined list of all applicants for the unified table
   // Filter by depot if user role is HRC
   const allApplicants = useMemo(() => {
-    let filtered = applicants.filter(a => a.status !== 'hired' && a.status !== 'rejected');
+    let filtered = applicants;
     
     // If user is HRC, only show applications for their depot
     if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
@@ -2617,16 +2683,18 @@ function HrRecruitment() {
     return filtered;
   }, [applicants, currentUser]);
 
+  const filterOptionApplicants = allApplicants;
+
   // Distinct positions/depots for filters
   const positions = useMemo(() => {
-    const s = new Set(allApplicants.map((a) => a.position).filter(Boolean));
+    const s = new Set(filterOptionApplicants.map((a) => a.position).filter(Boolean));
     return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
-  }, [allApplicants]);
+  }, [filterOptionApplicants]);
 
   const depots = useMemo(() => {
-    const s = new Set(allApplicants.map((a) => a.depot).filter(Boolean));
+    const s = new Set(filterOptionApplicants.map((a) => a.depot).filter(Boolean));
     return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
-  }, [allApplicants]);
+  }, [filterOptionApplicants]);
   
   const statusOptions = ["All", "SUBMITTED", "IN REVIEW", "INTERVIEW SET", "INTERVIEW CONFIRMED", "RESCHEDULE REQUESTED", "REQUIREMENTS", "AGREEMENT", "HIRED", "REJECTED"];
 
@@ -2670,12 +2738,102 @@ function HrRecruitment() {
     return list;
   }, [allApplicants, searchTerm, positionFilter, depotFilter, statusFilter, sortOrder]);
 
+
   // Pagination for unified table
   // const allApplicantsTotalPages = Math.ceil(filteredAllApplicants.length / itemsPerPage) || 1; // Unused for now
   const paginatedAllApplicants = filteredAllApplicants.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+
+  const printApplicantsList = useCallback((rows, title = "Applicants") => {
+    const list = Array.isArray(rows) ? rows : [];
+    const win = window.open('', '_blank', 'noopener,noreferrer');
+    if (!win) {
+      setErrorMessage('Unable to open print window (popup blocked).');
+      setShowErrorAlert(true);
+      return;
+    }
+
+    const printedAt = new Date().toLocaleString('en-US');
+    const filterSummary = [
+      searchTerm ? `Search: ${searchTerm}` : null,
+      positionFilter !== 'All' ? `Position: ${positionFilter}` : null,
+      depotFilter !== 'All' ? `Depot: ${depotFilter}` : null,
+      statusFilter !== 'All' ? `Status: ${statusFilter}` : null,
+      `Sort: ${sortOrder === 'asc' ? 'A→Z' : 'Z→A'}`,
+    ].filter(Boolean).join(' | ');
+
+    const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[c]));
+
+    const rowsHtml = list.map((a) => {
+      const statusLabel = getApplicationStatus(a).label;
+      return `
+        <tr>
+          <td>${escapeHtml(a.name)}</td>
+          <td>${escapeHtml(a.position || '—')}</td>
+          <td>${escapeHtml(a.depot || '—')}</td>
+          <td>${escapeHtml(statusLabel)}</td>
+          <td>${escapeHtml(a.dateApplied || '—')}</td>
+          <td>${escapeHtml(a.interview_date ? new Date(a.interview_date).toLocaleDateString('en-US') : '—')}</td>
+          <td>${escapeHtml(a.interview_time || '—')}</td>
+        </tr>
+      `;
+    }).join('');
+
+    win.document.open();
+    win.document.write(`
+      <!doctype html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>${escapeHtml(title)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
+            h1 { font-size: 18px; margin: 0 0 6px; }
+            .meta { font-size: 12px; color: #444; margin-bottom: 12px; }
+            table { width: 100%; border-collapse: collapse; font-size: 12px; }
+            th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
+            th { background: #f5f5f5; text-align: left; }
+            @media print { body { padding: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>${escapeHtml(title)} (${list.length})</h1>
+          <div class="meta">Printed: ${escapeHtml(printedAt)}</div>
+          ${filterSummary ? `<div class="meta">${escapeHtml(filterSummary)}</div>` : ''}
+          <table>
+            <thead>
+              <tr>
+                <th>Applicant</th>
+                <th>Position</th>
+                <th>Depot</th>
+                <th>Status</th>
+                <th>Date Applied</th>
+                <th>Interview Date</th>
+                <th>Interview Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+          <script>
+            window.focus();
+            window.print();
+          </script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  }, [searchTerm, positionFilter, depotFilter, statusFilter, sortOrder]);
 
   return (
     <>
@@ -2849,6 +3007,16 @@ function HrRecruitment() {
                         >
                           Week
                         </button>
+                        <button
+                          onClick={() => setActiveTab('past')}
+                          className={`flex-1 px-3 py-1.5 font-medium text-xs rounded-lg transition-all ${
+                            activeTab === 'past'
+                              ? 'bg-white text-indigo-600 shadow-sm'
+                              : 'text-gray-600 hover:text-gray-800'
+                          }`}
+                        >
+                          Past
+                        </button>
                       </div>
 
                       <div className="mb-2">
@@ -2871,7 +3039,7 @@ function HrRecruitment() {
                               className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-3 cursor-pointer hover:shadow-md transition-all border border-gray-200 hover:border-indigo-300"
                               onClick={() => {
                                 // Find the applicant in the list
-                                const applicant = allApplicants.find(a => a.id === interview.id);
+                                const applicant = filteredApplicantsByDepot.find(a => a.id === interview.id);
                                 if (applicant) {
                                   setSelectedApplicant(applicant);
                                   setActiveDetailTab('Assessment');
@@ -2894,6 +3062,24 @@ function HrRecruitment() {
                                 <p className="text-xs text-gray-500 mt-1">
                                   {new Date(interview.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                 </p>
+                              )}
+                              {(String(interview.status || '').toLowerCase() !== 'rejected' && String(interview.status || '').toLowerCase() !== 'hired') && (
+                                <div className="mt-2 flex justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      const fromApplicants = applicants.find(a => a.id === interview.id);
+                                      const applicantLike = fromApplicants || { id: interview.id, name: interview.applicant_name };
+                                      openRejectForApplicant(applicantLike);
+                                    }}
+                                    className="px-3 py-1 rounded-full border border-red-300 text-xs font-medium text-red-700 hover:bg-red-50"
+                                    title="Reject applicant"
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
                               )}
                             </div>
                           ))
@@ -2998,12 +3184,20 @@ function HrRecruitment() {
                     )}
                   </div>
 
-                  {/* Export Button */}
-                  <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
+
+                  {/* Print Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      printApplicantsList(filteredAllApplicants, 'Applicants');
+                    }}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
+                    title="Print the currently filtered list"
+                  >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    Export
+                    Print
                   </button>
                 </div>
               </div>
@@ -3230,6 +3424,28 @@ function HrRecruitment() {
                           );
                         })()}
                         <p className="text-xs text-gray-500">Applied: {selectedApplicant.dateApplied}</p>
+                        {(() => {
+                          const s = (selectedApplicant?.status || '').toLowerCase();
+                          const canReject = s !== 'rejected' && s !== 'hired';
+                          return (
+                            <button
+                              type="button"
+                              disabled={!canReject}
+                              onClick={() => {
+                                if (!canReject) return;
+                                openRejectForApplicant(selectedApplicant);
+                              }}
+                              className={`mt-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                                canReject
+                                  ? 'border-red-300 text-red-700 hover:bg-red-50'
+                                  : 'border-gray-200 text-gray-400 cursor-not-allowed'
+                              }`}
+                              title={canReject ? 'Reject applicant' : 'Cannot reject (already hired/rejected)'}
+                            >
+                              Reject
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -3396,7 +3612,7 @@ function HrRecruitment() {
                       };
 
                       // Format date
-                      const formatDate = (dateStr) => {
+                      const _formatDate = (dateStr) => {
                         if (!dateStr) return <span className="text-gray-500 italic">None</span>;
                         try {
                           const date = new Date(dateStr);
