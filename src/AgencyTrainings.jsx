@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
+import { generateCertificatePDF } from './utils/certificateGenerator';
 
 function AgencyTrainings() {
   const navigate = useNavigate();
@@ -1115,6 +1116,12 @@ function AgencyTrainings() {
                       
                       return filteredAttendees.map((attendee, idx) => {
                         const name = typeof attendee === "string" ? attendee : attendee.name || "";
+                        // Check if this is a completed training with attendance marked
+                        const hasAttendance = selectedTraining.attendance && typeof selectedTraining.attendance === 'object';
+                        const attendanceStatus = hasAttendance ? selectedTraining.attendance[name] : null;
+                        const isPresent = attendanceStatus === true || (typeof attendanceStatus === 'object' && attendanceStatus?.status === true);
+                        const isCompleted = !selectedTraining.is_active;
+                        
                         return (
                           <div 
                             key={idx} 
@@ -1126,7 +1133,37 @@ function AgencyTrainings() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium text-gray-900">{name}</p>
+                                {/* Show attendance status for completed trainings */}
+                                {isCompleted && hasAttendance && (
+                                  <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-semibold mt-1 ${
+                                    isPresent 
+                                      ? 'bg-green-100 text-green-700' 
+                                      : 'bg-red-100 text-red-700'
+                                  }`}>
+                                    {isPresent ? '✓ Present' : '✗ Absent'}
+                                  </span>
+                                )}
                               </div>
+                              {/* View Certificate button for present employees in completed trainings */}
+                              {isCompleted && isPresent && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    generateCertificatePDF(
+                                      name,
+                                      selectedTraining.title,
+                                      selectedTraining.date || selectedTraining.end_at
+                                    );
+                                  }}
+                                  className="px-3 py-1.5 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition-all shadow-sm text-xs font-semibold flex items-center gap-1.5"
+                                  title="View certificate"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  Certificate
+                                </button>
+                              )}
                             </div>
                           </div>
                         );
