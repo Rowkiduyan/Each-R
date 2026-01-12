@@ -791,8 +791,8 @@ function ApplicantApplications() {
                     );
                   } else if (interviewStatus === 'Rejected') {
                     return (
-                      <span className="text-sm px-2 py-1 rounded bg-red-100 text-red-800 border border-red-300">
-                        Status: Interview Rejected
+                      <span className="text-sm px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300">
+                        Status: Reschedule Requested
                       </span>
                     );
                   }
@@ -824,8 +824,8 @@ function ApplicantApplications() {
                     
                     return showButtons ? (
                       <div className="flex gap-2">
-                        <button type="button" className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600" onClick={() => setShowRejectDialog(true)}>
-                          Reject Interview
+                        <button type="button" className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600" onClick={() => setShowRejectDialog(true)}>
+                          Request for Reschedule
                         </button>
                         <button type="button" className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700" onClick={() => setShowConfirmDialog(true)}>
                           Confirm Interview
@@ -1685,16 +1685,16 @@ function ApplicantApplications() {
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowRejectDialog(false)}>
           <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
             <div className="p-4 border-b">
-              <h3 className="text-lg font-semibold text-gray-800">Reject Interview</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Request for Reschedule</h3>
             </div>
             <div className="p-4 text-sm text-gray-700">
-              Are you sure you want to reject this interview schedule? HR will be notified and may reschedule.
+              Are you sure you want to request for a reschedule of this interview? HR will be notified and will reschedule your interview.
             </div>
             <div className="p-4 border-t flex justify-end gap-2">
               <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowRejectDialog(false)}>Cancel</button>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-gray-500 text-white hover:bg-gray-600"
+                className="px-4 py-2 rounded bg-orange-500 text-white hover:bg-orange-600"
                 onClick={async () => {
                   if (!applicationData?.id) {
                     console.error('No application ID found');
@@ -1714,8 +1714,7 @@ function ApplicantApplications() {
                       .eq('id', applicationData.id);
 
                     if (updateError) {
-                      console.error('Error rejecting interview:', updateError);
-                      alert('Failed to reject interview. Please try again.');
+                      console.error('Error requesting reschedule:', updateError);
                       return;
                     }
 
@@ -1733,12 +1732,11 @@ function ApplicantApplications() {
                     // Show notification
                     setShowRejectionModal(true);
                   } catch (err) {
-                    console.error('Error rejecting interview:', err);
-                    alert('Failed to reject interview. Please try again.');
+                    console.error('Error requesting reschedule:', err);
                   }
                 }}
               >
-                Reject Interview
+                Request Reschedule
               </button>
             </div>
           </div>
@@ -1774,18 +1772,18 @@ function ApplicantApplications() {
 
       {/* Rejection Success Modal */}
       {showRejectionModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setShowRejectionModal(false)}>
-          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border border-black" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowRejectionModal(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
             <div className="p-6 text-center">
               <div className="flex items-center justify-center mb-3">
-                <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-red-600">
-                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25Zm-1.72 6.97a.75.75 0 1 0-1.06 1.06L10.94 12l-1.72 1.72a.75.75 0 1 0 1.06 1.06L12 13.06l1.72 1.72a.75.75 0 1 0 1.06-1.06L13.06 12l1.72-1.72a.75.75 0 1 0-1.06-1.06L12 10.94l-1.72-1.72Z" clipRule="evenodd" />
+                <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6 text-orange-600">
+                    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25ZM12.75 6a.75.75 0 0 0-1.5 0v6c0 .414.336.75.75.75h4.5a.75.75 0 0 0 0-1.5h-3.75V6Z" clipRule="evenodd" />
                   </svg>
                 </div>
               </div>
-              <div className="text-lg font-semibold text-gray-800 mb-2">Interview Rejected Successfully</div>
-              <div className="text-sm text-gray-600 mb-4">Your interview has been rejected. HR has been notified and may reschedule a new interview for you.</div>
+              <div className="text-lg font-semibold text-gray-800 mb-2">Reschedule Request Submitted</div>
+              <div className="text-sm text-gray-600 mb-4">Your reschedule request has been submitted. HR has been notified and will reschedule your interview.</div>
               <button type="button" className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" onClick={() => setShowRejectionModal(false)}>Close</button>
             </div>
           </div>
