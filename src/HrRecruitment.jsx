@@ -4740,7 +4740,7 @@ function HrRecruitment() {
                     <span className="w-24 text-center"></span>
                     <span className="w-48">Job</span>
                     <span className="w-32">Depot</span>
-                    <span className="w-24 text-center">Employees Needed</span>
+                    <span className="w-24 text-center">Employees Needed </span> 
                     <span className="w-24 text-center">Applied</span>
                     <span className="w-24 text-center">Hired</span>
                     <span className="w-28 text-center">Waitlisted</span>
