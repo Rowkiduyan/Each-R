@@ -176,11 +176,18 @@ function ApplicantLayout() {
           <div className="grid grid-cols-3 items-center">
             {/* Left: Logo */}
             <div className="flex items-center">
-              <img
-                src={LogoCropped}
-                alt="Each-R Logo"
-                className="h-10 w-auto object-contain"
-              />
+              <NavLink
+                to="/applicantl/home"
+                state={{ activeTab: 'Home' }}
+                aria-label="Go to home"
+                className="inline-flex items-center"
+              >
+                <img
+                  src={LogoCropped}
+                  alt="Each-R Logo"
+                  className="h-10 w-auto object-contain"
+                />
+              </NavLink>
             </div>
 
             {/* Center: Navigation */}
