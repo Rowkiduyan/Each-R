@@ -474,8 +474,18 @@ function ApplicantApplications() {
                   <div className="flex flex-col items-center flex-1">
                     <button
                       type="button"
-                      onClick={() => setActiveStep(step)}
-                      className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all hover:shadow-md ${stepColors.bg} ${stepColors.border} ${isActive ? 'ring-2 ring-red-300 ring-offset-2' : ''}`}
+                      onClick={() => {
+                        // Only allow clicking if step is completed or is the current pending/active step
+                        if (isCompleted || isPending || isActive) {
+                          setActiveStep(step);
+                        }
+                      }}
+                      disabled={isWaiting && !isActive}
+                      className={`flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all ${
+                        isWaiting && !isActive 
+                          ? 'cursor-not-allowed opacity-50' 
+                          : 'hover:shadow-md cursor-pointer'
+                      } ${stepColors.bg} ${stepColors.border} ${isActive ? 'ring-2 ring-red-300 ring-offset-2' : ''}`}
                     >
                       <div className={`${stepColors.icon} ${isActive ? 'scale-110' : ''} transition-transform`}>
                         {getStepIcon()}
@@ -643,29 +653,18 @@ function ApplicantApplications() {
                     <div className="p-4 text-sm text-gray-800">
                       {(() => {
                         const edu1 = applicationData.payload?.form?.edu1Institution || applicationData.payload?.form?.edu1Year;
-                        const edu2 = applicationData.payload?.form?.edu2Institution || applicationData.payload?.form?.edu2Year;
-                        const hasAnyEducation = edu1 || edu2;
 
-                        if (!hasAnyEducation) {
+                        if (!edu1) {
                           return <div className="text-gray-500 italic">None</div>;
                         }
 
                         return (
                           <div className="space-y-3">
-                            {edu1 && (
-                              <div className="border-b pb-3 last:border-b-0">
-                                <div><span className="font-semibold text-gray-600">Highest Educational Attainment:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu1Level || 'Education 1'}</span></div>
-                                <div><span className="font-semibold text-gray-600">Institution:</span> {applicationData.payload?.form?.edu1Institution ? <span className="text-gray-800">{applicationData.payload.form.edu1Institution}</span> : <span className="text-gray-400 italic">None</span>}</div>
-                                <div><span className="font-semibold text-gray-600">Year Finished:</span> {applicationData.payload?.form?.edu1Year ? <span className="text-gray-800">{applicationData.payload.form.edu1Year}</span> : <span className="text-gray-400 italic">None</span>}</div>
-                              </div>
-                            )}
-                            {edu2 && (
-                              <div className="border-b pb-3 last:border-b-0">
-                                <div><span className="font-semibold text-gray-600">Highest Educational Attainment:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu2Level || 'Education 2'}</span></div>
-                                <div><span className="font-semibold text-gray-600">Institution:</span> {applicationData.payload?.form?.edu2Institution ? <span className="text-gray-800">{applicationData.payload.form.edu2Institution}</span> : <span className="text-gray-400 italic">None</span>}</div>
-                                <div><span className="font-semibold text-gray-600">Year Finished:</span> {applicationData.payload?.form?.edu2Year ? <span className="text-gray-800">{applicationData.payload.form.edu2Year}</span> : <span className="text-gray-400 italic">None</span>}</div>
-                              </div>
-                            )}
+                            <div>
+                              <div><span className="font-semibold text-gray-600">Highest Educational Attainment:</span> <span className="text-gray-800">{applicationData.payload?.form?.edu1Level || 'Education 1'}</span></div>
+                              <div><span className="font-semibold text-gray-600">Institution:</span> {applicationData.payload?.form?.edu1Institution ? <span className="text-gray-800">{applicationData.payload.form.edu1Institution}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                              <div><span className="font-semibold text-gray-600">Year Finished:</span> {applicationData.payload?.form?.edu1Year ? <span className="text-gray-800">{applicationData.payload.form.edu1Year}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                            </div>
                           </div>
                         );
                       })()}
@@ -720,7 +719,7 @@ function ApplicantApplications() {
                           {applicationData.payload.workExperiences.map((exp, idx) => (
                             <div key={idx} className="border-b pb-3 last:border-b-0">
                               <div><span className="font-semibold text-gray-600">Company:</span> {exp.company ? <span className="text-gray-800">{exp.company}</span> : <span className="text-gray-400 italic">None</span>}</div>
-                              <div><span className="font-semibold text-gray-600">Role:</span> {exp.position ? <span className="text-gray-800">{exp.position}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                              <div><span className="font-semibold text-gray-600">Role:</span> {(exp.role || exp.position) ? <span className="text-gray-800">{exp.role || exp.position}</span> : <span className="text-gray-400 italic">None</span>}</div>
                               <div><span className="font-semibold text-gray-600">Period:</span> {exp.period ? <span className="text-gray-800">{exp.period}</span> : <span className="text-gray-400 italic">None</span>}</div>
                               <div><span className="font-semibold text-gray-600">Reason for leaving:</span> {exp.reason ? <span className="text-gray-800">{exp.reason}</span> : <span className="text-gray-400 italic">None</span>}</div>
                             </div>
@@ -737,16 +736,17 @@ function ApplicantApplications() {
                     <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Character References</div>
                     <div className="p-4 text-sm text-gray-800">
                       {(() => {
-                        // Filter out empty references (only show if name or contact exists)
+                        // Filter out empty references - must have at least a name
                         const validReferences = applicationData.payload?.characterReferences?.filter(ref => 
-                          (ref.name && ref.name.trim() !== '') || (ref.contact && ref.contact.trim() !== '') || (ref.contactNumber && ref.contactNumber.trim() !== '')
+                          ref.name && ref.name.trim() !== ''
                         ) || [];
                         
                         return validReferences.length > 0 ? (
                           <div className="space-y-3">
                             {validReferences.map((ref, idx) => (
                               <div key={idx} className="border-b pb-3 last:border-b-0">
-                                <div><span className="font-semibold text-gray-600">Name:</span> {ref.name ? <span className="text-gray-800">{ref.name}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                                <div className="mb-1"><span className="font-semibold text-gray-600">Reference #{idx + 1}</span></div>
+                                <div><span className="font-semibold text-gray-600">Name:</span> <span className="text-gray-800">{ref.name}</span></div>
                                 <div><span className="font-semibold text-gray-600">Contact:</span> {(ref.contact || ref.contactNumber) ? <span className="text-gray-800">{ref.contact || ref.contactNumber}</span> : <span className="text-gray-400 italic">None</span>}</div>
                                 <div><span className="font-semibold text-gray-600">Remarks:</span> {(ref.company || ref.remarks) ? <span className="text-gray-800">{ref.company || ref.remarks}</span> : <span className="text-gray-400 italic">None</span>}</div>
                               </div>
