@@ -7,6 +7,7 @@ function HrRequirements() {
   // Tab, filter, and search state
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortOption, setSortOption] = useState('name-asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedRow, setExpandedRow] = useState(null);
   const itemsPerPage = 8;
@@ -24,12 +25,85 @@ function HrRequirements() {
     }
   }, []);
 
-  // Advanced filters
-  const [employeeTypeFilter, setEmployeeTypeFilter] = useState('all'); // 'all', 'agency', 'direct'
+  // Filters
   const [positionFilter, setPositionFilter] = useState('All');
   const [depotFilter, setDepotFilter] = useState('All');
-  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const advancedFiltersRef = useRef(null);
+  const [departmentFilter, setDepartmentFilter] = useState('All');
+  const [employmentStatusFilter, setEmploymentStatusFilter] = useState('All');
+  const [recruitmentTypeFilter, setRecruitmentTypeFilter] = useState('All');
+
+  // master department list (shared with Employees.jsx)
+  const departments = [
+    "Operations Department",
+    "Billing Department",
+    "HR Department",
+    "Security & Safety Department",
+    "Collections Department",
+    "Repairs and Maintenance Specialist",
+  ];
+
+  const departmentToPositions = {
+    "Operations Department": [
+      "Driver",
+      "Helper",
+      "Rider/Messenger",
+      "Base Dispatcher",
+      "Site Coordinator",
+      "Transport Coordinator",
+      "Customer Service Representative",
+    ],
+    "Billing Department": [
+      "Billing Specialist",
+      "POD Specialist",
+    ],
+    "HR Department": [
+      "HR Specialist",
+      "Recruitment Specialist",
+      "HR Manager",
+    ],
+    "Security & Safety Department": [
+      "Safety Officer 2",
+      "Safety Officer 3",
+      "Security Officer",
+    ],
+    "Collections Department": [
+      "Billing & Collections Specialist",
+      "Charges Specialist",
+    ],
+    "Repairs and Maintenance Specialist": [
+      "Diesel Mechanic",
+      "Truck Refrigeration Technician",
+      "Welder",
+      "Tinsmith",
+    ],
+  };
+
+  const getPositionsForDepartment = (department) => {
+    if (department === "All") {
+      const all = new Set();
+      Object.values(departmentToPositions).forEach((list) => {
+        (list || []).forEach((p) => all.add(p));
+      });
+      return Array.from(all);
+    }
+    if (department === "Security & Safety Department") {
+      return departmentToPositions["Security & Safety Department"] || [];
+    }
+    return departmentToPositions[department] || [];
+  };
+
+  const normalizeDepartmentName = (name) => {
+    if (!name) return "";
+    return String(name).replace(/\s+/g, " ").trim().replace(/\sand\s/g, " & ");
+  };
+
+  const getDepartmentForPosition = (position) => {
+    if (!position) return null;
+    for (const [dept, list] of Object.entries(departmentToPositions)) {
+      if ((list || []).includes(position)) return dept;
+    }
+    return null;
+  };
 
   // Real data - Employees with their requirements
   const [employees, setEmployees] = useState([]);
@@ -132,7 +206,7 @@ function HrRequirements() {
         // Get all deployed employees (have hired_at)
         const { data: employeesData, error: empError } = await supabase
           .from('employees')
-          .select('id, email, fname, lname, mname, position, depot, hired_at, date_hired, requirements, is_agency, agency_profile_id')
+          .select('id, email, fname, lname, mname, position, depot, hired_at, date_hired, requirements, is_agency, agency_profile_id, status')
           .not('hired_at', 'is', null) // Only deployed employees
           .order('hired_at', { ascending: false });
 
@@ -335,6 +409,13 @@ function HrRequirements() {
             // Build employee name
             const name = `${emp.fname || ''} ${emp.mname || ''} ${emp.lname || ''}`.trim() || emp.email || 'Unknown';
 
+            const employmentStatus =
+              emp.status === 'Probationary'
+                ? 'Under Probation'
+                : emp.status === 'Regular'
+                  ? 'Regular'
+                  : (emp.status || 'Regular');
+
             return {
               id: emp.id || emp.email,
               name: name,
@@ -346,6 +427,7 @@ function HrRequirements() {
               employeeId: emp.id,
               email: emp.email,
               isAgency: emp.is_agency === true,
+              employmentStatus,
             };
           });
 
@@ -564,21 +646,35 @@ function HrRequirements() {
     return Array.from(positions).sort();
   }, [employees]);
 
-  const uniqueDepots = useMemo(() => {
-    const depots = new Set(employees.map(e => e.depot).filter(Boolean));
-    return Array.from(depots).sort();
+  const depotOptions = useMemo(() => {
+    const depotsSet = new Set(employees.map(e => e.depot).filter(Boolean));
+    return Array.from(depotsSet).sort();
   }, [employees]);
 
-  // Close advanced filters when clicking outside
+  const positions = useMemo(() => {
+    if (departmentFilter === 'All') {
+      const set = new Set(getPositionsForDepartment('All'));
+      uniquePositions.forEach((p) => set.add(p));
+      return ['All', ...Array.from(set).sort((a, b) => String(a).localeCompare(String(b)))];
+    }
+
+    const list = getPositionsForDepartment(departmentFilter);
+    return ['All', ...list.sort((a, b) => String(a).localeCompare(String(b)))];
+  }, [departmentFilter, uniquePositions]);
+
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (advancedFiltersRef.current && !advancedFiltersRef.current.contains(event.target)) {
-        setShowAdvancedFilters(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    if (positionFilter === 'All') return;
+    if (departmentFilter === 'All') return;
+    const allowed = new Set(getPositionsForDepartment(departmentFilter));
+    if (!allowed.has(positionFilter)) {
+      setPositionFilter('All');
+      setCurrentPage(1);
+      setExpandedRow(null);
+    }
+  }, [departmentFilter, positionFilter]);
+
+  const employmentStatuses = ['All', 'Regular', 'Under Probation', 'Part Time'];
+  const recruitmentTypes = ['All', 'Agency', 'Direct'];
 
   // Filter data based on active tab, search, and filters
   const getFilteredData = () => {
@@ -589,10 +685,10 @@ function HrRequirements() {
       data = data.filter(e => e.depot === currentUser.depot);
     }
 
-    // Filter by employee type (agency vs direct)
-    if (employeeTypeFilter === 'agency') {
+    // Filter by recruitment type (agency vs direct)
+    if (recruitmentTypeFilter === 'Agency') {
       data = data.filter(e => e.isAgency);
-    } else if (employeeTypeFilter === 'direct') {
+    } else if (recruitmentTypeFilter === 'Direct') {
       data = data.filter(e => !e.isAgency);
     }
 
@@ -606,6 +702,14 @@ function HrRequirements() {
       }
     }
 
+    // Filter by department (derived from position)
+    if (departmentFilter !== 'All') {
+      data = data.filter(e => {
+        const derived = getDepartmentForPosition(e.position);
+        return normalizeDepartmentName(derived) === normalizeDepartmentName(departmentFilter);
+      });
+    }
+
     // Filter by position
     if (positionFilter !== 'All') {
       data = data.filter(e => e.position === positionFilter);
@@ -614,6 +718,11 @@ function HrRequirements() {
     // Filter by depot
     if (depotFilter !== 'All') {
       data = data.filter(e => e.depot === depotFilter);
+    }
+
+    // Filter by employment status
+    if (employmentStatusFilter !== 'All') {
+      data = data.filter(e => e.employmentStatus === employmentStatusFilter);
     }
 
     // Search filter
@@ -627,6 +736,26 @@ function HrRequirements() {
         String(e.id).includes(query)
       );
     }
+
+    // Sort
+    const [sortKey, sortDir] = String(sortOption || 'name-asc').split('-');
+    const isAsc = sortDir === 'asc';
+    data.sort((a, b) => {
+      if (sortKey === 'hired') {
+        const at = a.deployedDate ? new Date(a.deployedDate).getTime() : null;
+        const bt = b.deployedDate ? new Date(b.deployedDate).getTime() : null;
+
+        if (at == null && bt == null) return 0;
+        if (at == null) return 1;
+        if (bt == null) return -1;
+
+        return isAsc ? at - bt : bt - at;
+      }
+
+      return isAsc
+        ? String(a.name || '').localeCompare(String(b.name || ''))
+        : String(b.name || '').localeCompare(String(a.name || ''));
+    });
 
     return data;
   };
@@ -1297,7 +1426,7 @@ function HrRequirements() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
           <div className="flex flex-col gap-4">
             {/* Top Row: Search, Filters, Export */}
-            <div className="flex flex-col sm:flex-row gap-3">
+            <div className="flex flex-col lg:flex-row gap-3">
               {/* Search */}
               <div className="relative flex-1">
                 <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1305,7 +1434,7 @@ function HrRequirements() {
                 </svg>
                 <input
                   type="text"
-                  placeholder="Search by name, position, depot, or email..."
+                  placeholder="Search by employee name..."
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);
@@ -1316,94 +1445,116 @@ function HrRequirements() {
                 />
               </div>
 
-              {/* Employee Type Filter */}
-              <select
-                value={employeeTypeFilter}
-                onChange={(e) => {
-                  setEmployeeTypeFilter(e.target.value);
-                  setCurrentPage(1);
-                  setExpandedRow(null);
-                }}
-                className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[140px]"
-              >
-                <option value="all">All Types</option>
-                <option value="agency">Agency</option>
-                <option value="direct">Direct</option>
-              </select>
+              {/* Controls (wrap under search on smaller screens) */}
+              <div className="flex flex-wrap gap-3 lg:flex-nowrap lg:justify-end lg:items-center lg:flex-none">
+                {/* Depot */}
+                <select
+                  value={depotFilter}
+                  onChange={(e) => {
+                    setDepotFilter(e.target.value);
+                    setCurrentPage(1);
+                    setExpandedRow(null);
+                  }}
+                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[140px]"
+                >
+                  <option value="All">All Depots</option>
+                  {depotOptions.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
 
-              {/* Advanced Filters Button */}
-              <div className="relative" ref={advancedFiltersRef}>
+                {/* Department */}
+                <select
+                  value={departmentFilter}
+                  onChange={(e) => {
+                    setDepartmentFilter(e.target.value);
+                    setCurrentPage(1);
+                    setExpandedRow(null);
+                  }}
+                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[140px]"
+                >
+                  <option value="All">All Departments</option>
+                  {departments.map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+
+                {/* Position */}
+                <select
+                  value={positionFilter}
+                  onChange={(e) => {
+                    setPositionFilter(e.target.value);
+                    setCurrentPage(1);
+                    setExpandedRow(null);
+                  }}
+                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
+                >
+                  <option value="All">All Positions</option>
+                  {positions.filter(p => p !== 'All').map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+
+                {/* Employment Status */}
+                <select
+                  value={employmentStatusFilter}
+                  onChange={(e) => {
+                    setEmploymentStatusFilter(e.target.value);
+                    setCurrentPage(1);
+                    setExpandedRow(null);
+                  }}
+                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
+                >
+                  <option value="All">Employment Status</option>
+                  {employmentStatuses.filter((s) => s !== 'All').map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+
+                {/* Recruitment Type */}
+                <select
+                  value={recruitmentTypeFilter}
+                  onChange={(e) => {
+                    setRecruitmentTypeFilter(e.target.value);
+                    setCurrentPage(1);
+                    setExpandedRow(null);
+                  }}
+                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[180px]"
+                >
+                  <option value="All">All Recruitment Type</option>
+                  {recruitmentTypes.filter((t) => t !== 'All').map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+
+                {/* Sort */}
+                <select
+                  value={sortOption}
+                  onChange={(e) => {
+                    setSortOption(e.target.value);
+                    setCurrentPage(1);
+                    setExpandedRow(null);
+                  }}
+                  aria-label="Sort"
+                  className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[190px]"
+                >
+                  <option value="name-asc">Alphabetically (A → Z)</option>
+                  <option value="name-desc">Alphabetically (Z → A)</option>
+                  <option value="hired-asc">Date Hired (Oldest → Newest)</option>
+                  <option value="hired-desc">Date Hired (Newest → Oldest)</option>
+                </select>
+
+                {/* Export Button */}
                 <button
-                  onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                  onClick={handleExport}
                   className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  Filters
+                  Export
                 </button>
-                {showAdvancedFilters && (
-                  <div className="absolute right-0 mt-2 w-64 bg-white border rounded-lg shadow-lg z-10 p-4">
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Position</label>
-                        <select
-                          value={positionFilter}
-                          onChange={(e) => {
-                            setPositionFilter(e.target.value);
-                            setCurrentPage(1);
-                            setExpandedRow(null);
-                          }}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
-                        >
-                          <option value="All">All Positions</option>
-                          {uniquePositions.map((pos) => (
-                            <option key={pos} value={pos}>{pos}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot</label>
-                        <select
-                          value={depotFilter}
-                          onChange={(e) => {
-                            setDepotFilter(e.target.value);
-                            setCurrentPage(1);
-                            setExpandedRow(null);
-                          }}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
-                        >
-                          <option value="All">All Depots</option>
-                          {uniqueDepots.map((depot) => (
-                            <option key={depot} value={depot}>{depot}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <button
-                        onClick={() => {
-                          setPositionFilter('All');
-                          setDepotFilter('All');
-                          setCurrentPage(1);
-                        }}
-                        className="w-full px-3 py-2 bg-gray-100 rounded-lg text-sm text-gray-700 hover:bg-gray-200"
-                      >
-                        Clear Filters
-                      </button>
-                    </div>
-                  </div>
-                )}
               </div>
-
-              {/* Export Button */}
-              <button 
-                onClick={handleExport}
-                className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export
-              </button>
             </div>
 
             {/* Bottom Row: Status Tabs */}
