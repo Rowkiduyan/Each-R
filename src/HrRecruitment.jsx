@@ -4752,7 +4752,7 @@ function HrRecruitment() {
                   <div className="px-5 py-8 text-sm text-gray-500 text-center">Loading job posts…</div>
                 ) : jobPostStats.length === 0 ? (
                   <div className="px-5 py-8 text-sm text-gray-500">
-                    No job ads yet. Use <span className="font-medium text-gray-700">Create a job ad</span> to start a posting.
+                    No job ads yet. Use <span className="font-medium text-gray-700">Create a job ad </span> to start a posting.
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-100">
