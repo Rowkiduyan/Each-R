@@ -406,7 +406,14 @@ function HrPost() {
           className="mt-4 flex flex-col flex-grow cursor-pointer"
           onClick={() => handleCardSelect(job)}
         >
-          <h3 className="text-xl font-bold text-gray-800 mb-2">{job.title}</h3>
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <h3 className="text-xl font-bold text-gray-800">{job.title}</h3>
+            {job.job_type === 'delivery_crew' && (
+              <span className="inline-flex items-center justify-center px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 border border-blue-200 whitespace-nowrap">
+                Outsourced
+              </span>
+            )}
+          </div>
           <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
             <div className="flex flex-col gap-1">
               <span>{job.depot}</span>
@@ -434,6 +441,22 @@ function HrPost() {
           display: none;
         }
       `}</style>
+
+      {/* Back button - only show in view-only mode */}
+      {isViewOnly && (
+        <div className="max-w-7xl mx-auto px-6 pt-4">
+          <Link
+            to="/hr/recruitment"
+            state={{ activeSubTab: "JobPosts" }}
+            className="inline-flex items-center gap-2 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Recruitment
+          </Link>
+        </div>
+      )}
 
       {/* Search Bar with Background */}
       <div className="max-w-7xl mx-auto px-6">
