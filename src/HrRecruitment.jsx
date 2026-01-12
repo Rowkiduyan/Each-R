@@ -2572,6 +2572,7 @@ function HrRecruitment() {
     // Check interview status
     const hasInterview = applicant.interview_date;
     const interviewConfirmed = applicant.interview_confirmed === 'Confirmed';
+    const rescheduleRequested = applicant.interview_confirmed === 'Rejected' && hasInterview;
     
     // Determine status based on workflow
     if (status === 'hired') {
@@ -2585,6 +2586,9 @@ function HrRecruitment() {
     }
     if (['requirements', 'docs_needed', 'awaiting_documents'].includes(status)) {
       return { label: 'REQUIREMENTS', color: 'text-orange-600', bg: 'bg-orange-50' };
+    }
+    if (rescheduleRequested) {
+      return { label: 'RESCHEDULE REQUESTED', color: 'text-orange-600', bg: 'bg-orange-50' };
     }
     if (hasInterview && interviewConfirmed) {
       return { label: 'INTERVIEW CONFIRMED', color: 'text-blue-600', bg: 'bg-blue-50' };
@@ -2622,7 +2626,7 @@ function HrRecruitment() {
     return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
   }, [allApplicants]);
   
-  const statusOptions = ["All", "SUBMITTED", "IN REVIEW", "INTERVIEW SET", "INTERVIEW CONFIRMED", "REQUIREMENTS", "AGREEMENT", "HIRED", "REJECTED"];
+  const statusOptions = ["All", "SUBMITTED", "IN REVIEW", "INTERVIEW SET", "INTERVIEW CONFIRMED", "RESCHEDULE REQUESTED", "REQUIREMENTS", "AGREEMENT", "HIRED", "REJECTED"];
 
   // Use actual job posts from database - loaded via loadJobPosts()
   // This replaces the previous aggregation-based approach
@@ -3797,8 +3801,8 @@ function HrRecruitment() {
                                   );
                                 } else if (interviewStatus === 'Rejected') {
                                   return (
-                                    <span className="text-sm px-3 py-1 rounded bg-red-100 text-red-800 border border-red-300 font-medium">
-                                      Interview Rejected
+                                    <span className="text-sm px-3 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300 font-medium">
+                                      Reschedule Requested
                                     </span>
                                   );
                                 } else if (interviewStatus === 'Idle' && selectedApplicant.interview_date) {

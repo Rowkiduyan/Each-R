@@ -2777,9 +2777,9 @@ function AgencyEndorsements() {
                                         <span className={`text-xs px-2 py-1 rounded font-medium ${
                                           isConfirmed
                                             ? 'bg-green-100 text-green-800 border border-green-300' 
-                                            : 'bg-[#800000]/20 text-[#800000] border border-red-300'
+                                            : 'bg-orange-100 text-orange-800 border border-orange-300'
                                         }`}>
-                                          {isConfirmed ? '✓ Interview Confirmed' : '✗ Interview Rejected'}
+                                          {isConfirmed ? '✓ Interview Confirmed' : 'Reschedule Requested'}
                                         </span>
                                       </div>
                                     )}
@@ -2805,9 +2805,9 @@ function AgencyEndorsements() {
                                           <button
                                             type="button"
                                             onClick={() => setShowRejectInterviewDialog(true)}
-                                            className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 text-sm font-medium transition-colors"
+                                            className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 text-sm font-medium transition-colors"
                                           >
-                                            Reject Interview
+                                            Request for Reschedule
                                           </button>
                                           <button
                                             type="button"
@@ -3204,19 +3204,19 @@ function AgencyEndorsements() {
         </div>
       )}
 
-      {/* Reject Interview Dialog */}
+      {/* Request Reschedule Dialog */}
       {showRejectInterviewDialog && (
         <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
           onClick={() => setShowRejectInterviewDialog(false)}
         >
           <div
             className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-bold mb-4">Reject Interview</h3>
+            <h3 className="text-lg font-bold mb-4">Request for Reschedule</h3>
             <div className="text-sm text-gray-700 mb-6">
-              Are you sure you want to reject this interview schedule? HR will be notified and may reschedule.
+              Are you sure you want to request for a reschedule of this interview? HR will be notified and will reschedule your interview.
             </div>
             <div className="flex justify-end gap-3">
               <button
@@ -3228,11 +3228,9 @@ function AgencyEndorsements() {
               </button>
               <button
                 type="button"
-                className="px-4 py-2 rounded bg-gray-500 text-white hover:bg-gray-600"
+                className="px-4 py-2 rounded bg-orange-500 text-white hover:bg-orange-600"
                 onClick={async () => {
                   if (!selectedEmployee.id) {
-                    setAlertMessage('Error: Application ID not found');
-                    setShowErrorAlert(true);
                     setShowRejectInterviewDialog(false);
                     return;
                   }
@@ -3255,19 +3253,17 @@ function AgencyEndorsements() {
                       .eq('id', selectedEmployee.id);
                     
                     if (updateError) {
-                      console.error('Error rejecting interview:', updateError);
-                      setAlertMessage('Failed to reject interview. Please try again.');
-                      setShowErrorAlert(true);
+                      console.error('Error requesting reschedule:', updateError);
                       setShowRejectInterviewDialog(false);
                       return;
                     }
                     
-                    // Notify HR about interview rejection
+                    // Notify HR about reschedule request
                     await notifyHRAboutInterviewResponse({
                       applicationId: selectedEmployee.id,
                       applicantName,
                       position,
-                      responseType: 'rejected',
+                      responseType: 'reschedule_requested',
                       interviewDate,
                       interviewTime
                     });
@@ -3288,17 +3284,15 @@ function AgencyEndorsements() {
                     }));
                     
                     setShowRejectInterviewDialog(false);
-                    setAlertMessage('Interview rejected. HR has been notified and may reschedule.');
+                    setAlertMessage('Reschedule request submitted. HR has been notified and will reschedule your interview.');
                     setShowSuccessAlert(true);
                   } catch (err) {
-                    console.error('Error rejecting interview:', err);
-                    setAlertMessage('Failed to reject interview. Please try again.');
-                    setShowErrorAlert(true);
+                    console.error('Error requesting reschedule:', err);
                     setShowRejectInterviewDialog(false);
                   }
                 }}
               >
-                Reject Interview
+                Request Reschedule
               </button>
             </div>
           </div>
