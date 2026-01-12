@@ -3415,113 +3415,61 @@ function HrRecruitment() {
                             </h5>
                             <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                               <div>
-                                <span className="text-gray-500">First Name:</span>
-                                <span className="ml-2 text-gray-800">{form.firstName || <span className="text-gray-500 italic">None</span>}</span>
+                                <span className="font-semibold text-gray-600">Name:</span>{' '}
+                                <span className="text-gray-800">{form.firstName || ''} {form.middleName || ''} {form.lastName || ''}</span>
                               </div>
                               <div>
-                                <span className="text-gray-500">Middle Name:</span>
-                                <span className="ml-2 text-gray-800">{form.middleName || <span className="text-gray-500 italic">None</span>}</span>
+                                <span className="font-semibold text-gray-600">Contact Number:</span> {form.contact || selectedApplicant.phone ? <span className="text-gray-800">{form.contact || selectedApplicant.phone}</span> : <span className="text-gray-400 italic">None</span>}
                               </div>
                               <div>
-                                <span className="text-gray-500">Last Name:</span>
-                                <span className="ml-2 text-gray-800">{form.lastName || <span className="text-gray-500 italic">None</span>}</span>
+                                <span className="font-semibold text-gray-600">Email:</span>{' '}
+                                {form.email || selectedApplicant.email ? <span className="text-gray-800">{form.email || selectedApplicant.email}</span> : <span className="text-gray-400 italic">None</span>}
                               </div>
                               <div>
-                                <span className="text-gray-500">Email:</span>
-                                <span className="ml-2 text-gray-800">{form.email || selectedApplicant.email || <span className="text-gray-500 italic">None</span>}</span>
+                                <span className="font-semibold text-gray-600">Birthday:</span>{' '}
+                                {form.birthday ? <span className="text-gray-800">{new Date(form.birthday).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span> : <span className="text-gray-400 italic">None</span>}
                               </div>
                               <div>
-                                <span className="text-gray-500">Contact Number:</span>
-                                <span className="ml-2 text-gray-800">{form.contact || selectedApplicant.phone || <span className="text-gray-500 italic">None</span>}</span>
+                                <span className="font-semibold text-gray-600">Age:</span>{' '}
+                                {form.birthday ? 
+                                  <span className="text-gray-800">{calculateAge(form.birthday)}</span> : <span className="text-gray-400 italic">None</span>}
                               </div>
                               <div>
-                                <span className="text-gray-500">Birthday:</span>
-                                <span className="ml-2 text-gray-800">{formatDate(form.birthday)}</span>
+                                <span className="font-semibold text-gray-600">Marital Status:</span>{' '}
+                                {(form.maritalStatus || form.marital_status) ? <span className="text-gray-800">{form.maritalStatus || form.marital_status}</span> : <span className="text-gray-400 italic">None</span>}
+                              </div>
+                              <div><span className="font-semibold text-gray-600">Sex:</span> {form.sex ? <span className="text-gray-800">{form.sex}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                              <div><span className="font-semibold text-gray-600">Available Start Date:</span> {form.startDate ? <span className="text-gray-800">{new Date(form.startDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                              <div>
+                                <span className="font-semibold text-gray-600">How did you learn about the company?:</span>{' '}
+                                {(form.heardFrom || form.sourceOfInfo) ? <span className="text-gray-800">{form.heardFrom || form.sourceOfInfo}</span> : <span className="text-gray-400 italic">None</span>}
+                              </div>
+                              <div><span className="font-semibold text-gray-600">Currently Employed?:</span> {form.employed ? <span className="text-gray-800">{form.employed}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                              <div>
+                                <span className="font-semibold text-gray-600">Resume:</span>{' '}
+                                {resumeUrl ? (
+                                  <a 
+                                    href={resumeUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-700 hover:underline font-medium"
+                                  >
+                                    {form.resumeName || 'View Resume'}
+                                  </a>
+                                ) : (
+                                  <span className="text-gray-400 italic">None</span>
+                                )}
                               </div>
                               <div>
-                                <span className="text-gray-500">Age:</span>
-                                <span className="ml-2 text-gray-800">{form.birthday ? calculateAge(form.birthday) : "—"}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Sex:</span>
-                                <span className="ml-2 text-gray-800">{form.sex || <span className="text-gray-500 italic">None</span>}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Marital Status:</span>
-                                <span className="ml-2 text-gray-800">{form.maritalStatus || form.marital_status || <span className="text-gray-500 italic">None</span>}</span>
-                              </div>
-                              <div className="md:col-span-2">
-                                <span className="text-gray-500">Resume:</span>
-                                <span className="ml-2">
-                                  {resumeUrl ? (
-                                    <div className="flex items-center gap-3">
-                                      <button
-                                        onClick={async (e) => {
-                                          e.preventDefault();
-                                          try {
-                                            // Fetch the file and trigger download
-                                            const response = await fetch(resumeUrl);
-                                            const blob = await response.blob();
-                                            const url = window.URL.createObjectURL(blob);
-                                            const link = document.createElement('a');
-                                            link.href = url;
-                                            const fileName = resumePath.split('/').pop() || form.resumeName || 'resume.pdf';
-                                            link.download = fileName;
-                                            document.body.appendChild(link);
-                                            link.click();
-                                            document.body.removeChild(link);
-                                            window.URL.revokeObjectURL(url);
-                                          } catch (error) {
-                                            console.error('Error downloading resume:', error);
-                                            // Fallback to direct download
-                                            window.open(resumeUrl, '_blank');
-                                          }
-                                        }}
-                                        className="text-red-600 hover:text-red-700 font-medium flex items-center gap-1 cursor-pointer"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                        Download Resume
-                                      </button>
-                                      <a
-                                        href={resumeUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm"
-                                      >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                        View
-                                      </a>
-                                    </div>
-                                  ) : (
-                                    <span className="text-gray-500">Not available</span>
-                                  )}
-                                </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Available Start Date:</span>
-                                <span className="ml-2 text-gray-800">{formatDate(form.startDate)}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">How did you learn about our company?</span>
-                                <span className="ml-2 text-gray-800">{form.heardFrom || <span className="text-gray-500 italic">None</span>}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Currently Employed?</span>
-                                <span className="ml-2 text-gray-800">{form.employed || <span className="text-gray-500 italic">None</span>}</span>
-                              </div>
-                              <div className="md:col-span-2">
-                                <span className="text-gray-500">Government IDs:</span>
-                                <div className="ml-2 mt-1 space-y-1">
-                                  {form.hasSSS && <div className="text-gray-800">• SSS</div>}
-                                  {form.hasPhilHealth && <div className="text-gray-800">• PhilHealth</div>}
-                                  {form.hasTIN && <div className="text-gray-800">• TIN</div>}
-                                  {!form.hasSSS && !form.hasPhilHealth && !form.hasTIN && <span className="text-gray-500 italic">None</span>}
-                                </div>
+                                <span className="font-semibold text-gray-600">Government IDs:</span>{' '}
+                                {(() => {
+                                  const ids = [];
+                                  if (form.sss) ids.push(`SSS: ${form.sss}`);
+                                  if (form.tin) ids.push(`TIN: ${form.tin}`);
+                                  if (form.philhealth) ids.push(`PhilHealth: ${form.philhealth}`);
+                                  if (form.pagibig) ids.push(`Pag-IBIG: ${form.pagibig}`);
+                                  return ids.length > 0 ? <span className="text-gray-800">{ids.join(', ')}</span> : <span className="text-gray-400 italic">None</span>;
+                                })()}
                               </div>
                             </div>
                           </div>
@@ -3565,10 +3513,10 @@ function HrRecruitment() {
                               Education & Skills
                             </h5>
                             <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
-                              {/* Education 1 */}
+                              {/* Education - Highest Attainment */}
                               {(form.edu1Level || form.edu1Institution || form.edu1Year) && (
                                 <div>
-                                  <div className="font-medium text-gray-700 mb-2">Education 1:</div>
+                                  <div className="font-medium text-gray-700 mb-2">Highest Educational Attainment:</div>
                                   <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-2">
                                     <div>
                                       <span className="text-gray-500">Level:</span>
@@ -3581,27 +3529,6 @@ function HrRecruitment() {
                                     <div>
                                       <span className="text-gray-500">Year Finished:</span>
                                       <span className="ml-2 text-gray-800">{form.edu1Year || <span className="text-gray-500 italic">None</span>}</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                              
-                              {/* Education 2 */}
-                              {(form.edu2Level || form.edu2Institution || form.edu2Year) && (
-                                <div>
-                                  <div className="font-medium text-gray-700 mb-2">Education 2:</div>
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-2">
-                                    <div>
-                                      <span className="text-gray-500">Level:</span>
-                                      <span className="ml-2 text-gray-800">{form.edu2Level || <span className="text-gray-500 italic">None</span>}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">Institution:</span>
-                                      <span className="ml-2 text-gray-800">{form.edu2Institution || <span className="text-gray-500 italic">None</span>}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">Year Finished:</span>
-                                      <span className="ml-2 text-gray-800">{form.edu2Year || <span className="text-gray-500 italic">None</span>}</span>
                                     </div>
                                   </div>
                                 </div>
@@ -3664,34 +3591,41 @@ function HrRecruitment() {
                           )}
 
                           {/* Character References */}
-                          {payloadObj.characterReferences && Array.isArray(payloadObj.characterReferences) && payloadObj.characterReferences.length > 0 && (
-                            <div className="mb-6">
-                              <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
-                                Character References
-                              </h5>
-                              <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
-                                {payloadObj.characterReferences.map((ref, idx) => (
-                                  <div key={idx} className="border-b border-gray-200 pb-4 last:border-b-0 last:pb-0">
-                                    <div className="font-medium text-gray-700 mb-2">Reference #{idx + 1}:</div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                      <div>
-                                        <span className="text-gray-500">Name:</span>
-                                        <span className="ml-2 text-gray-800">{ref.name || <span className="text-gray-500 italic">None</span>}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Contact Number:</span>
-                                        <span className="ml-2 text-gray-800">{ref.contact || ref.contactNumber || <span className="text-gray-500 italic">None</span>}</span>
-                                      </div>
-                                      <div className="md:col-span-2">
-                                        <span className="text-gray-500">Remarks:</span>
-                                        <span className="ml-2 text-gray-800">{ref.remarks || <span className="text-gray-500 italic">None</span>}</span>
+                          {(() => {
+                            // Filter out empty references - must have at least a name
+                            const validReferences = payloadObj.characterReferences?.filter(ref => 
+                              ref.name && ref.name.trim() !== ''
+                            ) || [];
+                            
+                            return validReferences.length > 0 && (
+                              <div className="mb-6">
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
+                                  Character References
+                                </h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
+                                  {validReferences.map((ref, idx) => (
+                                    <div key={idx} className="border-b border-gray-200 pb-4 last:border-b-0 last:pb-0">
+                                      <div className="font-medium text-gray-700 mb-2">Reference #{idx + 1}:</div>
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                        <div>
+                                          <span className="text-gray-500">Name:</span>
+                                          <span className="ml-2 text-gray-800">{ref.name}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Contact Number:</span>
+                                          <span className="ml-2 text-gray-800">{ref.contact || ref.contactNumber || <span className="text-gray-500 italic">None</span>}</span>
+                                        </div>
+                                        <div className="md:col-span-2">
+                                          <span className="text-gray-500">Remarks:</span>
+                                          <span className="ml-2 text-gray-800">{ref.remarks || ref.company || <span className="text-gray-500 italic">None</span>}</span>
+                                        </div>
                                       </div>
                                     </div>
-                                  </div>
-                                ))}
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
                         </>
                       );
                     })()}
