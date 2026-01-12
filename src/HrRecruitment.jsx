@@ -3701,12 +3701,24 @@ function HrRecruitment() {
                             </h5>
                             <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                               <div>
-                                <span className="text-gray-500">Unit/House Number:</span>
-                                <span className="ml-2 text-gray-800">{form.unit_house_number || <span className="text-gray-500 italic">None</span>}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Street Name:</span>
-                                <span className="ml-2 text-gray-800">{form.street || <span className="text-gray-500 italic">None</span>}</span>
+                                <span className="text-gray-500">Unit/House Number, Street Name, Subdivision/Village:</span>
+                                <span className="ml-2 text-gray-800">
+                                  {(() => {
+                                    const line = [
+                                      form.unit_house_number,
+                                      form.street,
+                                      form.subdivision,
+                                      form.village,
+                                      form.subdivision_village,
+                                    ]
+                                      .filter(Boolean)
+                                      .map((s) => (typeof s === 'string' ? s.trim() : String(s).trim()))
+                                      .filter(Boolean)
+                                      .join(', ');
+
+                                    return line ? line : <span className="text-gray-500 italic">None</span>;
+                                  })()}
+                                </span>
                               </div>
                               <div>
                                 <span className="text-gray-500">Barangay:</span>
@@ -3759,13 +3771,16 @@ function HrRecruitment() {
                                 <span className="text-gray-500">Skills:</span>
                                 <div className="ml-2 mt-1">
                                   {form.skills && Array.isArray(form.skills) ? (
-                                    <div className="flex flex-wrap gap-2">
-                                      {form.skills.map((skill, idx) => (
-                                        <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800">
-                                          {skill}
-                                        </span>
-                                      ))}
-                                    </div>
+                                    (() => {
+                                      const skillsText = (form.skills || [])
+                                        .filter(Boolean)
+                                        .map((s) => (typeof s === 'string' ? s.trim() : String(s).trim()))
+                                        .filter(Boolean)
+                                        .join(', ');
+                                      return skillsText
+                                        ? <span className="text-gray-800">{skillsText}</span>
+                                        : <span className="text-gray-500 italic">None</span>;
+                                    })()
                                   ) : form.skills_text ? (
                                     <span className="text-gray-800">{form.skills_text}</span>
                                   ) : (

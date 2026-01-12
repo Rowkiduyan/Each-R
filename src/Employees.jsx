@@ -6,23 +6,90 @@ import { supabase } from "./supabaseClient";
 function Employees() {
   const navigate = useNavigate();
 
-  // master depot list
-  const depots = [
-    "Pasig","Cagayan","Butuan","Davao","Cebu","Laguna","Iloilo",
-    "Bacolod","Zamboanga","Manila","Quezon City","Taguig",
-    "Baguio","General Santos","Palawan","Olongapo","Tacloban",
-    "Roxas","Legazpi","Cauayan","Cavite","Batangas","Ormoc","Koronadal",
-    "Calbayog","Catbalogan","Tuguegarao","Baler","Iligan","Koronadal City"
+  // master department list
+  const departments = [
+    "Operations Department",
+    "Billing Department",
+    "HR Department",
+    "Security & Safety Department",
+    "Collections Department",
+    "Repairs and Maintenance Specialist",
   ];
+
+  const departmentToPositions = {
+    "Operations Department": [
+      "Driver",
+      "Helper",
+      "Rider/Messenger",
+      "Base Dispatcher",
+      "Site Coordinator",
+      "Transport Coordinator",
+      "Customer Service Representative",
+    ],
+    "Billing Department": [
+      "Billing Specialist",
+      "POD Specialist",
+    ],
+    "HR Department": [
+      "HR Specialist",
+      "Recruitment Specialist",
+      "HR Manager",
+    ],
+    "Security & Safety Department": [
+      "Safety Officer 2",
+      "Safety Officer 3",
+      "Security Officer",
+    ],
+    "Collections Department": [
+      "Billing & Collections Specialist",
+      "Charges Specialist",
+    ],
+    "Repairs and Maintenance Specialist": [
+      "Diesel Mechanic",
+      "Truck Refrigeration Technician",
+      "Welder",
+      "Tinsmith",
+    ],
+  };
+
+  const getPositionsForDepartment = (department) => {
+    if (department === "All") {
+      const all = new Set();
+      Object.values(departmentToPositions).forEach((list) => {
+        (list || []).forEach((p) => all.add(p));
+      });
+      return Array.from(all);
+    }
+
+    // Backward-compat alias (in case existing data uses "and" instead of "&")
+    if (department === "Security & Safety Department") {
+      return departmentToPositions["Security & Safety Department"] || [];
+    }
+
+    return departmentToPositions[department] || [];
+  };
+
+  const normalizeDepartmentName = (name) => {
+    if (!name) return "";
+    return String(name).replace(/\s+/g, " ").trim().replace(/\sand\s/g, " & ");
+  };
+
+  const getDepartmentForPosition = (position) => {
+    if (!position) return null;
+    for (const [dept, list] of Object.entries(departmentToPositions)) {
+      if ((list || []).includes(position)) return dept;
+    }
+    return null;
+  };
 
   // controls
   const [search, setSearch] = useState("");
-  const [sortOrder, setSortOrder] = useState("asc");
+  const [sortOption, setSortOption] = useState("name-asc");
+  const [departmentFilter, setDepartmentFilter] = useState("All");
   const [positionFilter, setPositionFilter] = useState("All");
   const [depotFilter, setDepotFilter] = useState("All");
   const [employmentStatusFilter, setEmploymentStatusFilter] = useState("All");
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const filterMenuRef = useRef(null);
+  const [recruitmentTypeFilter, setRecruitmentTypeFilter] = useState("All");
 
 
   // data
@@ -129,17 +196,6 @@ function Employees() {
     return { position: p || null, depot: d || null };
   };
 
-
-  // Close filter menu when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
-        setShowFilterMenu(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   // Load employees
   useEffect(() => {
@@ -315,23 +371,68 @@ function Employees() {
     };
   }, []);
 
-  // distinct positions from live data
-  const positions = useMemo(() => {
-    const s = new Set(employees.map((e) => e.position).filter(Boolean));
-    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
+  const depotOptions = useMemo(() => {
+    const set = new Set();
+    for (const e of employees || []) {
+      const d = e?.depot ? String(e.depot).trim() : "";
+      if (d) set.add(d);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [employees]);
 
+  const positions = useMemo(() => {
+    const list = getPositionsForDepartment(departmentFilter);
+    return ["All", ...list.sort((a, b) => a.localeCompare(b))];
+  }, [departmentFilter]);
+
+  useEffect(() => {
+    if (positionFilter === "All") return;
+    const allowed = new Set(getPositionsForDepartment(departmentFilter));
+    if (!allowed.has(positionFilter)) setPositionFilter("All");
+  }, [departmentFilter, positionFilter]);
+
   const employmentStatuses = ["All", "Regular", "Under Probation", "Part Time"];
+  const recruitmentTypes = ["All", "Agency", "Direct"];
 
   // Filter and sort employees
   const filtered = useMemo(() => {
+    const [sortKey, sortDir] = String(sortOption || "name-asc").split("-");
+    const isAsc = sortDir === "asc";
+
     return employees
       .filter((e) => e.name.toLowerCase().includes(search.toLowerCase()))
+      .filter((e) => {
+        if (recruitmentTypeFilter === "All") return true;
+        if (recruitmentTypeFilter === "Agency") return !!e.agency;
+        if (recruitmentTypeFilter === "Direct") return !e.agency;
+        return true;
+      })
+      .filter((e) => {
+        if (departmentFilter === "All") return true;
+        const derived = getDepartmentForPosition(e.position);
+        return normalizeDepartmentName(derived) === normalizeDepartmentName(departmentFilter);
+      })
       .filter((e) => positionFilter === "All" || e.position === positionFilter)
-      .filter((e) => depotFilter === "All" || e.depot === depotFilter)
+      .filter((e) => {
+        if (depotFilter === "All") return true;
+        return (e.depot || "") === depotFilter;
+      })
       .filter((e) => employmentStatusFilter === "All" || e.employmentStatus === employmentStatusFilter)
-      .sort((a, b) => sortOrder === "asc" ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name));
-  }, [employees, search, positionFilter, depotFilter, employmentStatusFilter, sortOrder]);
+      .sort((a, b) => {
+        if (sortKey === "hired") {
+          const at = a.hired_at ? new Date(a.hired_at).getTime() : null;
+          const bt = b.hired_at ? new Date(b.hired_at).getTime() : null;
+
+          if (at == null && bt == null) return 0;
+          if (at == null) return 1;
+          if (bt == null) return -1;
+
+          return isAsc ? at - bt : bt - at;
+        }
+
+        return isAsc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
+      });
+  }, [employees, search, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
 
 
   // Stats
@@ -1502,7 +1603,7 @@ function Employees() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 overflow-hidden min-h-0">
             {/* Search and Filters */}
             <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex flex-col lg:flex-row gap-3">
                 {/* Search */}
                 <div className="relative flex-1">
                   <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1517,77 +1618,89 @@ function Employees() {
                   />
                 </div>
 
-                {/* Position Filter */}
-                <select
-                  value={positionFilter}
-                  onChange={(e) => setPositionFilter(e.target.value)}
-                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
-                >
-                  <option value="All">All Positions</option>
-                  {positions.filter(p => p !== "All").map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
-
-                {/* Depot Filter */}
-                <select
-                  value={depotFilter}
-                  onChange={(e) => setDepotFilter(e.target.value)}
-                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[140px]"
-                >
-                  <option value="All">All Depots</option>
-                  {depots.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-
-                {/* More Filters Button */}
-                <div className="relative" ref={filterMenuRef}>
-                  <button
-                    onClick={() => setShowFilterMenu(!showFilterMenu)}
-                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
+                {/* Controls (wrap under search on smaller screens) */}
+                <div className="flex flex-wrap gap-3 lg:flex-nowrap lg:justify-end lg:items-center lg:flex-none">
+                  {/* Depot Filter */}
+                  <select
+                    value={depotFilter}
+                    onChange={(e) => setDepotFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[140px]"
                   >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                    </svg>
-                    Filters
-                  </button>
-                  {showFilterMenu && (
-                    <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 p-4">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1.5">Sort by Name</label>
-                          <button
-                            onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                            className="w-full px-3 py-2 bg-gray-100 rounded-lg text-left hover:bg-gray-200 text-sm transition-colors"
-                          >
-                            {sortOrder === "asc" ? "A → Z" : "Z → A"}
-                          </button>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1.5">Employment Status</label>
-                          <select
-                            value={employmentStatusFilter}
-                            onChange={(e) => setEmploymentStatusFilter(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
-                          >
-                            {employmentStatuses.map((status) => (
-                              <option key={status} value={status}>{status}</option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                    <option value="All">All Depots</option>
+                    {depotOptions.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
 
-                {/* Export Button */}
-                <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Export
-                </button>
+                  {/* Department Filter */}
+                  <select
+                    value={departmentFilter}
+                    onChange={(e) => setDepartmentFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[140px]"
+                  >
+                    <option value="All">All Departments</option>
+                    {departments.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+
+                  {/* Position Filter */}
+                  <select
+                    value={positionFilter}
+                    onChange={(e) => setPositionFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
+                  >
+                    <option value="All">All Positions</option>
+                    {positions.filter(p => p !== "All").map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+
+                  {/* Employment Status */}
+                  <select
+                    value={employmentStatusFilter}
+                    onChange={(e) => setEmploymentStatusFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
+                  >
+                    <option value="All">Employment Status</option>
+                    {employmentStatuses.filter((s) => s !== "All").map((status) => (
+                      <option key={status} value={status}>{status}</option>
+                    ))}
+                  </select>
+
+                  {/* Recruitment Type */}
+                  <select
+                    value={recruitmentTypeFilter}
+                    onChange={(e) => setRecruitmentTypeFilter(e.target.value)}
+                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[180px]"
+                  >
+                    <option value="All">All Recruitment Type</option>
+                    {recruitmentTypes.filter((t) => t !== "All").map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+
+                  {/* Sort */}
+                  <select
+                    value={sortOption}
+                    onChange={(e) => setSortOption(e.target.value)}
+                    aria-label="Sort"
+                    className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[190px]"
+                  >
+                    <option value="name-asc">Alphabetically (A → Z)</option>
+                    <option value="name-desc">Alphabetically (Z → A)</option>
+                    <option value="hired-asc">Date Hired (Oldest → Newest)</option>
+                    <option value="hired-desc">Date Hired (Newest → Oldest)</option>
+                  </select>
+
+                  {/* Export Button */}
+                  <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Export
+                  </button>
+                </div>
               </div>
             </div>
 
