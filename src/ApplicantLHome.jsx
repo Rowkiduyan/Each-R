@@ -1428,11 +1428,7 @@ const formatDateForInput = (dateString) => {
     const [authChecked, setAuthChecked] = useState(false);
     const hasExistingApplication = Boolean(userApplication);
     const appliedJobId = userApplication?.job_id || null;
-    const applicationPayload = userApplication?.payload || null;
-    const applicationResumePath = applicationPayload?.form?.resumePath || applicationPayload?.form?.resumeName || null;
-    const applicationResumeUrl = applicationResumePath
-      ? supabase.storage.from('resume').getPublicUrl(applicationResumePath).data.publicUrl
-      : null;
+    
 
     useEffect(() => {
       let unsub;
@@ -3151,69 +3147,6 @@ const formatDateForInput = (dateString) => {
                           </div>
                         </div>
                       </div>
-
-                      {/* Application Information Card */}
-                      {userApplication && (
-                        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                          <div className="bg-gradient-to-r from-purple-50 to-pink-50 px-6 py-4 border-b border-gray-200">
-                            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                              <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                              Application Information
-                            </h3>
-                          </div>
-                          <div className="p-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-500 mb-1">Application ID</label>
-                                <div className="text-gray-900 font-medium">{userApplication?.id || 'Not available'}</div>
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-500 mb-1">Applied Position</label>
-                                <div className="text-gray-900">{applicationPayload?.job?.title || 'Not available'}</div>
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-500 mb-1">Applied Depot</label>
-                                <div className="text-gray-900">{applicationPayload?.job?.depot || 'Not available'}</div>
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-500 mb-1">Application Date</label>
-                                <div className="text-gray-900">{userApplication?.created_at ? formatDate(userApplication.created_at) : 'Not available'}</div>
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-500 mb-1">Application Status</label>
-                                <span className="inline-block px-3 py-1 bg-orange-500 text-white text-sm rounded-full font-medium">
-                                  {userApplication?.status || 'Not available'}
-                                </span>
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-500 mb-1">Resume</label>
-                                {applicationResumeUrl ? (
-                                  <a
-                                    href={applicationResumeUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-red-600 hover:text-red-700 font-medium"
-                                  >
-                                    {applicationPayload?.form?.resumeName || 'View Resume'}
-                                  </a>
-                                ) : (
-                                  <div className="text-gray-500">Not available</div>
-                                )}
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-500 mb-1">Available Start Date</label>
-                                <div className="text-gray-900">{applicationPayload?.form?.startDate ? formatDate(applicationPayload.form.startDate) : 'Not available'}</div>
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-500 mb-1">How did you learn about us</label>
-                                <div className="text-gray-900">{applicationPayload?.form?.heardFrom || 'Not available'}</div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
 
                     </div>
                   ) : (
