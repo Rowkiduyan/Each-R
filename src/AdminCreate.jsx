@@ -37,8 +37,10 @@ function AdminCreate() {
       return;
     }
 
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long');
+    // Password strength validation
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$/;
+    if (!passwordRegex.test(formData.password)) {
+      setError('Password must contain at least one uppercase letter, one lowercase letter, one number, one special character (@$!%*?&), and be at least 6 characters long');
       return;
     }
 
@@ -254,6 +256,9 @@ function AdminCreate() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                   placeholder="Enter password"
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  Must contain at least one uppercase, one lowercase, one number, and one special character (@$!%*?&)
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">

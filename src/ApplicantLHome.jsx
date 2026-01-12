@@ -991,13 +991,15 @@ const formatDateForInput = (dateString) => {
       }
 
       if (applicationTab === 'experience' || isLastTab) {
-        // Validate employment periods only if they have values
+        // Validate start/end dates only if they have values
         for (let i = 0; i < workExperiences.length; i++) {
           const exp = workExperiences[i];
-          if (exp.period && exp.period.trim() !== '') {
-            const periodError = validateEmploymentPeriod(exp.period);
-            if (periodError) {
-              setErrorMessage(`Work Experience #${i + 1}: ${periodError}`);
+          if (exp.start && exp.end) {
+            // Validate that end date is not before start date
+            const startDate = new Date(exp.start);
+            const endDate = new Date(exp.end);
+            if (endDate < startDate) {
+              setErrorMessage(`Work Experience #${i + 1}: End date cannot be before start date`);
               return;
             }
           }
@@ -1115,9 +1117,22 @@ const formatDateForInput = (dateString) => {
         formPayload.resumePath = resumeStoragePath;
       }
 
+      // Format work experiences with period from start/end dates
+      const formattedWorkExperiences = workExperiences.map(exp => {
+        if (exp.start || exp.end) {
+          const startFormatted = exp.start ? new Date(exp.start + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '';
+          const endFormatted = exp.end ? new Date(exp.end + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Present';
+          return {
+            ...exp,
+            period: exp.start && exp.end ? `${startFormatted} - ${endFormatted}` : exp.start ? `${startFormatted} - Present` : ''
+          };
+        }
+        return exp;
+      });
+
       const payload = {
         form: formPayload,
-        workExperiences,
+        workExperiences: formattedWorkExperiences,
         characterReferences,
         job, // snapshot of the job
       };
@@ -3260,32 +3275,92 @@ const formatDateForInput = (dateString) => {
                                   />
                                 </div>
                               </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Employment Period
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="January 2020 - June 2021 or 2020 - Present"
-                                  value={exp.period || ''}
-                                  onChange={(e) => {
-                                    updateWork(index, 'period', e.target.value);
-                                    const error = validateEmploymentPeriod(e.target.value);
-                                    setEmploymentPeriodErrors(prev => {
-                                      const newErrors = [...prev];
-                                      newErrors[index] = error;
-                                      return newErrors;
-                                    });
-                                  }}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                                />
-                                <p className="text-xs text-gray-500 mt-1">
-                                  Examples: January 2020 - June 2021, Jun 2021 - Present, or 2020 - 2025
-                                </p>
-                                {employmentPeriodErrors[index] && (
-                                  <p className="text-xs text-red-600 mt-1">{employmentPeriodErrors[index]}</p>
-                                )}
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Start (Month & Year)
+                                  </label>
+                                  <input
+                                    type="month"
+                                    value={exp.start || ''}
+                                    max={new Date().toISOString().slice(0, 7)}
+                                    onChange={(e) => {
+                                      const selectedDate = new Date(e.target.value + '-01');
+                                      const today = new Date();
+                                      
+                                      if (selectedDate > today) {
+                                        setEmploymentPeriodErrors(prev => {
+                                          const newErrors = [...prev];
+                                          newErrors[index] = 'Start date cannot be in the future';
+                                          return newErrors;
+                                        });
+                                        return;
+                                      }
+                                      
+                                      updateWork(index, 'start', e.target.value);
+                                      
+                                      // Check if end date is before start date
+                                      if (exp.end) {
+                                        const endDate = new Date(exp.end + '-01');
+                                        if (endDate < selectedDate) {
+                                          setEmploymentPeriodErrors(prev => {
+                                            const newErrors = [...prev];
+                                            newErrors[index] = 'End date cannot be before start date';
+                                            return newErrors;
+                                          });
+                                          return;
+                                        }
+                                      }
+                                      
+                                      setEmploymentPeriodErrors(prev => {
+                                        const newErrors = [...prev];
+                                        newErrors[index] = '';
+                                        return newErrors;
+                                      });
+                                    }}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    End (Month & Year)
+                                  </label>
+                                  <input
+                                    type="month"
+                                    value={exp.end || ''}
+                                    max={new Date().toISOString().slice(0, 7)}
+                                    onChange={(e) => {
+                                      if (exp.start && e.target.value) {
+                                        const startDate = new Date(exp.start + '-01');
+                                        const endDate = new Date(e.target.value + '-01');
+                                        
+                                        if (endDate < startDate) {
+                                          setEmploymentPeriodErrors(prev => {
+                                            const newErrors = [...prev];
+                                            newErrors[index] = 'End date cannot be before start date';
+                                            return newErrors;
+                                          });
+                                          return;
+                                        }
+                                      }
+                                      
+                                      updateWork(index, 'end', e.target.value);
+                                      setEmploymentPeriodErrors(prev => {
+                                        const newErrors = [...prev];
+                                        newErrors[index] = '';
+                                        return newErrors;
+                                      });
+                                    }}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                  />
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    Leave blank if currently employed
+                                  </p>
+                                </div>
                               </div>
+                              {employmentPeriodErrors[index] && (
+                                <p className="text-xs text-red-600 mt-1">{employmentPeriodErrors[index]}</p>
+                              )}
                               <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                   Reason for Leaving
@@ -3616,19 +3691,24 @@ const formatDateForInput = (dateString) => {
                         {workExperiences.length === 0 ? (
                           <div className="p-2"><span className="text-gray-500 italic">None</span></div>
                         ) : (
-                          workExperiences.map((w, i) => (
-                            <div
-                              key={i}
-                              className={`grid grid-cols-4 p-2 ${
-                                i % 2 === 1 ? 'bg-gray-100' : ''
-                              }`}
-                            >
-                              <div>{w.company || <span className="text-gray-500 italic">None</span>}</div>
-                              <div>{w.role || <span className="text-gray-500 italic">None</span>}</div>
-                              <div>{w.period || <span className="text-gray-500 italic">None</span>}</div>
-                              <div>{w.reason || <span className="text-gray-500 italic">None</span>}</div>
-                            </div>
-                          ))
+                          workExperiences.map((w, i) => {
+                            const startFormatted = w.start ? new Date(w.start + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : '';
+                            const endFormatted = w.end ? new Date(w.end + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'Present';
+                            const period = w.start && w.end ? `${startFormatted} - ${endFormatted}` : w.start ? `${startFormatted} - Present` : w.period || '';
+                            return (
+                              <div
+                                key={i}
+                                className={`grid grid-cols-4 p-2 ${
+                                  i % 2 === 1 ? 'bg-gray-100' : ''
+                                }`}
+                              >
+                                <div>{w.company || <span className="text-gray-500 italic">None</span>}</div>
+                                <div>{w.role || <span className="text-gray-500 italic">None</span>}</div>
+                                <div>{period || <span className="text-gray-500 italic">None</span>}</div>
+                                <div>{w.reason || <span className="text-gray-500 italic">None</span>}</div>
+                              </div>
+                            );
+                          })
                         )}
                       </div>
                     </div>

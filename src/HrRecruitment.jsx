@@ -762,6 +762,7 @@ function HrRecruitment() {
             created_at: jobPost.created_at,
             urgent: jobPost.urgent,
             is_active: jobPost.is_active,
+            job_type: jobPost.job_type,
             approval_status: jobPost.approval_status,
             created_by: jobPost.created_by,
             positions_needed: jobPost.positions_needed || 1,
@@ -4547,7 +4548,7 @@ function HrRecruitment() {
               {/* Header row */}
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h2 className="text-lg font-semibold text-gray-800">My recent job posts</h2>
+                  <h2 className="text-lg font-semibold text-gray-800">Job posts</h2>
                   <p className="text-sm text-gray-500 mt-1">
                     Draft and active postings with a quick overview of candidates.
                   </p>
@@ -4567,6 +4568,7 @@ function HrRecruitment() {
                 <div className="bg-gray-50 px-5 py-3 border-b border-gray-100 flex items-center justify-between text-xs font-medium text-gray-500 uppercase tracking-wide">
                   <div className="flex gap-8 items-center">
                     <span className="w-20">Status</span>
+                    <span className="w-24 text-center"></span>
                     <span className="w-48">Job</span>
                     <span className="w-32">Depot</span>
                     <span className="w-24 text-center">Employees Needed</span>
@@ -4600,6 +4602,13 @@ function HrRecruitment() {
                           }`}>
                             {job.status}
                           </span>
+                          <div className="w-24 text-center">
+                            {job.job_type === 'delivery_crew' && (
+                              <span className="inline-flex items-center justify-center px-2.5 py-1 text-[11px] rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                                Outsourced
+                              </span>
+                            )}
+                          </div>
                           <div className="w-48">
                             <p className="font-medium text-gray-800 truncate">{job.title}</p>
                           </div>

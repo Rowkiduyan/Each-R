@@ -276,8 +276,9 @@ function HrTrainings() {
         const end = training.end_at ? new Date(training.end_at) : null;
         const normalized = {
           ...training,
-          date: start ? start.toISOString().slice(0, 10) : "",
-          time: start ? start.toISOString().slice(11, 16) : "",
+          // Parse as Date object to get local date/time components
+          date: start ? start.getFullYear() + '-' + String(start.getMonth() + 1).padStart(2, '0') + '-' + String(start.getDate()).padStart(2, '0') : "",
+          time: start ? String(start.getHours()).padStart(2, '0') + ':' + String(start.getMinutes()).padStart(2, '0') : "",
         };
 
         if (start) {
@@ -539,8 +540,26 @@ function HrTrainings() {
   const confirmAddTraining = async () => {
     setShowConfirmAddModal(false);
 
+    // Create Date objects and format with local timezone to preserve the intended time
     const startAt = new Date(`${form.date}T${form.time}:00`);
     const endAt = new Date(`${form.date}T${form.end_time}:00`);
+    
+    // Format as ISO string with timezone offset (e.g., "2026-01-13T03:00:00+08:00")
+    const formatWithTimezone = (date) => {
+      const offset = -date.getTimezoneOffset();
+      const sign = offset >= 0 ? '+' : '-';
+      const hours = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0');
+      const minutes = String(Math.abs(offset) % 60).padStart(2, '0');
+      return date.getFullYear() + '-' +
+        String(date.getMonth() + 1).padStart(2, '0') + '-' +
+        String(date.getDate()).padStart(2, '0') + 'T' +
+        String(date.getHours()).padStart(2, '0') + ':' +
+        String(date.getMinutes()).padStart(2, '0') + ':00' +
+        sign + hours + ':' + minutes;
+    };
+    
+    const startAtISO = formatWithTimezone(startAt);
+    const endAtISO = formatWithTimezone(endAt);
     
     if (endAt <= startAt) {
       setAlertMessage("End time must be after start time.");
@@ -588,8 +607,8 @@ function HrTrainings() {
           {
             title: form.title,
             venue: form.venue || null,
-            start_at: startAt.toISOString(),
-            end_at: endAt.toISOString(),
+            start_at: startAtISO,
+            end_at: endAtISO,
             description: form.description || null,
             // store attendees as plain names only
             attendees: attendees || [],
@@ -665,8 +684,26 @@ function HrTrainings() {
       return;
     }
 
+    // Create Date objects and format with local timezone to preserve the intended time
     const startAt = new Date(`${editForm.date}T${editForm.time}:00`);
     const endAt = new Date(`${editForm.date}T${editForm.end_time}:00`);
+    
+    // Format as ISO string with timezone offset (e.g., "2026-01-13T03:00:00+08:00")
+    const formatWithTimezone = (date) => {
+      const offset = -date.getTimezoneOffset();
+      const sign = offset >= 0 ? '+' : '-';
+      const hours = String(Math.floor(Math.abs(offset) / 60)).padStart(2, '0');
+      const minutes = String(Math.abs(offset) % 60).padStart(2, '0');
+      return date.getFullYear() + '-' +
+        String(date.getMonth() + 1).padStart(2, '0') + '-' +
+        String(date.getDate()).padStart(2, '0') + 'T' +
+        String(date.getHours()).padStart(2, '0') + ':' +
+        String(date.getMinutes()).padStart(2, '0') + ':00' +
+        sign + hours + ':' + minutes;
+    };
+    
+    const startAtISO = formatWithTimezone(startAt);
+    const endAtISO = formatWithTimezone(endAt);
     
     if (endAt <= startAt) {
       setAlertMessage("End time must be after start time.");
@@ -713,8 +750,8 @@ function HrTrainings() {
         .update({
           title: editForm.title,
           venue: editForm.venue || null,
-          start_at: startAt.toISOString(),
-          end_at: endAt.toISOString(),
+          start_at: startAtISO,
+          end_at: endAtISO,
           description: editForm.description || null,
           // keep attendees as plain names only
           attendees: attendeesEdit || [],
