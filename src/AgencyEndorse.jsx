@@ -80,6 +80,11 @@ function AgencyEndorse() {
     zipAlt: "",
     contactNumber: "",
     email: "",
+    resumeFile: null,
+    hasSSS: false,
+    hasPAGIBIG: false,
+    hasTIN: false,
+    hasPhilHealth: false,
     education: "",
     secondarySchool: "",
     secondaryYear: "",
@@ -107,6 +112,84 @@ function AgencyEndorse() {
     vehicleTypes: [],
   });
 
+  const isApplicantBlank = (vals) => {
+    const baseline = makeEmptyValues();
+    const obj = vals || baseline;
+
+    for (const key of Object.keys(baseline)) {
+      const v = obj[key];
+      const b = baseline[key];
+
+      if (typeof File !== 'undefined' && v instanceof File) return false;
+      if (v && typeof v === 'object' && v?.name) return false;
+
+      if (Array.isArray(v) || Array.isArray(b)) {
+        const arr = Array.isArray(v) ? v : [];
+        if (arr.length > 0) return false;
+        continue;
+      }
+
+      if (typeof b === 'boolean') {
+        if (v !== b) return false;
+        continue;
+      }
+
+      if (typeof b === 'number') {
+        const num = Number(v);
+        const baseNum = Number(b);
+        if (Number.isFinite(num) && Number.isFinite(baseNum) && num !== baseNum) return false;
+        if (Number.isFinite(num) && !Number.isFinite(baseNum)) return false;
+        continue;
+      }
+
+      // Treat default strings (e.g., "no") as blank.
+      const vs = String(v ?? '').trim();
+      const bs = String(b ?? '').trim();
+      if (vs !== bs) return false;
+    }
+
+    return true;
+  };
+
+  const isApplicantReusableSlotForCsv = (vals) => {
+    const baseline = makeEmptyValues();
+    const obj = vals || baseline;
+
+    // If user has started filling personal/required step-1 fields, don't overwrite.
+    // Ignore job-prefilled fields (department/position/depot).
+    const keys = [
+      'dateAvailable',
+      'lastName',
+      'firstName',
+      'middleName',
+      'birthday',
+      'maritalStatus',
+      'sex',
+      'street',
+      'barangay',
+      'city',
+      'province',
+      'zip',
+      'contactNumber',
+      'email',
+    ];
+
+    for (const key of keys) {
+      const v = obj[key];
+      const b = baseline[key];
+      const vs = String(v ?? '').trim();
+      const bs = String(b ?? '').trim();
+      if (vs !== bs) return false;
+    }
+
+    // Also protect if any uploads/arrays were added (rare on step 1, but safe)
+    if (typeof File !== 'undefined') {
+      if (obj.resumeFile instanceof File) return false;
+    }
+
+    return true;
+  };
+
   const [formValues, setFormValues] = useState(() => {
     const init = {};
     applicants.forEach((a) => {
@@ -123,6 +206,9 @@ function AgencyEndorse() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
+
+  // Pre-submit summary modal (shown before Confirm Endorsement)
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
 
   // CSV Import state
   const [showImportModal, setShowImportModal] = useState(false);
@@ -293,9 +379,10 @@ function AgencyEndorse() {
     });
   }, [formValues, cities]);
 
-  // Auto-fill depot and position from job when available
+  // Auto-fill depot/position/department from job when available
   useEffect(() => {
-    if (job && job.depot && job.title) {
+    const jobDepartment = job?.department || job?.raw?.department || "";
+    if (job && (job.depot || job.title || jobDepartment)) {
       // Auto-fill for all existing applicants
       setFormValues((prev) => {
         const updated = { ...prev };
@@ -315,6 +402,10 @@ function AgencyEndorse() {
             newValues.position = job.title;
             applicantHasChanges = true;
           }
+          if (!currentValues.department && jobDepartment) {
+            newValues.department = jobDepartment;
+            applicantHasChanges = true;
+          }
           
           if (applicantHasChanges) {
             updated[appId] = newValues;
@@ -325,11 +416,11 @@ function AgencyEndorse() {
         return hasChanges ? updated : prev;
       });
     }
-  }, [job?.depot, job?.title]);
+  }, [job?.depot, job?.title, job?.department, job?.raw?.department]);
 
   const addApplicant = () => {
-    const newId = applicants.length + 1;
-    setApplicants((prev) => [...prev, { id: newId, name: `Applicant ${newId}` }]);
+    const newId = Math.max(0, ...applicants.map((a) => a.id)) + 1;
+    setApplicants((prev) => [...prev, { id: newId, name: `Employee ${newId}` }]);
     const newValues = makeEmptyValues();
     // Auto-fill depot and position from job if available
     if (job?.depot) {
@@ -338,10 +429,14 @@ function AgencyEndorse() {
     if (job?.title) {
       newValues.position = job.title;
     }
+    if (job?.department || job?.raw?.department) {
+      newValues.department = job?.department || job?.raw?.department;
+    }
     setFormValues((prev) => ({ ...prev, [newId]: newValues }));
     // Initialize cities and barangays arrays for the new applicant
     setCities((prev) => ({ ...prev, [newId]: [] }));
     setBarangays((prev) => ({ ...prev, [newId]: [] }));
+    setStep(1);
     setActiveApplicant(newId);
   };
 
@@ -396,6 +491,36 @@ function AgencyEndorse() {
     });
   };
 
+  // Vehicles Driven: make "None" mutually exclusive
+  const toggleVehicleType = (appId, vehicle) => {
+    setFormValues((prev) => {
+      const current = prev[appId] || makeEmptyValues();
+      const currentArr = Array.isArray(current.vehicleTypes) ? current.vehicleTypes : [];
+      const selected = new Set(currentArr);
+
+      const isNone = vehicle === "None";
+      if (isNone) {
+        // Selecting None clears all others; unselecting None clears it
+        if (selected.has("None")) {
+          selected.delete("None");
+        } else {
+          selected.clear();
+          selected.add("None");
+        }
+      } else {
+        // Selecting a real vehicle unselects None
+        if (selected.has("None")) selected.delete("None");
+        if (selected.has(vehicle)) selected.delete(vehicle);
+        else selected.add(vehicle);
+      }
+
+      return {
+        ...prev,
+        [appId]: { ...current, vehicleTypes: Array.from(selected) },
+      };
+    });
+  };
+
   const toggleFlag = (appId, key) => {
     setFormValues((prev) => ({
       ...prev,
@@ -404,15 +529,123 @@ function AgencyEndorse() {
   };
 
   // CSV Import Functions
+  const normalizeCsvContact = (value) => {
+    if (value == null) return "";
+    let raw = String(value).trim();
+    if (!raw) return "";
+
+    // Handle scientific notation from Excel like 9.171234567E+10
+    if (/e\+?/i.test(raw)) {
+      const n = Number(raw);
+      if (Number.isFinite(n)) {
+        raw = String(Math.trunc(n));
+      }
+    }
+
+    // Keep digits only
+    let digits = raw.replace(/\D/g, "");
+
+    // Handle +63 / 63 prefix (PH)
+    if (digits.startsWith("63") && digits.length === 12) {
+      const local = digits.slice(2);
+      if (local.length === 10 && local.startsWith("9")) digits = "0" + local;
+    }
+
+    // If Excel dropped the leading 0: 10 digits starting with 9
+    if (digits.length === 10 && digits.startsWith("9")) digits = "0" + digits;
+
+    // Final trim to 11 (don’t pad beyond fixing the missing 0)
+    return digits.slice(0, 11);
+  };
+
+  const normalizeCsvDate = (value) => {
+    if (value == null) return "";
+    const raw = String(value).trim();
+    if (!raw) return "";
+
+    // Strip any time portion (e.g. "13/01/2026 00:00:00")
+    const rawDateOnly = raw.split(/[T\s]/)[0];
+
+    // Excel serial date (usually ~ 40k-50k in recent years)
+    // Accept integer-like or float-like strings.
+    if (/^\d+(\.\d+)?$/.test(raw)) {
+      const num = Number(raw);
+      if (Number.isFinite(num) && num >= 20000 && num <= 80000) {
+        const serial = Math.floor(num);
+        // Excel's day 0 is 1899-12-30 (accounts for the 1900 leap-year bug)
+        const ms = Date.UTC(1899, 11, 30) + serial * 86400000;
+        const d = new Date(ms);
+        return d.toISOString().slice(0, 10);
+      }
+    }
+
+    // ISO date or ISO datetime
+    if (/^\d{4}-\d{2}-\d{2}/.test(rawDateOnly)) {
+      return rawDateOnly.slice(0, 10);
+    }
+
+    // DMY dates from CSV (DD/MM/YYYY) and common variants (DD-MM-YYYY, DD.MM.YYYY)
+    // User confirmed CSV format is DMY.
+    const dmy = rawDateOnly.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (dmy) {
+      const day = parseInt(dmy[1], 10);
+      const month = parseInt(dmy[2], 10);
+      const year = parseInt(dmy[3], 10);
+      if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return "";
+      if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+      const dt = new Date(Date.UTC(year, month - 1, day));
+      return dt.toISOString().slice(0, 10);
+    }
+
+    // Fallback: try Date parse
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Date(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()))
+        .toISOString()
+        .slice(0, 10);
+    }
+
+    return "";
+  };
+
+  const splitCsvLine = (line) => {
+    const out = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+      if (ch === ',' && !inQuotes) {
+        out.push(current);
+        current = '';
+        continue;
+      }
+      current += ch;
+    }
+    out.push(current);
+    return out;
+  };
+
   const parseCSV = (text) => {
-    const lines = text.split(/\r?\n/).filter(line => line.trim());
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => String(l || '').trim())
+      .filter((l) => l && !l.startsWith('#'));
     if (lines.length < 2) return { headers: [], data: [] };
     
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+    const headers = splitCsvLine(lines[0]).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
     const data = [];
     
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim().replace(/['"]/g, ''));
+      const values = splitCsvLine(lines[i]).map(v => v.trim().replace(/['"]/g, ''));
       if (values.length === headers.length) {
         const row = {};
         headers.forEach((h, idx) => {
@@ -424,8 +657,24 @@ function AgencyEndorse() {
     return { headers, data };
   };
 
-  const mapCsvToFormValues = (csvRow) => {
-    const values = makeEmptyValues();
+  const mapCsvToFormValues = (csvRow, baseValues) => {
+    const values = { ...(baseValues || makeEmptyValues()) };
+
+    const toBool = (v) => {
+      const s = String(v ?? '').trim().toLowerCase();
+      return s === '1' || s === 'true' || s === 'yes' || s === 'y' || s === 'checked';
+    };
+
+    const toList = (v) => {
+      const s = String(v ?? '').trim();
+      if (!s) return [];
+      const parts = s.includes('|')
+        ? s.split('|')
+        : s.includes(';')
+          ? s.split(';')
+          : s.split(',');
+      return parts.map(p => p.trim()).filter(Boolean);
+    };
     
     // Map common CSV column names to form fields
     const fieldMappings = {
@@ -438,9 +687,11 @@ function AgencyEndorse() {
       'position': 'position', 'job title': 'position', 'jobtitle': 'position',
       'department': 'department', 'dept': 'department',
       'depot': 'depot', 'location': 'depot', 'branch': 'depot',
+      'available start date': 'dateAvailable', 'available_start_date': 'dateAvailable', 'dateavailable': 'dateAvailable', 'date_available': 'dateAvailable',
+      'employed': 'employed', 'currently employed': 'employed',
       'birthday': 'birthday', 'birthdate': 'birthday', 'birth_date': 'birthday', 'date of birth': 'birthday',
       'sex': 'sex', 'gender': 'sex',
-      'marital status': 'maritalStatus', 'maritalstatus': 'maritalStatus', 'civil status': 'maritalStatus',
+      'marital status': 'maritalStatus', 'marital_status': 'maritalStatus', 'maritalstatus': 'maritalStatus', 'civil status': 'maritalStatus',
       'unit house number': 'unit_house_number', 'unit_house_number': 'unit_house_number', 'unit house no': 'unit_house_number',
       'house number': 'unit_house_number', 'house_no': 'unit_house_number', 'house no': 'unit_house_number',
       'street': 'street', 'street name': 'street', 'street_name': 'street', 'address': 'street',
@@ -449,22 +700,50 @@ function AgencyEndorse() {
       'city': 'city', 'municipality': 'city', 'city/municipality': 'city',
       'zip': 'zip', 'zipcode': 'zip', 'zip_code': 'zip', 'postal': 'zip', 'postal code': 'zip',
       'education': 'education', 'educational attainment': 'education',
-      'school': 'tertiarySchool', 'institution': 'tertiarySchool',
-      'course': 'tertiaryProgram', 'program': 'tertiaryProgram',
-      'year graduated': 'tertiaryYear', 'yeargraduated': 'tertiaryYear',
+      'school': 'tertiarySchool', 'institution': 'tertiarySchool', 'tertiary_school': 'tertiarySchool',
+      'course': 'tertiaryProgram', 'program': 'tertiaryProgram', 'tertiary_program': 'tertiaryProgram',
+      'year graduated': 'tertiaryYear', 'yeargraduated': 'tertiaryYear', 'tertiary_year': 'tertiaryYear',
       'skills': 'skills',
-      'license classification': 'licenseClassification', 'licenseclassification': 'licenseClassification',
-      'license expiry': 'licenseExpiry', 'licenseexpiry': 'licenseExpiry',
-      'years driving': 'yearsDriving', 'yearsdriving': 'yearsDriving', 'driving experience': 'yearsDriving',
+      'specialized training': 'specializedTraining', 'specialized_training': 'specializedTraining',
+      'year completed': 'specializedYear', 'year_completed': 'specializedYear',
+      'license classification': 'licenseClassification', 'licenseclassification': 'licenseClassification', 'license_classification': 'licenseClassification',
+      'license expiry': 'licenseExpiry', 'licenseexpiry': 'licenseExpiry', 'license_expiry': 'licenseExpiry',
+      'restriction codes': 'restrictionCodes', 'restriction_codes': 'restrictionCodes',
+      'years driving': 'yearsDriving', 'yearsdriving': 'yearsDriving', 'driving experience': 'yearsDriving', 'years_driving': 'yearsDriving',
+      'truck knowledge': 'truckKnowledge', 'truck_knowledge': 'truckKnowledge',
+      'vehicles driven': 'vehicleTypes', 'vehicles_driven': 'vehicleTypes', 'vehicle types': 'vehicleTypes',
+      'troubleshooting tasks': 'troubleshootingTasks', 'troubleshooting_tasks': 'troubleshootingTasks',
+      'taking medications': 'takingMedications', 'taking_medications': 'takingMedications',
+      'medication reason': 'medicationReason', 'medication_reason': 'medicationReason',
+      'took medical test': 'tookMedicalTest', 'took_medical_test': 'tookMedicalTest',
+      'medical test date': 'medicalTestDate', 'medical_test_date': 'medicalTestDate',
+      'has sss': 'hasSSS', 'has_sss': 'hasSSS', 'sss': 'hasSSS',
+      'has pagibig': 'hasPAGIBIG', 'has_pagibig': 'hasPAGIBIG', 'pagibig': 'hasPAGIBIG',
+      'has tin': 'hasTIN', 'has_tin': 'hasTIN', 'tin': 'hasTIN',
+      'has philhealth': 'hasPhilHealth', 'has_philhealth': 'hasPhilHealth', 'philhealth': 'hasPhilHealth',
     };
 
     Object.keys(csvRow).forEach(key => {
       const normalizedKey = key.toLowerCase().trim();
       const formField = fieldMappings[normalizedKey];
       if (formField && csvRow[key]) {
-        values[formField] = csvRow[key];
+        const raw = csvRow[key];
+        if (formField === 'contactNumber') values[formField] = normalizeCsvContact(raw);
+        else if (formField === 'zip') values[formField] = sanitizeZip(raw);
+        else if (formField === 'tertiaryYear' || formField === 'specializedYear') values[formField] = sanitizeYear(raw);
+        else if (formField === 'birthday' || formField === 'dateAvailable' || formField === 'licenseExpiry' || formField === 'medicalTestDate') values[formField] = normalizeCsvDate(raw);
+        else if (formField === 'restrictionCodes' || formField === 'vehicleTypes' || formField === 'troubleshootingTasks') values[formField] = toList(raw);
+        else if (formField === 'takingMedications' || formField === 'tookMedicalTest' || formField === 'hasSSS' || formField === 'hasPAGIBIG' || formField === 'hasTIN' || formField === 'hasPhilHealth') values[formField] = toBool(raw);
+        else if (formField === 'truckKnowledge') values[formField] = String(raw).trim().toLowerCase() === 'yes' ? 'yes' : 'no';
+        else if (formField === 'employed') values[formField] = String(raw).trim().toLowerCase() === 'yes' ? 'yes' : 'no';
+        else values[formField] = raw;
       }
     });
+
+    // Post-normalize contact if present but still missing the leading zero
+    if (values.contactNumber) {
+      values.contactNumber = normalizeCsvContact(values.contactNumber);
+    }
 
     return values;
   };
@@ -513,26 +792,44 @@ function AgencyEndorse() {
     reader.onload = (e) => {
       const { data } = parseCSV(e.target.result);
       
-      // Create new applicants from CSV data
-      const newApplicants = [];
+      // Create/reuse applicants from CSV data.
+      // Reuse completely blank slots (e.g., initial Employee 1) so import doesn't leave Employee 1 empty.
       const newFormValues = { ...formValues };
-      let nextId = Math.max(...applicants.map(a => a.id)) + 1;
-      
-      data.forEach((row, idx) => {
-        const values = mapCsvToFormValues(row);
-        const name = values.firstName && values.lastName 
-          ? `${values.firstName} ${values.lastName}` 
-          : `Employee ${nextId}`;
-        
-        newApplicants.push({ id: nextId, name });
-        newFormValues[nextId] = values;
-        nextId++;
+      const updatedApplicants = applicants.map((a) => ({ ...a }));
+      const blankSlotIds = updatedApplicants
+        .map((a) => a.id)
+        .filter((id) => isApplicantReusableSlotForCsv(newFormValues[id] || makeEmptyValues()));
+
+      let nextId = Math.max(...updatedApplicants.map((a) => a.id)) + 1;
+      let firstImportedId = null;
+
+      data.forEach((row) => {
+        const slotIdPreview = blankSlotIds.length ? blankSlotIds[0] : nextId;
+        const base = newFormValues[slotIdPreview] || makeEmptyValues();
+        const values = mapCsvToFormValues(row, base);
+        const displayName = values.firstName && values.lastName
+          ? `${values.firstName} ${values.lastName}`
+          : null;
+
+        const slotId = blankSlotIds.length ? blankSlotIds.shift() : nextId++;
+        newFormValues[slotId] = values;
+
+        const existingIdx = updatedApplicants.findIndex((a) => a.id === slotId);
+        const name = displayName || (existingIdx >= 0 ? updatedApplicants[existingIdx].name : `Employee ${slotId}`);
+        if (existingIdx >= 0) {
+          updatedApplicants[existingIdx] = { ...updatedApplicants[existingIdx], name };
+        } else {
+          updatedApplicants.push({ id: slotId, name });
+        }
+
+        if (firstImportedId == null) firstImportedId = slotId;
       });
-      
-      setApplicants(prev => [...prev, ...newApplicants]);
+
+      setApplicants(updatedApplicants);
       setFormValues(newFormValues);
-      if (newApplicants.length > 0) {
-        setActiveApplicant(newApplicants[0].id);
+      if (firstImportedId != null) {
+        setStep(1);
+        setActiveApplicant(firstImportedId);
       }
       
       // Close modal and reset
@@ -541,16 +838,249 @@ function AgencyEndorse() {
       setCsvPreview([]);
       setCsvError('');
 
-      // Custom success alert (site-wide design)
-      setSuccessMessage(`Successfully imported ${data.length} employee(s). Please review and complete their information.`);
-      setSuccessNavigatePath(null);
-      setShowSuccessAlert(true);
+      // After import, open Summary so the CSV flow can proceed to endorsement.
+      // If validation fails, users will see a validation alert.
+      setTimeout(() => {
+        if (isDeliveryDriverJob) {
+          setSuccessMessage(
+            `Successfully imported ${data.length} employee(s). Please upload the required License Photocopy for each employee before endorsing.`
+          );
+          setSuccessNavigatePath(null);
+          setShowSuccessAlert(true);
+        } else {
+          handleOpenSummary();
+        }
+      }, 0);
     };
     reader.readAsText(csvFile);
   };
 
+  const formatDateForInput = (date) => {
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return "";
+    const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  };
+
+  const todayStr = formatDateForInput(new Date());
+  const tomorrowStr = formatDateForInput(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  const minAge15BirthdayMaxStr = formatDateForInput(
+    new Date(new Date().setFullYear(new Date().getFullYear() - 15))
+  );
+
+  const getBirthYear = (birthday) => {
+    const year = parseInt(String(birthday || "").slice(0, 4), 10);
+    return Number.isFinite(year) ? year : null;
+  };
+
+  const getAgeFromBirthday = (birthday) => {
+    if (!birthday) return null;
+    const b = new Date(birthday);
+    if (Number.isNaN(b.getTime())) return null;
+    const now = new Date();
+    let age = now.getFullYear() - b.getFullYear();
+    const m = now.getMonth() - b.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < b.getDate())) age -= 1;
+    return age;
+  };
+
+  const sanitizeDigits = (value, maxLen) => String(value ?? "").replace(/\D/g, "").slice(0, maxLen);
+  const sanitizeYear = (value) => sanitizeDigits(value, 4);
+  const sanitizeZip = (value) => sanitizeDigits(value, 4);
+  const sanitizeContact = (value) => sanitizeDigits(value, 11);
+
+  const isValidEmail = (value) => {
+    const email = String(value || "").trim();
+    if (!email) return false;
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+
+  const validateYearAfterBirth = (yearStr, birthYear) => {
+    if (!yearStr) return null;
+    if (!/^\d{4}$/.test(yearStr)) return "must be 4 digits";
+    if (birthYear && parseInt(yearStr, 10) <= birthYear) return `must be after birth year (${birthYear})`;
+    return null;
+  };
+
+  const showValidationError = (message) => {
+    setErrorMessage(message);
+    setShowErrorAlert(true);
+  };
+
+  const validateStep = (stepNum, applicantId = activeApplicant) => {
+    const vals = formValues[applicantId] || makeEmptyValues();
+    const errors = [];
+    const req = (key, label) => {
+      const v = vals[key];
+      if (Array.isArray(v)) {
+        if (v.length === 0) errors.push(label);
+        return;
+      }
+      if (typeof v === "boolean") {
+        // booleans are always answered
+        return;
+      }
+      if (v == null) {
+        errors.push(label);
+        return;
+      }
+      if (typeof v === "string" && v.trim() === "") {
+        errors.push(label);
+        return;
+      }
+    };
+
+    const birthYear = getBirthYear(vals.birthday);
+
+    if (stepNum === 1) {
+      req("department", "Department");
+      req("position", "Position");
+      req("depot", "Depot Assignment");
+      req("dateAvailable", "Available Start Date");
+      req("employed", "Currently Employed");
+
+      req("lastName", "Last Name");
+      req("firstName", "First Name");
+      req("birthday", "Birthday");
+      req("maritalStatus", "Marital Status");
+      req("sex", "Sex");
+
+      req("street", "Street Address");
+      req("province", "Province");
+      req("city", "City / Municipality");
+      req("barangay", "Barangay");
+      req("zip", "ZIP Code");
+
+      req("contactNumber", "Contact Number");
+      req("email", "Email Address");
+
+      if (vals.birthday && vals.birthday > todayStr) {
+        errors.push("Birthday cannot be in the future");
+      }
+
+      const age = getAgeFromBirthday(vals.birthday);
+      if (age != null && age < 15) {
+        errors.push("Applicant must be at least 15 years old");
+      }
+
+      if (vals.dateAvailable && vals.dateAvailable < todayStr) {
+        errors.push("Available Start Date cannot be before today");
+      }
+
+      const zipStr = String(vals.zip || "").trim();
+      if (zipStr && !/^\d{4}$/.test(zipStr)) {
+        errors.push("ZIP Code must be exactly 4 digits");
+      }
+
+      const contactStr = String(vals.contactNumber || "").trim();
+      if (contactStr && !/^09\d{9}$/.test(contactStr)) {
+        errors.push("Contact Number must be exactly 11 digits and start with 09");
+      }
+
+      if (vals.email && !isValidEmail(vals.email)) {
+        errors.push("Email Address must be a valid email format (e.g., name@domain.com)");
+      }
+    }
+
+    if (stepNum === 2) {
+      req("education", "Educational Level");
+
+      const educationIsNA = vals.education === "N/A";
+      if (!educationIsNA) {
+        req("tertiaryYear", "Year Graduated");
+        req("tertiarySchool", "School/Institution Name");
+        req("tertiaryProgram", "Course/Program");
+      }
+
+      const yearGrad = sanitizeYear(vals.tertiaryYear);
+      const yearGradErr = validateYearAfterBirth(yearGrad, birthYear);
+      if (yearGrad && yearGradErr) errors.push(`Year Graduated ${yearGradErr}`);
+
+      const specYear = sanitizeYear(vals.specializedYear);
+      if (specYear) {
+        const specErr = validateYearAfterBirth(specYear, birthYear);
+        if (specErr) errors.push(`Year Completed ${specErr}`);
+      }
+    }
+
+    if (stepNum === 3 && isDeliveryDriverJob) {
+      req("licenseClassification", "License Classification");
+      req("licenseExpiry", "License Expiry Date");
+      req("licenseFile", "License Photocopy");
+
+      if (!Array.isArray(vals.restrictionCodes) || vals.restrictionCodes.length < 1) {
+        errors.push("Restriction Codes (select at least 1)");
+      }
+
+      if (vals.licenseExpiry && vals.licenseExpiry < tomorrowStr) {
+        errors.push("License Expiry Date must be from tomorrow onwards");
+      }
+    }
+
+    if (stepNum === 4 && isDeliveryDriverJob) {
+      req("yearsDriving", "Years of Driving Experience");
+      req("truckKnowledge", "Truck Troubleshooting Knowledge");
+      req("vehicleTypes", "Vehicles Driven");
+
+      const age = getAgeFromBirthday(vals.birthday);
+      const years = vals.yearsDriving === "" ? null : Number(vals.yearsDriving);
+      if (years != null && Number.isFinite(years) && age != null && years > age) {
+        errors.push(`Years of Driving Experience cannot exceed age (${age})`);
+      }
+    }
+
+    return errors;
+  };
+
   const nextStep = () => setStep((s) => Math.min(s + 1, totalSteps));
   const prevStep = () => setStep((s) => Math.max(s - 1, 1));
+
+  const handleNextStepClick = () => {
+    const errs = validateStep(step, activeApplicant);
+    if (errs.length > 0) {
+      showValidationError(`Please complete the required fields before proceeding:\n\n- ${errs.join("\n- ")}`);
+      return;
+    }
+    nextStep();
+  };
+
+  const handleOpenSummary = () => {
+    // Validate all applicants + all steps before showing summary
+    let hasAtLeastOne = false;
+    for (const applicant of applicants) {
+      const vals = formValues[applicant.id] || makeEmptyValues();
+      if (isApplicantBlank(vals)) continue;
+      hasAtLeastOne = true;
+      for (let s = 1; s <= totalSteps; s++) {
+        const errs = validateStep(s, applicant.id);
+        if (errs.length > 0) {
+          showValidationError(
+            `Please complete the required fields for ${applicant.name} before submitting (Step ${s}):\n\n- ${errs.join("\n- ")}`
+          );
+          return;
+        }
+      }
+    }
+    if (!hasAtLeastOne) {
+      showValidationError("No employees to endorse. Please add or import at least one employee.");
+      return;
+    }
+    setShowSummaryModal(true);
+  };
+
+  const formatSummaryValue = (value) => {
+    if (value == null) return "—";
+    if (Array.isArray(value)) return value.length ? value.join(", ") : "—";
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+    if (typeof value === "string") return value.trim() ? value.trim() : "—";
+    if (typeof value === "number") return String(value);
+    if (typeof value === "object") {
+      // Likely File objects
+      if (value?.name) return value.name;
+      return "—";
+    }
+    return String(value);
+  };
 
   const stepLabels = isDeliveryDriverJob 
     ? [
@@ -565,22 +1095,30 @@ function AgencyEndorse() {
       ];
 
   // --- Endorse implementation (no blocking auth alert) ---
-  // Endorse handler (AgencyEndorse.jsx)
-  const handleEndorse = async () => {
-    const vals = formValues[activeApplicant] || makeEmptyValues();
+  const getApplicantDisplayName = (applicantId) => {
+    const vals = formValues[applicantId] || makeEmptyValues();
+    const fname = vals.firstName?.trim() || "";
+    const lname = vals.lastName?.trim() || "";
+    const displayName = `${fname} ${lname}`.trim();
+    const fallback = applicants.find((a) => a.id === applicantId)?.name;
+    return displayName || fallback || `Employee ${applicantId}`;
+  };
+
+  const endorseOneApplicant = async (applicantId) => {
+    const vals = formValues[applicantId] || makeEmptyValues();
     const fname = vals.firstName?.trim() || "";
     const lname = vals.lastName?.trim() || "";
     const mname = vals.middleName?.trim() || "";
     const email = (vals.email || "").trim().toLowerCase();
-    const contact = vals.contactNumber || "";
+    const contact = sanitizeContact(vals.contactNumber || "");
     const position = vals.position || null;
     const depot = vals.depot || null;
 
-    // required fields
-    if (!fname || !lname || !email) {
-      setErrorMessage("Please fill required fields before endorsing: First Name, Last Name, Email.");
-      setShowErrorAlert(true);
-      return;
+    if (!fname || !lname || !email || !contact) {
+      throw new Error("Please fill required fields before endorsing: First Name, Last Name, Contact Number, Email.");
+    }
+    if (!/^09\d{9}$/.test(contact)) {
+      throw new Error("Contact Number must be exactly 11 digits and start with 09.");
     }
 
     try {
@@ -629,10 +1167,37 @@ function AgencyEndorse() {
         }
       }
 
+      // Upload resume from this endorsement form (optional). If provided, it overrides profile resume.
+      const resumeFile = vals.resumeFile || null;
+      if (resumeFile && resumeFile instanceof File) {
+        if (!authUserId) {
+          console.warn("No auth user id available; skipping resume upload.");
+        } else {
+          const sanitizedFileName = String(resumeFile.name || "resume.pdf").replace(/\s+/g, "_");
+          const filePath = `${authUserId}/${Date.now()}-${sanitizedFileName}`;
+
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('resume')
+            .upload(filePath, resumeFile, {
+              upsert: true,
+            });
+
+          if (uploadError) {
+            throw new Error('Failed to upload resume: ' + uploadError.message);
+          }
+
+          applicantResumePath = uploadData?.path || applicantResumePath;
+        }
+      }
+
       // Include resume in applicant data if available
+      // Avoid including raw File objects in DB payload.
+      // eslint-disable-next-line no-unused-vars
+      const { resumeFile: _resumeFile, ...valsNoResumeFile } = vals;
       const applicantData = {
-        ...vals,
-        department: job?.department || null, // Add department from job post
+        ...valsNoResumeFile,
+        contactNumber: contact,
+        department: vals.department || job?.department || job?.raw?.department || null,
         ...(applicantResumePath && { resumePath: applicantResumePath })
       };
 
@@ -662,12 +1227,10 @@ function AgencyEndorse() {
           if (empCheckErr && empCheckErr.code !== 'PGRST116') {
             console.warn("Employee check error:", empCheckErr);
           } else if (existingEmployee) {
-            setErrorMessage(
+            throw new Error(
               `Cannot endorse: The email "${email}" already exists in the system as an employee (${existingEmployee.fname || ''} ${existingEmployee.lname || ''}). ` +
-              `Employees cannot be endorsed as new applicants.`
+                `Employees cannot be endorsed as new applicants.`
             );
-            setShowErrorAlert(true);
-            return;
           }
         } catch (e) {
           console.warn("Error checking employees table:", e);
@@ -706,12 +1269,10 @@ function AgencyEndorse() {
               // If already endorsed, show informative message
               if (existingApp.endorsed) {
                 const jobTitle = existingApp.job_posts?.title || 'this position';
-                setErrorMessage(
+                throw new Error(
                   `Cannot endorse: This applicant (${email}) has already been endorsed for ${jobTitle}. ` +
-                  `Please check your endorsements list or choose a different job posting.`
+                    `Please check your endorsements list or choose a different job posting.`
                 );
-                setShowErrorAlert(true);
-                return;
               }
               // If exists but not endorsed, we can still try to update it
             }
@@ -741,12 +1302,10 @@ function AgencyEndorse() {
               if (appEmail && appEmail.toLowerCase().trim() === email.toLowerCase().trim()) {
                 const jobTitle = app.job_posts?.title || 'another position';
                 const status = app.status || 'unknown';
-                setErrorMessage(
+                throw new Error(
                   `Cannot endorse: This email "${email}" already has an active application for ${jobTitle} (Status: ${status}). ` +
-                  `Please wait for that application to be processed or use a different email address.`
+                    `Please wait for that application to be processed or use a different email address.`
                 );
-                setShowErrorAlert(true);
-                return;
               }
             }
           }
@@ -818,12 +1377,10 @@ function AgencyEndorse() {
                     if (app.endorsed) {
                       // Application exists and is endorsed - show error instead of success
                       const jobTitle = app.job_posts?.title || 'this position';
-                      setErrorMessage(
+                      throw new Error(
                         `Cannot endorse: This applicant (${email}) has already been endorsed for ${jobTitle}. ` +
-                        `Please check your endorsements list.`
+                          `Please check your endorsements list.`
                       );
-                      setShowErrorAlert(true);
-                      return;
                     } else {
                       // Application exists but not endorsed - treat as success (will be updated)
                       insertSuccess = true;
@@ -835,41 +1392,33 @@ function AgencyEndorse() {
 
               if (!insertSuccess) {
                 console.error("Failed to create application (conflict, but not found):", errAppInsert);
-                setErrorMessage(
+                throw new Error(
                   `Failed to create endorsement: Duplicate entry detected. ` +
-                  `The email "${email}" may already exist in the system. ` +
-                  `Please check if this applicant has already been endorsed or exists as an employee.`
+                    `The email "${email}" may already exist in the system. ` +
+                    `Please check if this applicant has already been endorsed or exists as an employee.`
                 );
-                setShowErrorAlert(true);
-                return;
               }
             } catch (verifyErr) {
               console.error("Error verifying application after conflict:", verifyErr);
-              setErrorMessage(
+              throw new Error(
                 `Failed to create endorsement: Database conflict detected. ` +
-                `The email "${email}" may already exist. ` +
-                `Please verify the applicant doesn't already exist in the system.`
+                  `The email "${email}" may already exist. ` +
+                  `Please verify the applicant doesn't already exist in the system.`
               );
-              setShowErrorAlert(true);
-              return;
             }
           } else if (errorMessage.includes('duplicate') || errorMessage.includes('already exists') || errorMessage.includes('unique constraint')) {
             // Generic duplicate error
-            setErrorMessage(
+            throw new Error(
               `Cannot endorse: The email "${email}" already exists in the system. ` +
-              `Please use a different email address or check if this applicant has already been endorsed.`
+                `Please use a different email address or check if this applicant has already been endorsed.`
             );
-            setShowErrorAlert(true);
-            return;
           } else {
             // Other database errors
             console.error("Failed to create application:", errAppInsert);
-            setErrorMessage(
+            throw new Error(
               `Failed to create endorsement: ${errorMessage}. ` +
-              `Please check the information and try again. If the problem persists, contact support.`
+                `Please check the information and try again. If the problem persists, contact support.`
             );
-            setShowErrorAlert(true);
-            return;
           }
         } else {
           insertSuccess = true;
@@ -877,16 +1426,60 @@ function AgencyEndorse() {
       }
 
       // Success: application created or updated with endorsed=true
-      if (insertSuccess) {
-        setSuccessMessage("Successfully endorsed. ✅");
-        setSuccessNavigatePath("/agency/endorsements");
-        setShowSuccessAlert(true);
-      }
+      if (insertSuccess) return true;
+      throw new Error("Failed to create endorsement. Please try again.");
     } catch (err) {
       console.error("unexpected endorse error:", err);
-      setErrorMessage("An unexpected error occurred. Check console.");
-      setShowErrorAlert(true);
+      throw err instanceof Error ? err : new Error("An unexpected error occurred. Check console.");
     }
+  };
+
+  const handleEndorseAll = async () => {
+    const results = [];
+    let attempted = 0;
+    for (const applicant of applicants) {
+      const vals = formValues[applicant.id] || makeEmptyValues();
+      if (isApplicantBlank(vals)) continue;
+      attempted += 1;
+      try {
+        await endorseOneApplicant(applicant.id);
+        results.push({ applicantId: applicant.id, ok: true });
+      } catch (e) {
+        results.push({
+          applicantId: applicant.id,
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    if (attempted === 0) {
+      setErrorMessage("No employees to endorse. Please add or import at least one employee.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    const failed = results.filter((r) => !r.ok);
+    const succeeded = results.filter((r) => r.ok);
+
+    if (failed.length > 0) {
+      const lines = failed
+        .map((r) => `- ${getApplicantDisplayName(r.applicantId)}: ${r.error || "Failed"}`)
+        .join("\n");
+      const okLine = succeeded.length
+        ? `\n\nSucceeded (${succeeded.length}):\n${succeeded
+            .map((r) => `- ${getApplicantDisplayName(r.applicantId)}`)
+            .join("\n")}`
+        : "";
+
+      setErrorMessage(`Some endorsements could not be submitted:\n\n${lines}${okLine}`);
+      setShowErrorAlert(true);
+      return;
+    }
+
+    setSuccessMessage(`Successfully endorsed ${succeeded.length} employee(s). ✅`);
+    setSuccessNavigatePath("/agency/endorsements");
+    setShowSuccessAlert(true);
   };
 
 
@@ -919,13 +1512,12 @@ function AgencyEndorse() {
     "Adding power steering fluid.",
     "Adjusting the engine belt.",
     "Replacing the tire.",
-    "No knowledge of basic troubleshooting.",
   ];
 
   const vehicleTypesList = ["Sedan or Car", "Van", "L300", "Hino / Canter (4 wheels - 6 wheels)", "10 Wheeler", "None"];
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div>
       <style>{`
         .no-scrollbar {
           -ms-overflow-style: none;
@@ -954,8 +1546,8 @@ function AgencyEndorse() {
         }
       `}</style>
 
-      {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-50">
+      {/* Header (hidden because AgencyLayout provides the main header) */}
+      <div className="bg-white shadow-sm sticky top-0 z-50 hidden">
         <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center">
@@ -1044,8 +1636,9 @@ function AgencyEndorse() {
                   )}
                 </div>
               ))}
+
             </div>
-      </div>
+          </div>
 
           {/* Employee Tabs */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6 overflow-hidden">
@@ -1069,7 +1662,12 @@ function AgencyEndorse() {
                     }`} 
                     onClick={() => setActiveApplicant(applicant.id)}
                   >
-                    {fv.firstName && fv.lastName ? `${fv.firstName} ${fv.lastName}` : applicant.name}
+                    {(() => {
+                      const v = formValues[applicant.id] || makeEmptyValues();
+                      const f = (v.firstName || "").trim();
+                      const l = (v.lastName || "").trim();
+                      return f && l ? `${f} ${l}` : applicant.name;
+                    })()}
                   </button>
             {applicants.length > 1 && (
                     <button 
@@ -1113,8 +1711,13 @@ function AgencyEndorse() {
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
-                      <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.department} onChange={(e) => handleChange(activeApplicant, "department", e.target.value)}>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Department <span className="text-[#800000]">*</span></label>
+                      <select 
+                        className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm ${(job?.department || job?.raw?.department) ? 'bg-gray-100 cursor-not-allowed' : 'focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]'}`}
+                        value={fv.department}
+                        onChange={(e) => handleChange(activeApplicant, "department", e.target.value)}
+                        disabled={!!(job?.department || job?.raw?.department)}
+                      >
                 <option value="">Select Department</option>
                 <option>Operations</option>
                 <option>HR</option>
@@ -1179,8 +1782,8 @@ function AgencyEndorse() {
               </select>
             </div>
             <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Date Available</label>
-                      <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.dateAvailable || ""} onChange={(e) => handleChange(activeApplicant, "dateAvailable", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Available Start Date <span className="text-[#800000]">*</span></label>
+                      <input type="date" min={todayStr} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.dateAvailable || ""} onChange={(e) => handleChange(activeApplicant, "dateAvailable", e.target.value)} />
                     </div>
                   </div>
                   <div>
@@ -1219,11 +1822,11 @@ function AgencyEndorse() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Birthday</label>
-                      <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.birthday} onChange={(e) => handleChange(activeApplicant, "birthday", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Birthday <span className="text-[#800000]">*</span></label>
+                      <input type="date" max={minAge15BirthdayMaxStr} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.birthday} onChange={(e) => handleChange(activeApplicant, "birthday", e.target.value)} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Marital Status</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Marital Status <span className="text-[#800000]">*</span></label>
                       <select className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.maritalStatus} onChange={(e) => handleChange(activeApplicant, "maritalStatus", e.target.value)}>
                         <option value="">Select status</option>
                 <option value="Single">Single</option>
@@ -1255,29 +1858,24 @@ function AgencyEndorse() {
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        Unit/House Number & Street Name
-                      </label>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="text"
-                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                          placeholder="Unit/House No."
-                          value={fv.unit_house_number || ''}
-                          onChange={(e) => handleChange(activeApplicant, "unit_house_number", e.target.value)}
-                        />
-                        <input
-                          type="text"
-                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                          placeholder="Street Name"
-                          value={fv.street || ''}
-                          onChange={(e) => handleChange(activeApplicant, "street", e.target.value)}
-                        />
-                      </div>
+                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                              Unit/House Number, Street Name, Subdivision/Village <span className="text-[#800000]">*</span>
+                            </label>
+                            <input
+                              type="text"
+                              className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                              placeholder="e.g., Unit 123 Main Street"
+                              value={[fv.unit_house_number, fv.street].filter(Boolean).join(' ') || ''}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                handleChange(activeApplicant, "street", value);
+                                handleChange(activeApplicant, "unit_house_number", "");
+                              }}
+                            />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        Province
+                              Province <span className="text-[#800000]">*</span>
                       </label>
                       <AutocompleteInput
                         value={fv.province || ''}
@@ -1305,7 +1903,7 @@ function AgencyEndorse() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        City / Municipality
+                        City / Municipality <span className="text-[#800000]">*</span>
                       </label>
                       <AutocompleteInput
                         value={fv.city || ''}
@@ -1332,7 +1930,7 @@ function AgencyEndorse() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                        Barangay / Village / Subdivision
+                        Barangay <span className="text-[#800000]">*</span>
                       </label>
                       <AutocompleteInput
                         value={fv.barangay || ''}
@@ -1351,14 +1949,16 @@ function AgencyEndorse() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">ZIP Code</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">ZIP Code <span className="text-[#800000]">*</span></label>
                       <input
                         type="text"
                         className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
                         placeholder="e.g. 1600"
                         value={fv.zip || ''}
-                        onChange={(e) => handleChange(activeApplicant, "zip", e.target.value)}
-                        maxLength={10}
+                        onChange={(e) => handleChange(activeApplicant, "zip", sanitizeZip(e.target.value))}
+                        inputMode="numeric"
+                        pattern="\d*"
+                        maxLength={4}
                       />
                     </div>
                   </div>
@@ -1374,11 +1974,88 @@ function AgencyEndorse() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-[#800000]">*</span></label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 09XX XXX XXXX" value={fv.contactNumber} onChange={(e) => handleChange(activeApplicant, "contactNumber", e.target.value)} />
+                      <input
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                        placeholder="e.g. 09XXXXXXXXX"
+                        value={fv.contactNumber}
+                        onChange={(e) => handleChange(activeApplicant, "contactNumber", sanitizeContact(e.target.value))}
+                        inputMode="numeric"
+                        pattern="\d*"
+                        maxLength={11}
+                      />
           </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-[#800000]">*</span></label>
                       <input type="email" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. employee@email.com" value={fv.email} onChange={(e) => handleChange(activeApplicant, "email", e.target.value)} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">Must be 11 digits and start with <span className="font-mono">09</span>.</p>
+                </div>
+              </div>
+
+              {/* Resume & Government IDs (Optional) */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                  <h2 className="text-base font-semibold text-gray-800">Additional Information</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">Optional fields</p>
+                </div>
+                <div className="p-6 space-y-5">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Resume (Optional)</label>
+                    <input
+                      type="file"
+                      accept="application/pdf"
+                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                      onChange={(e) => handleChange(activeApplicant, "resumeFile", e.target.files?.[0] || null)}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">PDF file. If not provided, endorsement will use the applicant’s profile resume if available.</p>
+                    {fv.resumeFile?.name && (
+                      <p className="text-xs text-gray-600 mt-1">Selected: <span className="font-medium">{fv.resumeFile.name}</span></p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-gray-700">
+                      Government IDs (Optional)
+                      <span className="text-xs font-normal text-gray-400 ml-2">(Check all that apply)</span>
+                    </label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={!!fv.hasSSS}
+                          onChange={(e) => handleChange(activeApplicant, "hasSSS", e.target.checked)}
+                          className="accent-[#800000]"
+                        />
+                        <span className="text-sm">SSS</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={!!fv.hasPAGIBIG}
+                          onChange={(e) => handleChange(activeApplicant, "hasPAGIBIG", e.target.checked)}
+                          className="accent-[#800000]"
+                        />
+                        <span className="text-sm">PAGIBIG</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={!!fv.hasTIN}
+                          onChange={(e) => handleChange(activeApplicant, "hasTIN", e.target.checked)}
+                          className="accent-[#800000]"
+                        />
+                        <span className="text-sm">TIN</span>
+                      </label>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={!!fv.hasPhilHealth}
+                          onChange={(e) => handleChange(activeApplicant, "hasPhilHealth", e.target.checked)}
+                          className="accent-[#800000]"
+                        />
+                        <span className="text-sm">PhilHealth</span>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -1418,30 +2095,34 @@ function AgencyEndorse() {
                       >
                         <option value="">Select highest education</option>
                         <option value="N/A">N/A</option>
-                        <option value="Elementary">Elementary Graduate</option>
-                        <option value="High School">High School Graduate</option>
+                        <option value="Elementary">Elementary</option>
+                        <option value="Junior High School">Junior High School</option>
+                        <option value="Senior High School">Senior High School</option>
                         <option value="Vocational">Vocational/Technical Course</option>
-                        <option value="College">College Graduate</option>
+                        <option value="College">College</option>
                         <option value="Post Graduate">Post Graduate (Masters/Doctorate)</option>
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Graduated</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Graduated <span className="text-[#800000]">*</span></label>
                       <input 
-                        type="number" 
+                        type="text" 
+                        inputMode="numeric"
+                        pattern="\d*"
+                        maxLength={4}
                         className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${
                           fv.education === "N/A" ? "bg-gray-100 cursor-not-allowed" : ""
                         }`}
                         placeholder="e.g. 2020" 
                         value={fv.tertiaryYear || ""} 
-                        onChange={(e) => handleChange(activeApplicant, "tertiaryYear", e.target.value)}
+                        onChange={(e) => handleChange(activeApplicant, "tertiaryYear", sanitizeYear(e.target.value))}
                         disabled={fv.education === "N/A"}
                       />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">School/Institution Name</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">School/Institution Name <span className="text-[#800000]">*</span></label>
                       <input 
                         className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${
                           fv.education === "N/A" ? "bg-gray-100 cursor-not-allowed" : ""
@@ -1453,7 +2134,7 @@ function AgencyEndorse() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Course/Program (if applicable)</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Course/Program <span className="text-[#800000]">*</span></label>
                       <input 
                         className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${
                           fv.education === "N/A" ? "bg-gray-100 cursor-not-allowed" : ""
@@ -1521,7 +2202,7 @@ function AgencyEndorse() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Completed</label>
-                      <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 2023" value={fv.specializedYear || ""} onChange={(e) => handleChange(activeApplicant, "specializedYear", e.target.value)} />
+                      <input type="text" inputMode="numeric" pattern="\d*" maxLength={4} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 2023" value={fv.specializedYear || ""} onChange={(e) => handleChange(activeApplicant, "specializedYear", sanitizeYear(e.target.value))} />
             </div>
           </div>
 
@@ -1609,15 +2290,26 @@ function AgencyEndorse() {
             </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">License Expiry Date <span className="text-[#800000]">*</span></label>
-                      <input type="date" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.licenseExpiry || ""} onChange={(e) => handleChange(activeApplicant, "licenseExpiry", e.target.value)} />
+                      <input type="date" min={tomorrowStr} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.licenseExpiry || ""} onChange={(e) => handleChange(activeApplicant, "licenseExpiry", e.target.value)} />
                     </div>
           </div>
 
                   {/* License Photocopy Upload */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                      License Photocopy <span className="text-gray-400 font-normal">(Front & Back)</span>
+                      License Photocopy <span className="text-[#800000]">*</span> <span className="text-gray-400 font-normal">(Front & Back)</span>
                     </label>
+                    <div className="mb-2">
+                      <a
+                        href="/samples/sample-front-and-back-license.pdf"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-blue-600 hover:underline"
+                      >
+                        View sample format in PDF
+                      </a>
+                      <span className="text-xs text-gray-400 ml-2">(opens in a new tab)</span>
+                    </div>
                     {!fv.licenseFile ? (
                       <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-[#800000]/40 hover:bg-[#800000]/10 transition-colors">
                         <div className="flex flex-col items-center justify-center py-4">
@@ -1735,17 +2427,37 @@ function AgencyEndorse() {
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Years of Driving Experience</label>
-                      <input type="number" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. 5" value={fv.yearsDriving || ""} onChange={(e) => handleChange(activeApplicant, "yearsDriving", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Years of Driving Experience <span className="text-[#800000]">*</span></label>
+                      <input 
+                        type="number" 
+                        min={0}
+                        max={getAgeFromBirthday(fv.birthday) ?? undefined}
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" 
+                        placeholder={getAgeFromBirthday(fv.birthday) != null ? `0 - ${getAgeFromBirthday(fv.birthday)}` : "e.g. 5"}
+                        value={fv.yearsDriving || ""} 
+                        onChange={(e) => {
+                          const age = getAgeFromBirthday(fv.birthday);
+                          const raw = e.target.value;
+                          if (raw === "") {
+                            handleChange(activeApplicant, "yearsDriving", "");
+                            return;
+                          }
+                          let next = Number(raw);
+                          if (!Number.isFinite(next)) return;
+                          if (next < 0) next = 0;
+                          if (age != null && next > age) next = age;
+                          handleChange(activeApplicant, "yearsDriving", String(next));
+                        }} 
+                      />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">Has basic truck troubleshooting knowledge?</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Has basic truck troubleshooting knowledge? <span className="text-[#800000]">*</span></label>
                       <div className="flex gap-3">
                         <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.truckKnowledge === "yes" ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 hover:bg-gray-50'}`}>
                           <input type="radio" name={`truckKnowledge-${activeApplicant}`} className="accent-green-600" checked={fv.truckKnowledge === "yes"} onChange={() => handleChange(activeApplicant, "truckKnowledge", "yes")} /> Yes
                         </label>
                         <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${fv.truckKnowledge !== "yes" ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
-                          <input type="radio" name={`truckKnowledge-${activeApplicant}`} className="accent-[#800000]" checked={fv.truckKnowledge !== "yes"} onChange={() => handleChange(activeApplicant, "truckKnowledge", "no")} /> No
+                          <input type="radio" name={`truckKnowledge-${activeApplicant}`} className="accent-[#800000]" checked={fv.truckKnowledge !== "yes"} onChange={() => { handleChange(activeApplicant, "truckKnowledge", "no"); handleChange(activeApplicant, "troubleshootingTasks", []); }} /> No
                         </label>
                       </div>
                     </div>
@@ -1753,35 +2465,37 @@ function AgencyEndorse() {
             </div>
           </div>
 
-              {/* Troubleshooting Tasks */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
-                  <h2 className="text-base font-semibold text-gray-800">Troubleshooting Capabilities</h2>
+              {/* Troubleshooting Tasks (only if Yes) */}
+              {fv.truckKnowledge === "yes" && (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                    <h2 className="text-base font-semibold text-gray-800">Troubleshooting Capabilities</h2>
+                  </div>
+                  <div className="p-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-3">What troubleshooting tasks can the employee perform?</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {troubleshootingTasksList.map((task) => (
+                        <label 
+                          key={task} 
+                          className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
+                            fv.troubleshootingTasks.includes(task) 
+                              ? 'border-purple-500 bg-purple-50' 
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                        >
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4 accent-purple-600 rounded" 
+                            checked={fv.troubleshootingTasks.includes(task)} 
+                            onChange={() => toggleArrayValue(activeApplicant, "troubleshootingTasks", task)} 
+                          />
+                          <span className={`text-sm ${fv.troubleshootingTasks.includes(task) ? 'text-purple-700 font-medium' : 'text-gray-700'}`}>{task}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="p-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-3">What troubleshooting tasks can the employee perform?</label>
-                  <div className="grid grid-cols-1 gap-2">
-              {troubleshootingTasksList.map((task) => (
-                      <label 
-                        key={task} 
-                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                          fv.troubleshootingTasks.includes(task) 
-                            ? 'border-purple-500 bg-purple-50' 
-                            : 'border-gray-200 hover:bg-gray-50'
-                        }`}
-                      >
-                        <input 
-                          type="checkbox" 
-                          className="w-4 h-4 accent-purple-600 rounded" 
-                          checked={fv.troubleshootingTasks.includes(task)} 
-                          onChange={() => toggleArrayValue(activeApplicant, "troubleshootingTasks", task)} 
-                        />
-                        <span className={`text-sm ${fv.troubleshootingTasks.includes(task) ? 'text-purple-700 font-medium' : 'text-gray-700'}`}>{task}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          </div>
+              )}
 
               {/* Vehicle Types */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1789,25 +2503,34 @@ function AgencyEndorse() {
                   <h2 className="text-base font-semibold text-gray-800">Vehicles Driven</h2>
                 </div>
                 <div className="p-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-3">What types of vehicles has the employee driven?</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">What types of vehicles has the employee driven? <span className="text-[#800000]">*</span></label>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
               {vehicleTypesList.map((vehicle) => (
+                      (() => {
+                        const noneSelected = Array.isArray(fv.vehicleTypes) && fv.vehicleTypes.includes('None');
+                        const disabled = noneSelected && vehicle !== 'None';
+                        return (
                       <label 
                         key={vehicle} 
-                        className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                          fv.vehicleTypes.includes(vehicle) 
-                            ? 'border-green-500 bg-green-50' 
-                            : 'border-gray-200 hover:bg-gray-50'
+                        className={`flex items-center gap-3 p-3 rounded-lg border transition-all ${
+                          disabled
+                            ? 'border-gray-200 bg-gray-50 opacity-60 cursor-not-allowed'
+                            : fv.vehicleTypes.includes(vehicle)
+                              ? 'border-green-500 bg-green-50 cursor-pointer'
+                              : 'border-gray-200 hover:bg-gray-50 cursor-pointer'
                         }`}
                       >
                         <input 
                           type="checkbox" 
                           className="w-4 h-4 accent-green-600 rounded" 
                           checked={fv.vehicleTypes.includes(vehicle)} 
-                          onChange={() => toggleArrayValue(activeApplicant, "vehicleTypes", vehicle)} 
+                          disabled={disabled}
+                          onChange={() => toggleVehicleType(activeApplicant, vehicle)} 
                         />
                         <span className={`text-sm ${fv.vehicleTypes.includes(vehicle) ? 'text-green-700 font-medium' : 'text-gray-700'}`}>{vehicle}</span>
                 </label>
+                        );
+                      })()
               ))}
                   </div>
             </div>
@@ -1861,7 +2584,7 @@ function AgencyEndorse() {
 
               {step < totalSteps ? (
                 <button 
-                  onClick={nextStep} 
+                  onClick={handleNextStepClick} 
                   className="flex items-center gap-2 px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors"
                 >
                   Next Step
@@ -1871,7 +2594,7 @@ function AgencyEndorse() {
                 </button>
               ) : (
                 <button 
-                  onClick={() => setShowConfirmModal(true)} 
+                  onClick={handleOpenSummary} 
                   className="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1884,6 +2607,170 @@ function AgencyEndorse() {
               </div>
         </div>
       </div>
+
+      {/* Summary Modal (Review before Terms) */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-[#800000]/10 to-orange-50">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-[#800000]/20 rounded-xl flex items-center justify-center">
+                    <svg className="w-5 h-5 text-[#800000]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5h6a2 2 0 012 2v14l-5-3-5 3V7a2 2 0 012-2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-800">Review Summary</h3>
+                    <p className="text-sm text-gray-500">Check details before confirming endorsement</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSummaryModal(false)}
+                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {applicants.map((a) => {
+                const v = formValues[a.id] || makeEmptyValues();
+                return (
+                  <div key={a.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                    <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                      <div className="font-semibold text-gray-800">{a.name}</div>
+                      {a.id === activeApplicant && (
+                        <span className="text-xs px-2 py-1 rounded-full bg-[#800000]/10 text-[#800000]">Active</span>
+                      )}
+                    </div>
+                    <div className="p-5 space-y-5">
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 mb-2">Employment</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <div><span className="text-gray-500">Department:</span> {formatSummaryValue(v.department)}</div>
+                          <div><span className="text-gray-500">Position:</span> {formatSummaryValue(v.position)}</div>
+                          <div><span className="text-gray-500">Depot:</span> {formatSummaryValue(v.depot)}</div>
+                          <div><span className="text-gray-500">Available Start Date:</span> {formatSummaryValue(v.dateAvailable)}</div>
+                          <div><span className="text-gray-500">Currently Employed:</span> {formatSummaryValue(v.employed)}</div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 mb-2">Personal</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <div><span className="text-gray-500">Name:</span> {formatSummaryValue(`${(v.firstName || '').trim()} ${(v.middleName || '').trim()} ${(v.lastName || '').trim()}`)}</div>
+                          <div><span className="text-gray-500">Birthday:</span> {formatSummaryValue(v.birthday)}</div>
+                          <div><span className="text-gray-500">Marital Status:</span> {formatSummaryValue(v.maritalStatus)}</div>
+                          <div><span className="text-gray-500">Sex:</span> {formatSummaryValue(v.sex)}</div>
+                          <div><span className="text-gray-500">Contact Number:</span> {formatSummaryValue(v.contactNumber)}</div>
+                          <div><span className="text-gray-500">Email:</span> {formatSummaryValue(v.email)}</div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 mb-2">Documents & IDs</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <div><span className="text-gray-500">Resume:</span> {formatSummaryValue(v.resumeFile)}</div>
+                          <div className="md:col-span-2">
+                            <span className="text-gray-500">Government IDs:</span>{" "}
+                            {(() => {
+                              const ids = [
+                                v.hasSSS ? 'SSS' : null,
+                                v.hasPAGIBIG ? 'PAGIBIG' : null,
+                                v.hasTIN ? 'TIN' : null,
+                                v.hasPhilHealth ? 'PhilHealth' : null,
+                              ].filter(Boolean);
+                              return ids.length ? ids.join(', ') : '—';
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 mb-2">Address</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <div className="md:col-span-2"><span className="text-gray-500">Street Address:</span> {formatSummaryValue(v.street)}</div>
+                          <div><span className="text-gray-500">Barangay:</span> {formatSummaryValue(v.barangay)}</div>
+                          <div><span className="text-gray-500">City/Municipality:</span> {formatSummaryValue(v.city)}</div>
+                          <div><span className="text-gray-500">Province:</span> {formatSummaryValue(v.province)}</div>
+                          <div><span className="text-gray-500">ZIP:</span> {formatSummaryValue(v.zip)}</div>
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 mb-2">Education & Skills</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <div><span className="text-gray-500">Education:</span> {formatSummaryValue(v.education)}</div>
+                          <div><span className="text-gray-500">Year Graduated:</span> {formatSummaryValue(v.tertiaryYear)}</div>
+                          <div><span className="text-gray-500">School:</span> {formatSummaryValue(v.tertiarySchool)}</div>
+                          <div><span className="text-gray-500">Course/Program:</span> {formatSummaryValue(v.tertiaryProgram)}</div>
+                          <div className="md:col-span-2"><span className="text-gray-500">Skills:</span> {formatSummaryValue(v.skills)}</div>
+                          <div><span className="text-gray-500">Specialized Training:</span> {formatSummaryValue(v.specializedTraining)}</div>
+                          <div><span className="text-gray-500">Year Completed:</span> {formatSummaryValue(v.specializedYear)}</div>
+                          <div><span className="text-gray-500">Training Company:</span> {formatSummaryValue(v.specializedCompany)}</div>
+                          <div><span className="text-gray-500">Training Address:</span> {formatSummaryValue(v.specializedAddress)}</div>
+                          <div className="md:col-span-2"><span className="text-gray-500">Training Certificate:</span> {formatSummaryValue(v.trainingCertFile)}</div>
+                        </div>
+                      </div>
+
+                      {isDeliveryDriverJob && (
+                        <div>
+                          <div className="text-sm font-semibold text-gray-700 mb-2">Driver Information</div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                            <div><span className="text-gray-500">License Classification:</span> {formatSummaryValue(v.licenseClassification)}</div>
+                            <div><span className="text-gray-500">License Expiry:</span> {formatSummaryValue(v.licenseExpiry)}</div>
+                            <div className="md:col-span-2"><span className="text-gray-500">License Photocopy:</span> {formatSummaryValue(v.licenseFile)}</div>
+                            <div><span className="text-gray-500">Restriction Codes:</span> {formatSummaryValue(v.restrictionCodes)}</div>
+                            <div><span className="text-gray-500">Years Driving:</span> {formatSummaryValue(v.yearsDriving)}</div>
+                            <div><span className="text-gray-500">Truck Knowledge:</span> {formatSummaryValue(v.truckKnowledge)}</div>
+                            <div><span className="text-gray-500">Vehicles Driven:</span> {formatSummaryValue(v.vehicleTypes)}</div>
+                            <div className="md:col-span-2"><span className="text-gray-500">Troubleshooting Tasks:</span> {formatSummaryValue(v.troubleshootingTasks)}</div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <div className="text-sm font-semibold text-gray-700 mb-2">Medical</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                          <div><span className="text-gray-500">Taking Maintenance Medications:</span> {formatSummaryValue(!!v.takingMedications)}</div>
+                          <div><span className="text-gray-500">Medication Reason:</span> {formatSummaryValue(v.medicationReason)}</div>
+                          <div><span className="text-gray-500">Taken Medical/Drug Test:</span> {formatSummaryValue(!!v.tookMedicalTest)}</div>
+                          <div><span className="text-gray-500">Test Date:</span> {formatSummaryValue(v.medicalTestDate)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-between">
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="px-5 py-2.5 text-gray-600 hover:text-gray-800 font-medium transition-colors"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => {
+                  setShowSummaryModal(false);
+                  setShowConfirmModal(true);
+                }}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all bg-[#800000] text-white hover:bg-[#990000]"
+              >
+                Next
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Modal with Terms & Privacy */}
       {showConfirmModal && (
@@ -2032,18 +2919,15 @@ function AgencyEndorse() {
               <button 
                 onClick={() => {
                   if (termsAccepted && privacyAccepted) {
-                    const vals = formValues[activeApplicant] || makeEmptyValues();
-                    const fname = vals.firstName?.trim() || "";
-                    const lname = vals.lastName?.trim() || "";
-                    const displayName = `${fname} ${lname}`.trim() || "this applicant";
+                    const count = applicants.length;
 
                     setShowConfirmModal(false);
                     setTermsAccepted(false);
                     setPrivacyAccepted(false);
 
-                    setConfirmMessage(`Endorse ${displayName} to HR?`);
+                    setConfirmMessage(`Endorse ${count} employee${count === 1 ? "" : "s"} to HR?`);
                     setConfirmCallback(() => async () => {
-                      await handleEndorse();
+                      await handleEndorseAll();
                     });
                     setShowConfirmDialog(true);
                   }
@@ -2109,9 +2993,15 @@ function AgencyEndorse() {
                   </svg>
                   <div>
                     <p className="text-sm font-medium text-blue-800 mb-1">CSV Format Requirements</p>
-                    <p className="text-xs text-blue-700">Your CSV file should include column headers. Supported columns:</p>
+                    <p className="text-xs text-blue-700">Your CSV file should include column headers. Download the template below for the full supported list.</p>
                     <p className="text-xs text-blue-600 mt-1 font-mono bg-blue-100 px-2 py-1 rounded">
-                      firstname, lastname, middlename, email, contact, position, department, depot, birthday, sex, unit_house_number, street, barangay, city, province, zip
+                      firstname, lastname, middlename, email, contact, position, department, depot, available_start_date, employed, birthday, marital_status, sex, unit_house_number, street, barangay, city, province, zip, education, ...
+                    </p>
+                    <p className="text-xs text-blue-700 mt-2">
+                      Notes: booleans accept <span className="font-mono">yes/no</span>, <span className="font-mono">true/false</span>, or <span className="font-mono">1/0</span>. Lists use <span className="font-mono">|</span> (e.g. <span className="font-mono">restriction_codes=1|2</span>). File uploads (resume/license/certificates) are not supported by CSV and must be uploaded manually.
+                    </p>
+                    <p className="text-xs text-blue-700 mt-1">
+                      Dates: CSV supports Excel serial dates (e.g. <span className="font-mono">46000</span>) or <span className="font-mono">DD/MM/YYYY</span> (also accepts <span className="font-mono">DD-MM-YYYY</span>). The form will convert these to the required <span className="font-mono">YYYY-MM-DD</span> for the date picker.
                     </p>
                   </div>
                 </div>
@@ -2243,7 +3133,7 @@ function AgencyEndorse() {
                 </div>
                 <button 
                   onClick={() => {
-                    const template = 'firstname,lastname,middlename,email,contact,position,department,depot,birthday,sex,unit_house_number,street,barangay,city,province,zip\nJuan,Dela Cruz,Santos,juan@email.com,09171234567,Delivery Driver,Delivery Crew,Makati,1990-05-15,Male,123,Main Street,Barangay 1,Makati,Metro Manila,1200\nMaria,Santos,,maria@email.com,09181234567,Helper,Delivery Crew,BGC,1992-08-20,Female,456,Ortigas Avenue,Barangay 2,Pasig,Metro Manila,1600';
+                    const template = 'firstname,lastname,middlename,email,contact,position,department,depot,available_start_date,employed,birthday,marital_status,sex,unit_house_number,street,barangay,city,province,zip,education,tertiary_school,tertiary_program,tertiary_year,skills,specialized_training,specialized_year,has_sss,has_pagibig,has_tin,has_philhealth,license_classification,license_expiry,restriction_codes,years_driving,truck_knowledge,vehicles_driven,troubleshooting_tasks,taking_medications,medication_reason,took_medical_test,medical_test_date\nJuan,Dela Cruz,Santos,juan@email.com,09171234567,Delivery Driver,Delivery Crew,Makati,2026-01-15,yes,1990-05-15,Single,Male,123,Main Street,Barangay 1,Makati,Metro Manila,1200,College,ABC University,BS Logistics,2012,"Driving, Customer Service",Defensive Driving,2023,yes,no,yes,yes,Professional,2027-01-01,1|2,8,yes,Motorcycle|Van,Engine|Electrical,no,,yes,2026-01-01\nMaria,Santos,,maria@email.com,09181234567,Helper,Delivery Crew,BGC,2026-01-15,no,1992-08-20,Single,Female,456,Ortigas Avenue,Barangay 2,Pasig,Metro Manila,1600,Senior High School,,,,"Packing, Inventory",,,no,no,no,no,,,,,,no,,no,';
                     const blob = new Blob([template], { type: 'text/csv' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -2395,31 +3285,6 @@ function AgencyEndorse() {
           </div>
         </div>
       )}
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-gray-200 py-4 flex-shrink-0">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-500">
-            <div className="flex items-center gap-1 hover:text-gray-700 cursor-pointer">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-              <span>Philippines</span>
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-              </svg>
-      </div>
-
-            <div className="flex items-center gap-6">
-              <a href="#" className="hover:text-gray-700 hover:underline">Terms & conditions</a>
-              <a href="#" className="hover:text-gray-700 hover:underline">Security</a>
-              <a href="#" className="hover:text-gray-700 hover:underline">Privacy</a>
-              <span className="text-gray-400">Copyright © 2025, Roadwise</span>
-            </div>
-          </div>
-        </div>
-      </footer>
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (

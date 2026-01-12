@@ -134,9 +134,6 @@ function App() {
         <Route path="/applicant/account-settings" element={<AccountSettings />} />
       </Route>
 
-      {/* Public routes (no protection) */}
-      <Route path="/agency/endorse" element={<AgencyEndorse />} />
-      
       {/* Agency protected routes */}
       <Route 
         path="/agency" 
@@ -147,6 +144,7 @@ function App() {
         }
       >
         <Route path="home" element={<AgencyHome />} />
+        <Route path="endorse" element={<AgencyEndorse />} />
         <Route path="endorsements" element={<AgencyEndorsements />} />
         <Route path="requirements" element={<AgencyRequirements />} />
         <Route path="trainings" element={<AgencyTrainings />} />
