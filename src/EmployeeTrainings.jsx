@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import React, { useState, useEffect } from "react";
 import { useEmployeeUser } from "./layouts/EmployeeLayout";
 import { supabase } from './supabaseClient';
+import { generateCertificatePDF } from './utils/certificateGenerator';
 
 function EmployeeTrainings() {
     const { userId, userEmail, employeeUser } = useEmployeeUser();
@@ -1207,6 +1208,24 @@ function EmployeeTrainings() {
                                                 
                                                 return (
                                                     <div className="flex items-center gap-2 flex-shrink-0">
+                                                        {/* System Generated Certificate - Always available for present employees */}
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                generateCertificatePDF(
+                                                                    attendanceStatus.employeeName,
+                                                                    training.title,
+                                                                    training.date
+                                                                );
+                                                            }}
+                                                            className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2"
+                                                            title="View system-generated certificate"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                            </svg>
+                                                            View Certificate
+                                                        </button>
                                                         {hasCertificate && (
                                                             <button
                                                                 onClick={async (e) => {
@@ -1224,13 +1243,13 @@ function EmployeeTrainings() {
                                                                     }
                                                                 }}
                                                                 className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2"
-                                                                title="View certificate"
+                                                                title="View uploaded certificate"
                                                             >
                                                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                                                 </svg>
-                                                                View Certificate
+                                                                View Uploaded
                                                             </button>
                                                         )}
                                                         <button
