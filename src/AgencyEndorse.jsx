@@ -11,6 +11,35 @@ function AgencyEndorse() {
   const location = useLocation();
   const navigate = useNavigate();
   const job = location.state?.job;
+
+  const getJobPrefill = () => {
+    const position =
+      job?.title ||
+      job?.job_posts?.title ||
+      job?.raw?.title ||
+      job?.raw?.job_posts?.title ||
+      "";
+
+    const depot =
+      job?.depot ||
+      job?.job_posts?.depot ||
+      job?.raw?.depot ||
+      job?.raw?.job_posts?.depot ||
+      "";
+
+    const department =
+      job?.department ||
+      job?.job_posts?.department ||
+      job?.raw?.department ||
+      job?.raw?.job_posts?.department ||
+      "";
+
+    return {
+      position: String(position || "").trim(),
+      depot: String(depot || "").trim(),
+      department: String(department || "").trim(),
+    };
+  };
   
   // Check if job title is "Delivery Drivers" to show license and driving fields
   const isDeliveryDriverJob = job?.title === 'Delivery Drivers';
@@ -381,8 +410,8 @@ function AgencyEndorse() {
 
   // Auto-fill depot/position/department from job when available
   useEffect(() => {
-    const jobDepartment = job?.department || job?.raw?.department || "";
-    if (job && (job.depot || job.title || jobDepartment)) {
+    const { depot, position, department } = getJobPrefill();
+    if (job && (depot || position || department)) {
       // Auto-fill for all existing applicants
       setFormValues((prev) => {
         const updated = { ...prev };
@@ -393,17 +422,17 @@ function AgencyEndorse() {
           const newValues = { ...currentValues };
           let applicantHasChanges = false;
           
-          // Only auto-fill if fields are empty (don't overwrite user input)
-          if (!currentValues.depot && job.depot) {
-            newValues.depot = job.depot;
+          // These fields come from the job post. Always enforce them.
+          if (depot && currentValues.depot !== depot) {
+            newValues.depot = depot;
             applicantHasChanges = true;
           }
-          if (!currentValues.position && job.title) {
-            newValues.position = job.title;
+          if (position && currentValues.position !== position) {
+            newValues.position = position;
             applicantHasChanges = true;
           }
-          if (!currentValues.department && jobDepartment) {
-            newValues.department = jobDepartment;
+          if (department && currentValues.department !== department) {
+            newValues.department = department;
             applicantHasChanges = true;
           }
           
@@ -422,16 +451,11 @@ function AgencyEndorse() {
     const newId = Math.max(0, ...applicants.map((a) => a.id)) + 1;
     setApplicants((prev) => [...prev, { id: newId, name: `Employee ${newId}` }]);
     const newValues = makeEmptyValues();
-    // Auto-fill depot and position from job if available
-    if (job?.depot) {
-      newValues.depot = job.depot;
-    }
-    if (job?.title) {
-      newValues.position = job.title;
-    }
-    if (job?.department || job?.raw?.department) {
-      newValues.department = job?.department || job?.raw?.department;
-    }
+    // Always fill from job post
+    const { depot, position, department } = getJobPrefill();
+    if (depot) newValues.depot = depot;
+    if (position) newValues.position = position;
+    if (department) newValues.department = department;
     setFormValues((prev) => ({ ...prev, [newId]: newValues }));
     // Initialize cities and barangays arrays for the new applicant
     setCities((prev) => ({ ...prev, [newId]: [] }));
@@ -528,6 +552,57 @@ function AgencyEndorse() {
     }));
   };
 
+  // Restriction codes are stored as code tokens (e.g., "1", "B2", "C").
+  // UI renders the label; CSV can provide either tokens ("1|2") or full labels.
+  const restrictionCodesCatalog = [
+    { code: "A", label: "A - MOTORCYCLE" },
+    { code: "1", label: "1 - MOTORCYLES / MOTORIZED TRICYCLE" },
+    { code: "A1", label: "A1 - TRICYLE" },
+    { code: "2", label: "2 - VEHICLE UP TO 4500 GVW" },
+    { code: "B", label: "B - UP TO 5000 KGS GVW / 8 SEATS" },
+    { code: "3", label: "3 - VEHICLE ABOVE 4500 GVW *" },
+    { code: "B1", label: "B1 - UP TO 5000 KGS GVW / 9 OR MORE SEATS" },
+    { code: "4", label: "4 - AUTOMATIC CLUTCH UP TO 4500 GVW" },
+    { code: "B2", label: "B2 - GOODS < 3500 KGS GVW *" },
+    { code: "5", label: "5 - AUTOMATIC CLUTCH UP ABOVE 4500 GVW" },
+    { code: "C", label: "C - GOODS > 3500 KGS GVW *" },
+    { code: "6", label: "6 - ARTICULATED VEHICLE 1600 GVW AND BELOW" },
+    { code: "D", label: "D - BUS > 5000 KGS GVW / 9 OR MORE SEATS" },
+    { code: "7", label: "7 - ARTICULATED VEHICLE 1601 UP TO 4500 GVW" },
+    { code: "BE", label: "BE - TRAILERS < 3500 KGS" },
+    { code: "8", label: "8 - ARTICULATED VEHICLE 4501 & ABOVE GVW" },
+    { code: "CE", label: "CE - ARTICULATED C > 3500 KGS COMBINED GVW" },
+  ];
+
+  const restrictionCodesAllowed = new Set(restrictionCodesCatalog.map((c) => c.code));
+
+  const normalizeRestrictionCodeToken = (value) => {
+    const raw = String(value ?? "").trim();
+    if (!raw) return "";
+    // Accept either a token ("B2") or a full label ("B2 - GOODS ...").
+    // Token is the first chunk before whitespace or hyphen.
+    const token = raw.split(/[\s-]+/)[0];
+    return String(token || "").trim().toUpperCase();
+  };
+
+  const parseRestrictionCodes = (raw) => {
+    const list = String(raw ?? "").trim();
+    if (!list) return [];
+    const parts = list.includes("|")
+      ? list.split("|")
+      : list.includes(";")
+        ? list.split(";")
+        : list.split(",");
+
+    const normalized = parts
+      .map((p) => normalizeRestrictionCodeToken(p))
+      .filter(Boolean)
+      .filter((code) => restrictionCodesAllowed.has(code));
+
+    // de-dupe while preserving order
+    return Array.from(new Set(normalized));
+  };
+
   // CSV Import Functions
   const normalizeCsvContact = (value) => {
     if (value == null) return "";
@@ -567,9 +642,10 @@ function AgencyEndorse() {
     const rawDateOnly = raw.split(/[T\s]/)[0];
 
     // Excel serial date (usually ~ 40k-50k in recent years)
-    // Accept integer-like or float-like strings.
-    if (/^\d+(\.\d+)?$/.test(raw)) {
-      const num = Number(raw);
+    // Accept integer-like or float-like strings (also allow commas).
+    const numericRaw = raw.replace(/,/g, "");
+    if (/^\d+(\.\d+)?$/.test(numericRaw)) {
+      const num = Number(numericRaw);
       if (Number.isFinite(num) && num >= 20000 && num <= 80000) {
         const serial = Math.floor(num);
         // Excel's day 0 is 1899-12-30 (accounts for the 1900 leap-year bug)
@@ -584,14 +660,32 @@ function AgencyEndorse() {
       return rawDateOnly.slice(0, 10);
     }
 
-    // DMY dates from CSV (DD/MM/YYYY) and common variants (DD-MM-YYYY, DD.MM.YYYY)
-    // User confirmed CSV format is DMY.
-    const dmy = rawDateOnly.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-    if (dmy) {
-      const day = parseInt(dmy[1], 10);
-      const month = parseInt(dmy[2], 10);
-      const year = parseInt(dmy[3], 10);
-      if (!Number.isFinite(day) || !Number.isFinite(month) || !Number.isFinite(year)) return "";
+    // Slash/dash dates from CSV.
+    // Support both MM/DD/YYYY and DD/MM/YYYY because Excel exports vary.
+    const mdYorDmY = rawDateOnly.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2}|\d{4})$/);
+    if (mdYorDmY) {
+      const a = parseInt(mdYorDmY[1], 10);
+      const b = parseInt(mdYorDmY[2], 10);
+      let year = parseInt(mdYorDmY[3], 10);
+      if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(year)) return "";
+      if (year < 100) year = year >= 70 ? 1900 + year : 2000 + year;
+
+      let month;
+      let day;
+      if (a > 12 && b <= 12) {
+        // D/M
+        day = a;
+        month = b;
+      } else if (b > 12 && a <= 12) {
+        // M/D
+        month = a;
+        day = b;
+      } else {
+        // Ambiguous (both <= 12): default to M/D (common Excel export)
+        month = a;
+        day = b;
+      }
+
       if (month < 1 || month > 12 || day < 1 || day > 31) return "";
       const dt = new Date(Date.UTC(year, month - 1, day));
       return dt.toISOString().slice(0, 10);
@@ -684,9 +778,7 @@ function AgencyEndorse() {
       'email': 'email', 'email address': 'email', 'emailaddress': 'email',
       'contact': 'contactNumber', 'contact_number': 'contactNumber', 'contactnumber': 'contactNumber', 
       'phone': 'contactNumber', 'mobile': 'contactNumber', 'phone number': 'contactNumber',
-      'position': 'position', 'job title': 'position', 'jobtitle': 'position',
-      'department': 'department', 'dept': 'department',
-      'depot': 'depot', 'location': 'depot', 'branch': 'depot',
+      // position/department/depot are taken from the job post; ignore CSV columns for them.
       'available start date': 'dateAvailable', 'available_start_date': 'dateAvailable', 'dateavailable': 'dateAvailable', 'date_available': 'dateAvailable',
       'employed': 'employed', 'currently employed': 'employed',
       'birthday': 'birthday', 'birthdate': 'birthday', 'birth_date': 'birthday', 'date of birth': 'birthday',
@@ -732,7 +824,8 @@ function AgencyEndorse() {
         else if (formField === 'zip') values[formField] = sanitizeZip(raw);
         else if (formField === 'tertiaryYear' || formField === 'specializedYear') values[formField] = sanitizeYear(raw);
         else if (formField === 'birthday' || formField === 'dateAvailable' || formField === 'licenseExpiry' || formField === 'medicalTestDate') values[formField] = normalizeCsvDate(raw);
-        else if (formField === 'restrictionCodes' || formField === 'vehicleTypes' || formField === 'troubleshootingTasks') values[formField] = toList(raw);
+        else if (formField === 'restrictionCodes') values[formField] = parseRestrictionCodes(raw);
+        else if (formField === 'vehicleTypes' || formField === 'troubleshootingTasks') values[formField] = toList(raw);
         else if (formField === 'takingMedications' || formField === 'tookMedicalTest' || formField === 'hasSSS' || formField === 'hasPAGIBIG' || formField === 'hasTIN' || formField === 'hasPhilHealth') values[formField] = toBool(raw);
         else if (formField === 'truckKnowledge') values[formField] = String(raw).trim().toLowerCase() === 'yes' ? 'yes' : 'no';
         else if (formField === 'employed') values[formField] = String(raw).trim().toLowerCase() === 'yes' ? 'yes' : 'no';
@@ -744,6 +837,12 @@ function AgencyEndorse() {
     if (values.contactNumber) {
       values.contactNumber = normalizeCsvContact(values.contactNumber);
     }
+
+    // Enforce job post fields (CSV must not override these)
+    const { depot, position, department } = getJobPrefill();
+    if (depot) values.depot = depot;
+    if (position) values.position = position;
+    if (department) values.department = department;
 
     return values;
   };
@@ -1194,10 +1293,14 @@ function AgencyEndorse() {
       // Avoid including raw File objects in DB payload.
       // eslint-disable-next-line no-unused-vars
       const { resumeFile: _resumeFile, ...valsNoResumeFile } = vals;
+
+      const { depot: jobDepot, position: jobPosition, department: jobDepartment } = getJobPrefill();
       const applicantData = {
         ...valsNoResumeFile,
         contactNumber: contact,
-        department: vals.department || job?.department || job?.raw?.department || null,
+        depot: jobDepot || vals.depot || null,
+        position: jobPosition || vals.position || null,
+        department: jobDepartment || vals.department || null,
         ...(applicantResumePath && { resumePath: applicantResumePath })
       };
 
@@ -1485,26 +1588,6 @@ function AgencyEndorse() {
 
   const fv = formValues[activeApplicant] || makeEmptyValues();
 
-  const restrictionCodesList = [
-    "A - MOTORCYCLE",
-    "1 - MOTORCYLES / MOTORIZED TRICYCLE",
-    "A1 - TRICYLE",
-    "2 - VEHICLE UP TO 4500 GVW",
-    "B - UP TO 5000 KGS GVW / 8 SEATS",
-    "3 - VEHICLE ABOVE 4500 GVW *",
-    "B1 - UP TO 5000 KGS GVW / 9 OR MORE SEATS",
-    "4 - AUTOMATIC CLUTCH UP TO 4500 GVW",
-    "B2 - GOODS < 3500 KGS GVW *",
-    "5 - AUTOMATIC CLUTCH UP ABOVE 4500 GVW",
-    "C - GOODS > 3500 KGS GVW *",
-    "6 - ARTICULATED VEHICLE 1600 GVW AND BELOW",
-    "D - BUS > 5000 KGS GVW / 9 OR MORE SEATS",
-    "7 - ARTICULATED VEHICLE 1601 UP TO 4500 GVW",
-    "BE - TRAILERS < 3500 KGS",
-    "8 - ARTICULATED VEHICLE 4501 & ABOVE GVW",
-    "CE - ARTICULATED C > 3500 KGS COMBINED GVW",
-  ];
-
   const troubleshootingTasksList = [
     "Replacing lights or bulbs for the headlights, brake lights, etc.",
     "Adding brake fluid.",
@@ -1711,77 +1794,33 @@ function AgencyEndorse() {
                 <div className="p-6 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Department <span className="text-[#800000]">*</span></label>
-                      <select 
-                        className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm ${(job?.department || job?.raw?.department) ? 'bg-gray-100 cursor-not-allowed' : 'focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]'}`}
-                        value={fv.department}
-                        onChange={(e) => handleChange(activeApplicant, "department", e.target.value)}
-                        disabled={!!(job?.department || job?.raw?.department)}
-                      >
-                <option value="">Select Department</option>
-                <option>Operations</option>
-                <option>HR</option>
-                <option>Admin</option>
-                <option>Delivery Crew</option>
-              </select>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
+                      <input
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-100 cursor-not-allowed"
+                        value={fv.department || ""}
+                        disabled
+                        readOnly
+                      />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Position <span className="text-[#800000]">*</span></label>
-                      <select 
-                        className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm ${job?.title ? 'bg-gray-100 cursor-not-allowed' : 'focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]'}`}
-                        value={fv.position} 
-                        onChange={(e) => handleChange(activeApplicant, "position", e.target.value)}
-                        disabled={!!job?.title}
-                      >
-                <option value="">Select Position</option>
-                <option>Delivery Drivers</option>
-                <option>Delivery Helpers</option>
-                <option>Transport Coordinators</option>
-                <option>Dispatchers</option>
-                <option>Customer Service Representative</option>
-                <option>POD (Proof of Delivery) Specialist</option>
-              </select>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Position</label>
+                      <input
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-100 cursor-not-allowed"
+                        value={fv.position || ""}
+                        disabled
+                        readOnly
+                      />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot Assignment <span className="text-[#800000]">*</span></label>
-                      <select 
-                        className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm ${job?.depot ? 'bg-gray-100 cursor-not-allowed' : 'focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]'}`}
-                        value={fv.depot} 
-                        onChange={(e) => handleChange(activeApplicant, "depot", e.target.value)}
-                        disabled={!!job?.depot}
-                      >
-                        <option value="">Select Depot</option>
-                        <option>Batangas</option>
-                        <option>Bulacan</option>
-                        <option>Butuan</option>
-                        <option>Cagayan</option>
-                        <option>Calamba</option>
-                        <option>Calbayog</option>
-                        <option>Cebu</option>
-                        <option>Davao</option>
-                        <option>Dipolog</option>
-                        <option>Iloilo</option>
-                        <option>Isabela</option>
-                        <option>Kalibo</option>
-                        <option>Kidapawan</option>
-                        <option>La Union</option>
-                        <option>Liip</option>
-                        <option>Manggahan</option>
-                        <option>Mindoro</option>
-                        <option>Naga</option>
-                        <option>Ozamis</option>
-                        <option>Palawan</option>
-                        <option>Pampanga</option>
-                        <option>Pasig</option>
-                        <option>Sucat</option>
-                        <option>Tacloban</option>
-                        <option>Tarlac</option>
-                        <option>Taytay</option>
-                        <option>Tuguegarao</option>
-                        <option>Vigan</option>
-              </select>
-            </div>
-            <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot Assignment</label>
+                      <input
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-gray-100 cursor-not-allowed"
+                        value={fv.depot || ""}
+                        disabled
+                        readOnly
+                      />
+                    </div>
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Available Start Date <span className="text-[#800000]">*</span></label>
                       <input type="date" min={todayStr} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.dateAvailable || ""} onChange={(e) => handleChange(activeApplicant, "dateAvailable", e.target.value)} />
                     </div>
@@ -2391,11 +2430,11 @@ function AgencyEndorse() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-3">Select applicable restriction codes:</label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {restrictionCodesList.map((code) => (
+              {restrictionCodesCatalog.map((item) => (
                         <label 
-                          key={code} 
+                          key={item.code} 
                           className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                            fv.restrictionCodes.includes(code) 
+                            fv.restrictionCodes.includes(item.code) 
                               ? 'border-[#800000] bg-[#800000]/10' 
                               : 'border-gray-200 hover:bg-gray-50'
                           }`}
@@ -2403,10 +2442,10 @@ function AgencyEndorse() {
                           <input 
                             type="checkbox" 
                             className="w-4 h-4 accent-[#800000] rounded" 
-                            checked={fv.restrictionCodes.includes(code)} 
-                            onChange={() => toggleArrayValue(activeApplicant, "restrictionCodes", code)} 
+                            checked={fv.restrictionCodes.includes(item.code)} 
+                            onChange={() => toggleArrayValue(activeApplicant, "restrictionCodes", item.code)} 
                           />
-                          <span className={`text-sm ${fv.restrictionCodes.includes(code) ? 'text-[#800000] font-medium' : 'text-gray-700'}`}>{code}</span>
+                          <span className={`text-sm ${fv.restrictionCodes.includes(item.code) ? 'text-[#800000] font-medium' : 'text-gray-700'}`}>{item.label}</span>
                 </label>
               ))}
                     </div>
@@ -3133,7 +3172,7 @@ function AgencyEndorse() {
                 </div>
                 <button 
                   onClick={() => {
-                    const template = 'firstname,lastname,middlename,email,contact,position,department,depot,available_start_date,employed,birthday,marital_status,sex,unit_house_number,street,barangay,city,province,zip,education,tertiary_school,tertiary_program,tertiary_year,skills,specialized_training,specialized_year,has_sss,has_pagibig,has_tin,has_philhealth,license_classification,license_expiry,restriction_codes,years_driving,truck_knowledge,vehicles_driven,troubleshooting_tasks,taking_medications,medication_reason,took_medical_test,medical_test_date\nJuan,Dela Cruz,Santos,juan@email.com,09171234567,Delivery Driver,Delivery Crew,Makati,2026-01-15,yes,1990-05-15,Single,Male,123,Main Street,Barangay 1,Makati,Metro Manila,1200,College,ABC University,BS Logistics,2012,"Driving, Customer Service",Defensive Driving,2023,yes,no,yes,yes,Professional,2027-01-01,1|2,8,yes,Motorcycle|Van,Engine|Electrical,no,,yes,2026-01-01\nMaria,Santos,,maria@email.com,09181234567,Helper,Delivery Crew,BGC,2026-01-15,no,1992-08-20,Single,Female,456,Ortigas Avenue,Barangay 2,Pasig,Metro Manila,1600,Senior High School,,,,"Packing, Inventory",,,no,no,no,no,,,,,,no,,no,';
+                    const template = 'firstname,lastname,middlename,email,contact,available_start_date,employed,birthday,marital_status,sex,unit_house_number,street,barangay,city,province,zip,education,tertiary_school,tertiary_program,tertiary_year,skills,specialized_training,specialized_year,has_sss,has_pagibig,has_tin,has_philhealth,license_classification,license_expiry,restriction_codes,years_driving,truck_knowledge,vehicles_driven,troubleshooting_tasks,taking_medications,medication_reason,took_medical_test,medical_test_date\nJuan,Dela Cruz,Santos,juan@email.com,09171234567,01/15/2026,yes,05/15/1990,Single,Male,123,Main Street,Barangay 1,Makati,Metro Manila,1200,College,ABC University,BS Logistics,2012,"Driving, Customer Service",Defensive Driving,2023,yes,no,yes,yes,Professional,01/01/2027,1|2,8,yes,Motorcycle|Van,Engine|Electrical,no,,yes,01/01/2026\nMaria,Santos,,maria@email.com,09181234567,01/15/2026,no,08/20/1992,Single,Female,456,Ortigas Avenue,Barangay 2,Pasig,Metro Manila,1600,Senior High School,,,,"Packing, Inventory",,,no,no,no,no,,,,,,no,,no,';
                     const blob = new Blob([template], { type: 'text/csv' });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');

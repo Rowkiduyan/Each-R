@@ -300,7 +300,7 @@ function AgencyEndorsements() {
            undertaking_duties_file,
            pre_employment_requirements_file,
            id_form_file,
-           job_posts:job_posts ( id, title, depot )`
+            job_posts:job_posts ( id, title, department, depot )`
         )
         .eq("endorsed", true)
         .order("created_at", { ascending: false });

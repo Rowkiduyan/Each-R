@@ -145,7 +145,7 @@ function AgencyHome() {
     try {
       const { data, error } = await supabase
         .from("job_posts")
-        .select("id, title, depot, description, created_at, responsibilities, job_type, urgent, expires_at, positions_needed")
+        .select("id, title, department, depot, description, created_at, responsibilities, job_type, urgent, expires_at, positions_needed")
         .eq("is_active", true)
         .order("created_at", { ascending: false });
 
@@ -168,6 +168,7 @@ function AgencyHome() {
           return {
             id: row.id,
             title: row.title || "Untitled",
+            department: row.department || "",
             depot: row.depot || "—",
             description: row.description || "",
             responsibilities,
