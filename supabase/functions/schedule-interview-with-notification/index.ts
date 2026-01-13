@@ -13,6 +13,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function getPayloadMeta(payload: any): any {
+  return payload?.meta || payload?.form?.meta || payload?.applicant?.meta || null;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -26,7 +30,9 @@ serve(async (req) => {
     
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
-    const { applicationId, interview } = await req.json()
+    const { applicationId, interview, kind } = await req.json()
+
+    const scheduleKind = (kind || 'interview') as string;
 
     if (!applicationId || !interview) {
       return new Response(
@@ -35,11 +41,18 @@ serve(async (req) => {
       )
     }
 
+    if (scheduleKind !== 'interview' && scheduleKind !== 'agreement_signing') {
+      return new Response(
+        JSON.stringify({ error: 'Invalid kind. Use "interview" or "agreement_signing".' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
+
     // First, get the application to find the user_id and check if this is a reschedule
     const { data: existingApp, error: fetchError } = await supabase
       .from('applications')
       // Also select job title payload, endorsed status, and agency info for notifications
-      .select('user_id, interview_date, interview_confirmed, payload, endorsed, agency_profile_id')
+      .select('user_id, interview_date, interview_confirmed, payload, endorsed, status')
       .eq('id', applicationId)
       .single()
 
@@ -51,44 +64,97 @@ serve(async (req) => {
       )
     }
 
-    const isReschedule = existingApp.interview_date !== null
     const userId = existingApp.user_id
-    const isEndorsed = existingApp.endorsed === true
-    const agencyProfileId = existingApp.agency_profile_id
+
+    // Normalize payload for reuse
+    let parsedPayload: any = {};
+    try {
+      parsedPayload = typeof existingApp.payload === 'string'
+        ? JSON.parse(existingApp.payload)
+        : (existingApp.payload || {});
+    } catch (e) {
+      console.warn('Failed to parse application payload:', e);
+      parsedPayload = {};
+    }
+
+    const meta = getPayloadMeta(parsedPayload);
+    const agencyProfileId = meta?.endorsed_by_profile_id || meta?.endorsed_by_auth_user_id || null;
+    const isEndorsed = existingApp.endorsed === true || !!agencyProfileId
+
+    const existingAgreementSigningDate =
+      parsedPayload?.agreement_signing?.date ||
+      parsedPayload?.agreementSigning?.date ||
+      parsedPayload?.signing_interview?.date ||
+      parsedPayload?.signingInterview?.date ||
+      null;
+
+    const isReschedule = scheduleKind === 'interview'
+      ? (existingApp.interview_date !== null)
+      : (existingAgreementSigningDate !== null)
 
     // Try to get job title from payload if present
     let jobTitle = 'your interview';
     try {
-      const payload = existingApp.payload;
-      if (payload) {
-        // payload may be JSON or stringified JSON depending on how it was stored
-        const parsed =
-          typeof payload === 'string'
-            ? JSON.parse(payload)
-            : payload;
-        jobTitle =
-          parsed?.job?.title ||
-          parsed?.title ||
-          parsed?.job_title ||
-          jobTitle;
-      }
+      jobTitle =
+        parsedPayload?.job?.title ||
+        parsedPayload?.title ||
+        parsedPayload?.job_title ||
+        jobTitle;
     } catch (e) {
       console.warn('Failed to parse application payload for job title:', e);
     }
 
-    // Update the application with interview details and reset confirmation status
+    // Prepare updated payload (used for agreement signing and also to keep interview details consistent)
+    const updatedPayload: any = (() => {
+      if (scheduleKind === 'interview') {
+        const interviewType = interview.type || parsedPayload?.interview_type || parsedPayload?.interview?.type || 'onsite';
+        return {
+          ...parsedPayload,
+          interview_type: interviewType,
+          interview: {
+            ...(parsedPayload?.interview || {}),
+            type: interviewType,
+            date: interview.date,
+            time: interview.time,
+            location: interview.location,
+            interviewer: interview.interviewer,
+          }
+        };
+      }
+
+      return {
+        ...parsedPayload,
+        agreement_signing: {
+          ...(parsedPayload?.agreement_signing || {}),
+          date: interview.date,
+          time: interview.time,
+          location: interview.location,
+          interviewer: interview.interviewer,
+        },
+        agreement_signing_confirmed: 'Idle',
+        agreement_signing_confirmed_at: null,
+      };
+    })();
+
+    // Update the application with schedule details
+    const updateFields: Record<string, any> = {
+      payload: updatedPayload,
+      updated_at: new Date().toISOString(),
+    };
+
+    if (scheduleKind === 'interview') {
+      updateFields.interview_date = interview.date;
+      updateFields.interview_time = interview.time;
+      updateFields.interview_location = interview.location;
+      updateFields.interviewer = interview.interviewer;
+      updateFields.interview_confirmed = 'Idle';
+      updateFields.interview_confirmed_at = null;
+      updateFields.status = 'interview';
+    }
+
     const { error: updateError } = await supabase
       .from('applications')
-      .update({
-        interview_date: interview.date,
-        interview_time: interview.time,
-        interview_location: interview.location,
-        interviewer: interview.interviewer,
-        interview_confirmed: 'Idle', // Reset to Idle for new/rescheduled interviews
-        interview_confirmed_at: null,
-        status: 'interview', // Update status to indicate interview stage
-        updated_at: new Date().toISOString()
-      })
+      .update(updateFields)
       .eq('id', applicationId)
 
     if (updateError) {
@@ -107,11 +173,18 @@ serve(async (req) => {
       day: 'numeric'
     })
 
-    const notificationType = isReschedule ? 'interview_rescheduled' : 'interview_scheduled'
-    const notificationTitle = isReschedule ? 'Interview Rescheduled' : 'Interview Scheduled'
+    const scheduleLabel = scheduleKind === 'agreement_signing' ? 'Agreement Signing' : 'Interview'
+    const scheduleVerb = scheduleKind === 'agreement_signing' ? 'appointment' : 'interview'
+    const safeTime = interview.time || 'To be confirmed'
+    const safeLocation = interview.location || 'To be confirmed'
+
+    const notificationType = scheduleKind === 'agreement_signing'
+      ? (isReschedule ? 'agreement_signing_rescheduled' : 'agreement_signing_scheduled')
+      : (isReschedule ? 'interview_rescheduled' : 'interview_scheduled')
+    const notificationTitle = isReschedule ? `${scheduleLabel} Rescheduled` : `${scheduleLabel} Scheduled`
     const notificationMessage = isReschedule 
-      ? `Your interview has been rescheduled to ${formattedDate} at ${interview.time} in ${interview.location}. Please check your application and confirm your availability.`
-      : `Your interview has been scheduled for ${formattedDate} at ${interview.time} in ${interview.location}. Please confirm your availability.`
+      ? `Your ${scheduleVerb} has been rescheduled to ${formattedDate} at ${safeTime} in ${safeLocation}. Please check your application and confirm your availability.`
+      : `Your ${scheduleVerb} has been scheduled for ${formattedDate} at ${safeTime} in ${safeLocation}. Please confirm your availability.`
 
     const { error: notificationError } = await supabase
       .from('notifications')
@@ -144,12 +217,12 @@ serve(async (req) => {
         : 'Endorsed applicant'
 
       const agencyNotificationTitle = isReschedule 
-        ? 'Endorsed Employee Interview Rescheduled' 
-        : 'Endorsed Employee Interview Scheduled'
+        ? `Endorsed Employee ${scheduleLabel} Rescheduled` 
+        : `Endorsed Employee ${scheduleLabel} Scheduled`
       
       const agencyNotificationMessage = isReschedule
-        ? `Interview for ${applicantName} has been rescheduled to ${formattedDate} at ${interview.time} in ${interview.location}.`
-        : `Interview for ${applicantName} has been scheduled for ${formattedDate} at ${interview.time} in ${interview.location}.`
+        ? `${scheduleLabel} for ${applicantName} has been rescheduled to ${formattedDate} at ${safeTime} in ${safeLocation}.`
+        : `${scheduleLabel} for ${applicantName} has been scheduled for ${formattedDate} at ${safeTime} in ${safeLocation}.`
 
       const { error: agencyNotificationError } = await supabase
         .from('notifications')
@@ -191,14 +264,25 @@ serve(async (req) => {
         const fullName = `${firstName} ${lastName}`.trim();
 
         const emailSubject = isReschedule
-          ? `Updated Interview Schedule for ${jobTitle}`
-          : `Interview Schedule for ${jobTitle}`;
+          ? `Updated ${scheduleLabel} Schedule for ${jobTitle}`
+          : `${scheduleLabel} Schedule for ${jobTitle}`;
 
         const interviewDateDisplay = formattedDate;
         const interviewTimeDisplay = interview.time || 'To be confirmed';
         const interviewLocationDisplay = interview.location || 'To be confirmed';
 
-        // HTML email template for interview details
+        const pillText = isReschedule ? `${scheduleLabel} Rescheduled` : `${scheduleLabel} Scheduled`;
+        const detailsTitle = scheduleKind === 'agreement_signing' ? 'Appointment Details' : 'Interview Details';
+        const locationLabel = scheduleKind === 'agreement_signing' ? 'Location:' : 'Location / Platform:';
+        const introHtml = scheduleKind === 'agreement_signing'
+          ? (isReschedule
+            ? 'Your agreement signing schedule has been <span class="highlight">updated</span>. Please review the updated details below:'
+            : 'Please review the details for your agreement signing appointment below:')
+          : (isReschedule
+            ? 'Your interview schedule has been <span class="highlight">updated</span>. Please review the updated details below:'
+            : 'Thank you for your interest in joining Roadwise. We are pleased to invite you for an interview. Please review the details below:');
+
+        // HTML email template for schedule details
         const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -312,21 +396,17 @@ serve(async (req) => {
         <div class="logo-brand">Each-R</div>
         <div class="logo-tagline">Each Record for Roadwise</div>
       </div>
-      <div class="pill">${isReschedule ? 'Interview Rescheduled' : 'Interview Scheduled'}</div>
+      <div class="pill">${pillText}</div>
       <h1>${jobTitle}</h1>
     </div>
 
     <p>Dear ${fullName || firstName},</p>
     <p>
-      ${
-        isReschedule
-          ? 'Your interview schedule has been <span class="highlight">updated</span>. Please review the updated details below:'
-          : 'Thank you for your interest in joining Roadwise. We are pleased to invite you for an interview. Please review the details below:'
-      }
+      ${introHtml}
     </p>
 
     <div class="section">
-      <div class="section-title">Interview Details</div>
+      <div class="section-title">${detailsTitle}</div>
       <div class="row">
         <span class="label">Date:</span>
         <span class="value">${interviewDateDisplay}</span>
@@ -336,7 +416,7 @@ serve(async (req) => {
         <span class="value">${interviewTimeDisplay}</span>
       </div>
       <div class="row">
-        <span class="label">Location / Platform:</span>
+        <span class="label">${locationLabel}</span>
         <span class="value">${interviewLocationDisplay}</span>
       </div>
       ${
@@ -372,16 +452,18 @@ serve(async (req) => {
         `;
 
         const textContent = `
-Roadwise - Interview ${isReschedule ? 'Rescheduled' : 'Scheduled'}
+      Roadwise - ${scheduleLabel} ${isReschedule ? 'Rescheduled' : 'Scheduled'}
 
 Dear ${fullName || firstName},
 
-${isReschedule ? 'Your interview schedule has been updated.' : 'You have been scheduled for an interview.'}
+${scheduleKind === 'agreement_signing'
+  ? (isReschedule ? 'Your agreement signing schedule has been updated.' : 'You have been scheduled for an agreement signing appointment.')
+  : (isReschedule ? 'Your interview schedule has been updated.' : 'You have been scheduled for an interview.')}
 
 Position: ${jobTitle}
 Date: ${interviewDateDisplay}
 Time: ${interviewTimeDisplay}
-Location / Platform: ${interviewLocationDisplay}
+Location: ${interviewLocationDisplay}
 ${
   interview.interviewer
     ? `Interviewer: ${interview.interviewer}\n`
@@ -438,7 +520,10 @@ This is an automated message from Roadwise. Please do not reply directly to this
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: 'Interview scheduled and notification sent successfully',
+        kind: scheduleKind,
+        message: scheduleKind === 'agreement_signing'
+          ? 'Agreement signing scheduled and notification sent successfully'
+          : 'Interview scheduled and notification sent successfully',
         isReschedule 
       }),
       { 

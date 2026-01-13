@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
-import { createInterviewScheduledNotification, createInterviewRescheduledNotification, notifyHRAboutInterviewResponse, notifyHRAboutApplicationRetraction } from './notifications';
+import { createInterviewScheduledNotification, createInterviewRescheduledNotification, notifyHRAboutInterviewResponse, notifyHRAboutAgreementSigningResponse, notifyHRAboutApplicationRetraction } from './notifications';
 
 function ApplicantApplications() {
   const navigate = useNavigate();
@@ -48,6 +48,8 @@ function ApplicantApplications() {
 
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
+  const [showAgreementConfirmDialog, setShowAgreementConfirmDialog] = useState(false);
+  const [showAgreementRescheduleDialog, setShowAgreementRescheduleDialog] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [showRetractDialog, setShowRetractDialog] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
@@ -191,6 +193,16 @@ function ApplicantApplications() {
             Assessment: "waiting",
             Agreements: "waiting"
           };
+
+          // If rejected at any point, clearly reflect it in the UI (esp. rejected at step 1)
+          if (applicationStatus === 'rejected') {
+            newStepStatus = {
+              Application: 'rejected',
+              Assessment: 'waiting',
+              Agreements: 'waiting',
+            };
+            setActiveStep('Application');
+          } else {
           
           // Assessment step: pending if interview scheduled, done if confirmed
           if (hasInterview) {
@@ -208,6 +220,7 @@ function ApplicantApplications() {
             newStepStatus.Agreements = "done";
           } else if (['agreement', 'agreements', 'final_agreement'].includes(applicationStatus)) {
             newStepStatus.Agreements = "pending";
+          }
           }
           
           setStepStatus(newStepStatus);
@@ -397,10 +410,18 @@ function ApplicantApplications() {
               const isCompleted = status === 'done';
               const isPending = status === 'pending';
               const isWaiting = status === 'waiting';
+              const isRejected = status === 'rejected';
               const isLast = index === steps.length - 1;
               
               // Step number and icon
               const getStepIcon = () => {
+                if (isRejected) {
+                  return (
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  );
+                }
                 if (isCompleted) {
                   return (
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -437,6 +458,13 @@ function ApplicantApplications() {
                   border: 'border-red-500',
                   icon: 'text-red-600'
                 };
+              } else if (isRejected) {
+                stepColors = {
+                  bg: 'bg-red-50',
+                  text: 'text-red-700',
+                  border: 'border-red-500',
+                  icon: 'text-red-600'
+                };
               } else if (isCompleted) {
                 stepColors = {
                   bg: 'bg-green-50',
@@ -462,6 +490,7 @@ function ApplicantApplications() {
 
               // Status label
               const getStatusLabel = () => {
+                if (isRejected) return 'Rejected';
                 if (isCompleted) return 'Completed';
                 if (isActive) return 'Current';
                 if (isPending) return 'In Progress';
@@ -500,7 +529,9 @@ function ApplicantApplications() {
                   </div>
                   {!isLast && (
                     <div className={`flex-1 h-1 mx-2 rounded-full ${
-                      isCompleted || (isActive && index > 0) 
+                      isRejected
+                        ? 'bg-red-400'
+                        : isCompleted || (isActive && index > 0) 
                         ? 'bg-green-500' 
                         : isPending && index === 0
                         ? 'bg-yellow-400'
@@ -559,14 +590,27 @@ function ApplicantApplications() {
                   </div>
                   <div className="text-right">
                     <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
-                    <button 
-                      type="button" 
-                      className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
-                      onClick={() => setShowRetractDialog(true)}
-                      disabled={applicationRetracted || retracting}
-                    >
-                      {applicationRetracted ? "Application Retracted" : "Retract Application"}
-                    </button>
+                    <div className="mt-2">
+                      {String(applicationData.status || '').toLowerCase() === 'rejected' ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-200">
+                          REJECTED
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-700 border border-gray-200">
+                          {(applicationData.status || 'submitted').toString().toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    {String(applicationData?.status || applicationData?.payload?.status || '').trim().toLowerCase() !== 'hired' && (
+                      <button 
+                        type="button" 
+                        className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
+                        onClick={() => setShowRetractDialog(true)}
+                        disabled={applicationRetracted || retracting}
+                      >
+                        {applicationRetracted ? "Application Retracted" : "Retract Application"}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -736,24 +780,55 @@ function ApplicantApplications() {
                     <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Character References</div>
                     <div className="p-4 text-sm text-gray-800">
                       {(() => {
-                        // Filter out empty references - must have at least a name
-                        const validReferences = applicationData.payload?.characterReferences?.filter(ref => 
-                          ref.name && ref.name.trim() !== ''
-                        ) || [];
-                        
-                        return validReferences.length > 0 ? (
+                        const rawRefs = (() => {
+                          const payload = applicationData?.payload;
+                          const candidates = [
+                            payload?.characterReferences,
+                            payload?.character_references,
+                            payload?.form?.characterReferences,
+                            payload?.form?.character_references,
+                            payload?.applicant?.characterReferences,
+                            payload?.applicant?.character_references,
+                          ];
+
+                          for (const candidate of candidates) {
+                            if (Array.isArray(candidate)) return candidate;
+                          }
+                          return [];
+                        })();
+
+                        const displayRefs = rawRefs.length > 0 ? rawRefs : [{}];
+
+                        return (
                           <div className="space-y-3">
-                            {validReferences.map((ref, idx) => (
+                            {displayRefs.map((ref, idx) => (
                               <div key={idx} className="border-b pb-3 last:border-b-0">
                                 <div className="mb-1"><span className="font-semibold text-gray-600">Reference #{idx + 1}</span></div>
-                                <div><span className="font-semibold text-gray-600">Name:</span> <span className="text-gray-800">{ref.name}</span></div>
-                                <div><span className="font-semibold text-gray-600">Contact:</span> {(ref.contact || ref.contactNumber) ? <span className="text-gray-800">{ref.contact || ref.contactNumber}</span> : <span className="text-gray-400 italic">None</span>}</div>
-                                <div><span className="font-semibold text-gray-600">Remarks:</span> {(ref.company || ref.remarks) ? <span className="text-gray-800">{ref.company || ref.remarks}</span> : <span className="text-gray-400 italic">None</span>}</div>
+                                {(() => {
+                                  const fullName = ref?.fullName ?? ref?.name ?? '';
+                                  const relationship = ref?.relationship ?? ref?.relation ?? '';
+                                  const jobTitle = ref?.jobTitle ?? ref?.title ?? ref?.position ?? '';
+                                  const company = ref?.company ?? ref?.remarks ?? '';
+                                  const phone = ref?.phone ?? ref?.contact ?? ref?.contactNumber ?? ref?.contact_number ?? '';
+                                  const email = ref?.email ?? '';
+
+                                  const renderValue = (value) =>
+                                    value ? <span className="text-gray-800">{value}</span> : <span className="text-gray-400 italic">None</span>;
+
+                                  return (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-1">
+                                      <div><span className="font-semibold text-gray-600">Full Name:</span> {renderValue(fullName)}</div>
+                                      <div><span className="font-semibold text-gray-600">Relationship:</span> {renderValue(relationship)}</div>
+                                      <div><span className="font-semibold text-gray-600">Job Title:</span> {renderValue(jobTitle)}</div>
+                                      <div><span className="font-semibold text-gray-600">Company:</span> {renderValue(company)}</div>
+                                      <div><span className="font-semibold text-gray-600">Phone:</span> {renderValue(phone)}</div>
+                                      <div><span className="font-semibold text-gray-600">Email:</span> {renderValue(email)}</div>
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             ))}
                           </div>
-                        ) : (
-                          <div className="text-gray-400 italic">None</div>
                         );
                       })()}
                     </div>
@@ -984,14 +1059,16 @@ function ApplicantApplications() {
                 </div>
                 <div className="text-right">
                   <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
-                  <button 
-                    type="button" 
-                    className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
-                    onClick={() => setShowRetractDialog(true)}
-                    disabled={applicationRetracted || retracting}
-                  >
-                    {applicationRetracted ? "Application Retracted" : "Retract Application"}
-                  </button>
+                  {String(applicationData?.status || applicationData?.payload?.status || '').trim().toLowerCase() !== 'hired' && (
+                    <button 
+                      type="button" 
+                      className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
+                      onClick={() => setShowRetractDialog(true)}
+                      disabled={applicationRetracted || retracting}
+                    >
+                      {applicationRetracted ? "Application Retracted" : "Retract Application"}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -1530,6 +1607,107 @@ function ApplicantApplications() {
                 </div>
               </div>
               <div className="p-6">
+                {/* Agreement Signing Schedule */}
+                {(() => {
+                  const payloadObj = typeof applicationData.payload === 'string'
+                    ? JSON.parse(applicationData.payload)
+                    : applicationData.payload || {};
+
+                  const signing =
+                    payloadObj?.agreement_signing ||
+                    payloadObj?.agreementSigning ||
+                    payloadObj?.signing_interview ||
+                    payloadObj?.signingInterview ||
+                    null;
+
+                  const signingDate = signing?.date || null;
+                  const signingTime = signing?.time || null;
+                  const signingLocation = signing?.location || null;
+                  const signingStatus = payloadObj?.agreement_signing_confirmed || payloadObj?.agreementSigningConfirmed || 'Idle';
+
+                  if (!signingDate) {
+                    return (
+                      <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm mb-6">
+                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">
+                          Agreement Signing Schedule
+                        </div>
+                        <div className="p-4 text-sm text-gray-700">
+                          <span className="text-gray-500 italic">Awaiting HR schedule.</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const statusPill = (() => {
+                    const v = String(signingStatus || '').toLowerCase();
+                    if (v === 'confirmed') {
+                      return (
+                        <span className="text-sm px-2 py-1 rounded bg-green-100 text-green-800 border border-green-300">
+                          Status: Confirmed
+                        </span>
+                      );
+                    }
+                    if (v === 'rejected') {
+                      return (
+                        <span className="text-sm px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300">
+                          Status: Reschedule Requested
+                        </span>
+                      );
+                    }
+                    return (
+                      <span className="text-sm px-2 py-1 rounded bg-gray-100 text-gray-800 border border-gray-300">
+                        Status: Pending Confirmation
+                      </span>
+                    );
+                  })();
+
+                  return (
+                    <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm mb-6">
+                      <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200 flex items-center justify-between">
+                        <span>Agreement Signing Schedule</span>
+                        {statusPill}
+                      </div>
+                      <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                        <div>
+                          <span className="font-semibold text-gray-600">Date:</span>{' '}
+                          {signingDate ? (
+                            <span className="text-gray-800">{new Date(signingDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                          ) : (
+                            <span className="text-gray-400 italic">None</span>
+                          )}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-600">Time:</span>{' '}
+                          {signingTime ? <span className="text-gray-800">{signingTime}</span> : <span className="text-gray-400 italic">None</span>}
+                        </div>
+                        <div>
+                          <span className="font-semibold text-gray-600">Location:</span>{' '}
+                          {signingLocation ? <span className="text-gray-800">{signingLocation}</span> : <span className="text-gray-400 italic">None</span>}
+                        </div>
+                      </div>
+
+                      {String(applicationData?.status || '').toLowerCase() !== 'hired' && String(signingStatus || '').toLowerCase() !== 'confirmed' && (
+                        <div className="px-4 pb-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700 text-sm"
+                            onClick={() => setShowAgreementConfirmDialog(true)}
+                          >
+                            Confirm Signing Schedule
+                          </button>
+                          <button
+                            type="button"
+                            className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 text-sm"
+                            onClick={() => setShowAgreementRescheduleDialog(true)}
+                          >
+                            Request Reschedule
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
                 <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
                   <div className="col-span-6">&nbsp;</div>
@@ -1674,6 +1852,148 @@ function ApplicantApplications() {
                 }}
               >
                 Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Agreement Signing dialog */}
+      {showAgreementConfirmDialog && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowAgreementConfirmDialog(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-800">Confirm Agreement Signing</h3>
+            </div>
+            <div className="p-4 text-sm text-gray-700">
+              Are you sure you want to confirm your agreement signing schedule?
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowAgreementConfirmDialog(false)}>Cancel</button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                onClick={async () => {
+                  if (!applicationData?.id) return;
+                  try {
+                    const confirmedAt = new Date().toISOString();
+                    const payloadObj = typeof applicationData.payload === 'string'
+                      ? JSON.parse(applicationData.payload)
+                      : applicationData.payload || {};
+                    const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
+                    const applicantName = `${form.firstName || ''} ${form.middleName || ''} ${form.lastName || ''}`.trim() || applicationData.name || 'Applicant';
+                    const position = jobData?.title || payloadObj.job?.title || form.position || 'Position';
+                    const signing = payloadObj.agreement_signing || payloadObj.agreementSigning || payloadObj.signing_interview || payloadObj.signingInterview || {};
+
+                    const updatedPayload = {
+                      ...payloadObj,
+                      agreement_signing_confirmed: 'Confirmed',
+                      agreement_signing_confirmed_at: confirmedAt,
+                    };
+
+                    const { error: updateError } = await supabase
+                      .from('applications')
+                      .update({ payload: updatedPayload })
+                      .eq('id', applicationData.id);
+
+                    if (updateError) {
+                      console.error('Error confirming agreement signing:', updateError);
+                      alert('Failed to confirm agreement signing. Please try again.');
+                      return;
+                    }
+
+                    await notifyHRAboutAgreementSigningResponse({
+                      applicationId: applicationData.id,
+                      applicantName,
+                      position,
+                      responseType: 'confirmed',
+                      signingDate: signing?.date || null,
+                      signingTime: signing?.time || null,
+                    });
+
+                    setApplicationData((prev) => ({
+                      ...prev,
+                      payload: updatedPayload,
+                    }));
+                    setShowAgreementConfirmDialog(false);
+                  } catch (err) {
+                    console.error('Error confirming agreement signing:', err);
+                    alert('Failed to confirm agreement signing. Please try again.');
+                  }
+                }}
+              >
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Request Agreement Signing Reschedule dialog */}
+      {showAgreementRescheduleDialog && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowAgreementRescheduleDialog(false)}>
+          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b">
+              <h3 className="text-lg font-semibold text-gray-800">Request Reschedule</h3>
+            </div>
+            <div className="p-4 text-sm text-gray-700">
+              Are you sure you want to request a reschedule for your agreement signing?
+            </div>
+            <div className="p-4 border-t flex justify-end gap-2">
+              <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowAgreementRescheduleDialog(false)}>Cancel</button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
+                onClick={async () => {
+                  if (!applicationData?.id) return;
+                  try {
+                    const requestedAt = new Date().toISOString();
+                    const payloadObj = typeof applicationData.payload === 'string'
+                      ? JSON.parse(applicationData.payload)
+                      : applicationData.payload || {};
+                    const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
+                    const applicantName = `${form.firstName || ''} ${form.middleName || ''} ${form.lastName || ''}`.trim() || applicationData.name || 'Applicant';
+                    const position = jobData?.title || payloadObj.job?.title || form.position || 'Position';
+                    const signing = payloadObj.agreement_signing || payloadObj.agreementSigning || payloadObj.signing_interview || payloadObj.signingInterview || {};
+
+                    const updatedPayload = {
+                      ...payloadObj,
+                      agreement_signing_confirmed: 'Rejected',
+                      agreement_signing_confirmed_at: requestedAt,
+                    };
+
+                    const { error: updateError } = await supabase
+                      .from('applications')
+                      .update({ payload: updatedPayload })
+                      .eq('id', applicationData.id);
+
+                    if (updateError) {
+                      console.error('Error requesting reschedule:', updateError);
+                      alert('Failed to request reschedule. Please try again.');
+                      return;
+                    }
+
+                    await notifyHRAboutAgreementSigningResponse({
+                      applicationId: applicationData.id,
+                      applicantName,
+                      position,
+                      responseType: 'rejected',
+                      signingDate: signing?.date || null,
+                      signingTime: signing?.time || null,
+                    });
+
+                    setApplicationData((prev) => ({
+                      ...prev,
+                      payload: updatedPayload,
+                    }));
+                    setShowAgreementRescheduleDialog(false);
+                  } catch (err) {
+                    console.error('Error requesting reschedule:', err);
+                    alert('Failed to request reschedule. Please try again.');
+                  }
+                }}
+              >
+                Request
               </button>
             </div>
           </div>

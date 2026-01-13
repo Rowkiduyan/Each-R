@@ -4487,7 +4487,7 @@ const formatDateForInput = (dateString) => {
                         Character References
                       </h3>
                       <div className="border border-gray-300">
-                        <div className="grid grid-cols-6 bg-gray-100 p-2 font-medium">
+                        <div className="grid grid-cols-6 bg-gray-100 p-2 font-medium min-w-0">
                           <div>Full Name</div>
                           <div>Relationship</div>
                           <div>Job Title</div>
@@ -4503,7 +4503,7 @@ const formatDateForInput = (dateString) => {
                             .map((r, i) => (
                               <div
                                 key={i}
-                                className={`grid grid-cols-6 p-2 ${
+                                className={`grid grid-cols-6 p-2 min-w-0 ${
                                   i % 2 === 1 ? 'bg-gray-100' : ''
                                 }`}
                               >
@@ -4512,7 +4512,9 @@ const formatDateForInput = (dateString) => {
                                 <div>{r.jobTitle || <span className="text-gray-500 italic">None</span>}</div>
                                 <div>{r.company || <span className="text-gray-500 italic">None</span>}</div>
                                 <div>{r.phone || <span className="text-gray-500 italic">None</span>}</div>
-                                <div>{r.email || <span className="text-gray-500 italic">None</span>}</div>
+                                <div className="min-w-0 truncate" title={r.email || ''}>
+                                  {r.email ? r.email : <span className="text-gray-500 italic">None</span>}
+                                </div>
                               </div>
                             ))
                         )}

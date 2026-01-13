@@ -1849,19 +1849,22 @@ function AgencyEndorsements() {
                               )}
 
                               {/* Character References */}
-                              {characterReferences && characterReferences.length > 0 && (
+                              {!selectedEmployee?.is_agency && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
                                   <div className="space-y-2">
-                                    {characterReferences.map((ref, idx) => (
-                                      <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
-                                        <div className="font-medium text-gray-800">{ref.name || "—"}</div>
-                                        <div className="text-gray-600">{ref.contact || ref.contactNumber || "—"}</div>
-                                        {ref.remarks && (
-                                          <div className="text-gray-500 text-xs mt-1">{ref.remarks}</div>
-                                        )}
-                                      </div>
-                                    ))}
+                                    {(() => {
+                                      const rawRefs = Array.isArray(characterReferences) ? characterReferences : [];
+                                      const displayRefs = rawRefs.length > 0 ? rawRefs : [{}];
+
+                                      return displayRefs.map((ref, idx) => (
+                                        <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
+                                          <div className="font-medium text-gray-800">{ref?.name || ''}</div>
+                                          <div className="text-gray-600">{ref?.contact || ref?.contactNumber || ''}</div>
+                                          <div className="text-gray-500 text-xs mt-1">{ref?.remarks || ''}</div>
+                                        </div>
+                                      ));
+                                    })()}
                                   </div>
                                 </div>
                               )}
@@ -2717,19 +2720,22 @@ function AgencyEndorsements() {
                               )}
 
                               {/* Character References */}
-                              {characterReferences && characterReferences.length > 0 && (
+                              {!selectedEmployee?.is_agency && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
                                   <div className="space-y-2">
-                                    {characterReferences.map((ref, idx) => (
-                                      <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
-                                        <div className="font-medium text-gray-800">{ref.name || "—"}</div>
-                                        <div className="text-gray-600">{ref.contact || ref.contactNumber || "—"}</div>
-                                        {ref.remarks && (
-                                          <div className="text-gray-500 text-xs mt-1">{ref.remarks}</div>
-                                        )}
-                                      </div>
-                                    ))}
+                                    {(() => {
+                                      const rawRefs = Array.isArray(characterReferences) ? characterReferences : [];
+                                      const displayRefs = rawRefs.length > 0 ? rawRefs : [{}];
+
+                                      return displayRefs.map((ref, idx) => (
+                                        <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
+                                          <div className="font-medium text-gray-800">{ref?.name || ''}</div>
+                                          <div className="text-gray-600">{ref?.contact || ref?.contactNumber || ''}</div>
+                                          <div className="text-gray-500 text-xs mt-1">{ref?.remarks || ''}</div>
+                                        </div>
+                                      ));
+                                    })()}
                                   </div>
                                 </div>
                               )}
