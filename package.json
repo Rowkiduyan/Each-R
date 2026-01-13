@@ -14,14 +14,22 @@
     "@supabase/supabase-js": "^2.81.0",
     "@tailwindcss/vite": "^4.1.13",
     "bcryptjs": "^3.0.2",
+    "buffer": "^6.0.3",
+    "docx": "^9.5.1",
+    "docx-templates": "^4.11.2",
+    "events": "^3.3.0",
+    "events-browserify": "^0.0.1",
+    "file-saver": "^2.0.5",
     "jspdf": "^4.0.0",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.544.0",
+    "pizzip": "^3.2.0",
     "react": "^19.1.1",
     "react-calendar": "^6.0.0",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.9.1",
-    "recharts": "^3.2.1"
+    "recharts": "^3.2.1",
+    "stream-browserify": "^3.0.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.30.1",

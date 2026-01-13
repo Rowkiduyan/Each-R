@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useEmployeeUser } from "./layouts/EmployeeLayout";
 import { supabase } from './supabaseClient';
 import { generateCertificatePDF } from './utils/certificateGenerator';
+import EmployeeCertificatesView from './components/EmployeeCertificatesView';
 
 function EmployeeTrainings() {
     const { userId, userEmail, employeeUser } = useEmployeeUser();
@@ -918,6 +919,21 @@ function EmployeeTrainings() {
                                 </div>
                             </button>
                             <button
+                                onClick={() => setActiveTab('training-certificates')}
+                                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                                    activeTab === 'training-certificates'
+                                        ? 'border-red-600 text-red-600 bg-red-50/50'
+                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                }`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                                    </svg>
+                                    Training Certificates
+                                </div>
+                            </button>
+                            <button
                                 onClick={() => setActiveTab('certificates')}
                                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'certificates'
@@ -1067,6 +1083,10 @@ function EmployeeTrainings() {
                                 ))}
                             </div>
                         )
+                    ) : activeTab === 'training-certificates' ? (
+                        <div className="relative h-[500px] overflow-y-auto no-scrollbar p-6">
+                            <EmployeeCertificatesView userId={userId} isAgencyView={false} />
+                        </div>
                     ) : activeTab === 'certificates' ? (
                         externalTrainings.length === 0 ? (
                             <div className="px-6 py-12 text-center text-gray-500 h-[500px] flex flex-col items-center justify-center">
@@ -1208,24 +1228,6 @@ function EmployeeTrainings() {
                                                 
                                                 return (
                                                     <div className="flex items-center gap-2 flex-shrink-0">
-                                                        {/* System Generated Certificate - Always available for present employees */}
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                generateCertificatePDF(
-                                                                    attendanceStatus.employeeName,
-                                                                    training.title,
-                                                                    training.date
-                                                                );
-                                                            }}
-                                                            className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2"
-                                                            title="View system-generated certificate"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                                            </svg>
-                                                            View Certificate
-                                                        </button>
                                                         {hasCertificate && (
                                                             <button
                                                                 onClick={async (e) => {

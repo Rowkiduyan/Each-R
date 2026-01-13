@@ -4,6 +4,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
 import { generateCertificatePDF } from './utils/certificateGenerator';
+import EmployeeCertificatesView from './components/EmployeeCertificatesView';
 
 function AgencyTrainings() {
   const navigate = useNavigate();
@@ -675,6 +676,21 @@ function AgencyTrainings() {
                   Training History
                 </div>
               </button>
+              <button
+                onClick={() => { setActiveTab('certificates'); setCurrentPage(1); }}
+                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === 'certificates'
+                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                  </svg>
+                  Employee Certificates
+                </div>
+              </button>
             </div>
           </div>
 
@@ -848,6 +864,13 @@ function AgencyTrainings() {
               </div>
             )}
           </div>
+          )}
+          
+          {/* Certificates Tab */}
+          {activeTab === 'certificates' && (
+            <div className="p-6">
+              <EmployeeCertificatesView userId={agencyUserId} isAgencyView={true} />
+            </div>
           )}
 
           {/* Pagination */}

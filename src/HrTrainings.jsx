@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom';
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './supabaseClient';
 import emailjs from '@emailjs/browser';
+import CertificateTemplateManager from './components/CertificateTemplateManager';
+import { generateTrainingCertificates, checkTrainingCertificates } from './utils/trainingCertificateGenerator';
 
 function HrTrainings() {
   const [loading, setLoading] = useState(true);
@@ -24,6 +26,20 @@ function HrTrainings() {
   const [showConfirmAddModal, setShowConfirmAddModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  
+  // Certificate management state
+  const [showCertificateManager, setShowCertificateManager] = useState(false);
+  const [generatingCertificates, setGeneratingCertificates] = useState(null);
+  const [certificateStatus, setCertificateStatus] = useState({});
+  const [showCertificateModal, setShowCertificateModal] = useState(false);
+  const [certificateProgress, setCertificateProgress] = useState({
+    total: 0,
+    current: 0,
+    status: 'preparing', // preparing, generating, complete, error
+    message: '',
+    successful: [],
+    failed: []
+  });
   
   const [form, setForm] = useState({
     title: "",
@@ -81,6 +97,29 @@ function HrTrainings() {
   useEffect(() => {
     fetchTrainings();
   }, []);
+  
+  // Check certificate status for completed trainings
+  // NOTE: Disabled until database setup is complete
+  // Uncomment after running database_setup.sql
+  /*
+  useEffect(() => {
+    const checkCertificates = async () => {
+      for (const training of completed) {
+        const result = await checkTrainingCertificates(training.id);
+        if (result.success) {
+          setCertificateStatus(prev => ({
+            ...prev,
+            [training.id]: result
+          }));
+        }
+      }
+    };
+    
+    if (completed.length > 0) {
+      checkCertificates();
+    }
+  }, [completed]);
+  */
 
   // Get current logged-in user (for created_by)
   useEffect(() => {
@@ -985,6 +1024,108 @@ function HrTrainings() {
       setShowAlertModal(true);
     }
   };
+  
+  // Generate and send certificates for completed training
+  const handleSendCertificates = async (training) => {
+    if (!training || !training.attendance) {
+      setAlertMessage('No attendance data found for this training');
+      setShowAlertModal(true);
+      return;
+    }
+    
+    // Get list of attendees who were present
+    const presentAttendees = [];
+    for (const [name, status] of Object.entries(training.attendance)) {
+      if (status === true) {
+        // Try to find employee's user ID by matching name
+        const matchingEmployee = employeeOptions.find(emp => emp.name === name);
+        presentAttendees.push({
+          name: name,
+          userId: matchingEmployee?.id || null,
+          email: matchingEmployee?.email || null
+        });
+      }
+    }
+    
+    if (presentAttendees.length === 0) {
+      setAlertMessage('No employees marked as present for this training');
+      setShowAlertModal(true);
+      return;
+    }
+    
+    // Check if certificates already exist
+    const certCheck = certificateStatus[training.id];
+    if (certCheck && certCheck.hasCertificates && certCheck.count > 0) {
+      const confirmed = confirm(
+        `Certificates have already been generated for this training (${certCheck.count} certificates). Do you want to generate them again? This will create duplicate certificates.`
+      );
+      if (!confirmed) return;
+    }
+    
+    if (!confirm(`Generate certificates for ${presentAttendees.length} attendee(s)?`)) {
+      return;
+    }
+    
+    try {
+      // Show modal and initialize progress
+      setShowCertificateModal(true);
+      setCertificateProgress({
+        total: presentAttendees.length,
+        current: 0,
+        status: 'preparing',
+        message: 'Preparing certificate template...',
+        successful: [],
+        failed: []
+      });
+      
+      setGeneratingCertificates(training.id);
+      setActionMenuOpen(null);
+      
+      // Update progress as generating
+      setCertificateProgress(prev => ({
+        ...prev,
+        status: 'generating',
+        message: `Generating certificate 1 of ${presentAttendees.length}...`
+      }));
+      
+      const result = await generateTrainingCertificates(training, presentAttendees);
+      
+      if (result.success) {
+        const { successful, failed } = result.results;
+        
+        setCertificateProgress({
+          total: presentAttendees.length,
+          current: presentAttendees.length,
+          status: 'complete',
+          message: `Successfully generated ${successful.length} certificate(s)${failed.length > 0 ? ` (${failed.length} failed)` : ''}`,
+          successful,
+          failed
+        });
+        
+        // Refresh certificate status
+        const updatedStatus = await checkTrainingCertificates(training.id);
+        setCertificateStatus(prev => ({
+          ...prev,
+          [training.id]: updatedStatus
+        }));
+      } else {
+        setCertificateProgress(prev => ({
+          ...prev,
+          status: 'error',
+          message: result.error || 'Failed to generate certificates'
+        }));
+      }
+    } catch (error) {
+      console.error('Error generating certificates:', error);
+      setCertificateProgress(prev => ({
+        ...prev,
+        status: 'error',
+        message: error.message || 'An error occurred while generating certificates'
+      }));
+    } finally {
+      setGeneratingCertificates(null);
+    }
+  };
 
   // View training details
   const viewDetails = (training) => {
@@ -1146,6 +1287,40 @@ function HrTrainings() {
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
           <p className="text-gray-500 mt-1">Manage schedules and track employee participation</p>
+        </div>
+
+        {/* Certificate Template Manager - Collapsible Section */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowCertificateManager(!showCertificateManager)}
+            className="w-full bg-gradient-to-r from-purple-50 to-blue-50 hover:from-purple-100 hover:to-blue-100 border border-purple-200 rounded-lg px-4 py-3 flex items-center justify-between transition-all"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-purple-600 rounded-lg flex items-center justify-center">
+                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div className="text-left">
+                <h3 className="font-semibold text-gray-900">Certificate Templates</h3>
+                <p className="text-xs text-gray-600">Manage Word document templates for training certificates</p>
+              </div>
+            </div>
+            <svg
+              className={`w-5 h-5 text-gray-500 transition-transform ${showCertificateManager ? 'rotate-180' : ''}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          {showCertificateManager && (
+            <div className="mt-4 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              <CertificateTemplateManager />
+            </div>
+          )}
         </div>
 
         {/* Main Content Card with Tabs (Upcoming / History) */}
@@ -1466,7 +1641,36 @@ function HrTrainings() {
                         </svg>
                       </button>
                       {actionMenuOpen === training.id && (
-                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+                        <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSendCertificates(training);
+                            }}
+                            disabled={generatingCertificates === training.id}
+                            className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-b border-gray-100"
+                          >
+                            {generatingCertificates === training.id ? (
+                              <>
+                                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                Send Certificates
+                                {certificateStatus[training.id]?.hasCertificates && (
+                                  <span className="ml-auto text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
+                                    {certificateStatus[training.id].count}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </button>
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -2852,6 +3056,96 @@ function HrTrainings() {
                 className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] transition-colors font-medium text-sm"
               >
                 Confirm & Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Certificate Generation Progress Modal */}
+      {showCertificateModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center px-4 z-50">
+          <div className="bg-white rounded-xl w-full max-w-md shadow-2xl">
+            <div className="px-6 py-4 border-b border-gray-200">
+              <h2 className="text-lg font-bold text-gray-900">Generating Certificates</h2>
+            </div>
+            <div className="px-6 py-6">
+              {/* Progress Bar */}
+              <div className="mb-4">
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <span>{certificateProgress.current} of {certificateProgress.total}</span>
+                  <span>{Math.round((certificateProgress.current / certificateProgress.total) * 100)}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      certificateProgress.status === 'error' ? 'bg-red-500' :
+                      certificateProgress.status === 'complete' ? 'bg-green-500' :
+                      'bg-blue-500'
+                    }`}
+                    style={{ width: `${(certificateProgress.current / certificateProgress.total) * 100}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Status Message */}
+              <div className="flex items-center gap-3 mb-4">
+                {certificateProgress.status === 'preparing' && (
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+                )}
+                {certificateProgress.status === 'generating' && (
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+                )}
+                {certificateProgress.status === 'complete' && (
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+                {certificateProgress.status === 'error' && (
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                )}
+                <p className="text-sm text-gray-700">{certificateProgress.message}</p>
+              </div>
+
+              {/* Results Summary */}
+              {certificateProgress.status === 'complete' && (
+                <div className="space-y-2">
+                  {certificateProgress.successful.length > 0 && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <p className="text-sm font-semibold text-green-800 mb-1">
+                        ✓ Successfully Generated ({certificateProgress.successful.length})
+                      </p>
+                      <div className="text-xs text-green-700 max-h-32 overflow-y-auto">
+                        {certificateProgress.successful.map((item, i) => (
+                          <div key={i}>• {item.name}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {certificateProgress.failed.length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-sm font-semibold text-red-800 mb-1">
+                        ✗ Failed ({certificateProgress.failed.length})
+                      </p>
+                      <div className="text-xs text-red-700 max-h-32 overflow-y-auto">
+                        {certificateProgress.failed.map((item, i) => (
+                          <div key={i}>• {item.name}: {item.error}</div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => setShowCertificateModal(false)}
+                disabled={certificateProgress.status === 'preparing' || certificateProgress.status === 'generating'}
+                className="px-4 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium text-sm"
+              >
+                {certificateProgress.status === 'preparing' || certificateProgress.status === 'generating' ? 'Please wait...' : 'Close'}
               </button>
             </div>
           </div>

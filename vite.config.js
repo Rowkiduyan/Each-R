@@ -9,4 +9,22 @@ export default defineConfig({
     tailwindcss(),
     react()
   ],
+  resolve: {
+    alias: {
+      stream: 'stream-browserify',
+      events: 'events',
+      buffer: 'buffer'
+    }
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      define: {
+        global: 'globalThis'
+      }
+    }
+  },
+  define: {
+    'process.env': {},
+    'global': 'globalThis'
+  }
 })
