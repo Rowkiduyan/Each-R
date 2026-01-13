@@ -126,6 +126,19 @@ export default function AdminLayout() {
               </NavLink>
 
               <NavLink
+                to="/admin/import"
+                className={({ isActive }) =>
+                  `pb-1 transition-colors ${
+                    isActive
+                      ? "text-red-600 border-b-2 border-red-600"
+                      : "hover:text-gray-900"
+                  }`
+                }
+              >
+                Import Employees
+              </NavLink>
+
+              <NavLink
                 to="/admin/enable-disable"
                 className={({ isActive }) =>
                   `pb-1 transition-colors ${

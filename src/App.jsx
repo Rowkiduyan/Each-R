@@ -32,6 +32,7 @@ import AgencyLayout from "./layouts/AgencyLayout";
 import HrCreateJob from "./HrCreateJob";
 import HrPost from "./HrPost";
 import VerifyEmail from "./VerifyEmail";
+import ResetPassword from "./ResetPassword";
 import RequireRole from "./RequireRole";
 import HRLayout from "./layouts/HRLayout";
 import AdminLayout from "./layouts/AdminLayout";
@@ -40,6 +41,7 @@ import GuestLayout from "./layouts/GuestLayout";
 import ApplicantLayout from "./layouts/ApplicantLayout";
 import AdminCreate from "./AdminCreate";
 import AdminEnableDisable from "./AdminEnableDisable";
+import AdminImportEmployees from "./AdminImportEmployees";
 import TermsAndPrivacy from "./TermsAndPrivacy";
 import AccountSettings from "./AccountSettings";
 import AgencyProfile from "./AgencyProfile";
@@ -113,6 +115,7 @@ function App() {
         >
         <Route path="home" element={<AdminHome />} />
         <Route path="create" element={<AdminCreate />} />
+        <Route path="import" element={<AdminImportEmployees />} />
         <Route path="enable-disable" element={<AdminEnableDisable />} />
         <Route path="account-settings" element={<AccountSettings />} />
       </Route>
@@ -124,6 +127,7 @@ function App() {
         <Route path="applicant/login" element={<ApplicantLogin />} />
         <Route path="applicant/register" element={<ApplicantRegister />} />
         <Route path="applicant/verify" element={<VerifyEmail />} />
+        <Route path="reset-password" element={<ResetPassword />} />
         <Route path="employee/login" element={<EmployeeLogin />} />
       </Route>
 

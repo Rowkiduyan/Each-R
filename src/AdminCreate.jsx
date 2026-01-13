@@ -6,8 +6,6 @@ function AdminCreate() {
   const [formData, setFormData] = useState({
     agencyName: '',
     email: '',
-    password: '',
-    confirmPassword: '',
     contactPerson: '',
     contactNumber: '',
     address: '',
@@ -17,6 +15,32 @@ function AdminCreate() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [generatedPassword, setGeneratedPassword] = useState('');
+
+  // Generate a secure random password
+  const generatePassword = () => {
+    const length = 12;
+    const uppercase = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lowercase = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const special = '@$!%*?&';
+    const allChars = uppercase + lowercase + numbers + special;
+    
+    let password = '';
+    // Ensure at least one of each required character type
+    password += uppercase[Math.floor(Math.random() * uppercase.length)];
+    password += lowercase[Math.floor(Math.random() * lowercase.length)];
+    password += numbers[Math.floor(Math.random() * numbers.length)];
+    password += special[Math.floor(Math.random() * special.length)];
+    
+    // Fill the rest randomly
+    for (let i = password.length; i < length; i++) {
+      password += allChars[Math.floor(Math.random() * allChars.length)];
+    }
+    
+    // Shuffle the password
+    return password.split('').sort(() => Math.random() - 0.5).join('');
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -31,18 +55,9 @@ function AdminCreate() {
     setError('');
     setSuccess('');
 
-    // Validation
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    // Password strength validation
-    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{6,}$/;
-    if (!passwordRegex.test(formData.password)) {
-      setError('Password must contain at least one uppercase letter, one lowercase letter, one number, one special character (@$!%*?&), and be at least 6 characters long');
-      return;
-    }
+    // Generate password
+    const newPassword = generatePassword();
+    setGeneratedPassword(newPassword);
 
     // Show confirmation modal
     setShowConfirmModal(true);
@@ -58,7 +73,7 @@ function AdminCreate() {
       // Create user account in Supabase Auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
-        password: formData.password,
+        password: generatedPassword,
         options: {
           data: {
             role: 'Agency',
@@ -107,7 +122,7 @@ function AdminCreate() {
             contact_person: formData.contactPerson,
             agency_name: formData.agencyName,
             email: formData.email,
-            password: formData.password,
+            password: generatedPassword,
             login_url: window.location.origin + '/employee/login',
             to_email: formData.email
           },
@@ -125,13 +140,12 @@ function AdminCreate() {
       setFormData({
         agencyName: '',
         email: '',
-        password: '',
-        confirmPassword: '',
         contactPerson: '',
         contactNumber: '',
         address: '',
         description: ''
       });
+      setGeneratedPassword('');
 
     } catch (err) {
       setError(err.message || 'Failed to create agency account');
@@ -243,38 +257,10 @@ function AdminCreate() {
                   placeholder="Enter contact number"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Password *
-                </label>
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                  placeholder="Enter password"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Must contain at least one uppercase, one lowercase, one number, and one special character (@$!%*?&)
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Confirm Password *
-                </label>
-                <input
-                  type="password"
-                  name="confirmPassword"
-                  value={formData.confirmPassword}
-                  onChange={handleInputChange}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                  placeholder="Confirm password"
-                />
-              </div>
             </div>
+            <p className="text-sm text-gray-600 mt-4 bg-blue-50 p-3 rounded-md border border-blue-200">
+              <strong>Note:</strong> A secure password will be automatically generated and sent to the agency's email address.
+            </p>
           </div>
 
           {/* Error/Success Messages */}
@@ -308,9 +294,18 @@ function AdminCreate() {
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
           <div className="bg-white rounded-lg border-2 border-black p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Confirm Agency Registration</h3>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to register <strong>{formData.agencyName}</strong> with email <strong>{formData.email}</strong>?
-            </p>
+            <div className="space-y-3 mb-6">
+              <p className="text-gray-600">
+                Are you sure you want to register <strong>{formData.agencyName}</strong> with email <strong>{formData.email}</strong>?
+              </p>
+              <div className="bg-gray-50 p-3 rounded-md border border-gray-200">
+                <p className="text-sm text-gray-700 mb-1"><strong>Generated Password:</strong></p>
+                <p className="text-sm font-mono bg-white p-2 rounded border border-gray-300 break-all">{generatedPassword}</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  This password will be sent to the agency's email address.
+                </p>
+              </div>
+            </div>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setShowConfirmModal(false)}
