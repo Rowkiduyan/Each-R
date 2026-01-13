@@ -75,9 +75,11 @@ function ApplicantGHome() {
     }
 
     return (jobsList || []).map((job) => {
-      const total = Number(job?.positions_needed) || 1;
+      const totalNum = Number(job?.positions_needed);
+      const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+      const total = hasLimit ? totalNum : null;
       const hired = hiredByJobId.get(job?.id) || 0;
-      const remaining = Math.max(total - hired, 0);
+      const remaining = hasLimit ? Math.max(totalNum - hired, 0) : null;
       return { ...job, hired_count: hired, remaining_slots: remaining };
     });
   };
@@ -96,14 +98,33 @@ function ApplicantGHome() {
         console.error('Failed to load job posts:', error);
         setJobs([]);
       } else {
-        // Filter out expired jobs and only show office_employee jobs for applicants
-        const activeJobs = (data || []).filter(job => {
-          const isExpired = isJobExpired(job);
-          const isOfficeJob = job.job_type?.toLowerCase() === 'office_employee';
-          return !isExpired && isOfficeJob;
+        // Only show office_employee jobs for applicants
+        const officeJobs = (data || []).filter((job) => job.job_type?.toLowerCase() === 'office_employee');
+        const withStats = await attachHiringStats(officeJobs);
+
+        const closable = withStats.filter((job) => {
+          const expired = isJobExpired(job);
+          const totalNum = Number(job?.positions_needed);
+          const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+          const filled = hasLimit && (Number(job?.hired_count) || 0) >= totalNum;
+          return expired || filled;
         });
-        const withStats = await attachHiringStats(activeJobs);
-        setJobs(withStats);
+
+        if (closable.length > 0) {
+          await Promise.all(
+            closable.map((job) => supabase.from('job_posts').update({ is_active: false }).eq('id', job.id))
+          );
+        }
+
+        const openJobs = withStats.filter((job) => {
+          const expired = isJobExpired(job);
+          const totalNum = Number(job?.positions_needed);
+          const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+          const filled = hasLimit && (Number(job?.hired_count) || 0) >= totalNum;
+          return !expired && !filled;
+        });
+
+        setJobs(openJobs);
       }
       setLoading(false);
     };
@@ -223,9 +244,15 @@ function ApplicantGHome() {
           </div>
           <p className="text-gray-700 line-clamp-3">{job.description}</p>
           <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
-            <span className="px-2 py-1 bg-gray-100 rounded">Slots Remaining: {(typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1))} / {job.positions_needed || 1}</span>
             <span className="px-2 py-1 bg-gray-100 rounded">
-              {job.expires_at ? `Closes on: ${new Date(job.expires_at).toLocaleDateString('en-US')}` : 'Closes when filled'}
+              {job.positions_needed == null
+                ? 'Slots Remaining: No limit'
+                : `Slots Remaining: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)} / ${job.positions_needed || 1}`}
+            </span>
+            <span className="px-2 py-1 bg-gray-100 rounded">
+              {job.expires_at
+                ? `Closes on: ${new Date(job.expires_at).toLocaleDateString('en-US')}`
+                : (job.positions_needed == null ? 'Open until manually closed' : 'Closes when filled')}
             </span>
           </div>
         </div>
@@ -397,7 +424,11 @@ function ApplicantGHome() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                         <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                           <div className="text-[11px] text-gray-500">Slots Remaining</div>
-                          <div className="text-sm font-semibold text-gray-800">{(typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1))} / {selectedJob.positions_needed || 1}</div>
+                          <div className="text-sm font-semibold text-gray-800">
+                            {selectedJob.positions_needed == null
+                              ? 'No limit'
+                              : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)} / ${selectedJob.positions_needed || 1}`}
+                          </div>
                         </div>
                         <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                           <div className="text-[11px] text-gray-500">Application Duration</div>

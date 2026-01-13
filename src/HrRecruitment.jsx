@@ -718,7 +718,7 @@ function HrRecruitment() {
     try {
       let query = supabase
         .from("job_posts")
-        .select("id, title, depot, description, created_at, urgent, is_active, job_type, duration, approval_status, created_by, positions_needed")
+        .select("id, title, depot, description, created_at, urgent, is_active, job_type, duration, expires_at, approval_status, created_by, positions_needed")
         .order("created_at", { ascending: false });
 
       // Filter by depot if user is HRC
@@ -759,11 +759,37 @@ function HrRecruitment() {
           const hired = applications.filter((app) => app.status === "hired").length;
           const waitlisted = 0; // You can add waitlisted logic if needed
 
+          const isExpired = (() => {
+            if (!jobPost.expires_at) return false;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const expiresAt = new Date(jobPost.expires_at);
+            expiresAt.setHours(0, 0, 0, 0);
+            return today >= expiresAt;
+          })();
+
+          const positionsNeededNum = Number(jobPost.positions_needed);
+          const hasLimit = Number.isFinite(positionsNeededNum) && positionsNeededNum > 0;
+          const isFilled = hasLimit && hired >= positionsNeededNum;
+
+          let isActive = jobPost.is_active;
+          if (isActive && (isExpired || isFilled)) {
+            const { error: closeError } = await supabase
+              .from('job_posts')
+              .update({ is_active: false })
+              .eq('id', jobPost.id);
+            if (closeError) {
+              console.warn('Failed to auto-close job post:', jobPost.id, closeError);
+            } else {
+              isActive = false;
+            }
+          }
+
           // Determine status based on is_active and approval_status
           // Pending = approval_status is 'pending' (HRC posts waiting for HR approval)
           // Draft = is_active is false
           // Active = is_active is true and approval_status is 'approved'
-          let status = jobPost.is_active ? "Active" : "Draft";
+          let status = isActive ? "Active" : "Draft";
           if (jobPost.approval_status === 'pending') {
             status = "Pending";
           }
@@ -779,11 +805,11 @@ function HrRecruitment() {
             waitlisted: waitlisted,
             created_at: jobPost.created_at,
             urgent: jobPost.urgent,
-            is_active: jobPost.is_active,
+            is_active: isActive,
             job_type: jobPost.job_type,
             approval_status: jobPost.approval_status,
             created_by: jobPost.created_by,
-            positions_needed: jobPost.positions_needed || 1,
+            positions_needed: jobPost.positions_needed ?? null,
           };
         })
       );
@@ -4787,7 +4813,7 @@ function HrRecruitment() {
                             <p className="font-medium text-gray-800 truncate">{job.title}</p>
                           </div>
                           <div className="w-32 text-gray-700">{job.depot}</div>
-                          <div className="w-24 text-center text-gray-800">{job.positions_needed || 1}</div>
+                          <div className="w-24 text-center text-gray-800">{job.positions_needed == null ? 'No limit' : job.positions_needed}</div>
                           <div className="w-24 text-center text-gray-800">{job.applied}</div>
                           <div className="w-24 text-center text-gray-800">{job.hired}</div>
                           <div className="w-28 text-center text-gray-800">{job.waitlisted}</div>

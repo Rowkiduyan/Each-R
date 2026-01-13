@@ -70,7 +70,10 @@ function HrCreateJob() {
     keyRequirements: "",
     urgent: true,
     jobType: "office_employee", // "delivery_crew" or "office_employee"
-    endDate: "",    positions_needed: 1,  });
+    endDate: "",
+    positions_needed: 1,
+    positionsNoLimit: false,
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState("");
@@ -138,6 +141,16 @@ function HrCreateJob() {
           jobType: shouldClearTitle || !prev.title ? inferredJobType : prev.jobType,
         };
       });
+      return;
+    }
+
+    if (k === "positionsNoLimit") {
+      const enabled = Boolean(v);
+      setForm((prev) => ({
+        ...prev,
+        positionsNoLimit: enabled,
+        positions_needed: enabled ? null : (Number(prev.positions_needed) > 0 ? prev.positions_needed : 1),
+      }));
       return;
     }
 
@@ -212,6 +225,13 @@ function HrCreateJob() {
     // Determine approval status based on user role
     // HRC posts need approval, HR posts are auto-approved
     const approvalStatus = created_by_role?.toUpperCase() === 'HRC' ? 'pending' : 'approved';
+
+    // positions_needed: null means "no limit"
+    const hasLimit = positions_needed !== null && positions_needed !== undefined && String(positions_needed) !== "";
+    const parsedPositionsNeeded = hasLimit ? Number(positions_needed) : null;
+    if (hasLimit && (!Number.isFinite(parsedPositionsNeeded) || parsedPositionsNeeded < 1)) {
+      throw new Error('Employees Needed must be at least 1, or choose No limit.');
+    }
     
     const payload = {
       title: String(title).trim(),
@@ -228,7 +248,7 @@ function HrCreateJob() {
       expires_at: expires_at ?? null, // Job post expiration date
       created_by: created_by_uuid ?? null, // UUID of the user who created the job post
       approval_status: approvalStatus, // HRC posts are 'pending', HR posts are 'approved'
-      positions_needed: Number(positions_needed) || 1, // Number of positions to hire
+      positions_needed: parsedPositionsNeeded, // Number of positions to hire (null = no limit)
     };
 
     // VERY IMPORTANT: log the payload so you can see what is being sent
@@ -350,7 +370,10 @@ function HrCreateJob() {
         keyRequirements: "",
         urgent: true,
         jobType: "office_employee",
-        endDate: "",        positions_needed: 1,      });
+        endDate: "",
+        positions_needed: 1,
+        positionsNoLimit: false,
+      });
       setShowConfirm(false);
     } catch (err) {
       // show user-friendly message, but console contains full details
@@ -506,10 +529,19 @@ function HrCreateJob() {
               type="number"
               min="1"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-              value={form.positions_needed}
-              onChange={(e) => setField("positions_needed", parseInt(e.target.value) || 1)}
+              value={form.positionsNoLimit ? "" : (form.positions_needed ?? 1)}
+              onChange={(e) => setField("positions_needed", parseInt(e.target.value, 10) || 1)}
               placeholder="Number of hires needed (e.g., 3)"
+              disabled={form.positionsNoLimit}
             />
+            <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={Boolean(form.positionsNoLimit)}
+                onChange={(e) => setField("positionsNoLimit", e.target.checked)}
+              />
+              No limit
+            </label>
           </div>
 
           <div>
@@ -524,7 +556,7 @@ function HrCreateJob() {
                 min={getTodayDate()}
               />
               <p className="text-xs text-gray-500 mt-1">
-                If no end date is selected, the job post will close automatically once the required number of applications (Employees Needed) is reached.
+                The job post will close automatically when the end date is reached, or when hired employees reach Employees Needed (if limited).
               </p>
             </div>
             {form.endDate && (

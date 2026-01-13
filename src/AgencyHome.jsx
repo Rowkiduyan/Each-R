@@ -117,15 +117,25 @@ function AgencyHome() {
       }
 
       return (jobsList || []).map((j) => {
-        const totalNeeded = j.positions_needed || 1;
+        const totalNum = Number(j.positions_needed);
+        const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
         const hiredCount = hiredByJobId.get(j.id) || 0;
-        const remaining = Math.max(0, totalNeeded - hiredCount);
+        const remaining = hasLimit ? Math.max(0, totalNum - hiredCount) : null;
         return { ...j, hired_count: hiredCount, remaining_slots: remaining };
       });
     } catch (e) {
       console.warn("AgencyHome: unexpected error computing remaining slots:", e);
       return jobsList || [];
     }
+  };
+
+  const isJobExpired = (job) => {
+    if (!job?.expires_at) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const expiresAt = new Date(job.expires_at);
+    expiresAt.setHours(0, 0, 0, 0);
+    return today >= expiresAt;
   };
 
   // ---------- Load job posts ----------
@@ -171,7 +181,29 @@ function AgencyHome() {
         });
 
         const withHiringStats = await attachHiringStats(normalized);
-        setJobCards(withHiringStats);
+        const closable = withHiringStats.filter((job) => {
+          const expired = isJobExpired(job);
+          const totalNum = Number(job?.positions_needed);
+          const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+          const filled = hasLimit && (Number(job?.hired_count) || 0) >= totalNum;
+          return expired || filled;
+        });
+
+        if (closable.length > 0) {
+          await Promise.all(
+            closable.map((job) => supabase.from('job_posts').update({ is_active: false }).eq('id', job.id))
+          );
+        }
+
+        const openJobs = withHiringStats.filter((job) => {
+          const expired = isJobExpired(job);
+          const totalNum = Number(job?.positions_needed);
+          const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+          const filled = hasLimit && (Number(job?.hired_count) || 0) >= totalNum;
+          return !expired && !filled;
+        });
+
+        setJobCards(openJobs);
       }
     } catch (err) {
       console.error("Unexpected error loading job posts:", err);
@@ -561,9 +593,15 @@ function AgencyHome() {
                                 </div>
                                 <p className="text-gray-700 line-clamp-3">{job.description}</p>
                                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
-                                  <span className="px-2 py-1 bg-gray-100 rounded">Slots Remaining: {(typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1))} / {job.positions_needed || 1}</span>
                                   <span className="px-2 py-1 bg-gray-100 rounded">
-                                    {job.expires_at ? `Closes on: ${formatDate(job.expires_at)}` : 'Closes when filled'}
+                                    {job.positions_needed == null
+                                      ? 'Slots Remaining: No limit'
+                                      : `Slots Remaining: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)} / ${job.positions_needed || 1}`}
+                                  </span>
+                                  <span className="px-2 py-1 bg-gray-100 rounded">
+                                    {job.expires_at
+                                      ? `Closes on: ${formatDate(job.expires_at)}`
+                                      : (job.positions_needed == null ? 'Open until manually closed' : 'Closes when filled')}
                                   </span>
                                 </div>
                               </div>
@@ -602,7 +640,11 @@ function AgencyHome() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                               <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                                 <div className="text-[11px] text-gray-500">Slots Remaining</div>
-                                <div className="text-sm font-semibold text-gray-800">{(typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1))} / {selectedJob.positions_needed || 1}</div>
+                                <div className="text-sm font-semibold text-gray-800">
+                                  {selectedJob.positions_needed == null
+                                    ? 'No limit'
+                                    : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)} / ${selectedJob.positions_needed || 1}`}
+                                </div>
                               </div>
                               <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                                 <div className="text-[11px] text-gray-500">Application Duration</div>
@@ -672,9 +714,15 @@ function AgencyHome() {
                         </div>
                         <p className="text-gray-700 line-clamp-3">{job.description}</p>
                         <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
-                          <span className="px-2 py-1 bg-gray-100 rounded">Slots Remaining: {(typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1))} / {job.positions_needed || 1}</span>
                           <span className="px-2 py-1 bg-gray-100 rounded">
-                            {job.expires_at ? `Closes on: ${formatDate(job.expires_at)}` : 'Closes when filled'}
+                            {job.positions_needed == null
+                              ? 'Slots Remaining: No limit'
+                              : `Slots Remaining: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)} / ${job.positions_needed || 1}`}
+                          </span>
+                          <span className="px-2 py-1 bg-gray-100 rounded">
+                            {job.expires_at
+                              ? `Closes on: ${formatDate(job.expires_at)}`
+                              : (job.positions_needed == null ? 'Open until manually closed' : 'Closes when filled')}
                           </span>
                         </div>
                       </div>
@@ -743,7 +791,11 @@ function AgencyHome() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                   <div className="text-[11px] text-gray-500">Slots Remaining</div>
-                  <div className="text-sm font-semibold text-gray-800">{(typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1))} / {selectedJob.positions_needed || 1}</div>
+                  <div className="text-sm font-semibold text-gray-800">
+                    {selectedJob.positions_needed == null
+                      ? 'No limit'
+                      : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)} / ${selectedJob.positions_needed || 1}`}
+                  </div>
                 </div>
                 <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                   <div className="text-[11px] text-gray-500">Application Duration</div>

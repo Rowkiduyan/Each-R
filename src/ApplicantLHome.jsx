@@ -1424,23 +1424,26 @@ const formatDateForInput = (dateString) => {
         return;
       }
 
-      const positionsNeeded = Number(jobPost.positions_needed) || 1;
-      const { count: existingCount, error: countError } = await supabase
-        .from('applications')
-        .select('id', { count: 'exact', head: true })
-        .eq('job_id', jobId);
+      const positionsNeededNum = Number(jobPost.positions_needed);
+      const hasLimit = Number.isFinite(positionsNeededNum) && positionsNeededNum > 0;
+      if (hasLimit) {
+        const { count: hiredCount, error: hiredCountError } = await supabase
+          .from('applications')
+          .select('id', { count: 'exact', head: true })
+          .eq('job_id', jobId)
+          .eq('status', 'hired');
 
-      if (countError) {
-        console.error('Failed to count applications:', countError);
-        setErrorMessage('Unable to verify available slots. Please try again.');
-        return;
-      }
+        if (hiredCountError) {
+          console.error('Failed to count hired applications:', hiredCountError);
+          setErrorMessage('Unable to verify available slots. Please try again.');
+          return;
+        }
 
-      if ((existingCount || 0) >= positionsNeeded) {
-        // Auto-close once filled
-        await supabase.from('job_posts').update({ is_active: false }).eq('id', jobId);
-        setErrorMessage('This job post is already closed (employees needed has been reached).');
-        return;
+        if ((hiredCount || 0) >= positionsNeededNum) {
+          await supabase.from('job_posts').update({ is_active: false }).eq('id', jobId);
+          setErrorMessage('This job post is already closed (employees needed has been reached).');
+          return;
+        }
       }
 
       const { data: insertedData, error } = await supabase.from('applications').insert([
@@ -1473,16 +1476,6 @@ const formatDateForInput = (dateString) => {
 
       if (insertedData && insertedData.length > 0) {
         setUserApplication(insertedData[0]);
-      }
-
-      // Auto-close job post if this submission fills the required headcount.
-      const { count: newCount } = await supabase
-        .from('applications')
-        .select('id', { count: 'exact', head: true })
-        .eq('job_id', jobId);
-
-      if ((newCount || 0) >= positionsNeeded) {
-        await supabase.from('job_posts').update({ is_active: false }).eq('id', jobId);
       }
 
       setShowSummary(false);
@@ -1894,9 +1887,11 @@ const formatDateForInput = (dateString) => {
       }
 
       return (jobsList || []).map((job) => {
-        const total = Number(job?.positions_needed) || 1;
+        const totalNum = Number(job?.positions_needed);
+        const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+        const total = hasLimit ? totalNum : null;
         const hired = hiredByJobId.get(job?.id) || 0;
-        const remaining = Math.max(total - hired, 0);
+        const remaining = hasLimit ? Math.max(totalNum - hired, 0) : null;
         return { ...job, hired_count: hired, remaining_slots: remaining };
       });
     };
@@ -1920,20 +1915,39 @@ const formatDateForInput = (dateString) => {
         }
 
         const list = data || [];
-        // Filter out expired jobs and only show office_employee jobs for applicants
-        const activeList = list.filter(job => {
-          const isExpired = isJobExpired(job);
-          const isOfficeJob = job.job_type?.toLowerCase() === 'office_employee';
-          return !isExpired && isOfficeJob;
-        });
+        // Only show office_employee jobs for applicants
+        const officeJobs = list.filter((job) => job.job_type?.toLowerCase() === 'office_employee');
         
         // ensure redirected job appears even if cache delay (avoid dupe)
         const merged = newJob
-          ? [activeList.find(j => j.id === newJob.id) ? null : newJob, ...activeList].filter(Boolean)
-          : activeList;
+          ? [officeJobs.find(j => j.id === newJob.id) ? null : newJob, ...officeJobs].filter(Boolean)
+          : officeJobs;
 
         const withStats = await attachHiringStats(merged);
-        setJobs(withStats);
+
+        const closable = withStats.filter((job) => {
+          const expired = isJobExpired(job);
+          const totalNum = Number(job?.positions_needed);
+          const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+          const filled = hasLimit && (Number(job?.hired_count) || 0) >= totalNum;
+          return expired || filled;
+        });
+
+        if (closable.length > 0) {
+          await Promise.all(
+            closable.map((job) => supabase.from('job_posts').update({ is_active: false }).eq('id', job.id))
+          );
+        }
+
+        const openJobs = withStats.filter((job) => {
+          const expired = isJobExpired(job);
+          const totalNum = Number(job?.positions_needed);
+          const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+          const filled = hasLimit && (Number(job?.hired_count) || 0) >= totalNum;
+          return !expired && !filled;
+        });
+
+        setJobs(openJobs);
         setJobsLoading(false);
       };
 
@@ -2100,9 +2114,15 @@ const formatDateForInput = (dateString) => {
             </div>
             <p className="text-gray-700 line-clamp-3">{job.description}</p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
-              <span className="px-2 py-1 bg-gray-100 rounded">Slots Remaining: {(typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1))} / {job.positions_needed || 1}</span>
               <span className="px-2 py-1 bg-gray-100 rounded">
-                {job.expires_at ? `Closes on: ${new Date(job.expires_at).toLocaleDateString('en-US')}` : 'Closes when filled'}
+                {job.positions_needed == null
+                  ? 'Slots Remaining: No limit'
+                  : `Slots Remaining: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)} / ${job.positions_needed || 1}`}
+              </span>
+              <span className="px-2 py-1 bg-gray-100 rounded">
+                {job.expires_at
+                  ? `Closes on: ${new Date(job.expires_at).toLocaleDateString('en-US')}`
+                  : (job.positions_needed == null ? 'Open until manually closed' : 'Closes when filled')}
               </span>
             </div>
             {isCurrentApplication && (
@@ -2327,7 +2347,11 @@ const formatDateForInput = (dateString) => {
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                                 <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                                   <div className="text-[11px] text-gray-500">Slots Remaining</div>
-                                  <div className="text-sm font-semibold text-gray-800">{(typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1))} / {selectedJob.positions_needed || 1}</div>
+                                  <div className="text-sm font-semibold text-gray-800">
+                                    {selectedJob.positions_needed == null
+                                      ? 'No limit'
+                                      : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)} / ${selectedJob.positions_needed || 1}`}
+                                  </div>
                                 </div>
                                 <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                                   <div className="text-[11px] text-gray-500">Application Duration</div>
@@ -2496,7 +2520,11 @@ const formatDateForInput = (dateString) => {
                               )}
                               <div className="bg-gray-50 p-3 rounded">
                                 <div className="text-xs text-gray-600 mb-0.5">Slots Remaining</div>
-                                <div className="font-semibold text-gray-800 text-sm">{(typeof filteredJobs[0].remaining_slots === 'number' ? filteredJobs[0].remaining_slots : (filteredJobs[0].positions_needed || 1))} / {filteredJobs[0].positions_needed || 1}</div>
+                                <div className="font-semibold text-gray-800 text-sm">
+                                  {filteredJobs[0].positions_needed == null
+                                    ? 'No limit'
+                                    : `${typeof filteredJobs[0].remaining_slots === 'number' ? filteredJobs[0].remaining_slots : (filteredJobs[0].positions_needed || 1)} / ${filteredJobs[0].positions_needed || 1}`}
+                                </div>
                               </div>
                             </div>
                           </div>

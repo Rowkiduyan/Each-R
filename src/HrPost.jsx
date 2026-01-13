@@ -110,9 +110,10 @@ function HrPost() {
       }
 
       return (jobsList || []).map((j) => {
-        const totalNeeded = j.positions_needed || 1;
+        const totalNum = Number(j.positions_needed);
+        const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
         const hiredCount = hiredByJobId.get(j.id) || 0;
-        const remaining = Math.max(0, totalNeeded - hiredCount);
+        const remaining = hasLimit ? Math.max(0, totalNum - hiredCount) : null;
         return { ...j, hired_count: hiredCount, remaining_slots: remaining };
       });
     } catch (e) {
@@ -142,9 +143,31 @@ function HrPost() {
           filtered = filtered.filter(job => job.depot === currentUser.depot);
         }
         const withHiringStats = await attachHiringStats(filtered);
-        setJobPosts(withHiringStats);
+        const closable = withHiringStats.filter((job) => {
+          const expired = isJobExpired(job);
+          const totalNum = Number(job?.positions_needed);
+          const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+          const filled = hasLimit && (Number(job?.hired_count) || 0) >= totalNum;
+          return expired || filled;
+        });
+
+        if (closable.length > 0) {
+          await Promise.all(
+            closable.map((job) => supabase.from('job_posts').update({ is_active: false }).eq('id', job.id))
+          );
+        }
+
+        const openJobs = withHiringStats.filter((job) => {
+          const expired = isJobExpired(job);
+          const totalNum = Number(job?.positions_needed);
+          const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
+          const filled = hasLimit && (Number(job?.hired_count) || 0) >= totalNum;
+          return !expired && !filled;
+        });
+
+        setJobPosts(openJobs);
         if (selectedJob?.id) {
-          const updatedSelected = withHiringStats.find((j) => j.id === selectedJob.id);
+          const updatedSelected = openJobs.find((j) => j.id === selectedJob.id);
           if (updatedSelected) setSelectedJob(updatedSelected);
         }
         console.log('Job posts state updated, count:', filtered.length || 0);
@@ -645,7 +668,11 @@ function HrPost() {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                           <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                             <div className="text-[11px] text-gray-500">Slots Remaining</div>
-                            <div className="text-sm font-semibold text-gray-800">{(typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1))} / {selectedJob.positions_needed || 1}</div>
+                            <div className="text-sm font-semibold text-gray-800">
+                              {selectedJob.positions_needed == null
+                                ? 'No limit'
+                                : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)} / ${selectedJob.positions_needed || 1}`}
+                            </div>
                           </div>
                           <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                             <div className="text-[11px] text-gray-500">Application Duration</div>
