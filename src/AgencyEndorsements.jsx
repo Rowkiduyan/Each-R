@@ -14,10 +14,12 @@ function AgencyEndorsements() {
   
   // Check if navigated from Separation page to submit resignation
   const [showSeparationPrompt, setShowSeparationPrompt] = useState(false);
+  const [endorsementsTab, setEndorsementsTab] = useState('pending'); // 'pending' | 'deployed'
   
   useEffect(() => {
     if (location.state?.openSeparationTab) {
       setShowSeparationPrompt(true);
+      setEndorsementsTab('deployed');
       // Clear the state to prevent showing prompt on refresh
       window.history.replaceState({}, document.title);
     }
@@ -37,11 +39,91 @@ function AgencyEndorsements() {
   
   // Search and filter for endorsements
   const [endorsementsSearch, setEndorsementsSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortOption, setSortOption] = useState('name-asc');
+  const [departmentFilter, setDepartmentFilter] = useState('All');
+  const [positionFilter, setPositionFilter] = useState('All');
+  const [depotFilter, setDepotFilter] = useState('All');
+  const [employmentStatusFilter, setEmploymentStatusFilter] = useState('All');
+  const [recruitmentTypeFilter, setRecruitmentTypeFilter] = useState('All');
   const [employeeDetailTab, setEmployeeDetailTab] = useState('profiling');
+
+  // master department list (kept in sync with Employees.jsx)
+  const departments = [
+    "Operations Department",
+    "Billing Department",
+    "HR Department",
+    "Security & Safety Department",
+    "Collections Department",
+    "Repairs and Maintenance Specialist",
+  ];
+
+  const departmentToPositions = {
+    "Operations Department": [
+      "Driver",
+      "Helper",
+      "Rider/Messenger",
+      "Base Dispatcher",
+      "Site Coordinator",
+      "Transport Coordinator",
+      "Customer Service Representative",
+    ],
+    "Billing Department": [
+      "Billing Specialist",
+      "POD Specialist",
+    ],
+    "HR Department": [
+      "HR Specialist",
+      "Recruitment Specialist",
+      "HR Manager",
+    ],
+    "Security & Safety Department": [
+      "Safety Officer 2",
+      "Safety Officer 3",
+      "Security Officer",
+    ],
+    "Collections Department": [
+      "Billing & Collections Specialist",
+      "Charges Specialist",
+    ],
+    "Repairs and Maintenance Specialist": [
+      "Diesel Mechanic",
+      "Truck Refrigeration Technician",
+      "Welder",
+      "Tinsmith",
+    ],
+  };
+
+  const getPositionsForDepartment = (department) => {
+    if (department === "All") {
+      const all = new Set();
+      Object.values(departmentToPositions).forEach((list) => {
+        (list || []).forEach((p) => all.add(p));
+      });
+      return Array.from(all);
+    }
+
+    // Backward-compat alias (in case existing data uses "and" instead of "&")
+    if (department === "Security & Safety Department") {
+      return departmentToPositions["Security & Safety Department"] || [];
+    }
+
+    return departmentToPositions[department] || [];
+  };
+
+  const normalizeDepartmentName = (name) => {
+    if (!name) return "";
+    return String(name).replace(/\s+/g, " ").trim().replace(/\sand\s/g, " & ");
+  };
+
+  const getDepartmentForPosition = (position) => {
+    if (!position) return null;
+    for (const [dept, list] of Object.entries(departmentToPositions)) {
+      if ((list || []).includes(position)) return dept;
+    }
+    return null;
+  };
   
   // Confirmation dialog state
-  const [showConfirmInterviewDialog, setShowConfirmInterviewDialog] = useState(false);
   const [showRejectInterviewDialog, setShowRejectInterviewDialog] = useState(false);
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
@@ -63,6 +145,106 @@ function AgencyEndorsements() {
   // Interview calendar state
   const [interviews, setInterviews] = useState([]);
   const [calendarActiveTab, setCalendarActiveTab] = useState('today'); // 'today', 'tomorrow', 'week'
+
+  // Schedule mode (left panel)
+  const [scheduleMode, setScheduleMode] = useState('interview'); // 'interview' | 'signing'
+
+  // Track which scheduled interviews have been viewed (for red-dot indicator)
+  const [viewedInterviewIds, setViewedInterviewIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem('agencyViewedInterviewIds');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return new Set();
+      return new Set(arr.map(String));
+    } catch {
+      return new Set();
+    }
+  });
+
+  const markInterviewViewed = (id) => {
+    const key = String(id);
+    setViewedInterviewIds((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      try {
+        localStorage.setItem('agencyViewedInterviewIds', JSON.stringify(Array.from(next)));
+      } catch {
+        // ignore storage failures
+      }
+      return next;
+    });
+  };
+
+  const isInterviewViewed = (id) => viewedInterviewIds.has(String(id));
+
+  // Track which signing schedules have been viewed (separate from interview schedules)
+  const [viewedSigningScheduleIds, setViewedSigningScheduleIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem('agencyViewedSigningScheduleIds');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return new Set();
+      return new Set(arr.map(String));
+    } catch {
+      return new Set();
+    }
+  });
+
+  const markSigningScheduleViewed = (id) => {
+    const key = String(id);
+    setViewedSigningScheduleIds((prev) => {
+      const next = new Set(prev);
+      next.add(key);
+      try {
+        localStorage.setItem('agencyViewedSigningScheduleIds', JSON.stringify(Array.from(next)));
+      } catch {
+        // ignore storage failures
+      }
+      return next;
+    });
+  };
+
+  const isSigningScheduleViewed = (id) => viewedSigningScheduleIds.has(String(id));
+
+  useEffect(() => {
+    if (!selectedEmployee) return;
+
+    const hasInterviewSchedule = Boolean(
+      selectedEmployee.interview_date ||
+      selectedEmployee.interview_time ||
+      selectedEmployee.interview_location
+    );
+    if (hasInterviewSchedule && selectedEmployee.id) {
+      markInterviewViewed(selectedEmployee.id);
+    }
+
+    // Signing schedule (stored in payload conventions; always onsite)
+    const rawPayload =
+      selectedEmployee.payload ??
+      selectedEmployee.raw?.payload ??
+      {};
+
+    let payloadObj = rawPayload;
+    if (typeof payloadObj === 'string') {
+      try {
+        payloadObj = JSON.parse(payloadObj);
+      } catch {
+        payloadObj = {};
+      }
+    }
+
+    const signingDate =
+      payloadObj?.signing_date ??
+      payloadObj?.signingDate ??
+      payloadObj?.signing?.date ??
+      payloadObj?.agreements?.signing?.date ??
+      payloadObj?.agreementSigning?.date ??
+      null;
+
+    if (signingDate && selectedEmployee.id) {
+      markSigningScheduleViewed(selectedEmployee.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmployee]);
 
 
   // Close dropdowns when clicking outside
@@ -249,7 +431,7 @@ function AgencyEndorsements() {
     try {
       const { data, error } = await supabase
         .from("employees")
-        .select("id, email, fname, lname, mname, contact_number, position, depot, hired_at, agency_profile_id, endorsed_by_agency_id, is_agency, source")
+        .select("id, email, fname, lname, mname, contact_number, position, depot, hired_at, agency_profile_id, endorsed_by_agency_id, is_agency, source, status")
         // Only include employees that are agency-sourced / endorsed
         // Explicitly exclude source: "internal" (direct applicants)
         .or("is_agency.eq.true,agency_profile_id.not.is.null,endorsed_by_agency_id.not.is.null,source.eq.recruitment,source.eq.agency")
@@ -266,6 +448,10 @@ function AgencyEndorsements() {
           .filter((r) => r.source !== "internal")
           .map((r) => {
             const name = [r.fname, r.mname, r.lname].filter(Boolean).join(" ").trim() || r.email || "Unnamed";
+            const employmentStatus =
+              r.status === "Probationary" ? "Under Probation" :
+              r.status === "Regular" ? "Regular" :
+              (r.status || null);
             return {
               id: r.id,
               name,
@@ -278,6 +464,9 @@ function AgencyEndorsements() {
               endorsed_by_agency_id: r.endorsed_by_agency_id || null,
               is_agency: !!r.is_agency,
               source: r.source || null,
+              status: r.status || null,
+              employmentStatus,
+              agency: true,
               raw: r,
             };
           });
@@ -349,11 +538,97 @@ function AgencyEndorsements() {
         };
       });
 
-      setInterviews(formatted);
+      setInterviews(formatted.filter(i => (i.status || '').toLowerCase() !== 'hired'));
     } catch (err) {
       console.error('Error fetching interviews:', err);
     }
   };
+
+  const parsePayloadObject = (payload) => {
+    if (!payload) return {};
+    if (typeof payload === 'object') return payload;
+    if (typeof payload === 'string') {
+      try {
+        const obj = JSON.parse(payload);
+        return obj && typeof obj === 'object' ? obj : {};
+      } catch {
+        return {};
+      }
+    }
+    return {};
+  };
+
+  const getSigningScheduleFromApplication = (app) => {
+    const payloadObj = parsePayloadObject(app?.payload ?? app?.raw?.payload ?? {});
+
+    const signingDate =
+      payloadObj?.signing_date ??
+      payloadObj?.signingDate ??
+      payloadObj?.signing?.date ??
+      payloadObj?.agreements?.signing?.date ??
+      payloadObj?.agreementSigning?.date ??
+      null;
+    const signingTime =
+      payloadObj?.signing_time ??
+      payloadObj?.signingTime ??
+      payloadObj?.signing?.time ??
+      payloadObj?.agreements?.signing?.time ??
+      payloadObj?.agreementSigning?.time ??
+      null;
+    const signingLocation =
+      payloadObj?.signing_location ??
+      payloadObj?.signingLocation ??
+      payloadObj?.signing?.location ??
+      payloadObj?.agreements?.signing?.location ??
+      payloadObj?.agreementSigning?.location ??
+      null;
+
+    if (!signingDate && !signingTime) return null;
+    return {
+      date: signingDate,
+      time: signingTime,
+      location: signingLocation || null,
+    };
+  };
+
+  const signingSchedules = React.useMemo(() => {
+    const list = (endorsedEmployees || [])
+      .filter((app) => (String(app?.status || '').toLowerCase() !== 'hired'))
+      .map((app) => {
+        const payloadObj = parsePayloadObject(app?.payload ?? app?.raw?.payload ?? {});
+        const applicantData = payloadObj?.applicant || payloadObj?.form || {};
+        const fname = applicantData.firstName || applicantData.fname || '';
+        const lname = applicantData.lastName || applicantData.lname || '';
+        const applicant_name = (fname || lname) ? `${fname} ${lname}`.trim() : (app?.applicant_name || 'Unknown');
+
+        const source = payloadObj?.form || payloadObj?.applicant || payloadObj || {};
+        const position = app?.job_posts?.title ?? source.position ?? source.title ?? app?.position ?? 'Position Not Set';
+
+        const sched = getSigningScheduleFromApplication({ ...app, payload: payloadObj });
+        if (!sched) return null;
+
+        return {
+          id: app.id,
+          applicant_name,
+          position,
+          date: sched.date,
+          time: sched.time,
+          location: sched.location,
+          interview_type: 'onsite',
+        };
+      })
+      .filter(Boolean);
+
+    // Sort by date, then time (best-effort)
+    return list.sort((a, b) => {
+      const ad = String(a.date || '');
+      const bd = String(b.date || '');
+      if (ad !== bd) return ad.localeCompare(bd);
+      const at = String(a.time || '');
+      const bt = String(b.time || '');
+      return at.localeCompare(bt);
+    });
+  }, [endorsedEmployees]);
 
   // Calendar helper functions
   const formatTime = (time24) => {
@@ -391,6 +666,60 @@ function AgencyEndorsements() {
     if (calendarActiveTab === 'tomorrow') return getTomorrowInterviews();
     if (calendarActiveTab === 'week') return getThisWeekInterviews();
     return [];
+  };
+
+  const getTodaySigningSchedules = () => {
+    const today = new Date().toISOString().split('T')[0];
+    return signingSchedules.filter((i) => i.date === today);
+  };
+
+  const getTomorrowSigningSchedules = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+    return signingSchedules.filter((i) => i.date === tomorrowStr);
+  };
+
+  const getThisWeekSigningSchedules = () => {
+    const today = new Date();
+    const nextWeek = new Date();
+    nextWeek.setDate(today.getDate() + 7);
+    const todayStr = today.toISOString().split('T')[0];
+    const nextWeekStr = nextWeek.toISOString().split('T')[0];
+    return signingSchedules.filter((i) => i.date >= todayStr && i.date <= nextWeekStr);
+  };
+
+  const getActiveSchedules = () => {
+    if (scheduleMode === 'signing') {
+      if (calendarActiveTab === 'today') return getTodaySigningSchedules();
+      if (calendarActiveTab === 'tomorrow') return getTomorrowSigningSchedules();
+      if (calendarActiveTab === 'week') return getThisWeekSigningSchedules();
+      return [];
+    }
+    return getActiveInterviews();
+  };
+
+  const hasNewScheduleInTab = (tabKey) => {
+    const list =
+      scheduleMode === 'signing'
+        ? tabKey === 'today'
+          ? getTodaySigningSchedules()
+          : tabKey === 'tomorrow'
+          ? getTomorrowSigningSchedules()
+          : tabKey === 'week'
+          ? getThisWeekSigningSchedules()
+          : []
+        : tabKey === 'today'
+          ? getTodayInterviews()
+          : tabKey === 'tomorrow'
+          ? getTomorrowInterviews()
+          : tabKey === 'week'
+          ? getThisWeekInterviews()
+          : [];
+
+    return list.some((i) =>
+      scheduleMode === 'signing' ? !isSigningScheduleViewed(i.id) : !isInterviewViewed(i.id)
+    );
   };
 
   const getTabTitle = () => {
@@ -469,6 +798,8 @@ function AgencyEndorsements() {
           // Prefer employee position/depot if application data is missing
           position: emp.position || hiredEmp.position || "Employee",
           depot: emp.depot || hiredEmp.depot || "—",
+          employmentStatus: emp.employmentStatus || hiredEmp.employmentStatus || null,
+          agency: true,
         };
       });
 
@@ -504,6 +835,8 @@ function AgencyEndorsements() {
           endorsed_employee_id: h.id,
           job_id: null,
           created_at: h.hired_at || null,
+          employmentStatus: h.employmentStatus || null,
+          agency: true,
           // No interview data on pure employee rows
           interview_date: null,
           interview_time: null,
@@ -521,6 +854,106 @@ function AgencyEndorsements() {
       return updatedList;
     });
   }, [hiredEmployees]);
+
+  const depotOptions = React.useMemo(() => {
+    const set = new Set();
+    for (const e of endorsedEmployees || []) {
+      const d = e?.depot ? String(e.depot).trim() : "";
+      if (d && d !== "—") set.add(d);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [endorsedEmployees]);
+
+  const positions = React.useMemo(() => {
+    const list = getPositionsForDepartment(departmentFilter);
+    return ["All", ...list.sort((a, b) => a.localeCompare(b))];
+  }, [departmentFilter]);
+
+  useEffect(() => {
+    if (positionFilter === "All") return;
+    const allowed = new Set(getPositionsForDepartment(departmentFilter));
+    if (!allowed.has(positionFilter)) setPositionFilter("All");
+  }, [departmentFilter, positionFilter]);
+
+  const employmentStatuses = ["All", "Regular", "Under Probation", "Part Time"];
+  const recruitmentTypes = ["All", "Agency", "Direct"];
+
+  const filteredEmployees = React.useMemo(() => {
+    const [sortKey, sortDir] = String(sortOption || "name-asc").split("-");
+    const isAsc = sortDir === "asc";
+    const searchLower = String(endorsementsSearch || "").trim().toLowerCase();
+
+    const getEmploymentStatus = (emp) => {
+      if (emp?.employmentStatus) return emp.employmentStatus;
+      const hired = emp?.endorsed_employee_id
+        ? hiredEmployees.find(h => h.id === emp.endorsed_employee_id)
+        : null;
+      return hired?.employmentStatus || null;
+    };
+
+    const getIsAgency = (emp) => {
+      if (emp?.agency === true) return true;
+      // Endorsements page is agency-scoped; treat unknown as agency.
+      return true;
+    };
+
+    const getHiredAt = (emp) => {
+      const hired = emp?.endorsed_employee_id
+        ? hiredEmployees.find(h => h.id === emp.endorsed_employee_id)
+        : null;
+      return hired?.hired_at || null;
+    };
+
+    return (endorsedEmployees || [])
+      .filter((emp) => emp?.status === endorsementsTab)
+      .filter((emp) => {
+        if (!searchLower) return true;
+        return (
+          String(emp?.name || "").toLowerCase().includes(searchLower) ||
+          String(emp?.position || "").toLowerCase().includes(searchLower) ||
+          String(emp?.depot || "").toLowerCase().includes(searchLower) ||
+          String(emp?.status || "").toLowerCase().includes(searchLower) ||
+          String(emp?.id || "").toLowerCase().includes(searchLower)
+        );
+      })
+      .filter((emp) => {
+        if (recruitmentTypeFilter === "All") return true;
+        const isAgency = getIsAgency(emp);
+        if (recruitmentTypeFilter === "Agency") return !!isAgency;
+        if (recruitmentTypeFilter === "Direct") return !isAgency;
+        return true;
+      })
+      .filter((emp) => {
+        if (departmentFilter === "All") return true;
+        const derived = getDepartmentForPosition(emp?.position);
+        return normalizeDepartmentName(derived) === normalizeDepartmentName(departmentFilter);
+      })
+      .filter((emp) => positionFilter === "All" || emp?.position === positionFilter)
+      .filter((emp) => {
+        if (depotFilter === "All") return true;
+        return String(emp?.depot || "") === depotFilter;
+      })
+      .filter((emp) => {
+        if (employmentStatusFilter === "All") return true;
+        return getEmploymentStatus(emp) === employmentStatusFilter;
+      })
+      .sort((a, b) => {
+        if (sortKey === "hired") {
+          const at = getHiredAt(a) ? new Date(getHiredAt(a)).getTime() : null;
+          const bt = getHiredAt(b) ? new Date(getHiredAt(b)).getTime() : null;
+
+          if (at == null && bt == null) return 0;
+          if (at == null) return 1;
+          if (bt == null) return -1;
+
+          return isAsc ? at - bt : bt - at;
+        }
+
+        const an = String(a?.name || "");
+        const bn = String(b?.name || "");
+        return isAsc ? an.localeCompare(bn) : bn.localeCompare(an);
+      });
+  }, [endorsedEmployees, hiredEmployees, endorsementsTab, endorsementsSearch, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
 
   // Keep selectedEmployee in sync with latest endorsedEmployees data
   useEffect(() => {
@@ -728,8 +1161,7 @@ function AgencyEndorsements() {
         }
 
         if (applicationsData && applicationsData.length > 0) {
-          // Use the most recent application to show all document types
-          // Always show all document types, even if file doesn't exist
+          // Use the most recent application to show uploaded documents
           const mostRecentApp = applicationsData[0]; // Already sorted by created_at DESC
           const jobTitle = mostRecentApp.job_posts?.title || 'N/A';
           const depot = mostRecentApp.job_posts?.depot || 'N/A';
@@ -737,36 +1169,40 @@ function AgencyEndorsements() {
           
           const records = [];
           
-          // Assessment Files - always show both
-          records.push({
-            id: `${mostRecentApp.id}-interview-details`,
-            type: 'assessment',
-            documentName: 'Interview Details',
-            fileName: mostRecentApp.interview_details_file ? mostRecentApp.interview_details_file.split('/').pop() : null,
-            filePath: mostRecentApp.interview_details_file,
-            fileUrl: mostRecentApp.interview_details_file ? getFileUrl(mostRecentApp.interview_details_file) : null,
-            date: date,
-            jobTitle: jobTitle,
-            depot: depot,
-            applicationId: mostRecentApp.id,
-            icon: 'blue'
-          });
+          // Assessment Files (only if uploaded)
+          if (mostRecentApp.interview_details_file) {
+            records.push({
+              id: `${mostRecentApp.id}-interview-details`,
+              type: 'assessment',
+              documentName: 'Interview Details',
+              fileName: mostRecentApp.interview_details_file.split('/').pop() || null,
+              filePath: mostRecentApp.interview_details_file,
+              fileUrl: getFileUrl(mostRecentApp.interview_details_file),
+              date: date,
+              jobTitle: jobTitle,
+              depot: depot,
+              applicationId: mostRecentApp.id,
+              icon: 'blue'
+            });
+          }
+
+          if (mostRecentApp.assessment_results_file) {
+            records.push({
+              id: `${mostRecentApp.id}-assessment-results`,
+              type: 'assessment',
+              documentName: 'In-Person Assessment Results',
+              fileName: mostRecentApp.assessment_results_file.split('/').pop() || null,
+              filePath: mostRecentApp.assessment_results_file,
+              fileUrl: getFileUrl(mostRecentApp.assessment_results_file),
+              date: date,
+              jobTitle: jobTitle,
+              depot: depot,
+              applicationId: mostRecentApp.id,
+              icon: 'green'
+            });
+          }
           
-          records.push({
-            id: `${mostRecentApp.id}-assessment-results`,
-            type: 'assessment',
-            documentName: 'In-Person Assessment Results',
-            fileName: mostRecentApp.assessment_results_file ? mostRecentApp.assessment_results_file.split('/').pop() : null,
-            filePath: mostRecentApp.assessment_results_file,
-            fileUrl: mostRecentApp.assessment_results_file ? getFileUrl(mostRecentApp.assessment_results_file) : null,
-            date: date,
-            jobTitle: jobTitle,
-            depot: depot,
-            applicationId: mostRecentApp.id,
-            icon: 'green'
-          });
-          
-          // Agreement Files - always show all 6
+          // Agreement Files (only if uploaded)
           const agreementDocs = [
             { key: 'appointment-letter', name: 'Employee Appointment Letter', file: mostRecentApp.appointment_letter_file },
             { key: 'undertaking', name: 'Undertaking', file: mostRecentApp.undertaking_file },
@@ -777,13 +1213,14 @@ function AgencyEndorsements() {
           ];
           
           agreementDocs.forEach(doc => {
+            if (!doc.file) return;
             records.push({
               id: `${mostRecentApp.id}-${doc.key}`,
               type: 'agreement',
               documentName: doc.name,
-              fileName: doc.file ? doc.file.split('/').pop() : null,
+              fileName: doc.file.split('/').pop() || null,
               filePath: doc.file,
-              fileUrl: doc.file ? getFileUrl(doc.file) : null,
+              fileUrl: getFileUrl(doc.file),
               date: date,
               jobTitle: jobTitle,
               depot: depot,
@@ -853,6 +1290,81 @@ function AgencyEndorsements() {
     if (!d) return "—";
     try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }); }
     catch { return String(d); }
+  };
+
+  const renderNone = () => <span className="text-gray-500 italic">None</span>;
+
+  const displayValue = (val) => {
+    if (val === null || val === undefined) return renderNone();
+    if (typeof val === 'string') {
+      const s = val.trim();
+      return s ? s : renderNone();
+    }
+    return val;
+  };
+
+  const displayDate = (val) => {
+    if (!val) return renderNone();
+    return formatDate(val);
+  };
+
+  const calculateAge = (birthday) => {
+    if (!birthday) return null;
+    const dt = new Date(birthday);
+    if (Number.isNaN(dt.getTime())) return null;
+    const now = new Date();
+    let age = now.getFullYear() - dt.getFullYear();
+    const m = now.getMonth() - dt.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < dt.getDate())) age -= 1;
+    return age >= 0 ? age : null;
+  };
+
+  const formatAddress = ({ unit, street, barangay, city, province, zip }) => {
+    const parts = [unit, street, barangay, city, province].map(v => String(v ?? '').trim()).filter(Boolean);
+    const base = parts.join(', ');
+    const z = String(zip ?? '').trim();
+    if (!base && !z) return null;
+    return z ? `${base}${base ? ' ' : ''}${z}` : base;
+  };
+
+  const isDeliveryCrew = (row, job) => {
+    const title = String(job?.title || row?.position || row?.raw?.job_posts?.title || row?.payload?.job?.title || '').toLowerCase();
+    if (!title) return false;
+    if (title === 'delivery drivers') return true;
+    return title.includes('delivery') || title.includes('driver');
+  };
+
+  // HR-style status label (mirrors HrRecruitment.jsx logic, adapted for agency endorsements)
+  const getEndorsementStatus = (row) => {
+    const status = (row?.status || row?.raw?.status || '').toLowerCase() || 'submitted';
+
+    const hasInterview = !!(row?.interview_date || row?.raw?.interview_date);
+    const interviewConfirmedRaw = row?.interview_confirmed ?? row?.raw?.interview_confirmed ?? null;
+    const interviewConfirmedNorm = interviewConfirmedRaw ? String(interviewConfirmedRaw).trim().toLowerCase() : '';
+    const rescheduleRequested = interviewConfirmedNorm === 'rejected' && hasInterview;
+
+    if (status === 'hired') {
+      return { label: 'HIRED', color: 'text-green-600', bg: 'bg-green-50' };
+    }
+    if (status === 'rejected') {
+      return { label: 'REJECTED', color: 'text-red-600', bg: 'bg-red-50' };
+    }
+    if (['agreement', 'agreements', 'final_agreement'].includes(status)) {
+      return { label: 'AGREEMENT', color: 'text-purple-600', bg: 'bg-purple-50' };
+    }
+    if (['requirements', 'docs_needed', 'awaiting_documents'].includes(status)) {
+      return { label: 'REQUIREMENTS', color: 'text-orange-600', bg: 'bg-orange-50' };
+    }
+    if (rescheduleRequested) {
+      return { label: 'RESCHEDULE REQUESTED', color: 'text-orange-600', bg: 'bg-orange-50' };
+    }
+    if (hasInterview) {
+      return { label: 'INTERVIEW SET', color: 'text-cyan-600', bg: 'bg-cyan-50' };
+    }
+    if (['screening', 'interview', 'scheduled', 'onsite'].includes(status)) {
+      return { label: 'IN REVIEW', color: 'text-yellow-600', bg: 'bg-yellow-50' };
+    }
+    return { label: 'SUBMITTED', color: 'text-gray-600', bg: 'bg-gray-50' };
   };
 
   // Get initials from name
@@ -1125,29 +1637,58 @@ function AgencyEndorsements() {
           {/* Main Content Area - Side by Side Layout */}
           <div className="flex gap-4 flex-1 overflow-hidden min-h-0">
             {/* Interview Schedule - Left Side (30%) */}
+            {endorsementsTab === 'pending' && (
             <div className="w-[30%]">
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col p-4 h-[calc(100vh-200px)]">
-                <h2 className="text-base font-bold text-gray-800 mb-3">Interview Schedule</h2>
-                
-                {/* Stats Overview */}
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-lg p-2 text-white">
-                    <p className="text-xs opacity-90">Total</p>
-                    <p className="text-lg font-bold">{getActiveInterviews().length}</p>
-                  </div>
-                  <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-lg p-2 text-white">
-                    <p className="text-xs opacity-90">Online</p>
-                    <p className="text-lg font-bold">
-                      {getActiveInterviews().filter(i => i.interview_type === 'online').length}
-                    </p>
-                  </div>
-                  <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg p-2 text-white">
-                    <p className="text-xs opacity-90">Onsite</p>
-                    <p className="text-lg font-bold">
-                      {getActiveInterviews().filter(i => i.interview_type === 'onsite').length}
-                    </p>
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <h2 className="text-base font-bold text-gray-800">Schedules</h2>
+                  <div className="inline-flex rounded-lg bg-gray-100 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setScheduleMode('interview')}
+                      className={`px-2 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                        scheduleMode === 'interview'
+                          ? 'bg-white text-[#800000] shadow-sm'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      Interview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setScheduleMode('signing')}
+                      className={`px-2 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                        scheduleMode === 'signing'
+                          ? 'bg-white text-[#800000] shadow-sm'
+                          : 'text-gray-600 hover:text-gray-800'
+                      }`}
+                    >
+                      Signing
+                    </button>
                   </div>
                 </div>
+                
+                {/* Stats Overview */}
+                {scheduleMode !== 'signing' && (
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-lg p-2 text-white">
+                      <p className="text-xs opacity-90">Total</p>
+                      <p className="text-lg font-bold">{getActiveSchedules().length}</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-red-500 to-red-600 rounded-lg p-2 text-white">
+                      <p className="text-xs opacity-90">Online</p>
+                      <p className="text-lg font-bold">
+                        {getActiveSchedules().filter(i => i.interview_type === 'online').length}
+                      </p>
+                    </div>
+                    <div className="bg-gradient-to-br from-pink-500 to-pink-600 rounded-lg p-2 text-white">
+                      <p className="text-xs opacity-90">Onsite</p>
+                      <p className="text-lg font-bold">
+                        {getActiveSchedules().filter(i => i.interview_type === 'onsite').length}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Tabs */}
                 <div className="flex gap-1 mb-3 bg-gray-100 p-1 rounded-lg">
@@ -1159,7 +1700,10 @@ function AgencyEndorsements() {
                         : 'text-gray-600 hover:text-gray-800'
                     }`}
                   >
-                    Today
+                    <span className="inline-flex items-center gap-1">
+                      Today
+                      {hasNewScheduleInTab('today') && <span className="w-2 h-2 bg-red-500 rounded-full" />}
+                    </span>
                   </button>
                   <button
                     onClick={() => setCalendarActiveTab('tomorrow')}
@@ -1169,7 +1713,10 @@ function AgencyEndorsements() {
                         : 'text-gray-600 hover:text-gray-800'
                     }`}
                   >
-                    Tomorrow
+                    <span className="inline-flex items-center gap-1">
+                      Tomorrow
+                      {hasNewScheduleInTab('tomorrow') && <span className="w-2 h-2 bg-red-500 rounded-full" />}
+                    </span>
                   </button>
                   <button
                     onClick={() => setCalendarActiveTab('week')}
@@ -1179,7 +1726,10 @@ function AgencyEndorsements() {
                         : 'text-gray-600 hover:text-gray-800'
                     }`}
                   >
-                    Week
+                    <span className="inline-flex items-center gap-1">
+                      Week
+                      {hasNewScheduleInTab('week') && <span className="w-2 h-2 bg-red-500 rounded-full" />}
+                    </span>
                   </button>
                 </div>
 
@@ -1189,28 +1739,47 @@ function AgencyEndorsements() {
                 </div>
                 
                 <div className="flex-1 overflow-y-auto space-y-2">
-                  {getActiveInterviews().length === 0 ? (
+                  {getActiveSchedules().length === 0 ? (
                     <div className="text-center py-12 bg-gray-50 rounded-lg">
                       <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
-                      <p className="text-xs text-gray-500">No interviews scheduled</p>
+                      <p className="text-xs text-gray-500">No schedules</p>
                     </div>
                   ) : (
-                    getActiveInterviews().map((interview) => (
+                    getActiveSchedules().map((interview) => {
+                      const isNew = scheduleMode === 'signing'
+                        ? !isSigningScheduleViewed(interview.id)
+                        : !isInterviewViewed(interview.id);
+
+                      return (
                       <div
                         key={interview.id}
-                        className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-3 cursor-pointer hover:shadow-md transition-all border border-gray-200 hover:border-[#800000]"
+                        className={[
+                          'rounded-lg p-3 cursor-pointer transition-all border',
+                          isNew
+                            ? 'bg-gradient-to-r from-[#800000]/10 to-white border-[#800000]/25 shadow-sm motion-safe:animate-pulse'
+                            : 'bg-gradient-to-r from-gray-50 to-white border-gray-200',
+                          'hover:shadow-md hover:border-[#800000]'
+                        ].join(' ')}
                         onClick={() => {
+                          if (scheduleMode === 'signing') {
+                            markSigningScheduleViewed(interview.id);
+                          } else {
+                            markInterviewViewed(interview.id);
+                          }
                           // Find the employee in the endorsed list
                           const employee = endorsedEmployees.find(e => e.id === interview.id);
                           if (employee) {
+                            setEndorsementsTab('pending');
                             setSelectedEmployee(employee);
                           }
                         }}
                       >
                         <div className="flex items-start justify-between mb-1">
-                          <div className="font-bold text-gray-900 text-sm">{formatTime(interview.time)}</div>
+                          <div className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                            {formatTime(interview.time)}
+                          </div>
                           <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${
                             interview.interview_type === 'online'
                               ? 'bg-emerald-100 text-emerald-700'
@@ -1227,56 +1796,155 @@ function AgencyEndorsements() {
                           </p>
                         )}
                       </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
             </div>
+            )}
 
-            {/* Endorsements Table - Right Side (70%) */}
-            <div className="w-[70%] bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden">
-              {/* Search and Filters */}
-              <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
-              <div className="flex flex-col sm:flex-row gap-3">
-                {/* Search */}
-                <div className="relative flex-1">
-                  <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <input
-                    type="text"
-                    placeholder="Search by employee name, ID, position, or depot..."
-                    value={endorsementsSearch}
-                    onChange={(e) => {
-                      setEndorsementsSearch(e.target.value);
-                    }}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
-                  />
+              <div className={`${endorsementsTab === 'pending' ? 'w-[70%]' : 'w-full'} bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col overflow-hidden`}>
+                <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
+              <div className="flex flex-col gap-3">
+                {/* Search + Pending/Deployed toggle */}
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+                  <div className="relative flex-1">
+                    <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input
+                      type="text"
+                      placeholder="Search by employee name, ID, position, or depot..."
+                      value={endorsementsSearch}
+                      onChange={(e) => setEndorsementsSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                    />
+                  </div>
+
+                  <div className="flex justify-end sm:flex-none w-full sm:w-auto">
+                    <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEndorsementsTab('pending');
+                          setSelectedEmployee(null);
+                        }}
+                        className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
+                          endorsementsTab === 'pending'
+                            ? 'bg-white text-[#800000] shadow-sm'
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        Pending ({stats.pendingEndorsements})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEndorsementsTab('deployed');
+                          setSelectedEmployee(null);
+                        }}
+                        className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
+                          endorsementsTab === 'deployed'
+                            ? 'bg-white text-[#800000] shadow-sm'
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        Deployed ({stats.totalDeployed})
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {/* Status Filter */}
-                <select
-                  value={statusFilter}
-                  onChange={(e) => { setStatusFilter(e.target.value); }}
-                  className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white min-w-[160px]"
-                >
-                  <option value="all">All Status</option>
-                  <option value="deployed">Deployed</option>
-                  <option value="pending">Pending</option>
-                </select>
+                {/* Filters + Export (responsive: one row on wide screens, wraps below on smaller) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))_auto] gap-2 items-center">
+                    {/* Depot Filter */}
+                    <select
+                      value={depotFilter}
+                      onChange={(e) => setDepotFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                    >
+                      <option value="All">All Depots</option>
+                      {depotOptions.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
 
-                {/* Export Button */}
-                <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Export
-                </button>
+                    {/* Department Filter */}
+                    <select
+                      value={departmentFilter}
+                      onChange={(e) => setDepartmentFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                    >
+                      <option value="All">All Departments</option>
+                      {departments.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+
+                    {/* Position Filter */}
+                    <select
+                      value={positionFilter}
+                      onChange={(e) => setPositionFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                    >
+                      <option value="All">All Positions</option>
+                      {positions.filter(p => p !== "All").map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+
+                    {/* Employment Status */}
+                    <select
+                      value={employmentStatusFilter}
+                      onChange={(e) => setEmploymentStatusFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                    >
+                      <option value="All">Employment Status</option>
+                      {employmentStatuses.filter((s) => s !== "All").map((status) => (
+                        <option key={status} value={status}>{status}</option>
+                      ))}
+                    </select>
+
+                    {/* Recruitment Type */}
+                    <select
+                      value={recruitmentTypeFilter}
+                      onChange={(e) => setRecruitmentTypeFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                    >
+                      <option value="All">All Recruitment Type</option>
+                      {recruitmentTypes.filter((t) => t !== "All").map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+
+                    {/* Sort */}
+                    <select
+                      value={sortOption}
+                      onChange={(e) => setSortOption(e.target.value)}
+                      aria-label="Sort"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                    >
+                      <option value="name-asc">Alphabetically (A → Z)</option>
+                      <option value="name-desc">Alphabetically (Z → A)</option>
+                      <option value="hired-asc">Date Hired (Oldest → Newest)</option>
+                      <option value="hired-desc">Date Hired (Newest → Oldest)</option>
+                    </select>
+
+                    {/* Export Button */}
+                    <button className="w-full xl:w-auto px-2.5 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Export
+                    </button>
+                </div>
               </div>
             </div>
 
+
             {/* Separation Prompt Banner */}
-            {showSeparationPrompt && (
+            {showSeparationPrompt && endorsementsTab === 'deployed' && (
               <div className="mx-4 mt-4 p-4 bg-gradient-to-r from-[#800000]/10 to-orange-50 border border-[#800000]/20 rounded-lg flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-[#800000]/20 rounded-full flex items-center justify-center flex-shrink-0">
@@ -1307,25 +1975,7 @@ function AgencyEndorsements() {
                 <div className="p-4 bg-[#800000]/10 text-[#800000] rounded">{endorsedError}</div>
               ) : endorsedEmployees.length === 0 ? (
                 <div className="p-6 text-gray-600">No endorsements yet.</div>
-              ) : (() => {
-                // Filter employees based on search and status filter
-                const filteredEmployees = endorsedEmployees.filter((emp) => {
-                  // Status filter
-                  if (statusFilter !== 'all' && emp.status !== statusFilter) return false;
-                  
-                  // Search filter
-                  if (!endorsementsSearch.trim()) return true;
-                  const searchLower = endorsementsSearch.toLowerCase();
-                  return (
-                    emp.name?.toLowerCase().includes(searchLower) ||
-                    emp.position?.toLowerCase().includes(searchLower) ||
-                    emp.depot?.toLowerCase().includes(searchLower) ||
-                    emp.status?.toLowerCase().includes(searchLower) ||
-                    String(emp.id).includes(searchLower)
-                  );
-                });
-
-                return (
+              ) : (
                 <>
                   <div className="flex flex-col lg:flex-row gap-4 flex-1 overflow-hidden min-h-0">
                     {/* Table on the left */}
@@ -1359,6 +2009,7 @@ function AgencyEndorsements() {
                                   key={emp.id} 
                                   className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${isSelected ? 'bg-[#800000]/10/50' : ''}`} 
                                   onClick={() => {
+                                    setEndorsementsTab(emp.status === 'deployed' ? 'deployed' : 'pending');
                                     setSelectedEmployee(emp);
                                     // If coming from Separation page, auto-open the separation tab
                                     if (showSeparationPrompt && emp.status === 'deployed') {
@@ -1426,6 +2077,20 @@ function AgencyEndorsements() {
                       const job = payload.job || {};
                       const isDeployed = selectedEmployee.status === "deployed";
 
+                      const endorsedAtRaw =
+                        payload?.meta?.endorsed_at ||
+                        payload?.meta?.endorsedAt ||
+                        selectedEmployee.created_at ||
+                        selectedEmployee.raw?.created_at ||
+                        null;
+                      const endorsedAtLabel = endorsedAtRaw ? formatDate(endorsedAtRaw) : '—';
+
+                      const appliedAtRaw = selectedEmployee.created_at || selectedEmployee.raw?.created_at || null;
+                      const appliedAtLabel = appliedAtRaw ? formatDate(appliedAtRaw) : '—';
+
+                      const statusInfo = getEndorsementStatus(selectedEmployee);
+                      const shortId = String(selectedEmployee.id || '').slice(0, 8);
+
                       // Different tabs based on status
                       const deployedTabs = [
                         { key: 'profiling', label: 'Profiling' },
@@ -1462,24 +2127,49 @@ function AgencyEndorsements() {
                           </button>
                           
                           <div className="flex items-center gap-3 pr-10">
-                            <div className="w-12 h-12 bg-blue-100 rounded flex items-center justify-center text-blue-600 font-bold">
-                              {selectedEmployee.name.split(' ').map(n => n[0]).join('').substring(0, 2)}
+                            <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${getAvatarColor(selectedEmployee.name)} flex items-center justify-center text-white text-lg font-semibold shadow-md`}>
+                              {getInitials(selectedEmployee.name)}
                             </div>
-                      <div className="flex-1">
+                            <div className="flex-1">
                               <div className="flex items-center gap-2">
-                                <h4 className="font-semibold text-gray-800">{selectedEmployee.name}</h4>
-                                {isDeployed ? (
-                                  <span className="text-xs px-2 py-0.5 bg-green-100 text-green-700 rounded">DEPLOYED</span>
-                                ) : (
-                                  <span className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded">ENDORSED</span>
-                                )}
+                                <h4 className="font-semibold text-gray-800 text-lg">{selectedEmployee.name}</h4>
                               </div>
-                              <p className="text-xs text-gray-500">#{selectedEmployee.id}</p>
-                              <p className="text-sm text-gray-600">{selectedEmployee.position} | {selectedEmployee.depot}</p>
+                              <p className="text-xs text-gray-500">#{shortId || String(selectedEmployee.id || '')}</p>
+                              <p className="text-sm text-gray-600">
+                                {displayValue(selectedEmployee.position || job.title)}
+                                <span className="text-gray-400"> | </span>
+                                {displayValue(selectedEmployee.depot || job.depot)}
+                              </p>
+                              {(() => {
+                                const resumePath = formData?.resumePath || formData?.resume_path || payload?.applicant?.resumePath || payload?.form?.resumePath || null;
+                                if (!resumePath) return null;
+                                const resumeUrl = supabase.storage.from('resume').getPublicUrl(resumePath)?.data?.publicUrl || null;
+                                if (!resumeUrl) return null;
+                                return (
+                                  <a
+                                    href={resumeUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1 mt-1"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    View Resume
+                                  </a>
+                                );
+                              })()}
+                            </div>
+                            <div className="text-right space-y-1">
+                              <span className={`inline-block text-xs font-semibold ${statusInfo.color}`}>
+                                {statusInfo.label}
+                              </span>
+                              <p className="text-xs text-gray-500">Applied: {appliedAtLabel}</p>
                               {!isDeployed && (
                                 <button
                                   type="button"
-                                  className="text-xs text-blue-600 hover:underline cursor-pointer mt-1"
+                                  className="mt-2 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors border-orange-300 text-orange-700 hover:bg-orange-50"
+                                  title="Retract endorsement"
                                   onClick={() => {
                                     setConfirmMessage(`Retract the endorsement for ${selectedEmployee.name}? This will remove the application from HR's recruitment list.`);
                                     setConfirmCallback(() => async () => {
@@ -1490,21 +2180,17 @@ function AgencyEndorsements() {
                                       }
 
                                       try {
-                                        // Get applicant info before deleting for notification
                                         const applicantName = selectedEmployee.name || 'Applicant';
                                         const position = selectedEmployee.position || selectedEmployee.raw?.job_posts?.title || 'Position';
                                         const depot = selectedEmployee.depot || selectedEmployee.raw?.job_posts?.depot || '';
-                                        
-                                        // Notify HR before deleting the application
+
                                         await notifyHRAboutApplicationRetraction({
                                           applicationId: selectedEmployee.id,
                                           applicantName,
                                           position,
                                           depot
                                         });
-                                        
-                                        // Delete the application to remove it from HR's list
-                                        // The database will automatically set application_id to NULL in notifications
+
                                         const { error } = await supabase
                                           .from('applications')
                                           .delete()
@@ -1517,7 +2203,6 @@ function AgencyEndorsements() {
                                           return;
                                         }
 
-                                        // Reload list and clear selected employee
                                         await loadEndorsed();
                                         setSelectedEmployee(null);
 
@@ -1539,22 +2224,166 @@ function AgencyEndorsements() {
                           </div>
                         </div>
 
-                        {/* Tabs */}
-                        <div className="flex border-b border-gray-300 bg-white overflow-x-auto">
-                          {detailTabs.map((tab) => (
-                            <button
-                              key={tab.key}
-                              onClick={() => setEmployeeDetailTab(tab.key)}
-                              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                                currentTab === tab.key
-                                  ? 'border-orange-500 text-orange-600 bg-orange-50'
-                                  : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
-                              }`}
-                            >
-                              {tab.label}
-                            </button>
-                          ))}
-                        </div>
+                        {/* Tabs / Stepper */}
+                        {isDeployed ? (
+                          <div className="flex border-b border-gray-300 bg-white overflow-x-auto">
+                            {detailTabs.map((tab) => (
+                              <button
+                                key={tab.key}
+                                onClick={() => setEmployeeDetailTab(tab.key)}
+                                className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                                  currentTab === tab.key
+                                    ? 'border-orange-500 text-orange-600 bg-orange-50'
+                                    : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                                }`}
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (() => {
+                          const hasAssessmentSchedule = Boolean(
+                            selectedEmployee.interview_date ||
+                            selectedEmployee.interview_time ||
+                            selectedEmployee.interview_location
+                          );
+
+                          const interviewConfirmedRaw = selectedEmployee.interview_confirmed || selectedEmployee.raw?.interview_confirmed;
+                          const interviewConfirmedNormalized = interviewConfirmedRaw ? String(interviewConfirmedRaw).trim().toLowerCase() : null;
+                          const isRejected = interviewConfirmedNormalized === 'rejected';
+                          const rescheduleRequested = hasAssessmentSchedule && isRejected;
+
+                          const hasAssessmentResult = Boolean(
+                            selectedEmployee.assessment_results_file ||
+                            selectedEmployee.raw?.assessment_results_file ||
+                            selectedEmployee.payload?.assessment_results_file
+                          );
+
+                          const assessmentComplete = hasAssessmentSchedule && !rescheduleRequested;
+                          const agreementsLocked = !hasAssessmentSchedule || rescheduleRequested;
+
+                          return (
+                            <div className="bg-white border-l border-r border-b border-gray-300 px-4 pt-3 pb-4">
+                              <div className="flex items-center justify-between gap-3">
+                                {[ 
+                                  { key: 'endorsement', label: 'Endorsement', description: 'View submitted details' },
+                                  { key: 'assessment', label: 'Assessment', description: 'View assessment schedule' },
+                                  { key: 'agreements', label: 'Agreements', description: 'View signing appointment and uploads' },
+                                ].map((step, index, arr) => {
+                                  const isActive = currentTab === step.key;
+
+                                  const hasAnyAgreementUpload = Boolean(
+                                    selectedEmployee.appointment_letter_file ||
+                                    selectedEmployee.undertaking_file ||
+                                    selectedEmployee.application_form_file ||
+                                    selectedEmployee.undertaking_duties_file ||
+                                    selectedEmployee.pre_employment_requirements_file ||
+                                    selectedEmployee.id_form_file ||
+                                    selectedEmployee.raw?.appointment_letter_file ||
+                                    selectedEmployee.raw?.undertaking_file ||
+                                    selectedEmployee.raw?.application_form_file ||
+                                    selectedEmployee.raw?.undertaking_duties_file ||
+                                    selectedEmployee.raw?.pre_employment_requirements_file ||
+                                    selectedEmployee.raw?.id_form_file ||
+                                    selectedEmployee.payload?.appointment_letter_file ||
+                                    selectedEmployee.payload?.undertaking_file ||
+                                    selectedEmployee.payload?.application_form_file ||
+                                    selectedEmployee.payload?.undertaking_duties_file ||
+                                    selectedEmployee.payload?.pre_employment_requirements_file ||
+                                    selectedEmployee.payload?.id_form_file
+                                  );
+
+                                  // Determine step completion and unlock status (match existing agency gating)
+                                  let isCompleted = false;
+                                  let isUnlocked = false;
+
+                                  if (step.key === 'endorsement') {
+                                    isUnlocked = true;
+                                    // Endorsement exists for all pending items; treat as completed.
+                                    isCompleted = true;
+                                  } else if (step.key === 'assessment') {
+                                    isUnlocked = true;
+                                    isCompleted = assessmentComplete;
+                                  } else if (step.key === 'agreements') {
+                                    isUnlocked = !agreementsLocked;
+                                    isCompleted = !agreementsLocked && hasAnyAgreementUpload;
+                                  }
+
+                                  const isLocked = !isUnlocked;
+
+                                  return (
+                                    <button
+                                      key={step.key}
+                                      type="button"
+                                      onClick={() => {
+                                        if (!isLocked) {
+                                          setEmployeeDetailTab(step.key);
+                                        }
+                                      }}
+                                      disabled={isLocked}
+                                      className={`flex-1 flex items-center text-left focus:outline-none ${
+                                        isLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                                      }`}
+                                      title={isLocked ? `Complete previous steps to unlock ${step.label}` : ''}
+                                    >
+                                      <div className="flex items-center gap-3 w-full">
+                                        <div
+                                          className={[
+                                            'w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold border transition-colors',
+                                            isActive
+                                              ? 'bg-red-600 text-white border-red-600 shadow'
+                                              : isCompleted
+                                              ? 'bg-green-50 text-green-700 border-green-500'
+                                              : isLocked
+                                              ? 'bg-gray-100 text-gray-400 border-gray-200'
+                                              : 'bg-gray-50 text-gray-500 border-gray-300',
+                                          ].join(' ')}
+                                        >
+                                          {isLocked ? (
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                            </svg>
+                                          ) : (
+                                            index + 1
+                                          )}
+                                        </div>
+                                        <div className="flex flex-col">
+                                          <span
+                                            className={[
+                                              'text-xs font-semibold',
+                                              isActive
+                                                ? 'text-red-600'
+                                                : isCompleted
+                                                ? 'text-green-700'
+                                                : isLocked
+                                                ? 'text-gray-400'
+                                                : 'text-gray-600',
+                                            ].join(' ')}
+                                          >
+                                            {step.label}
+                                            {isLocked && <span className="ml-1 text-[10px]">(Locked)</span>}
+                                          </span>
+                                          <span className={`text-[10px] ${isLocked ? 'text-gray-300' : 'text-gray-400'}`}>
+                                            {step.description}
+                                          </span>
+                                        </div>
+                                        {index < arr.length - 1 && (
+                                          <div
+                                            className={`flex-1 h-px mx-2 rounded-full ${
+                                              isLocked || (step.key === 'assessment' && !isUnlocked)
+                                                ? 'bg-gray-200'
+                                                : 'bg-gradient-to-r from-gray-200 via-gray-200 to-gray-200'
+                                            }`}
+                                          />
+                                        )}
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* Tab Content */}
                         <div className="bg-white border border-t-0 border-gray-300 rounded-b-lg p-6 flex-1 overflow-y-auto">
@@ -1562,29 +2391,29 @@ function AgencyEndorsements() {
                           {/* PROFILING TAB */}
                           {currentTab === 'profiling' && (
                             <div className="space-y-6">
-                              {/* Employment Details */}
+                              {/* Job Details */}
                               <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Employment Details</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Job Details</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Department:</span>
-                                    <span className="ml-2 text-gray-800">{formData.department || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.department)}</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Position:</span>
-                                    <span className="ml-2 text-gray-800">{formData.position || job.title || selectedEmployee.position || "—"}</span>
+                                    <span className="text-gray-500">Position Applying For:</span>
+                                    <span className="ml-2">{displayValue(formData.position || job.title || selectedEmployee.position)}</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Depot Assignment:</span>
-                                    <span className="ml-2 text-gray-800">{formData.depot || job.depot || selectedEmployee.depot || "—"}</span>
+                                    <span className="text-gray-500">Depot:</span>
+                                    <span className="ml-2">{displayValue(formData.depot || job.depot || selectedEmployee.depot)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Date Available:</span>
-                                    <span className="ml-2 text-gray-800">{formData.dateAvailable ? formatDate(formData.dateAvailable) : "—"}</span>
+                                    <span className="ml-2">{displayDate(formData.dateAvailable)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Currently Employed:</span>
-                                    <span className="ml-2 text-gray-800">{formData.employed || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.employed)}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1592,30 +2421,34 @@ function AgencyEndorsements() {
                               {/* Personal Information */}
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Personal Information</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Last Name:</span>
-                                    <span className="ml-2 text-gray-800">{formData.lastName || formData.lname || selectedEmployee.last || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.lastName || formData.lname || selectedEmployee.last)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">First Name:</span>
-                                    <span className="ml-2 text-gray-800">{formData.firstName || formData.fname || selectedEmployee.first || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.firstName || formData.fname || selectedEmployee.first)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Middle Name:</span>
-                                    <span className="ml-2 text-gray-800">{formData.middleName || formData.mname || selectedEmployee.middle || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.middleName || formData.mname || selectedEmployee.middle)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Sex:</span>
-                                    <span className="ml-2 text-gray-800">{formData.sex || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.sex)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Birthday:</span>
-                                    <span className="ml-2 text-gray-800">{formData.birthday ? formatDate(formData.birthday) : "—"}</span>
+                                    <span className="ml-2">{displayDate(formData.birthday)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Age:</span>
+                                    <span className="ml-2">{displayValue(calculateAge(formData.birthday))}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Marital Status:</span>
-                                    <span className="ml-2 text-gray-800">{formData.maritalStatus || formData.marital_status || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.maritalStatus || formData.marital_status)}</span>
                                   </div>
                                 </div>
                               </div>
@@ -1623,22 +2456,32 @@ function AgencyEndorsements() {
                               {/* Address Information */}
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Address Information</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-2">
                                   <div>
-                                    <span className="text-gray-500">House/Unit No.:</span>
-                                    <span className="ml-2 text-gray-800">{formData.residenceNo || formData.unit_house_number || "—"}</span>
+                                    <span className="text-gray-500">Current Address:</span>
+                                    <span className="ml-2">
+                                      {displayValue(formatAddress({
+                                        unit: formData.unit_house_number || formData.unit_house_no || formData.residenceNo,
+                                        street: formData.street,
+                                        barangay: formData.barangay,
+                                        city: formData.city,
+                                        province: formData.province,
+                                        zip: formData.zip,
+                                      }))}
+                                    </span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Street/Village:</span>
-                                    <span className="ml-2 text-gray-800">{formData.street || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">City/Municipality:</span>
-                                    <span className="ml-2 text-gray-800">{formData.city || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Zip Code:</span>
-                                    <span className="ml-2 text-gray-800">{formData.zip || "—"}</span>
+                                    <span className="text-gray-500">Alternate Address:</span>
+                                    <span className="ml-2">
+                                      {displayValue(formatAddress({
+                                        unit: formData.residenceNoAlt,
+                                        street: formData.streetAlt,
+                                        barangay: null,
+                                        city: formData.cityAlt,
+                                        province: null,
+                                        zip: formData.zipAlt,
+                                      }))}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -1646,41 +2489,93 @@ function AgencyEndorsements() {
                               {/* Contact Information */}
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Contact Information</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Contact Number:</span>
-                                    <span className="ml-2 text-gray-800">{formData.contactNumber || formData.contact || selectedEmployee.contact || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.contactNumber || formData.contact || selectedEmployee.contact)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Email Address:</span>
-                                    <span className="ml-2 text-gray-800">{formData.email || selectedEmployee.email || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.email || selectedEmployee.email)}</span>
                                   </div>
+                                </div>
+                              </div>
+
+                              {/* Uploaded Endorsement Files */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Uploaded Endorsement Files</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                  {(() => {
+                                    const uploads = [
+                                      { label: 'Interview Details', path: selectedEmployee?.interview_details_file },
+                                      { label: 'Assessment Results', path: selectedEmployee?.assessment_results_file },
+                                      { label: 'Appointment Letter', path: selectedEmployee?.appointment_letter_file },
+                                      { label: 'Undertaking', path: selectedEmployee?.undertaking_file },
+                                      { label: 'Application Form', path: selectedEmployee?.application_form_file },
+                                      { label: 'Undertaking Duties', path: selectedEmployee?.undertaking_duties_file },
+                                      { label: 'Pre-employment Requirements', path: selectedEmployee?.pre_employment_requirements_file },
+                                      { label: 'ID Form', path: selectedEmployee?.id_form_file },
+                                    ].filter((f) => !!f.path);
+
+                                    if (uploads.length === 0) {
+                                      return <div className="text-gray-500">No uploaded files yet.</div>;
+                                    }
+
+                                    return (
+                                      <div className="space-y-2">
+                                        {uploads.map((f) => {
+                                          const url = getFileUrl(f.path);
+                                          const filename = String(f.path).split('/').pop();
+                                          return (
+                                            <div key={f.label} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
+                                              <div className="min-w-0">
+                                                <div className="font-medium text-gray-800">{f.label}</div>
+                                                <div className="text-xs text-gray-500 truncate">{filename || f.path}</div>
+                                              </div>
+                                              {url ? (
+                                                <a
+                                                  href={url}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="shrink-0 text-[#800000] hover:underline font-medium"
+                                                >
+                                                  View
+                                                </a>
+                                              ) : (
+                                                <span className="shrink-0 text-gray-400">—</span>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </div>
 
                               {/* Education & Skills */}
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Education & Skills</h5>
-                                <div className="space-y-4">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
                                   {/* Highest Educational Attainment */}
                                   <div>
                                     <div className="font-medium text-gray-700 mb-2">Highest Educational Attainment:</div>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                                       <div>
                                         <span className="text-gray-500">Educational Level:</span>
-                                        <span className="ml-2 text-gray-800">{formData.education || formData.educational_attainment || "—"}</span>
+                                        <span className="ml-2">{displayValue(formData.education || formData.educational_attainment)}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Year Graduated:</span>
-                                        <span className="ml-2 text-gray-800">{formData.tertiaryYear || formData.year_graduated || "—"}</span>
+                                        <span className="ml-2">{displayValue(formData.tertiaryYear || formData.year_graduated)}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">School/Institution:</span>
-                                        <span className="ml-2 text-gray-800">{formData.tertiarySchool || formData.institution_name || "—"}</span>
+                                        <span className="ml-2">{displayValue(formData.tertiarySchool || formData.institution_name)}</span>
                                       </div>
                                       <div className="md:col-span-3">
                                         <span className="text-gray-500">Course/Program:</span>
-                                        <span className="ml-2 text-gray-800">{formData.tertiaryProgram || "—"}</span>
+                                        <span className="ml-2">{displayValue(formData.tertiaryProgram)}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -1704,45 +2599,43 @@ function AgencyEndorsements() {
                                           <span className="text-gray-800">{String(formData.skills)}</span>
                                         )
                                       ) : (
-                                        <span className="text-gray-500">—</span>
+                                        renderNone()
                                       )}
                                     </div>
                                   </div>
+                                </div>
+                              </div>
 
-                                  {/* Specialized Training */}
-                                  {(formData.specializedTraining || formData.specializedYear) && (
-                                    <div>
-                                      <div className="font-medium text-gray-700 mb-2">Specialized Training:</div>
-                                      <div className="grid grid-cols-2 gap-4 text-sm">
-                                        <div>
-                                          <span className="text-gray-500">Training/Certification Name:</span>
-                                          <span className="ml-2 text-gray-800">{formData.specializedTraining || "—"}</span>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Year Completed:</span>
-                                          <span className="ml-2 text-gray-800">{formData.specializedYear || "—"}</span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
+                              {/* Specialized Training */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Specialized Training</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                  <div>
+                                    <span className="text-gray-500">Training/Certification Name:</span>
+                                    <span className="ml-2">{displayValue(formData.specializedTraining)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Year Completed:</span>
+                                    <span className="ml-2">{displayValue(formData.specializedYear)}</span>
+                                  </div>
                                 </div>
                               </div>
 
                               {/* License Information (only for Delivery Drivers) */}
-                              {(formData.position === 'Delivery Drivers' || job.title === 'Delivery Drivers') && (
+                              {isDeliveryCrew(selectedEmployee, job) && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
-                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                     <div>
                                       <span className="text-gray-500">License Classification:</span>
-                                      <span className="ml-2 text-gray-800">{formData.licenseClassification || "—"}</span>
+                                      <span className="ml-2">{displayValue(formData.licenseClassification)}</span>
                                     </div>
                                     <div>
                                       <span className="text-gray-500">License Expiry Date:</span>
-                                      <span className="ml-2 text-gray-800">{formData.licenseExpiry ? formatDate(formData.licenseExpiry) : "—"}</span>
+                                      <span className="ml-2">{displayDate(formData.licenseExpiry)}</span>
                                     </div>
                                     {formData.restrictionCodes && Array.isArray(formData.restrictionCodes) && formData.restrictionCodes.length > 0 && (
-                                      <div className="col-span-2">
+                                      <div className="md:col-span-2">
                                         <span className="text-gray-500">Restriction Codes:</span>
                                         <div className="ml-2 mt-1 flex flex-wrap gap-2">
                                           {formData.restrictionCodes.map((code, idx) => (
@@ -1758,94 +2651,73 @@ function AgencyEndorsements() {
                               )}
 
                               {/* Driving History (only for Delivery Drivers) */}
-                              {(formData.position === 'Delivery Drivers' || job.title === 'Delivery Drivers') && (
-                                <div>
-                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Driving History</h5>
-                                  <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                      <div>
-                                        <span className="text-gray-500">Years of Driving Experience:</span>
-                                        <span className="ml-2 text-gray-800">{formData.yearsDriving || "—"}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Has Truck Troubleshooting Knowledge:</span>
-                                        <span className="ml-2 text-gray-800">{formData.truckKnowledge === 'yes' ? 'Yes' : formData.truckKnowledge === 'no' ? 'No' : "—"}</span>
+                              {isDeliveryCrew(selectedEmployee, job) && (
+                                <>
+                                  <div>
+                                    <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Driving History</h5>
+                                    <div className="space-y-4">
+                                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                                        <div>
+                                          <span className="text-gray-500">Years of Driving Experience:</span>
+                                          <span className="ml-2">{displayValue(formData.yearsDriving)}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Has Truck Troubleshooting Knowledge:</span>
+                                          <span className="ml-2">{formData.truckKnowledge === 'yes' ? 'Yes' : formData.truckKnowledge === 'no' ? 'No' : renderNone()}</span>
+                                        </div>
+                                        <div className="md:col-span-2">
+                                          <span className="text-gray-500">Vehicles Driven:</span>
+                                          {Array.isArray(formData.vehicleTypes) && formData.vehicleTypes.filter(Boolean).length > 0 ? (
+                                            <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                              {formData.vehicleTypes.filter(Boolean).map((vehicle, idx) => (
+                                                <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                                  {vehicle}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <span className="ml-2">{renderNone()}</span>
+                                          )}
+                                        </div>
+
+                                        {formData.troubleshootingTasks && Array.isArray(formData.troubleshootingTasks) && formData.troubleshootingTasks.length > 0 && (
+                                          <div className="md:col-span-2">
+                                            <span className="text-gray-500">Troubleshooting Capabilities:</span>
+                                            <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                              {formData.troubleshootingTasks.map((task, idx) => (
+                                                <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                                  {task}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
-
-                                    {formData.troubleshootingTasks && Array.isArray(formData.troubleshootingTasks) && formData.troubleshootingTasks.length > 0 && (
-                                      <div>
-                                        <span className="text-gray-500">Troubleshooting Capabilities:</span>
-                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
-                                          {formData.troubleshootingTasks.map((task, idx) => (
-                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
-                                              {task}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {formData.vehicleTypes && Array.isArray(formData.vehicleTypes) && formData.vehicleTypes.length > 0 && (
-                                      <div>
-                                        <span className="text-gray-500">Vehicles Driven:</span>
-                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
-                                          {formData.vehicleTypes.map((vehicle, idx) => (
-                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
-                                              {vehicle}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {(formData.takingMedications !== undefined || formData.tookMedicalTest !== undefined) && (
-                                      <div>
-                                        <span className="text-gray-500">Medical Information:</span>
-                                        <div className="ml-2 mt-1 space-y-1 text-sm">
-                                          <div>
-                                            <span className="text-gray-600">Taking Medications:</span>
-                                            <span className="ml-2 text-gray-800">{formData.takingMedications ? 'Yes' : 'No'}</span>
-                                            {formData.takingMedications && formData.medicationReason && (
-                                              <span className="ml-2 text-gray-600">({formData.medicationReason})</span>
-                                            )}
-                                          </div>
-                                          <div>
-                                            <span className="text-gray-600">Has Taken Medical Test:</span>
-                                            <span className="ml-2 text-gray-800">{formData.tookMedicalTest ? 'Yes' : 'No'}</span>
-                                            {formData.tookMedicalTest && formData.medicalTestDate && (
-                                              <span className="ml-2 text-gray-600">({formatDate(formData.medicalTestDate)})</span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
                                   </div>
-                                </div>
-                              )}
 
-                              {/* Work Experience */}
-                              {workExperiences && workExperiences.length > 0 && (
-                                <div>
-                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
-                                  <div className="space-y-3">
-                                    {workExperiences.map((exp, idx) => (
-                                      <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
-                                        <div className="font-medium text-gray-800">{exp.company || "—"}</div>
-                                        <div className="text-gray-600">{exp.role || exp.title || "—"} • {exp.date || exp.period || "—"}</div>
-                                        {exp.reason && (
-                                          <div className="text-gray-500 text-xs mt-1">Reason for leaving: {exp.reason}</div>
-                                        )}
-                                        {exp.notes && (
-                                          <div className="text-gray-500 text-xs mt-1">{exp.notes}</div>
-                                        )}
-                                        {exp.tasks && (
-                                          <div className="text-gray-500 text-xs mt-1">Tasks: {exp.tasks}</div>
-                                        )}
+                                  <div>
+                                    <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Medical Information</h5>
+                                    <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                      <div>
+                                        <span className="text-gray-500">Taking Medications:</span>
+                                        <span className="ml-2">{formData.takingMedications === true ? 'Yes' : formData.takingMedications === false ? 'No' : renderNone()}</span>
                                       </div>
-                                    ))}
+                                      <div>
+                                        <span className="text-gray-500">Medication Reason:</span>
+                                        <span className="ml-2">{formData.takingMedications ? displayValue(formData.medicationReason) : renderNone()}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Has Taken Medical Test:</span>
+                                        <span className="ml-2">{formData.tookMedicalTest === true ? 'Yes' : formData.tookMedicalTest === false ? 'No' : renderNone()}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Medical Test Date:</span>
+                                        <span className="ml-2">{formData.tookMedicalTest ? displayDate(formData.medicalTestDate) : renderNone()}</span>
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
+                                </>
                               )}
 
                               {/* Character References */}
@@ -2034,115 +2906,91 @@ function AgencyEndorsements() {
                                 )}
                               </div>
 
-                              {/* Assessment and Agreement Records Section */}
+                              {/* Assessment Remarks and Records */}
                               <div>
                                 <div className="flex items-center justify-between mb-3">
-                                  <h5 className="font-semibold text-gray-800 bg-gray-100 px-3 py-2 rounded flex-1">Assessment and Agreement Records</h5>
+                                  <h5 className="font-semibold text-gray-800 bg-gray-100 px-3 py-2 rounded flex-1">Assessment Remarks and Records</h5>
                                 </div>
-                                
-                                {assessmentRecords.length === 0 ? (
-                                  <div className="border border-gray-200 rounded-lg p-6 text-center">
-                                    <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    <p className="text-sm text-gray-500">No assessment or agreement records found.</p>
-                                    <p className="text-xs text-gray-400 mt-1">Files from the application process will appear here.</p>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-6">
-                                    {/* Assessment Files Section */}
-                                    {assessmentRecords.filter(r => r.type === 'assessment').length > 0 && (
-                                      <div>
-                                        <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
-                                        <div className="border border-gray-200 rounded-b-lg overflow-hidden">
-                                          <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
-                                            <div className="col-span-6">Document</div>
-                                            <div className="col-span-6">File</div>
-                                          </div>
-                                          {assessmentRecords
-                                            .filter(r => r.type === 'assessment')
-                                            .map((record) => (
-                                            <div key={record.id} className="border-b">
-                                              <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                                                <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
-                                                  {record.documentName === 'Interview Details' ? (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
-                                                      <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
-                                                    </svg>
-                                                  ) : (
-                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
-                                                      <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
-                                                    </svg>
-                                                  )}
-                                                  {record.documentName}
-                                                </div>
-                                                <div className="col-span-12 md:col-span-6 text-sm">
-                                                  {record.fileUrl ? (
-                                                    <div className="flex items-center gap-2">
-                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                                                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                                                      </svg>
-                                                      <a
-                                                        href={record.fileUrl}
-                                                        target="_blank"
-                                                        rel="noopener noreferrer"
-                                                        className="text-blue-600 hover:text-blue-800 underline text-sm"
-                                                      >
-                                                        {record.fileName}
-                                                      </a>
-                                                      <button
-                                                        onClick={async () => {
-                                                          try {
-                                                            const response = await fetch(record.fileUrl);
-                                                            const blob = await response.blob();
-                                                            const url = window.URL.createObjectURL(blob);
-                                                            const link = document.createElement('a');
-                                                            link.href = url;
-                                                            link.download = record.fileName;
-                                                            document.body.appendChild(link);
-                                                            link.click();
-                                                            document.body.removeChild(link);
-                                                            window.URL.revokeObjectURL(url);
-                                                          } catch (error) {
-                                                            console.error('Error downloading file:', error);
-                                                            window.open(record.fileUrl, '_blank');
-                                                          }
-                                                        }}
-                                                        className="text-purple-600 hover:text-purple-800 underline text-sm"
-                                                      >
-                                                        Download
-                                                      </button>
-                                                    </div>
-                                                  ) : (
-                                                    <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
 
-                                    {/* Agreement Documents Section */}
-                                    {assessmentRecords.filter(r => r.type === 'agreement').length > 0 && (
-                                      <div>
-                                        <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
-                                        <div className="border border-gray-200 rounded-b-lg overflow-hidden">
-                                          <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
-                                            <div className="col-span-6">&nbsp;</div>
-                                            <div className="col-span-6">File</div>
-                                          </div>
-                                          {assessmentRecords
-                                            .filter(r => r.type === 'agreement')
-                                            .map((record) => (
-                                            <div key={record.id} className="border-b">
-                                              <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                                                <div className="col-span-12 md:col-span-6 text-sm text-gray-800">
-                                                  {record.documentName}
-                                                </div>
-                                                <div className="col-span-12 md:col-span-6 text-sm">
-                                                  {record.fileUrl ? (
+                                {(() => {
+                                  const assessmentFiles = assessmentRecords.filter(r => r.type === 'assessment');
+
+                                  const remarks =
+                                    selectedEmployee.assessment_remarks ||
+                                    selectedEmployee.raw?.assessment_remarks ||
+                                    selectedEmployee.payload?.assessment_remarks ||
+                                    selectedEmployee.payload?.assessmentRemarks ||
+                                    selectedEmployee.raw?.payload?.assessment_remarks ||
+                                    selectedEmployee.raw?.payload?.assessmentRemarks ||
+                                    null;
+
+                                  const normalized = remarks ? String(remarks).trim() : '';
+                                  const hasRemarks = Boolean(normalized);
+
+                                  if (!hasRemarks && assessmentFiles.length === 0) {
+                                    return (
+                                      <div className="border border-gray-200 rounded-lg p-6 text-center">
+                                        <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <p className="text-sm text-gray-500">No uploaded records/documents yet.</p>
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div className="space-y-4">
+                                      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                        <div className="px-4 py-3 bg-gray-50">
+                                          <div className="text-sm font-semibold text-gray-900">Remarks</div>
+                                        </div>
+                                        <div className="p-4 text-sm">
+                                          {hasRemarks ? (
+                                            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-gray-800">
+                                              {normalized}
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-2 text-gray-500 italic">
+                                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z" />
+                                              </svg>
+                                              <span>No uploaded remarks yet.</span>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {assessmentFiles.length === 0 ? (
+                                        <div className="border border-gray-200 rounded-lg p-6 text-center">
+                                          <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                          </svg>
+                                          <p className="text-sm text-gray-500">No uploaded records/documents yet.</p>
+                                        </div>
+                                      ) : (
+                                        <div>
+                                          <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
+                                          <div className="border border-gray-200 rounded-b-lg overflow-hidden">
+                                            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                                              <div className="col-span-6">Document</div>
+                                              <div className="col-span-6">File</div>
+                                            </div>
+                                            {assessmentFiles.map((record) => (
+                                              <div key={record.id} className="border-b">
+                                                <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                                                  <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
+                                                    {record.documentName === 'Interview Details' ? (
+                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
+                                                        <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
+                                                      </svg>
+                                                    ) : (
+                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
+                                                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                                                      </svg>
+                                                    )}
+                                                    {record.documentName}
+                                                  </div>
+                                                  <div className="col-span-12 md:col-span-6 text-sm">
                                                     <div className="flex items-center gap-2">
                                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
                                                         <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
@@ -2178,18 +3026,96 @@ function AgencyEndorsements() {
                                                         Download
                                                       </button>
                                                     </div>
-                                                  ) : (
-                                                    <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
-                                                  )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </div>
+
+                              {/* Agreement Documents */}
+                              <div>
+                                <div className="flex items-center justify-between mb-3">
+                                  <h5 className="font-semibold text-gray-800 bg-gray-100 px-3 py-2 rounded flex-1">Agreement Documents</h5>
+                                </div>
+
+                                {(() => {
+                                  const agreementFiles = assessmentRecords.filter(r => r.type === 'agreement');
+
+                                  if (agreementFiles.length === 0) {
+                                    return (
+                                      <div className="border border-gray-200 rounded-lg p-6 text-center">
+                                        <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <p className="text-sm text-gray-500">No uploaded records/documents yet.</p>
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div>
+                                      <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
+                                      <div className="border border-gray-200 rounded-b-lg overflow-hidden">
+                                        <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                                          <div className="col-span-6">Document</div>
+                                          <div className="col-span-6">File</div>
+                                        </div>
+                                        {agreementFiles.map((record) => (
+                                          <div key={record.id} className="border-b">
+                                            <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                                              <div className="col-span-12 md:col-span-6 text-sm text-gray-800">
+                                                {record.documentName}
+                                              </div>
+                                              <div className="col-span-12 md:col-span-6 text-sm">
+                                                <div className="flex items-center gap-2">
+                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                                                    <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                                  </svg>
+                                                  <a
+                                                    href={record.fileUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                                  >
+                                                    {record.fileName}
+                                                  </a>
+                                                  <button
+                                                    onClick={async () => {
+                                                      try {
+                                                        const response = await fetch(record.fileUrl);
+                                                        const blob = await response.blob();
+                                                        const url = window.URL.createObjectURL(blob);
+                                                        const link = document.createElement('a');
+                                                        link.href = url;
+                                                        link.download = record.fileName;
+                                                        document.body.appendChild(link);
+                                                        link.click();
+                                                        document.body.removeChild(link);
+                                                        window.URL.revokeObjectURL(url);
+                                                      } catch (error) {
+                                                        console.error('Error downloading file:', error);
+                                                        window.open(record.fileUrl, '_blank');
+                                                      }
+                                                    }}
+                                                    className="text-purple-600 hover:text-purple-800 underline text-sm"
+                                                  >
+                                                    Download
+                                                  </button>
                                                 </div>
                                               </div>
                                             </div>
-                                          ))}
-                                        </div>
+                                          </div>
+                                        ))}
                                       </div>
-                                    )}
-                                  </div>
-                                )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
 
                               {/* Info Banner */}
@@ -2430,29 +3356,29 @@ function AgencyEndorsements() {
                           {/* ENDORSEMENT DETAILS TAB (for pending) */}
                           {currentTab === 'endorsement' && (
                             <div className="space-y-6">
-                              {/* Employment Details */}
+                              {/* Job Details */}
                               <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Employment Details</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Job Details</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Department:</span>
-                                    <span className="ml-2 text-gray-800">{formData.department || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.department)}</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Position:</span>
-                                    <span className="ml-2 text-gray-800">{formData.position || job.title || selectedEmployee.position || "—"}</span>
+                                    <span className="text-gray-500">Position Applying For:</span>
+                                    <span className="ml-2">{displayValue(formData.position || job.title || selectedEmployee.position)}</span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Depot Assignment:</span>
-                                    <span className="ml-2 text-gray-800">{formData.depot || job.depot || selectedEmployee.depot || "—"}</span>
+                                    <span className="text-gray-500">Depot:</span>
+                                    <span className="ml-2">{displayValue(formData.depot || job.depot || selectedEmployee.depot)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Date Available:</span>
-                                    <span className="ml-2 text-gray-800">{formData.dateAvailable ? formatDate(formData.dateAvailable) : "—"}</span>
+                                    <span className="ml-2">{displayDate(formData.dateAvailable)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Currently Employed:</span>
-                                    <span className="ml-2 text-gray-800">{formData.employed || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.employed)}</span>
                                   </div>
                                 </div>
                               </div>
@@ -2460,30 +3386,34 @@ function AgencyEndorsements() {
                               {/* Personal Information */}
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Personal Information</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Last Name:</span>
-                                    <span className="ml-2 text-gray-800">{formData.lastName || formData.lname || selectedEmployee.last || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.lastName || formData.lname || selectedEmployee.last)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">First Name:</span>
-                                    <span className="ml-2 text-gray-800">{formData.firstName || formData.fname || selectedEmployee.first || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.firstName || formData.fname || selectedEmployee.first)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Middle Name:</span>
-                                    <span className="ml-2 text-gray-800">{formData.middleName || formData.mname || selectedEmployee.middle || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.middleName || formData.mname || selectedEmployee.middle)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Sex:</span>
-                                    <span className="ml-2 text-gray-800">{formData.sex || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.sex)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Birthday:</span>
-                                    <span className="ml-2 text-gray-800">{formData.birthday ? formatDate(formData.birthday) : "—"}</span>
+                                    <span className="ml-2">{displayDate(formData.birthday)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Age:</span>
+                                    <span className="ml-2">{displayValue(calculateAge(formData.birthday))}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Marital Status:</span>
-                                    <span className="ml-2 text-gray-800">{formData.maritalStatus || formData.marital_status || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.maritalStatus || formData.marital_status)}</span>
                                   </div>
                                 </div>
                               </div>
@@ -2491,22 +3421,32 @@ function AgencyEndorsements() {
                               {/* Address Information */}
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Address Information</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-2">
                                   <div>
-                                    <span className="text-gray-500">House/Unit No.:</span>
-                                    <span className="ml-2 text-gray-800">{formData.residenceNo || formData.unit_house_number || "—"}</span>
+                                    <span className="text-gray-500">Current Address:</span>
+                                    <span className="ml-2">
+                                      {displayValue(formatAddress({
+                                        unit: formData.unit_house_number || formData.unit_house_no || formData.residenceNo,
+                                        street: formData.street,
+                                        barangay: formData.barangay,
+                                        city: formData.city,
+                                        province: formData.province,
+                                        zip: formData.zip,
+                                      }))}
+                                    </span>
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Street/Village:</span>
-                                    <span className="ml-2 text-gray-800">{formData.street || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">City/Municipality:</span>
-                                    <span className="ml-2 text-gray-800">{formData.city || "—"}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Zip Code:</span>
-                                    <span className="ml-2 text-gray-800">{formData.zip || "—"}</span>
+                                    <span className="text-gray-500">Alternate Address:</span>
+                                    <span className="ml-2">
+                                      {displayValue(formatAddress({
+                                        unit: formData.residenceNoAlt,
+                                        street: formData.streetAlt,
+                                        barangay: null,
+                                        city: formData.cityAlt,
+                                        province: null,
+                                        zip: formData.zipAlt,
+                                      }))}
+                                    </span>
                                   </div>
                                 </div>
                               </div>
@@ -2514,14 +3454,89 @@ function AgencyEndorsements() {
                               {/* Contact Information */}
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Contact Information</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Contact Number:</span>
-                                    <span className="ml-2 text-gray-800">{formData.contactNumber || formData.contact || selectedEmployee.contact || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.contactNumber || formData.contact || selectedEmployee.contact)}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Email Address:</span>
-                                    <span className="ml-2 text-gray-800">{formData.email || selectedEmployee.email || "—"}</span>
+                                    <span className="ml-2">{displayValue(formData.email || selectedEmployee.email)}</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Uploaded Endorsement Files */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Uploaded Endorsement Files</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                  {(() => {
+                                    const uploads = [
+                                      { label: 'Interview Details', path: selectedEmployee?.interview_details_file },
+                                      { label: 'Assessment Results', path: selectedEmployee?.assessment_results_file },
+                                      { label: 'Appointment Letter', path: selectedEmployee?.appointment_letter_file },
+                                      { label: 'Undertaking', path: selectedEmployee?.undertaking_file },
+                                      { label: 'Application Form', path: selectedEmployee?.application_form_file },
+                                      { label: 'Undertaking Duties', path: selectedEmployee?.undertaking_duties_file },
+                                      { label: 'Pre-employment Requirements', path: selectedEmployee?.pre_employment_requirements_file },
+                                      { label: 'ID Form', path: selectedEmployee?.id_form_file },
+                                    ].filter((f) => !!f.path);
+
+                                    if (uploads.length === 0) {
+                                      return <div className="text-gray-500">No uploaded files yet.</div>;
+                                    }
+
+                                    return (
+                                      <div className="space-y-2">
+                                        {uploads.map((f) => {
+                                          const url = getFileUrl(f.path);
+                                          const filename = String(f.path).split('/').pop();
+                                          return (
+                                            <div key={f.label} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
+                                              <div className="min-w-0">
+                                                <div className="font-medium text-gray-800">{f.label}</div>
+                                                <div className="text-xs text-gray-500 truncate">{filename || f.path}</div>
+                                              </div>
+                                              {url ? (
+                                                <a
+                                                  href={url}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="shrink-0 text-[#800000] hover:underline font-medium"
+                                                >
+                                                  View
+                                                </a>
+                                              ) : (
+                                                <span className="shrink-0 text-gray-400">—</span>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+
+                              {/* Government IDs (Declared) */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Government IDs (Declared)</h5>
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div>
+                                    <span className="text-gray-500">SSS:</span>
+                                    <span className="ml-2 text-gray-800">{formData.hasSSS ? 'Yes' : 'No'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">PAG-IBIG:</span>
+                                    <span className="ml-2 text-gray-800">{formData.hasPAGIBIG ? 'Yes' : 'No'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">TIN:</span>
+                                    <span className="ml-2 text-gray-800">{formData.hasTIN ? 'Yes' : 'No'}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">PhilHealth:</span>
+                                    <span className="ml-2 text-gray-800">{formData.hasPhilHealth ? 'Yes' : 'No'}</span>
                                   </div>
                                 </div>
                               </div>
@@ -2529,26 +3544,26 @@ function AgencyEndorsements() {
                               {/* Education & Skills */}
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Education & Skills</h5>
-                                <div className="space-y-4">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
                                   {/* Highest Educational Attainment */}
                                   <div>
                                     <div className="font-medium text-gray-700 mb-2">Highest Educational Attainment:</div>
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
                                       <div>
                                         <span className="text-gray-500">Educational Level:</span>
-                                        <span className="ml-2 text-gray-800">{formData.education || formData.educational_attainment || "—"}</span>
+                                        <span className="ml-2">{displayValue(formData.education || formData.educational_attainment)}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Year Graduated:</span>
-                                        <span className="ml-2 text-gray-800">{formData.tertiaryYear || formData.year_graduated || "—"}</span>
+                                        <span className="ml-2">{displayValue(formData.tertiaryYear || formData.year_graduated)}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">School/Institution:</span>
-                                        <span className="ml-2 text-gray-800">{formData.tertiarySchool || formData.institution_name || "—"}</span>
+                                        <span className="ml-2">{displayValue(formData.tertiarySchool || formData.institution_name)}</span>
                                       </div>
                                       <div className="md:col-span-3">
                                         <span className="text-gray-500">Course/Program:</span>
-                                        <span className="ml-2 text-gray-800">{formData.tertiaryProgram || "—"}</span>
+                                        <span className="ml-2">{displayValue(formData.tertiaryProgram)}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -2572,45 +3587,43 @@ function AgencyEndorsements() {
                                           <span className="text-gray-800">{String(formData.skills)}</span>
                                         )
                                       ) : (
-                                        <span className="text-gray-500">—</span>
+                                        renderNone()
                                       )}
                                     </div>
                                   </div>
+                                </div>
+                              </div>
 
-                                  {/* Specialized Training */}
-                                  {(formData.specializedTraining || formData.specializedYear) && (
-                                    <div>
-                                      <div className="font-medium text-gray-700 mb-2">Specialized Training:</div>
-                                      <div className="grid grid-cols-2 gap-4 text-sm">
-                                        <div>
-                                          <span className="text-gray-500">Training/Certification Name:</span>
-                                          <span className="ml-2 text-gray-800">{formData.specializedTraining || "—"}</span>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Year Completed:</span>
-                                          <span className="ml-2 text-gray-800">{formData.specializedYear || "—"}</span>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
+                              {/* Specialized Training */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Specialized Training</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                  <div>
+                                    <span className="text-gray-500">Training/Certification Name:</span>
+                                    <span className="ml-2">{displayValue(formData.specializedTraining)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Year Completed:</span>
+                                    <span className="ml-2">{displayValue(formData.specializedYear)}</span>
+                                  </div>
                                 </div>
                               </div>
 
                               {/* License Information (only for Delivery Drivers) */}
-                              {(formData.position === 'Delivery Drivers' || job.title === 'Delivery Drivers') && (
+                              {isDeliveryCrew(selectedEmployee, job) && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
-                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                     <div>
                                       <span className="text-gray-500">License Classification:</span>
-                                      <span className="ml-2 text-gray-800">{formData.licenseClassification || "—"}</span>
+                                      <span className="ml-2">{displayValue(formData.licenseClassification)}</span>
                                     </div>
                                     <div>
                                       <span className="text-gray-500">License Expiry Date:</span>
-                                      <span className="ml-2 text-gray-800">{formData.licenseExpiry ? formatDate(formData.licenseExpiry) : "—"}</span>
+                                      <span className="ml-2">{displayDate(formData.licenseExpiry)}</span>
                                     </div>
                                     {formData.restrictionCodes && Array.isArray(formData.restrictionCodes) && formData.restrictionCodes.length > 0 && (
-                                      <div className="col-span-2">
+                                      <div className="md:col-span-2">
                                         <span className="text-gray-500">Restriction Codes:</span>
                                         <div className="ml-2 mt-1 flex flex-wrap gap-2">
                                           {formData.restrictionCodes.map((code, idx) => (
@@ -2626,94 +3639,73 @@ function AgencyEndorsements() {
                               )}
 
                               {/* Driving History (only for Delivery Drivers) */}
-                              {(formData.position === 'Delivery Drivers' || job.title === 'Delivery Drivers') && (
-                                <div>
-                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Driving History</h5>
-                                  <div className="space-y-4">
-                                    <div className="grid grid-cols-2 gap-4 text-sm">
-                                      <div>
-                                        <span className="text-gray-500">Years of Driving Experience:</span>
-                                        <span className="ml-2 text-gray-800">{formData.yearsDriving || "—"}</span>
-                                      </div>
-                                      <div>
-                                        <span className="text-gray-500">Has Truck Troubleshooting Knowledge:</span>
-                                        <span className="ml-2 text-gray-800">{formData.truckKnowledge === 'yes' ? 'Yes' : formData.truckKnowledge === 'no' ? 'No' : "—"}</span>
+                              {isDeliveryCrew(selectedEmployee, job) && (
+                                <>
+                                  <div>
+                                    <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Driving History</h5>
+                                    <div className="space-y-4">
+                                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                                        <div>
+                                          <span className="text-gray-500">Years of Driving Experience:</span>
+                                          <span className="ml-2">{displayValue(formData.yearsDriving)}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Has Truck Troubleshooting Knowledge:</span>
+                                          <span className="ml-2">{formData.truckKnowledge === 'yes' ? 'Yes' : formData.truckKnowledge === 'no' ? 'No' : renderNone()}</span>
+                                        </div>
+                                        <div className="md:col-span-2">
+                                          <span className="text-gray-500">Vehicles Driven:</span>
+                                          {Array.isArray(formData.vehicleTypes) && formData.vehicleTypes.filter(Boolean).length > 0 ? (
+                                            <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                              {formData.vehicleTypes.filter(Boolean).map((vehicle, idx) => (
+                                                <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                                  {vehicle}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <span className="ml-2">{renderNone()}</span>
+                                          )}
+                                        </div>
+
+                                        {formData.troubleshootingTasks && Array.isArray(formData.troubleshootingTasks) && formData.troubleshootingTasks.length > 0 && (
+                                          <div className="md:col-span-2">
+                                            <span className="text-gray-500">Troubleshooting Capabilities:</span>
+                                            <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                              {formData.troubleshootingTasks.map((task, idx) => (
+                                                <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                                  {task}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
-
-                                    {formData.troubleshootingTasks && Array.isArray(formData.troubleshootingTasks) && formData.troubleshootingTasks.length > 0 && (
-                                      <div>
-                                        <span className="text-gray-500">Troubleshooting Capabilities:</span>
-                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
-                                          {formData.troubleshootingTasks.map((task, idx) => (
-                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
-                                              {task}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {formData.vehicleTypes && Array.isArray(formData.vehicleTypes) && formData.vehicleTypes.length > 0 && (
-                                      <div>
-                                        <span className="text-gray-500">Vehicles Driven:</span>
-                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
-                                          {formData.vehicleTypes.map((vehicle, idx) => (
-                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
-                                              {vehicle}
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-
-                                    {(formData.takingMedications !== undefined || formData.tookMedicalTest !== undefined) && (
-                                      <div>
-                                        <span className="text-gray-500">Medical Information:</span>
-                                        <div className="ml-2 mt-1 space-y-1 text-sm">
-                                          <div>
-                                            <span className="text-gray-600">Taking Medications:</span>
-                                            <span className="ml-2 text-gray-800">{formData.takingMedications ? 'Yes' : 'No'}</span>
-                                            {formData.takingMedications && formData.medicationReason && (
-                                              <span className="ml-2 text-gray-600">({formData.medicationReason})</span>
-                                            )}
-                                          </div>
-                                          <div>
-                                            <span className="text-gray-600">Has Taken Medical Test:</span>
-                                            <span className="ml-2 text-gray-800">{formData.tookMedicalTest ? 'Yes' : 'No'}</span>
-                                            {formData.tookMedicalTest && formData.medicalTestDate && (
-                                              <span className="ml-2 text-gray-600">({formatDate(formData.medicalTestDate)})</span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      </div>
-                                    )}
                                   </div>
-                                </div>
-                              )}
 
-                              {/* Work Experience */}
-                              {workExperiences && workExperiences.length > 0 && (
-                                <div>
-                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
-                                  <div className="space-y-3">
-                                    {workExperiences.map((exp, idx) => (
-                                      <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
-                                        <div className="font-medium text-gray-800">{exp.company || "—"}</div>
-                                        <div className="text-gray-600">{exp.role || exp.title || "—"} • {exp.date || exp.period || "—"}</div>
-                                        {exp.reason && (
-                                          <div className="text-gray-500 text-xs mt-1">Reason for leaving: {exp.reason}</div>
-                                        )}
-                                        {exp.notes && (
-                                          <div className="text-gray-500 text-xs mt-1">{exp.notes}</div>
-                                        )}
-                                        {exp.tasks && (
-                                          <div className="text-gray-500 text-xs mt-1">Tasks: {exp.tasks}</div>
-                                        )}
+                                  <div>
+                                    <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Medical Information</h5>
+                                    <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                      <div>
+                                        <span className="text-gray-500">Taking Medications:</span>
+                                        <span className="ml-2">{formData.takingMedications === true ? 'Yes' : formData.takingMedications === false ? 'No' : renderNone()}</span>
                                       </div>
-                                    ))}
+                                      <div>
+                                        <span className="text-gray-500">Medication Reason:</span>
+                                        <span className="ml-2">{formData.takingMedications ? displayValue(formData.medicationReason) : renderNone()}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Has Taken Medical Test:</span>
+                                        <span className="ml-2">{formData.tookMedicalTest === true ? 'Yes' : formData.tookMedicalTest === false ? 'No' : renderNone()}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Medical Test Date:</span>
+                                        <span className="ml-2">{formData.tookMedicalTest ? displayDate(formData.medicalTestDate) : renderNone()}</span>
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
+                                </>
                               )}
 
                               {/* Character References */}
@@ -2751,9 +3743,7 @@ function AgencyEndorsements() {
                             const interviewConfirmedNormalized = interviewConfirmedRaw 
                               ? String(interviewConfirmedRaw).trim() 
                               : null;
-                            const isConfirmed = interviewConfirmedNormalized && interviewConfirmedNormalized.toLowerCase() === 'confirmed';
                             const isRejected = interviewConfirmedNormalized && interviewConfirmedNormalized.toLowerCase() === 'rejected';
-                            const isIdle = interviewConfirmedNormalized && interviewConfirmedNormalized.toLowerCase() === 'idle';
                             
                             return (
                             <div className="space-y-6">
@@ -2761,236 +3751,138 @@ function AgencyEndorsements() {
                                 <h5 className="font-semibold text-gray-800">Assessment</h5>
                               </div>
                               
-                              <div className="bg-gray-50 border rounded-md p-4">
-                                <div className="text-sm text-gray-800 font-semibold mb-2">Interview Schedule</div>
+                              <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                                <div className="flex items-center justify-between mb-3">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 rounded-lg bg-[#800000]/10 text-[#800000] flex items-center justify-center">
+                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                                        <path fillRule="evenodd" d="M6.75 2.25A2.25 2.25 0 0 0 4.5 4.5v15A2.25 2.25 0 0 0 6.75 21.75h10.5A2.25 2.25 0 0 0 19.5 19.5v-15A2.25 2.25 0 0 0 17.25 2.25H6.75Zm.75 4.5a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1-.75-.75Zm0 3a.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 0 1.5h-7.5a.75.75 0 0 1-.75-.75Zm0 3a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1-.75-.75Z" clipRule="evenodd" />
+                                      </svg>
+                                    </div>
+                                    <div>
+                                      <div className="text-sm font-semibold text-gray-900">Assessment Schedule</div>
+                                      <div className="text-xs text-gray-500">Set by HR after review</div>
+                                    </div>
+                                  </div>
+                                  {hasInterview && (
+                                    <span className={`text-xs px-2 py-1 rounded-full font-semibold border ${
+                                      isRejected
+                                        ? 'bg-orange-50 text-orange-800 border-orange-200'
+                                        : 'bg-cyan-50 text-cyan-800 border-cyan-200'
+                                    }`}>
+                                      {isRejected ? 'Reschedule Requested' : 'Schedule Set'}
+                                    </span>
+                                  )}
+                                </div>
                                 {hasInterview ? (
                                   <>
-                                    <div className="text-sm text-gray-700 space-y-1">
-                                      <div><span className="font-medium">Date:</span> <span className="text-gray-800">{interviewDate || "—"}</span></div>
-                                      <div><span className="font-medium">Time:</span> <span className="text-gray-800">{interviewTime || "—"}</span></div>
-                                      <div><span className="font-medium">Location:</span> <span className="text-gray-800">{selectedEmployee.interview_location || "—"}</span></div>
-                                      <div><span className="font-medium">Interviewer:</span> <span className="text-gray-800">{selectedEmployee.interviewer || "—"}</span></div>
+                                    <div className="grid grid-cols-1 gap-2 text-sm text-gray-700">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">Date</span>
+                                        <span className="font-semibold text-gray-900">{interviewDate || '—'}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">Time</span>
+                                        <span className="font-semibold text-gray-900">{interviewTime || '—'}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">Location</span>
+                                        <span className="font-semibold text-gray-900">{selectedEmployee.interview_location || '—'}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">Interviewer</span>
+                                        <span className="font-semibold text-gray-900">{selectedEmployee.interviewer || '—'}</span>
+                                      </div>
                                     </div>
-                                    {/* Show status badge only if confirmed or rejected */}
-                                    {(isConfirmed || isRejected) && (
-                                      <div className="mt-3">
-                                        <span className={`text-xs px-2 py-1 rounded font-medium ${
-                                          isConfirmed
-                                            ? 'bg-green-100 text-green-800 border border-green-300' 
-                                            : 'bg-orange-100 text-orange-800 border border-orange-300'
-                                        }`}>
-                                          {isConfirmed ? '✓ Interview Confirmed' : 'Reschedule Requested'}
-                                        </span>
-                                      </div>
-                                    )}
-                                    {/* Show pending status if not confirmed/rejected */}
-                                    {!isConfirmed && !isRejected && (
-                                      <div className="mt-3">
-                                        <span className="text-xs px-2 py-1 rounded font-medium bg-yellow-100 text-yellow-800 border border-yellow-300">
-                                          Interview Pending Confirmation
-                                        </span>
-                                      </div>
-                                    )}
+
                                     <div className="mt-3 flex items-center justify-between">
-                                      <div className="text-xs text-gray-500 italic">
-                                        Important Reminder: {isConfirmed
-                                          ? 'Interview has been confirmed by the applicant.' 
-                                          : isRejected
-                                          ? 'Interview was rejected by the applicant.'
-                                          : 'Please confirm at least a day before your schedule.'}
+                                      <div className="text-xs text-gray-500">
+                                        {isRejected
+                                          ? 'Reschedule has been requested. Please wait for HR to update the schedule.'
+                                          : 'If you need changes, request a reschedule.'}
                                       </div>
-                                      {/* Show Confirm/Reject Interview buttons only if not yet confirmed/rejected */}
-                                      {!isConfirmed && !isRejected && (
-                                        <div className="flex gap-2">
-                                          <button
-                                            type="button"
-                                            onClick={() => setShowRejectInterviewDialog(true)}
-                                            className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 text-sm font-medium transition-colors"
-                                          >
-                                            Request for Reschedule
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={() => setShowConfirmInterviewDialog(true)}
-                                            className="px-4 py-2 bg-[#800000] text-white rounded-md hover:bg-[#990000] text-sm font-medium transition-colors"
-                                          >
-                                            Confirm Interview
-                                          </button>
-                                        </div>
+                                      {!isRejected && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setShowRejectInterviewDialog(true)}
+                                          className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 text-sm font-medium transition-colors"
+                                        >
+                                          Request Reschedule
+                                        </button>
                                       )}
                                     </div>
                                   </>
                                 ) : (
                                   <>
-                                    <div className="text-sm text-gray-700 space-y-1">
-                                      <div><span className="font-medium">Date:</span> <span className="text-gray-500 italic">To be scheduled</span></div>
-                                      <div><span className="font-medium">Time:</span> <span className="text-gray-500 italic">To be scheduled</span></div>
-                                      <div><span className="font-medium">Location:</span> <span className="text-gray-500 italic">To be scheduled</span></div>
-                                      <div><span className="font-medium">Interviewer:</span> <span className="text-gray-500 italic">To be assigned</span></div>
+                                    <div className="grid grid-cols-1 gap-2 text-sm text-gray-700">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">Date</span>
+                                        <span className="text-gray-500 italic">To be scheduled</span>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">Time</span>
+                                        <span className="text-gray-500 italic">To be scheduled</span>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">Location</span>
+                                        <span className="text-gray-500 italic">To be scheduled</span>
+                                      </div>
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-gray-500">Interviewer</span>
+                                        <span className="text-gray-500 italic">To be assigned</span>
+                                      </div>
                                     </div>
-                                    <div className="mt-3 text-xs text-gray-500 italic">
-                                      Important Reminder: Interview schedule will be set by HR once the endorsement is reviewed.
+                                    <div className="mt-3 text-xs text-gray-500">
+                                      Important Reminder: The assessment schedule will be set by HR once the endorsement is reviewed.
                                     </div>
                                   </>
                                 )}
                               </div>
 
-                              {/* Assessment Files */}
+                              {/* Assessment Remarks and Files */}
                               <div className="mt-6">
-                                <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
-                                <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
-                                  <div className="col-span-6">Document</div>
-                                  <div className="col-span-6">File</div>
-                                </div>
+                                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                  <div className="px-4 py-3 bg-gray-50 flex items-center justify-between">
+                                    <div className="text-sm font-semibold text-gray-900">Assessment Remarks and Files</div>
+                                  </div>
 
-                                {/* Interview Details File Row */}
-                                <div className="border-b">
-                                  <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                                    <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
-                                        <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
-                                      </svg>
-                                      Interview Details
-                                    </div>
-                                    <div className="col-span-12 md:col-span-6 text-sm">
-                                      {(() => {
-                                        // Check multiple sources for the file path
-                                        let interviewFile = selectedEmployee.interview_details_file;
-                                        
-                                        // If not found, check raw database column
-                                        if (!interviewFile && selectedEmployee.raw?.interview_details_file) {
-                                          interviewFile = selectedEmployee.raw.interview_details_file;
-                                        }
-                                        
-                                        // If still not found, check parsed payload
-                                        if (!interviewFile && selectedEmployee.payload?.interview_details_file) {
-                                          interviewFile = selectedEmployee.payload.interview_details_file;
-                                        }
-                                        
-                                        // If still not found, try parsing raw payload (might be a string)
-                                        if (!interviewFile && selectedEmployee.raw?.payload) {
-                                          let payloadObj = selectedEmployee.raw.payload;
-                                          if (typeof payloadObj === 'string') {
-                                            try {
-                                              payloadObj = JSON.parse(payloadObj);
-                                            } catch {
-                                              payloadObj = {};
-                                            }
-                                          }
-                                          if (payloadObj?.interview_details_file) {
-                                            interviewFile = payloadObj.interview_details_file;
-                                          }
-                                        }
-                                        
-                                        if (interviewFile) {
-                                          const fileUrl = supabase.storage.from('application-files').getPublicUrl(interviewFile)?.data?.publicUrl;
-                                          const fileName = interviewFile.split('/').pop() || 'Interview Details';
-                                          return (
-                                            <div className="flex items-center gap-2">
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
-                                                <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
-                                              </svg>
-                                              <a 
-                                                href={fileUrl} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                                              >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-                                                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
-                                                </svg>
-                                                {fileName}
-                                              </a>
-                                            </div>
-                                          );
-                                        }
-                                        return (
-                                          <div className="flex items-center gap-2">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                                              <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                  {(() => {
+                                    const remarks =
+                                      selectedEmployee.assessment_remarks ||
+                                      selectedEmployee.raw?.assessment_remarks ||
+                                      selectedEmployee.payload?.assessment_remarks ||
+                                      selectedEmployee.payload?.assessmentRemarks ||
+                                      selectedEmployee.raw?.payload?.assessment_remarks ||
+                                      selectedEmployee.raw?.payload?.assessmentRemarks ||
+                                      null;
+
+                                    const normalized = remarks ? String(remarks).trim() : '';
+                                    const isEmpty =
+                                      !normalized ||
+                                      normalized.toLowerCase() === 'no uploaded remarks or files.';
+                                    const displayText = isEmpty ? 'No uploaded remarks or files.' : normalized;
+                                    return (
+                                      <div className="p-4 text-sm">
+                                        {!isEmpty ? (
+                                          <div className="text-xs font-semibold text-gray-600">Remarks</div>
+                                        ) : null}
+                                        {isEmpty ? (
+                                          <div className="flex items-center gap-2 text-gray-500 italic">
+                                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z" />
                                             </svg>
-                                            <span className="text-sm text-gray-500 italic">No file uploaded yet</span>
+                                            <span>{displayText}</span>
                                           </div>
-                                        );
-                                      })()}
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                {/* Assessment Results File Row */}
-                                <div className="border-b">
-                                  <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                                    <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
-                                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
-                                      </svg>
-                                      In-Person Assessment Results
-                                    </div>
-                                    <div className="col-span-12 md:col-span-6 text-sm">
-                                      {(() => {
-                                        // Check multiple sources for the file path
-                                        let assessmentFile = selectedEmployee.assessment_results_file;
-                                        
-                                        // If not found, check raw database column
-                                        if (!assessmentFile && selectedEmployee.raw?.assessment_results_file) {
-                                          assessmentFile = selectedEmployee.raw.assessment_results_file;
-                                        }
-                                        
-                                        // If still not found, check parsed payload
-                                        if (!assessmentFile && selectedEmployee.payload?.assessment_results_file) {
-                                          assessmentFile = selectedEmployee.payload.assessment_results_file;
-                                        }
-                                        
-                                        // If still not found, try parsing raw payload (might be a string)
-                                        if (!assessmentFile && selectedEmployee.raw?.payload) {
-                                          let payloadObj = selectedEmployee.raw.payload;
-                                          if (typeof payloadObj === 'string') {
-                                            try {
-                                              payloadObj = JSON.parse(payloadObj);
-                                            } catch {
-                                              payloadObj = {};
-                                            }
-                                          }
-                                          if (payloadObj?.assessment_results_file) {
-                                            assessmentFile = payloadObj.assessment_results_file;
-                                          }
-                                        }
-                                        
-                                        if (assessmentFile) {
-                                          const fileUrl = supabase.storage.from('application-files').getPublicUrl(assessmentFile)?.data?.publicUrl;
-                                          const fileName = assessmentFile.split('/').pop() || 'Assessment Results';
-                                          return (
-                                            <div className="flex items-center gap-2">
-                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
-                                                <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
-                                              </svg>
-                                              <a 
-                                                href={fileUrl} 
-                                                target="_blank" 
-                                                rel="noopener noreferrer"
-                                                className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                                              >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-                                                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
-                                                </svg>
-                                                {fileName}
-                                              </a>
+                                        ) : (
+                                          <div className="mt-2">
+                                            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-gray-800">
+                                              {displayText}
                                             </div>
-                                          );
-                                        }
-                                        return (
-                                          <div className="flex items-center gap-2">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                                              <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                                            </svg>
-                                            <span className="text-sm text-gray-500 italic">No file uploaded yet</span>
                                           </div>
-                                        );
-                                      })()}
-                                    </div>
-                                  </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </div>
@@ -3000,92 +3892,131 @@ function AgencyEndorsements() {
                           {/* AGREEMENTS TAB (for pending) */}
                           {currentTab === 'agreements' && (
                             <div className="space-y-6">
-                              <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
-                              <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
-                                <div className="col-span-6">&nbsp;</div>
-                                <div className="col-span-3">File</div>
-                                <div className="col-span-3">&nbsp;</div>
-                              </div>
-
-                              {/* Helper function to render agreement document row */}
                               {(() => {
-                                const renderAgreementRow = (documentName, fileKey) => {
-                                  // Check multiple sources for the file path
+                                const interviewConfirmedRaw = selectedEmployee.interview_confirmed || selectedEmployee.raw?.interview_confirmed;
+                                const interviewConfirmedNormalized = interviewConfirmedRaw ? String(interviewConfirmedRaw).trim().toLowerCase() : null;
+                                const isRejected = interviewConfirmedNormalized === 'rejected';
+
+                                const hasAssessmentSchedule = Boolean(
+                                  selectedEmployee.interview_date ||
+                                  selectedEmployee.interview_time ||
+                                  selectedEmployee.interview_location
+                                );
+
+                                const agreementsUnlocked = hasAssessmentSchedule && !isRejected;
+
+                                const payloadObj = parsePayloadObject(selectedEmployee.payload ?? selectedEmployee.raw?.payload ?? {});
+                                const signing = getSigningScheduleFromApplication({ payload: payloadObj }) || null;
+                                const signingDate = signing?.date ? formatDate(signing.date) : null;
+                                const signingTime = signing?.time ? formatTime(signing.time) : null;
+                                const signingLocation = signing?.location || null;
+
+                                const keys = [
+                                  'appointment_letter_file',
+                                  'undertaking_file',
+                                  'application_form_file',
+                                  'undertaking_duties_file',
+                                  'pre_employment_requirements_file',
+                                  'id_form_file',
+                                ];
+
+                                const getFilePathForKey = (fileKey) => {
                                   let filePath = selectedEmployee?.[fileKey];
-                                  
-                                  // If not found, check raw database column
-                                  if (!filePath && selectedEmployee?.raw?.[fileKey]) {
-                                    filePath = selectedEmployee.raw[fileKey];
-                                  }
-                                  
-                                  // If still not found, check parsed payload
-                                  if (!filePath && selectedEmployee?.payload?.[fileKey]) {
-                                    filePath = selectedEmployee.payload[fileKey];
-                                  }
-                                  
-                                  // If still not found, try parsing raw payload (might be a string)
+                                  if (!filePath && selectedEmployee?.raw?.[fileKey]) filePath = selectedEmployee.raw[fileKey];
+                                  if (!filePath && selectedEmployee?.payload?.[fileKey]) filePath = selectedEmployee.payload[fileKey];
                                   if (!filePath && selectedEmployee?.raw?.payload) {
                                     let payloadObj = selectedEmployee.raw.payload;
                                     if (typeof payloadObj === 'string') {
-                                      try {
-                                        payloadObj = JSON.parse(payloadObj);
-                                      } catch {
-                                        payloadObj = {};
-                                      }
+                                      try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
                                     }
-                                    if (payloadObj?.[fileKey]) {
-                                      filePath = payloadObj[fileKey];
-                                    }
+                                    if (payloadObj?.[fileKey]) filePath = payloadObj[fileKey];
                                   }
-                                  
-                                  const hasFile = !!filePath;
-                                  
-                                  return (
-                                    <div key={fileKey} className="border-b">
-                                      <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                                        <div className="col-span-12 md:col-span-6 text-sm text-gray-800">{documentName}</div>
-                                        <div className="col-span-12 md:col-span-3 text-sm">
-                                          {hasFile ? (
-                                            <>
-                                              <a 
-                                                href={supabase.storage.from('application-files').getPublicUrl(filePath)?.data?.publicUrl} 
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-blue-600 hover:underline"
-                                              >
-                                                {filePath.split('/').pop() || documentName}
-                                              </a>
-                                              {selectedEmployee.created_at && (
-                                                <span className="ml-2 text-xs text-gray-500">
-                                                  {new Date(selectedEmployee.created_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })}
-                                                </span>
-                                              )}
-                                            </>
-                                          ) : (
-                                            <span className="text-gray-400 italic">No file uploaded yet</span>
-                                          )}
-                                        </div>
-                                        <div className="col-span-12 md:col-span-3" />
-                                      </div>
-                                    </div>
-                                  );
+                                  return filePath || null;
                                 };
+
+                                const uploaded = keys
+                                  .map((k) => ({ key: k, path: getFilePathForKey(k) }))
+                                  .filter((x) => Boolean(x.path));
 
                                 return (
                                   <>
-                                    {renderAgreementRow("Employee Appointment Letter", "appointment_letter_file")}
-                                    {renderAgreementRow("Undertaking", "undertaking_file")}
-                                    {renderAgreementRow("Application Form", "application_form_file")}
-                                    {renderAgreementRow("Undertaking of Duties and Responsibilities", "undertaking_duties_file")}
-                                    {renderAgreementRow("Roadwise Pre Employment Requirements", "pre_employment_requirements_file")}
-                                    {renderAgreementRow("ID Form", "id_form_file")}
+                                    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                                      <div className="flex items-center justify-between">
+                                        <div>
+                                          <div className="text-sm font-semibold text-gray-900">Signing appointment schedule</div>
+                                        </div>
+                                        <span className={`text-xs px-2 py-1 rounded-full font-semibold border ${
+                                          signingDate || signingTime
+                                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                            : 'bg-gray-50 text-gray-600 border-gray-200'
+                                        }`}>
+                                          {signingDate || signingTime ? 'Schedule Set' : 'Not Set'}
+                                        </span>
+                                      </div>
+                                      <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-gray-700">
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-gray-500">Date</span>
+                                          <span className="font-semibold text-gray-900">{signingDate || '—'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-gray-500">Time</span>
+                                          <span className="font-semibold text-gray-900">{signingTime || '—'}</span>
+                                        </div>
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-gray-500">Location</span>
+                                          <span className="font-semibold text-gray-900">{signingLocation || '—'}</span>
+                                        </div>
+                                      </div>
+                                      <div className="mt-3 text-xs text-gray-500">
+                                        Stay posted for the agreement signing schedule. We will post as soon as possible.
+                                      </div>
+                                      {!agreementsUnlocked && (
+                                        <div className="mt-3 text-xs text-gray-500">
+                                          Agreements are locked while reschedule is pending.
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">
+                                      Uploaded Agreements
+                                    </div>
+                                    <div className="border border-t-0 rounded-b-md overflow-hidden">
+                                      {uploaded.length === 0 ? (
+                                        <div className="p-6 text-sm text-gray-600">No uploaded documents</div>
+                                      ) : (
+                                        <div className="divide-y">
+                                          {uploaded.map((doc) => {
+                                            const url = supabase.storage.from('application-files').getPublicUrl(doc.path)?.data?.publicUrl || null;
+                                            const fileName = String(doc.path).split('/').pop() || 'Document';
+                                            return (
+                                              <div key={doc.key} className="p-4 flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                  <div className="text-sm font-semibold text-gray-800 truncate">{fileName}</div>
+                                                  <div className="text-xs text-gray-500 truncate">{doc.path}</div>
+                                                </div>
+                                                <div className="flex-shrink-0">
+                                                  {url ? (
+                                                    <a
+                                                      href={url}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="text-sm font-semibold text-blue-600 hover:underline"
+                                                    >
+                                                      View
+                                                    </a>
+                                                  ) : (
+                                                    <span className="text-sm text-gray-400">Unavailable</span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
                                   </>
                                 );
                               })()}
-
-                              <div className="text-xs text-gray-500 italic mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
-                                <strong>Note:</strong> Once the employee is deployed, the appointment letter will be uploaded here by HR. The employee will receive their employee account credentials via email.
-                              </div>
                             </div>
                           )}
 
@@ -3095,114 +4026,12 @@ function AgencyEndorsements() {
                     })()}
                   </div>
                 </>
-                );
-              })()}
+              )}
             </div>
             </div>
           </div>
         </div>
       </div>
-
-      {/* Confirm Interview Dialog */}
-      {showConfirmInterviewDialog && (
-        <div
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-          onClick={() => setShowConfirmInterviewDialog(false)}
-        >
-          <div
-            className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-bold mb-4">Confirm Interview</h3>
-            <div className="text-sm text-gray-700 mb-6">
-              Are you sure you want to confirm this interview schedule?
-            </div>
-            <div className="flex justify-end gap-3">
-              <button
-                type="button"
-                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
-                onClick={() => setShowConfirmInterviewDialog(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="px-4 py-2 rounded bg-[#800000] text-white hover:bg-[#990000]"
-                onClick={async () => {
-                  if (!selectedEmployee.id) {
-                    setAlertMessage('Error: Application ID not found');
-                    setShowErrorAlert(true);
-                    setShowConfirmInterviewDialog(false);
-                    return;
-                  }
-                  
-                  try {
-                    const confirmedAt = new Date().toISOString();
-                    
-                    // Get applicant and interview info for notification
-                    const applicantName = selectedEmployee.name || 'Applicant';
-                    const position = selectedEmployee.position || selectedEmployee.raw?.job_posts?.title || 'Position';
-                    const interviewDate = selectedEmployee.interview_date || selectedEmployee.raw?.interview_date || null;
-                    const interviewTime = selectedEmployee.interview_time || selectedEmployee.raw?.interview_time || null;
-                    
-                    const { error: updateError } = await supabase
-                      .from('applications')
-                      .update({
-                        interview_confirmed: 'Confirmed',
-                        interview_confirmed_at: confirmedAt
-                      })
-                      .eq('id', selectedEmployee.id);
-                    
-                    if (updateError) {
-                      console.error('Error confirming interview:', updateError);
-                      setAlertMessage('Failed to confirm interview. Please try again.');
-                      setShowErrorAlert(true);
-                      setShowConfirmInterviewDialog(false);
-                      return;
-                    }
-                    
-                    // Notify HR about interview confirmation
-                    await notifyHRAboutInterviewResponse({
-                      applicationId: selectedEmployee.id,
-                      applicantName,
-                      position,
-                      responseType: 'confirmed',
-                      interviewDate,
-                      interviewTime
-                    });
-                    
-                    // Reload the endorsed employees to update the UI
-                    loadEndorsed();
-                    
-                    // Update local state immediately
-                    setSelectedEmployee(prev => ({
-                      ...prev,
-                      interview_confirmed: 'Confirmed',
-                      interview_confirmed_at: confirmedAt,
-                      raw: {
-                        ...prev.raw,
-                        interview_confirmed: 'Confirmed',
-                        interview_confirmed_at: confirmedAt
-                      }
-                    }));
-                    
-                    setShowConfirmInterviewDialog(false);
-                    setAlertMessage('Interview confirmed successfully! ✓');
-                    setShowSuccessAlert(true);
-                  } catch (err) {
-                    console.error('Error confirming interview:', err);
-                    setAlertMessage('Failed to confirm interview. Please try again.');
-                    setShowErrorAlert(true);
-                    setShowConfirmInterviewDialog(false);
-                  }
-                }}
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Request Reschedule Dialog */}
       {showRejectInterviewDialog && (

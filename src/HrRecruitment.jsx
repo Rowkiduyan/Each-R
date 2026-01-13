@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo, useRef, useCallback } from "react"
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import { getStoredJson } from "./authStorage";
-import jsPDF from "jspdf";
+import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 /**
@@ -19,6 +19,25 @@ async function scheduleInterviewClient(applicationId, interview) {
     });
 
     // SDK may return a Response (fetch) or a plain object with .error or .data
+                                const agencyApplicant = isAgency(selectedApplicant);
+
+                                if (agencyApplicant) {
+                                  if (interviewStatus === 'Rejected') {
+                                    return (
+                                      <span className="text-sm px-3 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300 font-medium">
+                                        Reschedule Requested
+                                      </span>
+                                    );
+                                  }
+                                  if (selectedApplicant.interview_date) {
+                                    return (
+                                      <span className="text-sm px-3 py-1 rounded bg-cyan-100 text-cyan-800 border border-cyan-300 font-medium">
+                                        Schedule Set
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                }
     if (res instanceof Response) {
       const json = await res.json().catch(() => null);
       if (!res.ok) {
@@ -561,12 +580,14 @@ function HrRecruitment() {
     
     const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
     const hasInterview = !!selectedApplicant?.interview_date;
+    const agencyApplicant = isAgency(selectedApplicant);
     const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
                               selectedApplicant?.interview_confirmed === 'confirmed';
+    const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterview;
     
     // Check which steps are unlocked
     const step2Unlocked = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
-    const step3Unlocked = hasInterview && interviewConfirmed;
+    const step3Unlocked = hasInterview && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
     
     // If current tab is locked, switch to first unlocked step
     if (activeDetailTab === "Assessment" && !step2Unlocked) {
@@ -2800,6 +2821,7 @@ function HrRecruitment() {
     const hasInterview = applicant.interview_date;
     const interviewConfirmed = applicant.interview_confirmed === 'Confirmed';
     const rescheduleRequested = applicant.interview_confirmed === 'Rejected' && hasInterview;
+    const agencyApplicant = isAgency(applicant);
     
     // Determine status based on workflow
     if (status === 'hired') {
@@ -2817,7 +2839,7 @@ function HrRecruitment() {
     if (rescheduleRequested) {
       return { label: 'RESCHEDULE REQUESTED', color: 'text-orange-600', bg: 'bg-orange-50' };
     }
-    if (hasInterview && interviewConfirmed) {
+    if (hasInterview && interviewConfirmed && !agencyApplicant) {
       return { label: 'INTERVIEW CONFIRMED', color: 'text-blue-600', bg: 'bg-blue-50' };
     }
     if (hasInterview) {
@@ -3619,8 +3641,10 @@ function HrRecruitment() {
                       const isActive = activeDetailTab === step.key;
                       const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
                       const hasInterview = !!selectedApplicant?.interview_date;
+                      const agencyApplicant = isAgency(selectedApplicant);
                       const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
                                                 selectedApplicant?.interview_confirmed === 'confirmed';
+                      const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterview;
                       
                       // Determine step completion and unlock status
                       let isCompleted = false;
@@ -3635,11 +3659,11 @@ function HrRecruitment() {
                         // Step 2 is unlocked when Step 1 is completed
                         const step1Completed = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
                         isUnlocked = step1Completed;
-                        // Step 2 is completed when interview is scheduled AND confirmed
-                        isCompleted = hasInterview && interviewConfirmed;
+                        // For agency endorsements: no schedule confirmation; complete once scheduled (unless reschedule requested)
+                        isCompleted = hasInterview && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
                       } else if (step.key === "Agreements") {
-                        // Step 3 is unlocked when Step 2 is completed (interview scheduled and confirmed)
-                        isUnlocked = hasInterview && interviewConfirmed;
+                        // For agency endorsements: unlock once scheduled (unless reschedule requested)
+                        isUnlocked = hasInterview && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
                         // Step 3 is completed when status is agreement or hired
                         isCompleted = ["agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
                       }
@@ -4116,6 +4140,25 @@ function HrRecruitment() {
                               {(() => {
                                 // Check interview status using the new text-based system
                                 const interviewStatus = selectedApplicant.interview_confirmed || selectedApplicant.payload?.interview_confirmed || 'Idle';
+                                const agencyApplicant = isAgency(selectedApplicant);
+
+                                if (agencyApplicant) {
+                                  if (interviewStatus === 'Rejected') {
+                                    return (
+                                      <span className="text-sm px-3 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300 font-medium">
+                                        Reschedule Requested
+                                      </span>
+                                    );
+                                  }
+                                  if (selectedApplicant.interview_date) {
+                                    return (
+                                      <span className="text-sm px-3 py-1 rounded bg-cyan-100 text-cyan-800 border border-cyan-300 font-medium">
+                                        Schedule Set
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                }
                                 
                                 if (interviewStatus === 'Confirmed') {
                                   return (
@@ -4174,9 +4217,11 @@ function HrRecruitment() {
                       {(() => {
                         // Check if interview is scheduled and confirmed
                         const hasInterviewScheduled = !!selectedApplicant?.interview_date;
+                        const agencyApplicant = isAgency(selectedApplicant);
                         const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
                                                    selectedApplicant?.interview_confirmed === 'confirmed';
-                        const canUpload = hasInterviewScheduled && interviewConfirmed;
+                        const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterviewScheduled;
+                        const canUpload = hasInterviewScheduled && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
                         
                         const fileValue = selectedApplicant?.interview_details_file || (selectedApplicant?.raw?.payload ? (() => {
                           const payload = typeof selectedApplicant.raw.payload === 'string' 
@@ -4205,6 +4250,8 @@ function HrRecruitment() {
                                       </svg>
                                       {!hasInterviewScheduled 
                                         ? "Interview must be scheduled first" 
+                                        : agencyApplicant
+                                        ? (rescheduleRequested ? "Reschedule requested" : "Upload unavailable") 
                                         : !interviewConfirmed 
                                         ? "Applicant must confirm interview first" 
                                         : "Upload unavailable"}
@@ -4407,9 +4454,11 @@ function HrRecruitment() {
                       {(() => {
                         // Check if interview is scheduled and confirmed
                         const hasInterviewScheduled = !!selectedApplicant?.interview_date;
+                        const agencyApplicant = isAgency(selectedApplicant);
                         const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
                                                    selectedApplicant?.interview_confirmed === 'confirmed';
-                        const canUpload = hasInterviewScheduled && interviewConfirmed;
+                        const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterviewScheduled;
+                        const canUpload = hasInterviewScheduled && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
                         
                         const fileValue = selectedApplicant?.assessment_results_file || (selectedApplicant?.raw?.payload ? (() => {
                           const payload = typeof selectedApplicant.raw.payload === 'string' 
@@ -4438,6 +4487,8 @@ function HrRecruitment() {
                                       </svg>
                                       {!hasInterviewScheduled 
                                         ? "Interview must be scheduled first" 
+                                        : agencyApplicant
+                                        ? (rescheduleRequested ? "Reschedule requested" : "Upload unavailable")
                                         : !interviewConfirmed 
                                         ? "Applicant must confirm interview first" 
                                         : "Upload unavailable"}
