@@ -3,6 +3,8 @@ import React, { useEffect, useState, useMemo, useRef, useCallback } from "react"
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import { getStoredJson } from "./authStorage";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 /**
  * scheduleInterviewClient
@@ -2904,92 +2906,90 @@ function HrRecruitment() {
   );
 
 
-  const printApplicantsList = useCallback((rows, title = "Applicants") => {
+  const exportApplicantsPdf = useCallback((rows, title = "Applicants") => {
     const list = Array.isArray(rows) ? rows : [];
-    const win = window.open('', '_blank', 'noopener,noreferrer');
-    if (!win) {
-      setErrorMessage('Unable to open print window (popup blocked).');
+    if (list.length === 0) {
+      setErrorMessage("No applicants to export for the current filters.");
       setShowErrorAlert(true);
       return;
     }
 
-    const printedAt = new Date().toLocaleString('en-US');
-    const filterSummary = [
-      searchTerm ? `Search: ${searchTerm}` : null,
-      positionFilter !== 'All' ? `Position: ${positionFilter}` : null,
-      depotFilter !== 'All' ? `Depot: ${depotFilter}` : null,
-      statusFilter !== 'All' ? `Status: ${statusFilter}` : null,
-      `Sort: ${sortOrder === 'asc' ? 'A→Z' : 'Z→A'}`,
-    ].filter(Boolean).join(' | ');
+    try {
+      const exportedAt = new Date();
+      const exportedAtLabel = exportedAt.toLocaleString("en-US");
+      const filterSummary = [
+        searchTerm ? `Search: ${searchTerm}` : null,
+        positionFilter !== "All" ? `Position: ${positionFilter}` : null,
+        depotFilter !== "All" ? `Depot: ${depotFilter}` : null,
+        statusFilter !== "All" ? `Status: ${statusFilter}` : null,
+        `Sort: ${sortOrder === "asc" ? "A→Z" : "Z→A"}`,
+      ]
+        .filter(Boolean)
+        .join(" | ");
 
-    const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;',
-    }[c]));
+      const safeText = (v) => {
+        const s = String(v ?? "").trim();
+        return s.length ? s : "—";
+      };
 
-    const rowsHtml = list.map((a) => {
-      const statusLabel = getApplicationStatus(a).label;
-      return `
-        <tr>
-          <td>${escapeHtml(a.name)}</td>
-          <td>${escapeHtml(a.position || '—')}</td>
-          <td>${escapeHtml(a.depot || '—')}</td>
-          <td>${escapeHtml(statusLabel)}</td>
-          <td>${escapeHtml(a.dateApplied || '—')}</td>
-          <td>${escapeHtml(a.interview_date ? new Date(a.interview_date).toLocaleDateString('en-US') : '—')}</td>
-          <td>${escapeHtml(a.interview_time || '—')}</td>
-        </tr>
-      `;
-    }).join('');
+      const interviewDateText = (v) => {
+        if (!v) return "—";
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
+      };
 
-    win.document.open();
-    win.document.write(`
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>${escapeHtml(title)}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
-            h1 { font-size: 18px; margin: 0 0 6px; }
-            .meta { font-size: 12px; color: #444; margin-bottom: 12px; }
-            table { width: 100%; border-collapse: collapse; font-size: 12px; }
-            th, td { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
-            th { background: #f5f5f5; text-align: left; }
-            @media print { body { padding: 0; } }
-          </style>
-        </head>
-        <body>
-          <h1>${escapeHtml(title)} (${list.length})</h1>
-          <div class="meta">Printed: ${escapeHtml(printedAt)}</div>
-          ${filterSummary ? `<div class="meta">${escapeHtml(filterSummary)}</div>` : ''}
-          <table>
-            <thead>
-              <tr>
-                <th>Applicant</th>
-                <th>Position</th>
-                <th>Depot</th>
-                <th>Status</th>
-                <th>Date Applied</th>
-                <th>Interview Date</th>
-                <th>Interview Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-          <script>
-            window.focus();
-            window.print();
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "pt",
+        format: "a4",
+      });
+
+      doc.setFontSize(16);
+      doc.text(`${title} (${list.length})`, 40, 40);
+
+      doc.setFontSize(10);
+      doc.setTextColor(80);
+      doc.text(`Exported: ${exportedAtLabel}`, 40, 58);
+      if (filterSummary) {
+        doc.text(filterSummary, 40, 74);
+      }
+      doc.setTextColor(0);
+
+      const body = list.map((a) => {
+        const statusLabel = getApplicationStatus(a).label;
+        return [
+          safeText(a.name),
+          safeText(a.position),
+          safeText(a.depot),
+          safeText(statusLabel),
+          safeText(a.dateApplied),
+          interviewDateText(a.interview_date),
+          safeText(a.interview_time),
+        ];
+      });
+
+      autoTable(doc, {
+        startY: filterSummary ? 90 : 78,
+        head: [["Applicant", "Position", "Depot", "Status", "Date Applied", "Interview Date", "Interview Time"]],
+        body,
+        theme: "grid",
+        styles: { fontSize: 9, cellPadding: 6, overflow: "linebreak" },
+        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
+        margin: { left: 40, right: 40 },
+      });
+
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const rawParts = [title, statusFilter !== "All" ? statusFilter : null, positionFilter !== "All" ? positionFilter : null, depotFilter !== "All" ? depotFilter : null, yyyyMmDd]
+        .filter(Boolean)
+        .join("_");
+      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".pdf";
+
+      doc.save(fileName);
+    } catch (err) {
+      console.error("exportApplicantsPdf error:", err);
+      setErrorMessage("Failed to export PDF. Please try again.");
+      setShowErrorAlert(true);
+    }
   }, [searchTerm, positionFilter, depotFilter, statusFilter, sortOrder]);
 
   return (
@@ -3342,19 +3342,19 @@ function HrRecruitment() {
                   </div>
 
 
-                  {/* Print Button */}
+                  {/* Export Button */}
                   <button
                     type="button"
                     onClick={() => {
-                      printApplicantsList(filteredAllApplicants, 'Applicants');
+                      exportApplicantsPdf(filteredAllApplicants, "Applicants");
                     }}
                     className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
-                    title="Print the currently filtered list"
+                    title="Export the currently filtered list to PDF"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
-                    Print
+                    Export
                   </button>
                 </div>
               </div>
