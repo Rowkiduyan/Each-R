@@ -1981,10 +1981,10 @@ const formatDateForInput = (dateString) => {
       );
     }
 
-    // Check if the job title is "Delivery Drivers" to show license and driving fields
-    const jobTitle = (selectedJob || newJob)?.title || '';
-    const isDeliveryDriverJob = jobTitle === 'Delivery Drivers';
-    const showLicenseSection = isDeliveryDriverJob;
+    // Check if the job_type is 'delivery_crew' to show license and driving fields
+    const jobType = (selectedJob || newJob)?.job_type || '';
+    const isDeliveryCrewJob = jobType === 'delivery_crew';
+    const showLicenseSection = isDeliveryCrewJob;
 
     // Calculate suggestions after early return
     const locationSuggestions = Array.from(
@@ -4427,22 +4427,24 @@ const formatDateForInput = (dateString) => {
                       </div>
                     </div>
 
-                    {/* License */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                        License Information
-                      </h3>
-                      <div className="border border-gray-300">
-                        <div className="grid grid-cols-2 bg-gray-100 p-2 font-medium">
-                          <div>License Type</div>
-                          <div>Expiry Date</div>
-                        </div>
-                        <div className="grid grid-cols-2 p-2">
-                          <div>{form.licenseType || <span className="text-gray-500 italic">None</span>}</div>
-                          <div>{form.licenseExpiry || <span className="text-gray-500 italic">None</span>}</div>
+                    {/* License - Only show for delivery_crew jobs */}
+                    {showLicenseSection && (
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                          License Information
+                        </h3>
+                        <div className="border border-gray-300">
+                          <div className="grid grid-cols-2 bg-gray-100 p-2 font-medium">
+                            <div>License Type</div>
+                            <div>Expiry Date</div>
+                          </div>
+                          <div className="grid grid-cols-2 p-2">
+                            <div>{form.licenseType || <span className="text-gray-500 italic">None</span>}</div>
+                            <div>{form.licenseExpiry || <span className="text-gray-500 italic">None</span>}</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Work Experience */}
                     <div>

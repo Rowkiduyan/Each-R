@@ -32,6 +32,7 @@ import AgencyLayout from "./layouts/AgencyLayout";
 import HrCreateJob from "./HrCreateJob";
 import HrPost from "./HrPost";
 import VerifyEmail from "./VerifyEmail";
+import ResetPassword from "./ResetPassword";
 import RequireRole from "./RequireRole";
 import HRLayout from "./layouts/HRLayout";
 import AdminLayout from "./layouts/AdminLayout";
@@ -124,6 +125,7 @@ function App() {
         <Route path="applicant/login" element={<ApplicantLogin />} />
         <Route path="applicant/register" element={<ApplicantRegister />} />
         <Route path="applicant/verify" element={<VerifyEmail />} />
+        <Route path="reset-password" element={<ResetPassword />} />
         <Route path="employee/login" element={<EmployeeLogin />} />
       </Route>
 
