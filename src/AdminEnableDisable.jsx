@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { getStoredJson } from './authStorage';
 
 function AdminEnableDisable() {
   const [accounts, setAccounts] = useState([]);
@@ -171,8 +172,7 @@ function AdminEnableDisable() {
       const isDisabling = actionType === 'disable';
       
       // Get current admin user
-      const stored = localStorage.getItem("loggedInHR");
-      const adminUser = stored ? JSON.parse(stored) : null;
+      const adminUser = getStoredJson("loggedInHR");
 
       // Update account status in profiles table
       const updateData = {

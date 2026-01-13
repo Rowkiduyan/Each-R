@@ -1,6 +1,55 @@
 import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { getStoredJson } from "./authStorage";
+
+// Keep job titles/positions aligned with Employees.jsx
+const departments = [
+  "Operations Department",
+  "Billing Department",
+  "HR Department",
+  "Security & Safety Department",
+  "Collections Department",
+  "Repairs and Maintenance Specialist",
+];
+
+const departmentToPositions = {
+  "Operations Department": [
+    "Driver",
+    "Helper",
+    "Rider/Messenger",
+    "Base Dispatcher",
+    "Site Coordinator",
+    "Transport Coordinator",
+    "Customer Service Representative",
+  ],
+  "Billing Department": ["Billing Specialist", "POD Specialist"],
+  "HR Department": ["HR Specialist", "Recruitment Specialist", "HR Manager"],
+  "Security & Safety Department": ["Safety Officer 2", "Safety Officer 3", "Security Officer"],
+  "Collections Department": ["Billing & Collections Specialist", "Charges Specialist"],
+  "Repairs and Maintenance Specialist": [
+    "Diesel Mechanic",
+    "Truck Refrigeration Technician",
+    "Welder",
+    "Tinsmith",
+  ],
+};
+
+const getDepartmentForPosition = (position) => {
+  if (!position) return "";
+  for (const [dept, list] of Object.entries(departmentToPositions)) {
+    if ((list || []).includes(position)) return dept;
+  }
+  return "";
+};
+
+const splitLines = (text) =>
+  String(text || "")
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+const allJobTitles = Object.values(departmentToPositions).flatMap((list) => list || []);
 
 function HrCreateJob() {
   const navigate = useNavigate();
@@ -17,11 +66,10 @@ function HrCreateJob() {
     department: "",
     posted: "Just now",
     description: "",
-    responsibilities: [""],
-    others: [""],
+    mainResponsibilities: "",
+    keyRequirements: "",
     urgent: true,
-    jobType: "delivery_crew", // "delivery_crew" or "office_employee"
-    startDate: getTodayDate(),
+    jobType: "office_employee", // "delivery_crew" or "office_employee"
     endDate: "",    positions_needed: 1,  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -35,18 +83,13 @@ function HrCreateJob() {
   useEffect(() => {
     const fetchUser = async () => {
       // Get user role from localStorage
-      const stored = localStorage.getItem("loggedInHR");
-      if (stored) {
-        try {
-          const user = JSON.parse(stored);
-          setCurrentUser(user);
-          
-          // If user is HRC, auto-fill depot
-          if (user.role?.toUpperCase() === 'HRC' && user.depot) {
-            setForm(prev => ({ ...prev, depot: user.depot }));
-          }
-        } catch (err) {
-          console.error("Failed to parse loggedInHR:", err);
+      const storedUser = getStoredJson("loggedInHR");
+      if (storedUser) {
+        setCurrentUser(storedUser);
+
+        // If user is HRC, auto-fill depot
+        if (storedUser.role?.toUpperCase() === 'HRC' && storedUser.depot) {
+          setForm(prev => ({ ...prev, depot: storedUser.depot }));
         }
       }
       
@@ -68,62 +111,87 @@ function HrCreateJob() {
     "Taytay", "Tuguegarao", "Vigan"
   ];
 
-  // Job title to department mapping
-  const jobTitleToDepartment = {
-    "Delivery Drivers": "Delivery Crew",
-    "Delivery Helpers": "Delivery Crew",
-    "Transport Coordinators": "Delivery Crew",
-    "Dispatchers": "Delivery Crew",
-    "Customer Service Representative": "Delivery Crew",
-    "POD (Proof of Delivery) Specialist": "Delivery Crew",
-    "HR Specialist": "HR Department",
-    "Recruitment Specialist": "HR Department",
-    "Safety Officer 2": "Security & Safety Department",
-    "Safety Officer 3": "Security & Safety Department",
-    "Security Officer": "Security & Safety Department",
-    "Billing & Collections Specialist": "Collections Department",
-    "Charges Specialist": "Collections Department",
-    "Diesel Mechanics": "Repairs and Maintenance Specialist",
-    "Truck Refrigeration Technician": "Repairs and Maintenance Specialist",
-    "Welders": "Repairs and Maintenance Specialist",
-    "Tinsmith": "Repairs and Maintenance Specialist",
-  };
-
   const setField = (k, v) => {
-    setForm(prev => ({ ...prev, [k]: v }));
-    
-    // When job type changes to delivery_crew, auto-set department to "Delivery Crew"
-    if (k === "jobType" && v === "delivery_crew") {
-      setForm(prev => ({ ...prev, jobType: v, department: "Delivery Crew" }));
+    // Auto-fill department when job title matches a known position
+    if (k === "title") {
+      const dept = getDepartmentForPosition(v);
+      const inferredJobType = dept === "Operations Department" ? "delivery_crew" : "office_employee";
+      setForm((prev) => ({
+        ...prev,
+        title: v,
+        department: dept ? dept : prev.department,
+        jobType: dept ? inferredJobType : prev.jobType,
+      }));
       return;
     }
-    
-    // Auto-fill department when job title is selected
-    if (k === "title" && jobTitleToDepartment[v]) {
-      setForm(prev => ({ ...prev, title: v, department: jobTitleToDepartment[v] }));
+
+    // Department can be edited; if it no longer matches the selected title, clear title so user can re-select.
+    if (k === "department") {
+      setForm((prev) => {
+        const mappedDept = getDepartmentForPosition(prev.title);
+        const shouldClearTitle = Boolean(prev.title) && Boolean(mappedDept) && mappedDept !== v;
+        const inferredJobType = v === "Operations Department" ? "delivery_crew" : "office_employee";
+        return {
+          ...prev,
+          department: v,
+          title: shouldClearTitle ? "" : prev.title,
+          jobType: shouldClearTitle || !prev.title ? inferredJobType : prev.jobType,
+        };
+      });
+      return;
     }
+
+    setForm((prev) => ({ ...prev, [k]: v }));
   };
-
-  const addResp = () =>
-    setForm(prev => ({ ...prev, responsibilities: [...prev.responsibilities, ""] }));
-  const setResp = (i, v) =>
-    setForm(prev => ({ ...prev, responsibilities: prev.responsibilities.map((r, idx) => (idx === i ? v : r)) }));
-  const removeResp = (i) =>
-    setForm(prev => ({ ...prev, responsibilities: prev.responsibilities.filter((_, idx) => idx !== i) }));
-
-  const addOther = () =>
-    setForm(prev => ({ ...prev, others: [...prev.others, ""] }));
-  const setOther = (i, v) =>
-    setForm(prev => ({ ...prev, others: prev.others.map((r, idx) => (idx === i ? v : r)) }));
-  const removeOther = (i) =>
-    setForm(prev => ({ ...prev, others: prev.others.filter((_, idx) => idx !== i) }));
 
   // Check if form is complete (all required fields filled)
   const isFormComplete = () => {
     const hasTitle = form.title && form.title.trim() !== "";
     const hasDepot = form.depot && form.depot.trim() !== "";
-    const hasResponsibilities = form.responsibilities.some(r => r && r.trim() !== "");
-    return hasTitle && hasDepot && hasResponsibilities;
+    const hasDescription = form.description && form.description.trim() !== "";
+    const hasResponsibilities = splitLines(form.mainResponsibilities).length > 0;
+    return hasTitle && hasDepot && hasDescription && hasResponsibilities;
+  };
+
+  const withBulletAutoContinue = (fieldKey) => (e) => {
+    if (e.key !== "Enter") return;
+
+    const target = e.target;
+    if (!target || typeof target.selectionStart !== "number") return;
+
+    const value = String(form[fieldKey] || "");
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+
+    const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+    const lineEnd = value.indexOf("\n", start);
+    const currentLine = value.slice(lineStart, lineEnd === -1 ? value.length : lineEnd);
+
+    const bulletMatch = currentLine.match(/^\s*(?:\*\s+|-\s+|•\s+)/);
+    if (!bulletMatch) return; // default Enter behavior
+
+    e.preventDefault();
+    const prefix = bulletMatch[0];
+    const lineContentAfterPrefix = currentLine.slice(prefix.length).trim();
+
+    // If user presses Enter on an empty bullet line, remove the bullet instead of creating another.
+    if (!lineContentAfterPrefix) {
+      const newValue = value.slice(0, lineStart) + value.slice(lineStart + prefix.length);
+      setForm((prev) => ({ ...prev, [fieldKey]: newValue }));
+      requestAnimationFrame(() => {
+        target.selectionStart = target.selectionEnd = start - prefix.length;
+      });
+      return;
+    }
+
+    // Otherwise continue the bullet on the next line.
+    const insertText = "\n" + prefix;
+    const newValue = value.slice(0, start) + insertText + value.slice(end);
+    setForm((prev) => ({ ...prev, [fieldKey]: newValue }));
+    requestAnimationFrame(() => {
+      const nextPos = start + insertText.length;
+      target.selectionStart = target.selectionEnd = nextPos;
+    });
   };
   // safe create + debug function
   // call: await createJobPost({ title, depot, department, description, responsibilities, urgent, job_type, expires_at, created_by_uuid, created_by_role, positions_needed })
@@ -202,16 +270,9 @@ function HrCreateJob() {
     }
     
     const combinedResponsibilities = [
-      ...form.responsibilities,
-      ...form.others,
-    ].filter(Boolean);
-    
-    // Validate that start and end dates are not the same
-    if (form.startDate && form.endDate && form.startDate === form.endDate) {
-      setError("Start date and end date cannot be the same.");
-      setSaving(false);
-      return;
-    }
+      ...splitLines(form.mainResponsibilities),
+      ...splitLines(form.keyRequirements).map((s) => `REQ: ${s}`),
+    ];
     
     // Use endDate for expires_at field
     const expiresAt = form.endDate || null;
@@ -245,17 +306,16 @@ function HrCreateJob() {
     setError(null);
     setSuccess("");
     setSaving(true);
-    const combinedResponsibilities = [
-      ...form.responsibilities,
-      ...form.others,
-    ];
-    
-    // Validate that start and end dates are not the same
-    if (form.startDate && form.endDate && form.startDate === form.endDate) {
-      setError("Start date and end date cannot be the same.");
+
+    if (!form.description || !form.description.trim()) {
+      setError("Job title description is required.");
       setSaving(false);
       return;
     }
+    const combinedResponsibilities = [
+      ...splitLines(form.mainResponsibilities),
+      ...splitLines(form.keyRequirements).map((s) => `REQ: ${s}`),
+    ];
     
     // Use endDate for expires_at field
     const expiresAt = form.endDate || null;
@@ -286,11 +346,10 @@ function HrCreateJob() {
         department: "",
         posted: "Just now",
         description: "",
-        responsibilities: [""],
-        others: [""],
+        mainResponsibilities: "",
+        keyRequirements: "",
         urgent: true,
-        jobType: "delivery_crew",
-        startDate: "",
+        jobType: "office_employee",
         endDate: "",        positions_needed: 1,      });
       setShowConfirm(false);
     } catch (err) {
@@ -353,75 +412,77 @@ function HrCreateJob() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium">Mark as Urgent</label>
-              <input
-                type="checkbox"
-                checked={form.urgent}
-                onChange={(e) => setField("urgent", e.target.checked)}
-              />
+            <div>
+              <button
+                type="button"
+                onClick={() => setField("urgent", !form.urgent)}
+                className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg border-2 transition-all ${
+                  form.urgent
+                    ? "border-red-600 bg-red-50"
+                    : "border-gray-200 bg-white hover:border-gray-300"
+                }`}
+                aria-pressed={form.urgent}
+              >
+                <div className="text-left">
+                  <div className={`text-sm font-semibold ${form.urgent ? "text-red-700" : "text-gray-800"}`}>
+                    Mark as Urgent
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Highlight this job post as a priority opening.
+                  </div>
+                </div>
+                <div className={`h-6 w-11 rounded-full p-1 transition-colors ${form.urgent ? "bg-red-600" : "bg-gray-300"}`}>
+                  <div className={`h-4 w-4 rounded-full bg-white transition-transform ${form.urgent ? "translate-x-5" : "translate-x-0"}`} />
+                </div>
+              </button>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Job Title <span className="text-red-600">*</span></label>
-              <input
-                list="job-title-options"
-                className="w-full border rounded px-3 py-2"
-                value={form.title}
-                onChange={(e) => setField("title", e.target.value)}
-                placeholder="Select or type job title"
-              />
-              <datalist id="job-title-options">
-                {form.jobType === "delivery_crew" ? (
-                  <>
-                    <option value="Delivery Drivers" />
-                    <option value="Delivery Helpers" />
-                    <option value="Transport Coordinators" />
-                    <option value="Dispatchers" />
-                    <option value="Customer Service Representative" />
-                    <option value="POD (Proof of Delivery) Specialist" />
-                  </>
-                ) : (
-                  <>
-                    <option value="HR Specialist" />
-                    <option value="Recruitment Specialist" />
-                    <option value="Safety Officer 2" />
-                    <option value="Safety Officer 3" />
-                    <option value="Security Officer" />
-                    <option value="Billing & Collections Specialist" />
-                    <option value="Charges Specialist" />
-                    <option value="Diesel Mechanics" />
-                    <option value="Truck Refrigeration Technician" />
-                    <option value="Welders" />
-                    <option value="Tinsmith" />
-                  </>
-                )}
-              </datalist>
-            </div>
-            <div>
-              <label className="block text-sm font-medium mb-1">Employees Needed <span className="text-red-600">*</span></label>
-              <input
-                type="number"
-                min="1"
-                className="w-full border rounded px-3 py-2"
-                value={form.positions_needed}
-                onChange={(e) => setField("positions_needed", parseInt(e.target.value) || 1)}
-                placeholder="Number of employees"
-              />
-            </div>
+          {/* Job Title (single row) */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Job Title <span className="text-red-600">*</span>
+            </label>
+            <input
+              list="job-title-options"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+              value={form.title}
+              onChange={(e) => setField("title", e.target.value)}
+              placeholder="e.g., Driver"
+            />
+            <datalist id="job-title-options">
+              {allJobTitles.map((title) => (
+                <option key={title} value={title} />
+              ))}
+            </datalist>
+           
           </div>
 
+          {/* Department + Depot (shared row) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Depot</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
+              <select
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all bg-white"
+                value={form.department}
+                onChange={(e) => setField("department", e.target.value)}
+              >
+                <option value="">Department</option>
+                {departments.map((dept) => (
+                  <option key={dept} value={dept}>{dept}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 mt-1">Department is set automatically based on the selected job title.</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot <span className="text-red-600">*</span></label>
               <input
                 list="depot-options"
-                className="w-full border rounded px-3 py-2"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
                 value={form.depot}
                 onChange={(e) => setField("depot", e.target.value)}
-                placeholder="Select or type depot"
+                placeholder="e.g., Batangas"
                 disabled={currentUser?.role?.toUpperCase() === 'HRC'}
                 style={currentUser?.role?.toUpperCase() === 'HRC' ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
               />
@@ -436,117 +497,79 @@ function HrCreateJob() {
             </div>
           </div>
 
+          {/* Employees Needed (row below) */}
           <div>
-            <label className="block text-sm font-medium mb-1">Department</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              value={form.department}
-              onChange={(e) => setField("department", e.target.value)}
-              disabled={form.jobType === "delivery_crew"}
-              style={form.jobType === "delivery_crew" ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
-            >
-              <option value="">Select Department</option>
-              {form.jobType === "delivery_crew" && (
-                <option value="Delivery Crew">Delivery Crew</option>
-              )}
-              {form.jobType === "office_employee" && (
-                <>
-                  <option value="HR Department">HR Department</option>
-                  <option value="Security & Safety Department">Security & Safety Department</option>
-                  <option value="Collections Department">Collections Department</option>
-                  <option value="Repairs and Maintenance Specialist">Repairs and Maintenance Specialist</option>
-                </>
-              )}
-            </select>
-            {form.jobType === "delivery_crew" && (
-              <p className="text-xs text-gray-500 mt-1">Department is automatically set to "Delivery Crew" for Drivers/Delivery Crew job type</p>
-            )}
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Employees Needed <span className="text-red-600">*</span>
+            </label>
+            <input
+              type="number"
+              min="1"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+              value={form.positions_needed}
+              onChange={(e) => setField("positions_needed", parseInt(e.target.value) || 1)}
+              placeholder="Number of hires needed (e.g., 3)"
+            />
           </div>
 
           <div>
             <label className="block text-sm font-medium mb-1">Duration (Optional)</label>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  className="w-full border rounded px-3 py-2 bg-gray-100 cursor-not-allowed"
-                  value={form.startDate}
-                  readOnly
-                  disabled
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-600 mb-1">End Date</label>
-                <input
-                  type="date"
-                  className="w-full border rounded px-3 py-2"
-                  value={form.endDate}
-                  onChange={(e) => setField("endDate", e.target.value)}
-                  min={form.startDate ? new Date(new Date(form.startDate).getTime() + 86400000).toISOString().split('T')[0] : undefined}
-                />
-              </div>
-            </div>
-            {form.startDate && form.endDate && (
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">End Date</label>
+              <input
+                type="date"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                value={form.endDate}
+                onChange={(e) => setField("endDate", e.target.value)}
+                min={getTodayDate()}
+              />
               <p className="text-xs text-gray-500 mt-1">
-                Duration: {form.startDate} to {form.endDate}
+                If no end date is selected, the job post will close automatically once the required number of applications (Employees Needed) is reached.
+              </p>
+            </div>
+            {form.endDate && (
+              <p className="text-xs text-gray-500 mt-1">
+                Applications close on: {form.endDate}
               </p>
             )}
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Short Description</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Job Title Description <span className="text-red-600">*</span>
+            </label>
             <textarea
-              className="w-full border rounded px-3 py-2"
-              rows={3}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-y"
+              rows={4}
               value={form.description}
               onChange={(e) => setField("description", e.target.value)}
-              placeholder="We are seeking a reliable and safety-conscious Truck Driver..."
+              onKeyDown={withBulletAutoContinue("description")}
+              placeholder="Example: This role supports daily operations by coordinating tasks, documenting updates, and ensuring deadlines are met."
             />
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium">Main Responsibilities</label>
-              <button onClick={addResp} className="text-sm text-blue-600 hover:underline">+ Add Responsibility</button>
-            </div>
-            <div className="space-y-2">
-              {form.responsibilities.map((r, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input
-                    className="flex-1 border rounded px-3 py-2"
-                    value={r}
-                    onChange={(e) => setResp(i, e.target.value)}
-                    placeholder="e.g., Safely operate company-based trucks"
-                  />
-                  {form.responsibilities.length > 1 && (
-                    <button onClick={() => removeResp(i)} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded">Remove</button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Main Responsibilities <span className="text-red-600">*</span></label>
+            <textarea
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-y"
+              rows={5}
+              value={form.mainResponsibilities}
+              onChange={(e) => setField("mainResponsibilities", e.target.value)}
+              onKeyDown={withBulletAutoContinue("mainResponsibilities")}
+              placeholder="Example: Deliver goods safely and on time; Maintain accurate delivery documents; Follow safety and company procedures."
+            />
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium">Other Notes</label>
-              <button onClick={addOther} className="text-sm text-blue-600 hover:underline">+ Add Other</button>
-            </div>
-            <div className="space-y-2">
-              {form.others.map((r, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <input
-                    className="flex-1 border rounded px-3 py-2"
-                    value={r}
-                    onChange={(e) => setOther(i, e.target.value)}
-                    placeholder="e.g., Must be willing to travel"
-                  />
-                  {form.others.length > 1 && (
-                    <button onClick={() => removeOther(i)} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded">Remove</button>
-                  )}
-                </div>
-              ))}
-            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Basic Key Requirements</label>
+            <textarea
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-y"
+              rows={4}
+              value={form.keyRequirements}
+              onChange={(e) => setField("keyRequirements", e.target.value)}
+              onKeyDown={withBulletAutoContinue("keyRequirements")}
+              placeholder="Example: Willing to work shifting schedules; Strong communication and teamwork; Relevant experience is an advantage."
+            />
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t">

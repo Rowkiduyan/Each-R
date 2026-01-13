@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { useNavigate } from "react-router-dom";
 import Logo from "./Logo.png";
+import { isRememberMeEnabled, setRememberMeEnabled, setStoredJson } from "./authStorage";
 
 function EmployeeLogin() {
   const [email, setEmail] = useState("");
@@ -10,31 +11,11 @@ function EmployeeLogin() {
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => isRememberMeEnabled());
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
-    e?.preventDefault(); // Add optional chaining in case called without event
-    setError("");
-    setLoading(true);
-
-    // Step 1: Try to log in using Supabase
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setError("Invalid email or password.");
-      setShowErrorModal(true);
-      setLoading(false);
-      console.error(error);
-      return;
-    }
-
-    // Step 2: Get the user from the login response
-    const user = data.user;
-
-    // Step 3: Fetch the user's role and depot from the 'profiles' table
+  const redirectAfterLogin = async (user) => {
+    // Fetch the user's role and depot from the 'profiles' table
     let { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("email, role, first_name, last_name, depot")
@@ -44,11 +25,12 @@ function EmployeeLogin() {
     // If profile doesn't exist, try to determine role from user metadata or default to Employee
     if (profileError || !profile) {
       console.warn("Profile not found, creating one...", profileError);
-      
+
       // Try to get role from user metadata, or default to Employee
       const defaultRole = user.user_metadata?.role || "Employee";
-      const normalizedDefaultRole = defaultRole.charAt(0).toUpperCase() + defaultRole.slice(1).toLowerCase();
-      
+      const normalizedDefaultRole =
+        defaultRole.charAt(0).toUpperCase() + defaultRole.slice(1).toLowerCase();
+
       // Try to create profile
       const { data: newProfile, error: createError } = await supabase
         .from("profiles")
@@ -72,7 +54,7 @@ function EmployeeLogin() {
           .select("email, role, first_name, last_name, depot")
           .eq("id", user.id)
           .single();
-        
+
         if (fetchError || !fetchedProfile) {
           console.error("Error fetching profile:", fetchError);
           setError("Profile setup failed. Please contact support.");
@@ -88,20 +70,22 @@ function EmployeeLogin() {
 
     // Normalize role format (capitalize first letter, lowercase rest) but don't change HR to Employee
     const currentRole = profile.role;
-    const normalizedRole = currentRole ? (currentRole.charAt(0).toUpperCase() + currentRole.slice(1).toLowerCase()) : "Employee";
-    
+    const normalizedRole = currentRole
+      ? currentRole.charAt(0).toUpperCase() + currentRole.slice(1).toLowerCase()
+      : "Employee";
+
     // Only update if the format is wrong (e.g., "hr" -> "Hr" should be "HR", "employee" -> "Employee")
     if (currentRole !== normalizedRole && normalizedRole !== "Hr") {
       // Special case: "HR" should stay "HR", not become "Hr"
       const targetRole = currentRole.toLowerCase() === "hr" ? "HR" : normalizedRole;
-      
+
       if (currentRole !== targetRole) {
         console.warn(`Updating role format from "${currentRole}" to "${targetRole}"...`);
         const { error: roleUpdateError } = await supabase
           .from("profiles")
           .update({ role: targetRole })
           .eq("id", user.id);
-        
+
         if (roleUpdateError) {
           console.error("Error updating role:", roleUpdateError);
         } else {
@@ -110,7 +94,7 @@ function EmployeeLogin() {
       }
     }
 
-    // Step 4: Update the user's metadata so the JWT includes the correct role
+    // Update the user's metadata so the JWT includes the correct role
     const { error: updateError } = await supabase.auth.updateUser({
       data: { role: profile.role },
     });
@@ -119,14 +103,10 @@ function EmployeeLogin() {
       console.error("Failed to update user metadata:", updateError);
     }
 
-    // Step 5: Refresh session to apply updated role metadata
+    // Refresh session to apply updated role metadata
     await supabase.auth.refreshSession();
 
-    // Step 6: Debug - check if the role is now in the JWT
-    const { data: userData } = await supabase.auth.getUser();
-    console.log("✅ JWT user role:", userData?.user?.user_metadata?.role);
-
-    // Step 7: Save HR info in localStorage
+    // Save HR/admin info in preferred storage (localStorage if rememberMe is on, otherwise sessionStorage)
     const userDataToSave = {
       email: user.email,
       id: user.id,
@@ -135,12 +115,10 @@ function EmployeeLogin() {
       last_name: profile.last_name,
       depot: profile.depot || null,
     };
+    setStoredJson("loggedInHR", userDataToSave);
 
-    localStorage.setItem("loggedInHR", JSON.stringify(userDataToSave));
-
-    // Step 8: Redirect based on role
+    // Redirect based on role
     const roleForRedirect = profile.role?.toLowerCase();
-
     console.log("🔐 Login successful! Role:", profile.role, "Normalized:", roleForRedirect);
 
     if (roleForRedirect === "hr" || roleForRedirect === "hrc") {
@@ -152,13 +130,58 @@ function EmployeeLogin() {
       navigate("/agency/home");
     } else if (roleForRedirect === "admin") {
       navigate("/admin/home");
-    }
-    else {
+    } else {
       console.error("❌ Unknown role:", profile.role);
       setError(`Unknown role: ${profile.role}. Please contact support.`);
       setShowErrorModal(true);
       setLoading(false);
     }
+  };
+
+  // If a valid session is already present, redirect without asking for credentials.
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkExistingSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session?.user) {
+        await redirectAfterLogin(session.user);
+      }
+    };
+
+    checkExistingSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleLogin = async (e) => {
+    e?.preventDefault(); // Add optional chaining in case called without event
+    setError("");
+    setLoading(true);
+
+    // Configure whether auth should persist across browser restarts.
+    setRememberMeEnabled(rememberMe);
+
+    // Step 1: Try to log in using Supabase
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError("Invalid email or password.");
+      setShowErrorModal(true);
+      setLoading(false);
+      console.error(error);
+      return;
+    }
+
+    // Step 2+: role lookup + redirect
+    const user = data.user;
+    await redirectAfterLogin(user);
   };
 
   return (
@@ -244,7 +267,12 @@ function EmployeeLogin() {
 
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center">
-                <input type="checkbox" className="rounded border-gray-300 text-red-600 focus:ring-red-500" />
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                />
                 <span className="ml-2 text-gray-600">Remember me</span>
               </label>
               <button

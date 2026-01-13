@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead } from './notifications';
+import { getStoredJson } from './authStorage';
 
 function HrNotificationBell() {
   const [notifications, setNotifications] = useState([]);
@@ -16,10 +17,9 @@ function HrNotificationBell() {
     const initializeNotifications = async () => {
       try {
         // Get current HR user ID from localStorage
-        const storedUser = localStorage.getItem("loggedInHR");
-        if (!storedUser) return;
-        
-        const hrUser = JSON.parse(storedUser);
+        const hrUser = getStoredJson("loggedInHR");
+        if (!hrUser) return;
+
         setCurrentHrUser(hrUser);
         const currentUserId = hrUser.id;
         
@@ -207,11 +207,8 @@ function HrNotificationBell() {
 
   const handleMarkAllAsRead = async () => {
     // Get current HR user ID
-    const storedUser = localStorage.getItem("loggedInHR");
-    if (storedUser) {
-      const hrUser = JSON.parse(storedUser);
-      await markAllNotificationsAsRead(hrUser.id);
-    }
+    const hrUser = getStoredJson("loggedInHR");
+    if (hrUser) await markAllNotificationsAsRead(hrUser.id);
     
     setUnreadCount(0);
     setNotifications(prev => 

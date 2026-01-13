@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { getStoredJson } from "./authStorage";
 
 /**
  * scheduleInterviewClient
@@ -176,14 +177,8 @@ function HrRecruitment() {
   // Get current user info from localStorage
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
-    const stored = localStorage.getItem("loggedInHR");
-    if (stored) {
-      try {
-        setCurrentUser(JSON.parse(stored));
-      } catch (err) {
-        console.error("Failed to parse loggedInHR:", err);
-      }
-    }
+    const userData = getStoredJson("loggedInHR");
+    if (userData) setCurrentUser(userData);
   }, []);
 
   // ---- UI state
@@ -2309,12 +2304,22 @@ function HrRecruitment() {
       }
 
       // Split responsibilities and others if they're combined
-      const responsibilities = Array.isArray(data.responsibilities) 
+      const rawItems = Array.isArray(data.responsibilities)
         ? data.responsibilities.filter(Boolean)
-        : (data.responsibilities ? [data.responsibilities] : [""]);
-      
-      // For now, we'll use responsibilities only. If there's a separate "others" field, we can split them.
-      const others = [""];
+        : (data.responsibilities ? [data.responsibilities] : []);
+
+      const responsibilities = [];
+      const others = [];
+      for (const item of rawItems) {
+        const s = String(item || "").trim();
+        if (!s) continue;
+        if (s.toUpperCase().startsWith("REQ:")) {
+          const v = s.slice(4).trim();
+          if (v) others.push(v);
+        } else {
+          responsibilities.push(s);
+        }
+      }
 
       // Set editing job and form data
       setEditingJobPost(data);
@@ -2323,7 +2328,7 @@ function HrRecruitment() {
         depot: data.depot || "",
         description: data.description || "",
         responsibilities: responsibilities.length > 0 ? responsibilities : [""],
-        others: others,
+        others: others.length > 0 ? others : [""],
         urgent: data.urgent || false,
         jobType: data.job_type || "delivery_crew",
         durationHours: durationHours,
@@ -2384,7 +2389,7 @@ function HrRecruitment() {
     try {
       const combinedResponsibilities = [
         ...editJobForm.responsibilities,
-        ...editJobForm.others,
+        ...editJobForm.others.map((s) => `REQ: ${s}`),
       ].filter(Boolean);
 
       // Format duration if provided

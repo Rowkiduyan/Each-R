@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { supabase } from "./supabaseClient";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
+import { getStoredJson } from "./authStorage";
 
 function HrRequirements() {
   // Tab, filter, and search state
@@ -15,14 +16,8 @@ function HrRequirements() {
   // Get current user info from localStorage
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
-    const stored = localStorage.getItem("loggedInHR");
-    if (stored) {
-      try {
-        setCurrentUser(JSON.parse(stored));
-      } catch (err) {
-        console.error("Failed to parse loggedInHR:", err);
-      }
-    }
+    const userData = getStoredJson("loggedInHR");
+    if (userData) setCurrentUser(userData);
   }, []);
 
   // Filters

@@ -1,7 +1,8 @@
 import Logo from './Logo.png';
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { isRememberMeEnabled, setRememberMeEnabled } from "./authStorage";
 
 function ApplicantLogin() {
   const navigate = useNavigate();
@@ -12,11 +13,71 @@ function ApplicantLogin() {
   const [error, setError] = useState("");
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => isRememberMeEnabled());
+
+  const redirectAfterLogin = async (user) => {
+    // 2️⃣ Fetch the user's record from applicants table by email (case-insensitive)
+    const { data: applicantData, error: applicantError } = await supabase
+      .from("applicants")
+      .select("*")
+      .ilike("email", user.email)
+      .maybeSingle();
+
+    if (applicantError) {
+      console.error("Error fetching applicant data:", applicantError);
+      setError("Error accessing account data. Please try again or contact support.");
+      setShowErrorModal(true);
+      return;
+    }
+
+    if (!applicantData) {
+      console.log("No applicant data found for email:", user.email);
+      setError("Account not registered. Please create an account first.");
+      setShowErrorModal(true);
+      return;
+    }
+
+    // 3️⃣ Redirect based on role (default to applicant if role doesn't exist)
+    const userRole = applicantData.role?.toLowerCase() || "applicant";
+
+    if (userRole === "applicant") {
+      const redirectTo = location.state?.redirectTo || "/applicantl/home";
+      const jobId = location.state?.jobId;
+      navigate(redirectTo, { state: { jobId } });
+    } else if (userRole === "hr") {
+      navigate("/hr/recruitment");
+    } else {
+      setError("Unknown role or access not allowed");
+      setShowErrorModal(true);
+    }
+  };
+
+  // If a valid session is already present, redirect without asking for credentials.
+  useEffect(() => {
+    let cancelled = false;
+
+    const checkExistingSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session?.user) {
+        await redirectAfterLogin(session.user);
+      }
+    };
+
+    checkExistingSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleLogin = async (e) => {
   e.preventDefault();
   setLoading(true);
   setError("");
+
+  // Configure whether auth should persist across browser restarts.
+  setRememberMeEnabled(rememberMe);
 
   // 1️⃣ Log in the user
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -32,46 +93,7 @@ function ApplicantLogin() {
   }
 
   const { user } = data;
-
-  // 2️⃣ Fetch the user's record from applicants table by email (case-insensitive)
-  const { data: applicantData, error: applicantError } = await supabase
-    .from("applicants")
-    .select("*")
-    .ilike("email", user.email)
-    .maybeSingle();
-
-  if (applicantError) {
-    console.error("Error fetching applicant data:", applicantError);
-    setError("Error accessing account data. Please try again or contact support.");
-    setShowErrorModal(true);
-    setLoading(false);
-    return;
-  }
-
-  if (!applicantData) {
-    console.log("No applicant data found for email:", user.email);
-    setError("Account not registered. Please create an account first.");
-    setShowErrorModal(true);
-    setLoading(false);
-    return;
-  }
-
-  console.log("Applicant data found:", applicantData);
-
-  // 3️⃣ Redirect based on role (default to applicant if role doesn't exist)
-  const userRole = applicantData.role?.toLowerCase() || "applicant";
-  
-  if (userRole === "applicant") {
-    const redirectTo = location.state?.redirectTo || "/applicantl/home";
-    const jobId = location.state?.jobId;
-    navigate(redirectTo, { state: { jobId } });
-  } else if (userRole === "hr") {
-    navigate("/hr/recruitment");
-  } else {
-    setError("Unknown role or access not allowed");
-    setShowErrorModal(true);
-    setLoading(false);
-  }
+  await redirectAfterLogin(user);
 
   setLoading(false);
 };
@@ -160,7 +182,12 @@ function ApplicantLogin() {
 
             <div className="flex items-center justify-between text-sm">
               <label className="flex items-center">
-                <input type="checkbox" className="rounded border-gray-300 text-red-600 focus:ring-red-500" />
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                />
                 <span className="ml-2 text-gray-600">Remember me</span>
               </label>
               <button

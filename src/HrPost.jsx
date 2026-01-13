@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useParams, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import Roadwise from './Roadwise.png';
+import { getStoredJson } from "./authStorage";
 
 function HrPost() {
   const { id } = useParams();
@@ -39,18 +40,20 @@ function HrPost() {
   // Get current user info from localStorage
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
-    const stored = localStorage.getItem("loggedInHR");
-    if (stored) {
-      try {
-        setCurrentUser(JSON.parse(stored));
-      } catch (err) {
-        console.error("Failed to parse loggedInHR:", err);
-      }
-    }
+    const userData = getStoredJson("loggedInHR");
+    if (userData) setCurrentUser(userData);
   }, []);
 
   // Helper to check if job is expired based on duration
   const isJobExpired = (job) => {
+    if (job?.expires_at) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const expiresAt = new Date(job.expires_at);
+      expiresAt.setHours(0, 0, 0, 0);
+      return today >= expiresAt;
+    }
+
     if (!job.duration || !job.created_at) return false;
     
     // Parse duration (format: "Xh Ym")
@@ -65,6 +68,57 @@ function HrPost() {
     const now = Date.now();
     
     return (now - createdAt) > durationMs;
+  };
+
+  const splitJobDetails = (items) => {
+    const list = Array.isArray(items) ? items : (items ? [items] : []);
+    const responsibilities = [];
+    const keyRequirements = [];
+    for (const item of list) {
+      const s = String(item || "").trim();
+      if (!s) continue;
+      if (s.toUpperCase().startsWith("REQ:")) {
+        const v = s.slice(4).trim();
+        if (v) keyRequirements.push(v);
+      } else {
+        responsibilities.push(s);
+      }
+    }
+    return { responsibilities, keyRequirements };
+  };
+
+  const attachHiringStats = async (jobsList) => {
+    try {
+      const ids = (jobsList || []).map((j) => j?.id).filter(Boolean);
+      if (ids.length === 0) return jobsList || [];
+
+      const { data, error } = await supabase
+        .from('applications')
+        .select('job_id, status')
+        .in('job_id', ids);
+
+      if (error) {
+        console.warn('HrPost: failed to load application stats:', error);
+        return jobsList || [];
+      }
+
+      const hiredByJobId = new Map();
+      for (const row of data || []) {
+        if (!row?.job_id) continue;
+        if (String(row.status || '').toLowerCase() !== 'hired') continue;
+        hiredByJobId.set(row.job_id, (hiredByJobId.get(row.job_id) || 0) + 1);
+      }
+
+      return (jobsList || []).map((j) => {
+        const totalNeeded = j.positions_needed || 1;
+        const hiredCount = hiredByJobId.get(j.id) || 0;
+        const remaining = Math.max(0, totalNeeded - hiredCount);
+        return { ...j, hired_count: hiredCount, remaining_slots: remaining };
+      });
+    } catch (e) {
+      console.warn('HrPost: unexpected error computing remaining slots:', e);
+      return jobsList || [];
+    }
   };
 
   // Function to fetch job posts
@@ -87,7 +141,12 @@ function HrPost() {
         if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
           filtered = filtered.filter(job => job.depot === currentUser.depot);
         }
-        setJobPosts(filtered);
+        const withHiringStats = await attachHiringStats(filtered);
+        setJobPosts(withHiringStats);
+        if (selectedJob?.id) {
+          const updatedSelected = withHiringStats.find((j) => j.id === selectedJob.id);
+          if (updatedSelected) setSelectedJob(updatedSelected);
+        }
         console.log('Job posts state updated, count:', filtered.length || 0);
       }
     } catch (err) {
@@ -583,20 +642,53 @@ function HrPost() {
                           <span className="font-semibold">{selectedJob.depot}</span>
                         </div>
                         <span className="text-xs text-gray-500">Posted {formatPostedLabel(selectedJob)}</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                          <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                            <div className="text-[11px] text-gray-500">Slots Remaining</div>
+                            <div className="text-sm font-semibold text-gray-800">{(typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1))} / {selectedJob.positions_needed || 1}</div>
+                          </div>
+                          <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                            <div className="text-[11px] text-gray-500">Application Duration</div>
+                            <div className="text-sm font-semibold text-gray-800">
+                              {selectedJob.expires_at ? `Closes on ${new Date(selectedJob.expires_at).toLocaleDateString('en-US')}` : (selectedJob.duration || "Closes when headcount is reached")}
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                     <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
                     <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">Responsibilities & Other Details</h3>
-                      {selectedJob.responsibilities && selectedJob.responsibilities.length > 0 ? (
-                        <ul className="list-disc list-inside text-gray-700 space-y-1">
-                          {selectedJob.responsibilities.map((item, idx) => (
-                            <li key={idx}>{item}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-gray-500">No additional details provided.</p>
-                      )}
+                      {(() => {
+                        const { responsibilities, keyRequirements } = splitJobDetails(selectedJob.responsibilities);
+                        const hasAny = responsibilities.length > 0 || keyRequirements.length > 0;
+                        if (!hasAny) {
+                          return <p className="text-sm text-gray-500">No additional details provided.</p>;
+                        }
+                        return (
+                          <div className="space-y-4">
+                            {responsibilities.length > 0 && (
+                              <div>
+                                <h3 className="text-lg font-semibold text-gray-800 mb-2">Main Responsibilities</h3>
+                                <ul className="list-disc list-inside text-gray-700 space-y-1">
+                                  {responsibilities.map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {keyRequirements.length > 0 && (
+                              <div>
+                                <h3 className="text-lg font-semibold text-gray-800 mb-2">Basic Key Requirements</h3>
+                                <ul className="list-disc list-inside text-gray-700 space-y-1">
+                                  {keyRequirements.map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

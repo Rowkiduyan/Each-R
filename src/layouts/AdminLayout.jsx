@@ -3,6 +3,7 @@ import { NavLink, useNavigate, Outlet } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import LogoCropped from "./photos/logo(cropped).png";
 import AdminNotificationBell from "../AdminNotificationBell";
+import { getStoredJson, removeStoredItem } from "../authStorage";
 
 export default function AdminLayout() {
   const [adminUser, setAdminUser] = useState(null);
@@ -12,19 +13,12 @@ export default function AdminLayout() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const stored = localStorage.getItem("loggedInHR");
-    if (stored) {
-      try {
-        const userData = JSON.parse(stored);
-        if (userData.role?.toLowerCase() === 'admin') {
-          setAdminUser(userData);
-        } else {
-          // Not an admin user
-          navigate("/employee/login");
-        }
-      } catch (err) {
-        console.error("Failed to parse loggedInHR:", err);
-        localStorage.removeItem("loggedInHR");
+    const userData = getStoredJson("loggedInHR");
+    if (userData) {
+      if (userData.role?.toLowerCase() === 'admin') {
+        setAdminUser(userData);
+      } else {
+        // Not an admin user
         navigate("/employee/login");
       }
     } else {
@@ -35,7 +29,7 @@ export default function AdminLayout() {
   }, []);
 
   const handleLogout = async () => {
-    localStorage.removeItem("loggedInHR");
+    removeStoredItem("loggedInHR");
     // Also sign out from Supabase to prevent ApplicantLayout from showing
     await supabase.auth.signOut();
     setShowLogoutConfirm(false);

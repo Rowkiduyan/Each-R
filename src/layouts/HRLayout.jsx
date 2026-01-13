@@ -3,6 +3,7 @@ import { NavLink, useNavigate, Outlet } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import LogoCropped from "./photos/logo(cropped).png";
 import HrNotificationBell from "../HrNotificationBell";
+import { getStoredJson, removeStoredItem } from "../authStorage";
 
 export default function HRLayout() {
   const [hrUser, setHrUser] = useState(null);
@@ -12,15 +13,9 @@ export default function HRLayout() {
   const navigate = useNavigate(); 
 
   useEffect(() => {
-    const stored = localStorage.getItem("loggedInHR");
-    if (stored) {
-      try {
-        setHrUser(JSON.parse(stored));
-      } catch (err) {
-        console.error("Failed to parse loggedInHR:", err);
-        localStorage.removeItem("loggedInHR");
-        navigate("/employee/login");
-      }
+    const userData = getStoredJson("loggedInHR");
+    if (userData) {
+      setHrUser(userData);
     } else {
       // not logged in -> redirect to login
       navigate("/employee/login");
@@ -29,7 +24,7 @@ export default function HRLayout() {
   }, []);
 
   const handleLogout = async () => {
-    localStorage.removeItem("loggedInHR");
+    removeStoredItem("loggedInHR");
     // Also sign out from Supabase to prevent ApplicantLayout from showing
     await supabase.auth.signOut();
     setShowLogoutConfirm(false);

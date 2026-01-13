@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead } from './notifications';
+import { getStoredJson } from './authStorage';
 
 function AdminNotificationBell() {
   const [notifications, setNotifications] = useState([]);
@@ -16,10 +17,9 @@ function AdminNotificationBell() {
     const initializeNotifications = async () => {
       try {
         // Get current Admin user ID from localStorage
-        const storedUser = localStorage.getItem("loggedInHR");
-        if (!storedUser) return;
-        
-        const adminUser = JSON.parse(storedUser);
+        const adminUser = getStoredJson("loggedInHR");
+        if (!adminUser) return;
+
         setCurrentAdminUser(adminUser);
         const currentUserId = adminUser.id;
         
@@ -103,11 +103,8 @@ function AdminNotificationBell() {
 
   const handleMarkAllAsRead = async () => {
     // Get current Admin user ID
-    const storedUser = localStorage.getItem("loggedInHR");
-    if (storedUser) {
-      const adminUser = JSON.parse(storedUser);
-      await markAllNotificationsAsRead(adminUser.id);
-    }
+    const adminUser = getStoredJson("loggedInHR");
+    if (adminUser) await markAllNotificationsAsRead(adminUser.id);
     
     setUnreadCount(0);
     setNotifications(prev => 
