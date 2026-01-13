@@ -155,6 +155,11 @@ function HrRecruitment() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
+
   // Depot options for job posts
   const depotOptions = [
     "Batangas", "Bulacan", "Cagayan", "Calamba", "Calbayog", "Cebu", 
@@ -164,15 +169,53 @@ function HrRecruitment() {
     "Taytay", "Tuguegarao", "Vigan"
   ];
 
-  // Job title options for job posts
-  const jobTitleOptions = [
-    "Delivery Drivers",
-    "Delivery Helpers",
-    "Transport Coordinators",
-    "Dispatchers",
-    "Customer Service Representative",
-    "POD (Proof of Delivery) Specialist"
+  // Keep job titles/positions aligned with Employees.jsx (same as create job post)
+  const departments = [
+    "Operations Department",
+    "Billing Department",
+    "HR Department",
+    "Security & Safety Department",
+    "Collections Department",
+    "Repairs and Maintenance Specialist",
   ];
+
+  const departmentToPositions = {
+    "Operations Department": [
+      "Driver",
+      "Helper",
+      "Rider/Messenger",
+      "Base Dispatcher",
+      "Site Coordinator",
+      "Transport Coordinator",
+      "Customer Service Representative",
+    ],
+    "Billing Department": ["Billing Specialist", "POD Specialist"],
+    "HR Department": ["HR Specialist", "Recruitment Specialist", "HR Manager"],
+    "Security & Safety Department": ["Safety Officer 2", "Safety Officer 3", "Security Officer"],
+    "Collections Department": ["Billing & Collections Specialist", "Charges Specialist"],
+    "Repairs and Maintenance Specialist": [
+      "Diesel Mechanic",
+      "Truck Refrigeration Technician",
+      "Welder",
+      "Tinsmith",
+    ],
+  };
+
+  const getDepartmentForPosition = (position) => {
+    if (!position) return "";
+    for (const [dept, list] of Object.entries(departmentToPositions)) {
+      if ((list || []).includes(position)) return dept;
+    }
+    return "";
+  };
+
+  const allJobTitles = Object.values(departmentToPositions).flatMap((list) => list || []);
+
+  const splitLines = (text) =>
+    String(text || "")
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean);
 
   // Get current user info from localStorage
   const [currentUser, setCurrentUser] = useState(null);
@@ -222,13 +265,15 @@ function HrRecruitment() {
   const [editJobForm, setEditJobForm] = useState({
     title: "",
     depot: "",
+    department: "",
     description: "",
-    responsibilities: [""],
-    others: [""],
-    urgent: false,
-    jobType: "delivery_crew",
-    durationHours: "",
-    durationMinutes: "",
+    mainResponsibilities: "",
+    keyRequirements: "",
+    urgent: true,
+    jobType: "office_employee",
+    endDate: "",
+    positions_needed: 1,
+    positionsNoLimit: false,
   });
   const [updatingJobPost, setUpdatingJobPost] = useState(false);
   const [interviewFile, setInterviewFile] = useState(null);
@@ -785,13 +830,18 @@ function HrRecruitment() {
             }
           }
 
-          // Determine status based on is_active and approval_status
+          // Determine status based on approval + closure rules.
           // Pending = approval_status is 'pending' (HRC posts waiting for HR approval)
-          // Draft = is_active is false
-          // Active = is_active is true and approval_status is 'approved'
-          let status = isActive ? "Active" : "Draft";
+          // Active = is_active is true
+          // Closed = is_active is false AND (expired OR filled)
+          // Draft = remaining inactive posts
+          let status = "Draft";
           if (jobPost.approval_status === 'pending') {
             status = "Pending";
+          } else if (isActive) {
+            status = "Active";
+          } else if (isExpired || isFilled) {
+            status = "Closed";
           }
 
           return {
@@ -2318,16 +2368,14 @@ function HrRecruitment() {
         return;
       }
 
-      // Parse duration if exists (format: "Xh Ym")
-      let durationHours = "";
-      let durationMinutes = "";
-      if (data.duration) {
-        const match = data.duration.match(/(\d+)h\s*(\d+)m/);
-        if (match) {
-          durationHours = match[1] || "";
-          durationMinutes = match[2] || "";
+      const endDate = (() => {
+        if (!data.expires_at) return "";
+        try {
+          return new Date(data.expires_at).toISOString().split('T')[0];
+        } catch {
+          return "";
         }
-      }
+      })();
 
       // Split responsibilities and others if they're combined
       const rawItems = Array.isArray(data.responsibilities)
@@ -2347,18 +2395,27 @@ function HrRecruitment() {
         }
       }
 
+      const dept = data.department || getDepartmentForPosition(data.title);
+      const inferredJobType = dept === 'Operations Department' ? 'delivery_crew' : 'office_employee';
+      const jobType = data.job_type || inferredJobType;
+
+      const positionsNoLimit = data.positions_needed == null;
+      const positionsNeeded = positionsNoLimit ? 1 : (Number(data.positions_needed) || 1);
+
       // Set editing job and form data
       setEditingJobPost(data);
       setEditJobForm({
         title: data.title || "",
         depot: data.depot || "",
+        department: dept || "",
         description: data.description || "",
-        responsibilities: responsibilities.length > 0 ? responsibilities : [""],
-        others: others.length > 0 ? others : [""],
-        urgent: data.urgent || false,
-        jobType: data.job_type || "delivery_crew",
-        durationHours: durationHours,
-        durationMinutes: durationMinutes,
+        mainResponsibilities: responsibilities.join('\n'),
+        keyRequirements: others.join('\n'),
+        urgent: data.urgent ?? true,
+        jobType: jobType,
+        endDate: endDate,
+        positions_needed: positionsNeeded,
+        positionsNoLimit,
       });
       setShowEditJobModal(true);
     } catch (err) {
@@ -2369,27 +2426,84 @@ function HrRecruitment() {
   };
 
   // Edit form handlers
-  const setEditJobField = (k, v) => setEditJobForm(prev => ({ ...prev, [k]: v }));
+  const setEditJobField = (k, v) => {
+    if (k === 'title') {
+      const dept = getDepartmentForPosition(v);
+      const inferredJobType = dept === 'Operations Department' ? 'delivery_crew' : 'office_employee';
+      setEditJobForm((prev) => ({
+        ...prev,
+        title: v,
+        department: dept ? dept : prev.department,
+        jobType: dept ? inferredJobType : prev.jobType,
+      }));
+      return;
+    }
 
-  const addEditResp = () => setEditJobForm(prev => ({ ...prev, responsibilities: [...prev.responsibilities, ""] }));
-  const setEditResp = (i, v) => setEditJobForm(prev => ({ 
-    ...prev, 
-    responsibilities: prev.responsibilities.map((r, idx) => (idx === i ? v : r)) 
-  }));
-  const removeEditResp = (i) => setEditJobForm(prev => ({ 
-    ...prev, 
-    responsibilities: prev.responsibilities.filter((_, idx) => idx !== i) 
-  }));
+    if (k === 'department') {
+      setEditJobForm((prev) => {
+        const mappedDept = getDepartmentForPosition(prev.title);
+        const shouldClearTitle = Boolean(prev.title) && Boolean(mappedDept) && mappedDept !== v;
+        const inferredJobType = v === 'Operations Department' ? 'delivery_crew' : 'office_employee';
+        return {
+          ...prev,
+          department: v,
+          title: shouldClearTitle ? '' : prev.title,
+          jobType: shouldClearTitle || !prev.title ? inferredJobType : prev.jobType,
+        };
+      });
+      return;
+    }
 
-  const addEditOther = () => setEditJobForm(prev => ({ ...prev, others: [...prev.others, ""] }));
-  const setEditOther = (i, v) => setEditJobForm(prev => ({ 
-    ...prev, 
-    others: prev.others.map((r, idx) => (idx === i ? v : r)) 
-  }));
-  const removeEditOther = (i) => setEditJobForm(prev => ({ 
-    ...prev, 
-    others: prev.others.filter((_, idx) => idx !== i) 
-  }));
+    if (k === 'positionsNoLimit') {
+      const enabled = Boolean(v);
+      setEditJobForm((prev) => ({
+        ...prev,
+        positionsNoLimit: enabled,
+        positions_needed: enabled ? null : (Number(prev.positions_needed) > 0 ? prev.positions_needed : 1),
+      }));
+      return;
+    }
+
+    setEditJobForm((prev) => ({ ...prev, [k]: v }));
+  };
+
+  const withEditBulletAutoContinue = (fieldKey) => (e) => {
+    if (e.key !== 'Enter') return;
+    const target = e.target;
+    if (!target || typeof target.selectionStart !== 'number') return;
+
+    const value = String(editJobForm[fieldKey] || '');
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    const lineEnd = value.indexOf('\n', start);
+    const currentLine = value.slice(lineStart, lineEnd === -1 ? value.length : lineEnd);
+
+    const bulletMatch = currentLine.match(/^\s*(?:\*\s+|-\s+|•\s+)/);
+    if (!bulletMatch) return;
+
+    e.preventDefault();
+    const prefix = bulletMatch[0];
+    const lineContentAfterPrefix = currentLine.slice(prefix.length).trim();
+
+    if (!lineContentAfterPrefix) {
+      const newValue = value.slice(0, lineStart) + value.slice(lineStart + prefix.length);
+      setEditJobForm((prev) => ({ ...prev, [fieldKey]: newValue }));
+      requestAnimationFrame(() => {
+        target.selectionStart = target.selectionEnd = start - prefix.length;
+      });
+      return;
+    }
+
+    const insertText = '\n' + prefix;
+    const newValue = value.slice(0, start) + insertText + value.slice(end);
+    setEditJobForm((prev) => ({ ...prev, [fieldKey]: newValue }));
+    requestAnimationFrame(() => {
+      const nextPos = start + insertText.length;
+      target.selectionStart = target.selectionEnd = nextPos;
+    });
+  };
 
   // Update job post
   const handleUpdateJobPost = async () => {
@@ -2411,29 +2525,39 @@ function HrRecruitment() {
       return;
     }
 
+    if (!editJobForm.description || !editJobForm.description.trim()) {
+      setErrorMessage("Job title description is required.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    if (splitLines(editJobForm.mainResponsibilities).length === 0) {
+      setErrorMessage("Main responsibilities are required.");
+      setShowErrorAlert(true);
+      return;
+    }
+
     setUpdatingJobPost(true);
     try {
       const combinedResponsibilities = [
-        ...editJobForm.responsibilities,
-        ...editJobForm.others.map((s) => `REQ: ${s}`),
-      ].filter(Boolean);
+        ...splitLines(editJobForm.mainResponsibilities),
+        ...splitLines(editJobForm.keyRequirements).map((s) => `REQ: ${s}`),
+      ];
 
-      // Format duration if provided
-      let duration = null;
-      if (editJobForm.durationHours || editJobForm.durationMinutes) {
-        const hours = editJobForm.durationHours ? parseInt(editJobForm.durationHours) : 0;
-        const minutes = editJobForm.durationMinutes ? parseInt(editJobForm.durationMinutes) : 0;
-        duration = `${hours}h ${minutes}m`;
-      }
+      const positionsNeededNum = Number(editJobForm.positions_needed);
+      const hasLimit = !editJobForm.positionsNoLimit && Number.isFinite(positionsNeededNum) && positionsNeededNum > 0;
+      const positionsNeededPayload = editJobForm.positionsNoLimit ? null : (hasLimit ? positionsNeededNum : 1);
 
       const payload = {
         title: String(editJobForm.title).trim(),
         depot: String(editJobForm.depot).trim(),
+        department: editJobForm.department || null,
         description: editJobForm.description || null,
         responsibilities: combinedResponsibilities,
         urgent: Boolean(editJobForm.urgent),
         job_type: String(editJobForm.jobType).trim(),
-        duration: duration,
+        expires_at: editJobForm.endDate || null,
+        positions_needed: positionsNeededPayload,
       };
 
       const { error } = await supabase
@@ -2457,13 +2581,15 @@ function HrRecruitment() {
       setEditJobForm({
         title: "",
         depot: "",
+        department: "",
         description: "",
-        responsibilities: [""],
-        others: [""],
-        urgent: false,
-        jobType: "delivery_crew",
-        durationHours: "",
-        durationMinutes: "",
+        mainResponsibilities: "",
+        keyRequirements: "",
+        urgent: true,
+        jobType: "office_employee",
+        endDate: "",
+        positions_needed: 1,
+        positionsNoLimit: false,
       });
       setSuccessMessage(`Job post "${editJobForm.title}" has been updated successfully.`);
       setShowSuccessAlert(true);
@@ -4743,7 +4869,7 @@ function HrRecruitment() {
           )}
 
           {activeSubTab === "JobPosts" && (
-            // Job posts view (stays in this module, mimicking external job ads UI)
+            // Job posts view (stays in this module, mimicking external job posts UI)
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               {/* Header row */}
               <div className="flex items-center justify-between mb-4">
@@ -4756,9 +4882,9 @@ function HrRecruitment() {
                 <button
                   type="button"
                   onClick={() => navigate("/hr/create/job")}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-pink-500 text-white text-sm font-semibold shadow hover:bg-pink-600 transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-red-600 text-white text-sm font-semibold shadow hover:bg-red-700 transition-colors"
                 >
-                  Create a job ad
+                  Create Job Post
                   <span className="text-lg leading-none">＋</span>
                 </button>
               </div>
@@ -4783,7 +4909,7 @@ function HrRecruitment() {
                   <div className="px-5 py-8 text-sm text-gray-500 text-center">Loading job posts…</div>
                 ) : jobPostStats.length === 0 ? (
                   <div className="px-5 py-8 text-sm text-gray-500">
-                    No job ads yet. Use <span className="font-medium text-gray-700">Create a job ad</span> to start a posting.
+                    No job posts yet. Use <span className="font-medium text-gray-700">Create Job Post</span> to start a posting.
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-100">
@@ -4798,6 +4924,8 @@ function HrRecruitment() {
                               ? "bg-green-50 text-green-700 border-green-200"
                               : job.status === "Pending"
                               ? "bg-yellow-50 text-yellow-700 border-yellow-200"
+                              : job.status === "Closed"
+                              ? "bg-red-50 text-red-700 border-red-200"
                               : "bg-gray-50 text-gray-700 border-gray-200"
                           }`}>
                             {job.status}
@@ -4868,7 +4996,7 @@ function HrRecruitment() {
                   onClick={() => navigate("/hr/recruitment/job/all")}
                   className="text-xs font-medium text-gray-600 hover:text-gray-800 hover:underline"
                 >
-                  View all job ads
+                  View all job posts
                 </button>
               </div>
             </div>
@@ -5411,13 +5539,15 @@ function HrRecruitment() {
                   setEditJobForm({
                     title: "",
                     depot: "",
+                    department: "",
                     description: "",
-                    responsibilities: [""],
-                    others: [""],
-                    urgent: false,
-                    jobType: "delivery_crew",
-                    durationHours: "",
-                    durationMinutes: "",
+                    mainResponsibilities: "",
+                    keyRequirements: "",
+                    urgent: true,
+                    jobType: "office_employee",
+                    endDate: "",
+                    positions_needed: 1,
+                    positionsNoLimit: false,
                   });
                   setErrorMessage("");
                   setShowErrorAlert(false);
@@ -5477,39 +5607,73 @@ function HrRecruitment() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <label className="text-sm font-medium">Mark as Urgent</label>
-                  <input
-                    type="checkbox"
-                    checked={editJobForm.urgent}
-                    onChange={(e) => setEditJobField("urgent", e.target.checked)}
-                  />
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => setEditJobField("urgent", !editJobForm.urgent)}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-lg border-2 transition-all ${
+                      editJobForm.urgent
+                        ? "border-red-600 bg-red-50"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                    aria-pressed={editJobForm.urgent}
+                  >
+                    <div className="text-left">
+                      <div className={`text-sm font-semibold ${editJobForm.urgent ? "text-red-700" : "text-gray-800"}`}>
+                        Mark as Urgent
+                      </div>
+                      <div className="text-xs text-gray-500">Highlight this job post as a priority opening.</div>
+                    </div>
+                    <div className={`h-6 w-11 rounded-full p-1 transition-colors ${editJobForm.urgent ? "bg-red-600" : "bg-gray-300"}`}>
+                      <div className={`h-4 w-4 rounded-full bg-white transition-transform ${editJobForm.urgent ? "translate-x-5" : "translate-x-0"}`} />
+                    </div>
+                  </button>
                 </div>
 
+                {/* Job Title */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Job Title <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    list="edit-job-title-options"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    value={editJobForm.title}
+                    onChange={(e) => setEditJobField("title", e.target.value)}
+                    placeholder="e.g., Driver"
+                  />
+                  <datalist id="edit-job-title-options">
+                    {allJobTitles.map((title) => (
+                      <option key={title} value={title} />
+                    ))}
+                  </datalist>
+                </div>
+
+                {/* Department + Depot */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium mb-1">Job Title *</label>
-                    <input
-                      list="edit-job-title-options"
-                      className="w-full border rounded px-3 py-2"
-                      value={editJobForm.title}
-                      onChange={(e) => setEditJobField("title", e.target.value)}
-                      placeholder="Select or type job title"
-                    />
-                    <datalist id="edit-job-title-options">
-                      {jobTitleOptions.map((title) => (
-                        <option key={title} value={title} />
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
+                    <select
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all bg-white"
+                      value={editJobForm.department}
+                      onChange={(e) => setEditJobField("department", e.target.value)}
+                    >
+                      <option value="">Department</option>
+                      {departments.map((dept) => (
+                        <option key={dept} value={dept}>{dept}</option>
                       ))}
-                    </datalist>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Department is set automatically based on the selected job title.</p>
                   </div>
+
                   <div>
-                    <label className="block text-sm font-medium mb-1">Depot *</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot <span className="text-red-600">*</span></label>
                     <input
                       list="edit-depot-options"
-                      className="w-full border rounded px-3 py-2"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
                       value={editJobForm.depot}
                       onChange={(e) => setEditJobField("depot", e.target.value)}
-                      placeholder="Select or type depot"
+                      placeholder="e.g., Batangas"
                       disabled={currentUser?.role?.toUpperCase() === 'HRC'}
                       style={currentUser?.role?.toUpperCase() === 'HRC' ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
                     />
@@ -5524,88 +5688,88 @@ function HrRecruitment() {
                   </div>
                 </div>
 
+                {/* Employees Needed */}
                 <div>
-                  <label className="block text-sm font-medium mb-1">Duration (Optional)</label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">Hours</label>
-                      <input
-                        type="number"
-                        min="0"
-                        className="w-full border rounded px-3 py-2"
-                        value={editJobForm.durationHours}
-                        onChange={(e) => setEditJobField("durationHours", e.target.value)}
-                        placeholder="e.g., 8"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">Minutes (0-59)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        max="59"
-                        className="w-full border rounded px-3 py-2"
-                        value={editJobForm.durationMinutes}
-                        onChange={(e) => setEditJobField("durationMinutes", e.target.value)}
-                        placeholder="e.g., 30"
-                      />
-                    </div>
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Employees Needed <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    value={editJobForm.positionsNoLimit ? "" : (editJobForm.positions_needed ?? 1)}
+                    onChange={(e) => setEditJobField("positions_needed", parseInt(e.target.value, 10) || 1)}
+                    placeholder="Number of hires needed (e.g., 3)"
+                    disabled={editJobForm.positionsNoLimit}
+                  />
+                  <label className="mt-2 inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(editJobForm.positionsNoLimit)}
+                      onChange={(e) => setEditJobField("positionsNoLimit", e.target.checked)}
+                    />
+                    No limit
+                  </label>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">Short Description</label>
+                  <label className="block text-sm font-medium mb-1">Duration (Optional)</label>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                      value={editJobForm.endDate}
+                      onChange={(e) => setEditJobField("endDate", e.target.value)}
+                      min={getTodayDate()}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      The job post will close automatically when the end date is reached, or when hired employees reach Employees Needed (if limited).
+                    </p>
+                  </div>
+                  {editJobForm.endDate && (
+                    <p className="text-xs text-gray-500 mt-1">Applications close on: {editJobForm.endDate}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Job Title Description <span className="text-red-600">*</span>
+                  </label>
                   <textarea
-                    className="w-full border rounded px-3 py-2"
-                    rows={3}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-y"
+                    rows={4}
                     value={editJobForm.description}
                     onChange={(e) => setEditJobField("description", e.target.value)}
-                    placeholder="We are seeking a reliable and safety-conscious Truck Driver..."
+                    onKeyDown={withEditBulletAutoContinue("description")}
+                    placeholder="Example: This role supports daily operations by coordinating tasks, documenting updates, and ensuring deadlines are met."
                   />
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium">Main Responsibilities</label>
-                    <button onClick={addEditResp} className="text-sm text-blue-600 hover:underline">+ Add Responsibility</button>
-                  </div>
-                  <div className="space-y-2">
-                    {editJobForm.responsibilities.map((r, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <input
-                          className="flex-1 border rounded px-3 py-2"
-                          value={r}
-                          onChange={(e) => setEditResp(i, e.target.value)}
-                          placeholder="e.g., Safely operate company-based trucks"
-                        />
-                        {editJobForm.responsibilities.length > 1 && (
-                          <button onClick={() => removeEditResp(i)} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded">Remove</button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Main Responsibilities <span className="text-red-600">*</span>
+                  </label>
+                  <textarea
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-y"
+                    rows={5}
+                    value={editJobForm.mainResponsibilities}
+                    onChange={(e) => setEditJobField("mainResponsibilities", e.target.value)}
+                    onKeyDown={withEditBulletAutoContinue("mainResponsibilities")}
+                    placeholder="Example: Deliver goods safely and on time; Maintain accurate delivery documents; Follow safety and company procedures."
+                  />
                 </div>
 
                 <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium">Other Notes</label>
-                    <button onClick={addEditOther} className="text-sm text-blue-600 hover:underline">+ Add Other</button>
-                  </div>
-                  <div className="space-y-2">
-                    {editJobForm.others.map((r, i) => (
-                      <div key={i} className="flex items-center gap-2">
-                        <input
-                          className="flex-1 border rounded px-3 py-2"
-                          value={r}
-                          onChange={(e) => setEditOther(i, e.target.value)}
-                          placeholder="e.g., Must be willing to travel"
-                        />
-                        {editJobForm.others.length > 1 && (
-                          <button onClick={() => removeEditOther(i)} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded">Remove</button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Basic Key Requirements</label>
+                  <textarea
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-y"
+                    rows={4}
+                    value={editJobForm.keyRequirements}
+                    onChange={(e) => setEditJobField("keyRequirements", e.target.value)}
+                    onKeyDown={withEditBulletAutoContinue("keyRequirements")}
+                    placeholder="Example: Willing to work shifting schedules; Strong communication and teamwork; Relevant experience is an advantage."
+                  />
                 </div>
               </div>
             </div>
@@ -5619,13 +5783,15 @@ function HrRecruitment() {
                   setEditJobForm({
                     title: "",
                     depot: "",
+                    department: "",
                     description: "",
-                    responsibilities: [""],
-                    others: [""],
-                    urgent: false,
-                    jobType: "delivery_crew",
-                    durationHours: "",
-                    durationMinutes: "",
+                    mainResponsibilities: "",
+                    keyRequirements: "",
+                    urgent: true,
+                    jobType: "office_employee",
+                    endDate: "",
+                    positions_needed: 1,
+                    positionsNoLimit: false,
                   });
                   setErrorMessage("");
                   setShowErrorAlert(false);
@@ -5636,7 +5802,13 @@ function HrRecruitment() {
               </button>
               <button
                 onClick={handleUpdateJobPost}
-                disabled={updatingJobPost || !editJobForm.title || !editJobForm.depot}
+                disabled={
+                  updatingJobPost ||
+                  !editJobForm.title ||
+                  !editJobForm.depot ||
+                  !editJobForm.description ||
+                  splitLines(editJobForm.mainResponsibilities).length === 0
+                }
                 className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
               >
                 {updatingJobPost ? "Saving..." : "Save Changes"}
