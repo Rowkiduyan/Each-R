@@ -120,6 +120,7 @@ function Employees() {
   const [loadingFiles, setLoadingFiles] = useState(false);
   const [applicationData, setApplicationData] = useState(null);
   const [loadingApplication, setLoadingApplication] = useState(false);
+  const [applicantExtras, setApplicantExtras] = useState({ work_experiences: [], character_references: [] });
 
   // Termination modal states
   const [showTerminateModal, setShowTerminateModal] = useState(false);
@@ -1255,8 +1256,11 @@ function Employees() {
         setResumeData(null);
         setApplicationFormData(null);
         setApplicationData(null);
+        setApplicantExtras({ work_experiences: [], character_references: [] });
         return;
       }
+
+      const applicantEmail = selectedEmployee.personal_email?.trim() || selectedEmployee.email?.trim();
 
       setLoadingApplication(true);
       setLoadingFiles(true);
@@ -1270,7 +1274,7 @@ function Employees() {
         const { data: apps1, error: err1 } = await supabase
           .from('applications')
           .select('id, payload, created_at')
-          .eq('payload->>email', selectedEmployee.email)
+          .eq('payload->>email', applicantEmail)
           .order('created_at', { ascending: false })
           .limit(1);
 
@@ -1281,7 +1285,7 @@ function Employees() {
           const { data: apps2, error: err2 } = await supabase
             .from('applications')
             .select('id, payload, created_at')
-            .eq('payload->form->>email', selectedEmployee.email)
+            .eq('payload->form->>email', applicantEmail)
             .order('created_at', { ascending: false })
             .limit(1);
 
@@ -1292,7 +1296,7 @@ function Employees() {
             const { data: apps3, error: err3 } = await supabase
               .from('applications')
               .select('id, payload, created_at')
-              .eq('payload->applicant->>email', selectedEmployee.email)
+              .eq('payload->applicant->>email', applicantEmail)
               .order('created_at', { ascending: false })
               .limit(1);
 
@@ -1309,7 +1313,24 @@ function Employees() {
         if (applications && applications.length > 0) {
           const app = applications[0];
           const payload = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload;
-          const form = payload.form || payload || {};
+          const baseForm = payload?.form && typeof payload.form === 'object' ? payload.form : (payload || {});
+
+          // Important: for direct applicants the application payload usually looks like:
+          // { form: {...}, workExperiences: [...], characterReferences: [...] }
+          // so we must merge root fields back in.
+          const form = {
+            ...baseForm,
+            workExperiences:
+              payload?.workExperiences ??
+              baseForm?.workExperiences ??
+              baseForm?.work_experiences ??
+              [],
+            characterReferences:
+              payload?.characterReferences ??
+              baseForm?.characterReferences ??
+              baseForm?.character_references ??
+              [],
+          };
           
           // Store full application data
           setApplicationData(form);
@@ -1364,6 +1385,46 @@ function Employees() {
     };
 
     fetchEmployeeApplication();
+  }, [selectedEmployee, activeTab]);
+
+  // Fetch applicant profile extras (source of truth) for profiling display
+  useEffect(() => {
+    const fetchApplicantExtras = async () => {
+      if (!selectedEmployee || activeTab !== 'profiling') {
+        setApplicantExtras({ work_experiences: [], character_references: [] });
+        return;
+      }
+
+      const applicantEmail = selectedEmployee.personal_email?.trim() || selectedEmployee.email?.trim();
+      if (!applicantEmail) {
+        setApplicantExtras({ work_experiences: [], character_references: [] });
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('applicants')
+          .select('work_experiences, character_references')
+          .ilike('email', applicantEmail)
+          .maybeSingle();
+
+        if (error) {
+          console.warn('Error fetching applicant extras:', error);
+          setApplicantExtras({ work_experiences: [], character_references: [] });
+          return;
+        }
+
+        setApplicantExtras({
+          work_experiences: Array.isArray(data?.work_experiences) ? data.work_experiences : [],
+          character_references: Array.isArray(data?.character_references) ? data.character_references : [],
+        });
+      } catch (e) {
+        console.warn('Unexpected error fetching applicant extras:', e);
+        setApplicantExtras({ work_experiences: [], character_references: [] });
+      }
+    };
+
+    fetchApplicantExtras();
   }, [selectedEmployee, activeTab]);
 
   // State to trigger onboarding items refresh
@@ -1960,78 +2021,96 @@ function Employees() {
                                 </div>
                               )}
 
-                              {applicationData && applicationData.workExperiences && applicationData.workExperiences.length > 0 && (
-                                <div>
-                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
-                                  <div className="space-y-3 text-sm">
-                                    {applicationData.workExperiences.map((exp, idx) => (
-                                      <div key={idx} className="border border-gray-200 rounded-lg p-3">
-                                        <div className="grid grid-cols-2 gap-2">
-                                          {exp.company && (
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
+                                <div className="space-y-3 text-sm">
+                                  {(() => {
+                                    const rawFromApplication = Array.isArray(applicationData?.workExperiences)
+                                      ? applicationData.workExperiences
+                                      : [];
+                                    const rawFromProfile = Array.isArray(applicantExtras?.work_experiences)
+                                      ? applicantExtras.work_experiences
+                                      : [];
+                                    const raw = rawFromApplication.length > 0 ? rawFromApplication : rawFromProfile;
+                                    const display = raw.length > 0 ? raw : [{}];
+
+                                    return display.map((exp, idx) => {
+                                      const company = exp?.company || '';
+                                      const role = exp?.position || exp?.role || exp?.title || '';
+                                      const period =
+                                        exp?.period ||
+                                        exp?.date ||
+                                        exp?.year ||
+                                        (exp?.startDate || exp?.endDate ? `${exp?.startDate || ''}${exp?.startDate && exp?.endDate ? ' - ' : ''}${exp?.endDate || ''}` : '') ||
+                                        '';
+                                      const details = exp?.reason || exp?.description || exp?.remarks || '';
+
+                                      return (
+                                        <div key={idx} className="border border-gray-200 rounded-lg p-3">
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                             <div>
                                               <span className="text-gray-500">Company:</span>
-                                              <span className="ml-2 text-gray-800">{exp.company}</span>
+                                              <span className="ml-2 text-gray-800">{company}</span>
                                             </div>
-                                          )}
-                                          {exp.position && (
                                             <div>
-                                              <span className="text-gray-500">Position:</span>
-                                              <span className="ml-2 text-gray-800">{exp.position}</span>
+                                              <span className="text-gray-500">Role/Title:</span>
+                                              <span className="ml-2 text-gray-800">{role}</span>
                                             </div>
-                                          )}
-                                          {exp.startDate && (
-                                            <div>
-                                              <span className="text-gray-500">Start Date:</span>
-                                              <span className="ml-2 text-gray-800">{exp.startDate}</span>
+                                            <div className="md:col-span-2">
+                                              <span className="text-gray-500">Period:</span>
+                                              <span className="ml-2 text-gray-800">{period}</span>
                                             </div>
-                                          )}
-                                          {exp.endDate && (
-                                            <div>
-                                              <span className="text-gray-500">End Date:</span>
-                                              <span className="ml-2 text-gray-800">{exp.endDate}</span>
+                                            <div className="md:col-span-2">
+                                              <span className="text-gray-500">Details:</span>
+                                              <span className="ml-2 text-gray-800">{details}</span>
                                             </div>
-                                          )}
-                                        </div>
-                                        {exp.description && (
-                                          <div className="mt-2">
-                                            <span className="text-gray-500">Description:</span>
-                                            <div className="ml-2 text-gray-800 mt-1">{exp.description}</div>
                                           </div>
-                                        )}
-                                      </div>
-                                    ))}
-                                  </div>
+                                        </div>
+                                      );
+                                    });
+                                  })()}
                                 </div>
-                              )}
+                              </div>
 
-                              {applicationData && applicationData.characterReferences && applicationData.characterReferences.length > 0 && (
+                              {!selectedEmployee?.agency && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
                                   <div className="space-y-3 text-sm">
-                                    {applicationData.characterReferences.map((ref, idx) => (
-                                      <div key={idx} className="border border-gray-200 rounded-lg p-3">
-                                        <div className="grid grid-cols-2 gap-2">
-                                          {ref.name && (
-                                            <div>
-                                              <span className="text-gray-500">Name:</span>
-                                              <span className="ml-2 text-gray-800">{ref.name}</span>
+                                    {(() => {
+                                      const rawFromApplication = Array.isArray(applicationData?.characterReferences)
+                                        ? applicationData.characterReferences
+                                        : [];
+                                      const rawFromProfile = Array.isArray(applicantExtras?.character_references)
+                                        ? applicantExtras.character_references
+                                        : [];
+                                      const raw = rawFromApplication.length > 0 ? rawFromApplication : rawFromProfile;
+                                      const displayRefs = raw.length > 0 ? raw : [{}];
+
+                                      return displayRefs.map((ref, idx) => {
+                                        const name = ref?.name || ref?.fullName || '';
+                                        const contact = ref?.contact || ref?.contactNumber || ref?.phone || '';
+                                        const relationship = ref?.relationship || '';
+
+                                        return (
+                                          <div key={idx} className="border border-gray-200 rounded-lg p-3">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                              <div>
+                                                <span className="text-gray-500">Name:</span>
+                                                <span className="ml-2 text-gray-800">{name}</span>
+                                              </div>
+                                              <div>
+                                                <span className="text-gray-500">Contact:</span>
+                                                <span className="ml-2 text-gray-800">{contact}</span>
+                                              </div>
+                                              <div className="md:col-span-2">
+                                                <span className="text-gray-500">Relationship:</span>
+                                                <span className="ml-2 text-gray-800">{relationship}</span>
+                                              </div>
                                             </div>
-                                          )}
-                                          {ref.contact && (
-                                            <div>
-                                              <span className="text-gray-500">Contact:</span>
-                                              <span className="ml-2 text-gray-800">{ref.contact}</span>
-                                            </div>
-                                          )}
-                                          {ref.relationship && (
-                                            <div>
-                                              <span className="text-gray-500">Relationship:</span>
-                                              <span className="ml-2 text-gray-800">{ref.relationship}</span>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
+                                          </div>
+                                        );
+                                      });
+                                    })()}
                                   </div>
                                 </div>
                               )}

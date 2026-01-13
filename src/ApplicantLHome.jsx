@@ -1981,10 +1981,10 @@ const formatDateForInput = (dateString) => {
       );
     }
 
-    // Check if the job title is "Delivery Drivers" to show license and driving fields
-    const jobTitle = (selectedJob || newJob)?.title || '';
-    const isDeliveryDriverJob = jobTitle === 'Delivery Drivers';
-    const showLicenseSection = isDeliveryDriverJob;
+    // Check if the job_type is 'delivery_crew' to show license and driving fields
+    const jobType = (selectedJob || newJob)?.job_type || '';
+    const isDeliveryCrewJob = jobType === 'delivery_crew';
+    const showLicenseSection = isDeliveryCrewJob;
 
     // Calculate suggestions after early return
     const locationSuggestions = Array.from(
@@ -4427,22 +4427,24 @@ const formatDateForInput = (dateString) => {
                       </div>
                     </div>
 
-                    {/* License */}
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                        License Information
-                      </h3>
-                      <div className="border border-gray-300">
-                        <div className="grid grid-cols-2 bg-gray-100 p-2 font-medium">
-                          <div>License Type</div>
-                          <div>Expiry Date</div>
-                        </div>
-                        <div className="grid grid-cols-2 p-2">
-                          <div>{form.licenseType || <span className="text-gray-500 italic">None</span>}</div>
-                          <div>{form.licenseExpiry || <span className="text-gray-500 italic">None</span>}</div>
+                    {/* License - Only show for delivery_crew jobs */}
+                    {showLicenseSection && (
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-800 mb-2">
+                          License Information
+                        </h3>
+                        <div className="border border-gray-300">
+                          <div className="grid grid-cols-2 bg-gray-100 p-2 font-medium">
+                            <div>License Type</div>
+                            <div>Expiry Date</div>
+                          </div>
+                          <div className="grid grid-cols-2 p-2">
+                            <div>{form.licenseType || <span className="text-gray-500 italic">None</span>}</div>
+                            <div>{form.licenseExpiry || <span className="text-gray-500 italic">None</span>}</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* Work Experience */}
                     <div>
@@ -4487,7 +4489,7 @@ const formatDateForInput = (dateString) => {
                         Character References
                       </h3>
                       <div className="border border-gray-300">
-                        <div className="grid grid-cols-6 bg-gray-100 p-2 font-medium">
+                        <div className="grid grid-cols-6 bg-gray-100 p-2 font-medium min-w-0">
                           <div>Full Name</div>
                           <div>Relationship</div>
                           <div>Job Title</div>
@@ -4503,7 +4505,7 @@ const formatDateForInput = (dateString) => {
                             .map((r, i) => (
                               <div
                                 key={i}
-                                className={`grid grid-cols-6 p-2 ${
+                                className={`grid grid-cols-6 p-2 min-w-0 ${
                                   i % 2 === 1 ? 'bg-gray-100' : ''
                                 }`}
                               >
@@ -4512,7 +4514,9 @@ const formatDateForInput = (dateString) => {
                                 <div>{r.jobTitle || <span className="text-gray-500 italic">None</span>}</div>
                                 <div>{r.company || <span className="text-gray-500 italic">None</span>}</div>
                                 <div>{r.phone || <span className="text-gray-500 italic">None</span>}</div>
-                                <div>{r.email || <span className="text-gray-500 italic">None</span>}</div>
+                                <div className="min-w-0 truncate" title={r.email || ''}>
+                                  {r.email ? r.email : <span className="text-gray-500 italic">None</span>}
+                                </div>
                               </div>
                             ))
                         )}

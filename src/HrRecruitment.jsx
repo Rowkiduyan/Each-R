@@ -56,6 +56,75 @@ async function scheduleInterviewClient(applicationId, interview) {
 }
 
 /**
+ * scheduleAgreementSigningClient
+ * Reuses the same Edge Function with kind="agreement_signing".
+ */
+async function scheduleAgreementSigningClient(applicationId, appointment) {
+  try {
+    const functionName = "schedule-agreement-signing-with-notification";
+    const res = await supabase.functions.invoke(functionName, {
+      body: JSON.stringify({ applicationId, appointment }),
+    });
+
+    if (res instanceof Response) {
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(JSON.stringify(json || { status: res.status }));
+      }
+      return { ok: true, data: json };
+    } else if (res?.error) {
+      // Try to surface server-provided details for easier debugging
+      const anyErr = res.error;
+
+      let details = anyErr?.message || String(anyErr);
+      try {
+        const ctx = anyErr?.context;
+        const resp = ctx?.response;
+
+        if (resp && typeof resp.text === 'function') {
+          const respClone = typeof resp.clone === 'function' ? resp.clone() : resp;
+          const bodyText = await respClone.text();
+          if (bodyText) details = bodyText;
+        } else if (ctx?.body && typeof ctx.body === 'string') {
+          details = ctx.body;
+        } else if (ctx?.body) {
+          // Some environments provide a ReadableStream body
+          try {
+            const bodyText = await new Response(ctx.body).text();
+            if (bodyText) details = bodyText;
+          } catch {
+            // ignore
+          }
+        }
+      } catch {
+        // ignore
+      }
+
+      // If it's JSON, make it more readable
+      try {
+        const parsed = JSON.parse(details);
+        if (parsed?.error && parsed?.details) {
+          details = `${parsed.error}: ${parsed.details}`;
+        } else if (parsed?.error) {
+          details = String(parsed.error);
+        } else {
+          details = JSON.stringify(parsed);
+        }
+      } catch {
+        // keep details as-is
+      }
+
+      throw new Error(details);
+    } else {
+      return { ok: true, data: res };
+    }
+  } catch (err) {
+    console.error("scheduleAgreementSigningClient error:", err);
+    return { ok: false, error: err };
+  }
+}
+
+/**
  * createEmployeeAuthAccount
  * Helper that invokes a Supabase Edge Function to create/update employee auth account using Admin API.
  * This handles both new users and existing users (by resetting their password).
@@ -275,6 +344,8 @@ function HrRecruitment() {
   const [sortOrder, setSortOrder] = useState("asc");
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const filterMenuRef = useRef(null);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef(null);
   
   // Selected applicant detail view state
   const [selectedApplicant, setSelectedApplicant] = useState(null);
@@ -359,6 +430,9 @@ function HrRecruitment() {
     const handleClickOutside = (event) => {
       if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
         setShowFilterMenu(false);
+      }
+      if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
+        setShowExportMenu(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -454,6 +528,16 @@ function HrRecruitment() {
     interview_type: "onsite", // "online" or "onsite"
   });
   const [scheduling, setScheduling] = useState(false);
+
+  // ---- Agreement signing schedule modal state + scheduling
+  const [showAgreementSigningModal, setShowAgreementSigningModal] = useState(false);
+  const [selectedApplicationForSigning, setSelectedApplicationForSigning] = useState(null);
+  const [agreementSigningForm, setAgreementSigningForm] = useState({
+    date: "",
+    time: "",
+    location: "",
+  });
+  const [schedulingAgreementSigning, setSchedulingAgreementSigning] = useState(false);
 
   // ---- Data from Supabase
   const [applicants, setApplicants] = useState([]);
@@ -554,7 +638,12 @@ function HrRecruitment() {
           updatedApplicant.interview_date !== selectedApplicant.interview_date ||
           updatedApplicant.interview_confirmed !== selectedApplicant.interview_confirmed ||
           updatedApplicant.interview_time !== selectedApplicant.interview_time ||
-          updatedApplicant.interview_location !== selectedApplicant.interview_location;
+          updatedApplicant.interview_location !== selectedApplicant.interview_location ||
+          updatedApplicant.agreement_signing_date !== selectedApplicant.agreement_signing_date ||
+          updatedApplicant.agreement_signing_time !== selectedApplicant.agreement_signing_time ||
+          updatedApplicant.agreement_signing_location !== selectedApplicant.agreement_signing_location ||
+          updatedApplicant.agreement_signing_confirmed !== selectedApplicant.agreement_signing_confirmed ||
+          updatedApplicant.agreement_signing_confirmed_at !== selectedApplicant.agreement_signing_confirmed_at;
         
         if (hasChanges) {
           setSelectedApplicant(updatedApplicant);
@@ -731,6 +820,13 @@ function HrRecruitment() {
         // Get resume path - prioritize from applicants table, then from payload
         const resumePath = applicantResumes[row.user_id] || source.resumePath || source.resumeName || null;
 
+        const agreementSigning =
+          payloadObj.agreement_signing ||
+          payloadObj.agreementSigning ||
+          payloadObj.signing_interview ||
+          payloadObj.signingInterview ||
+          null;
+
         return {
           id: row.id,
           user_id: row.user_id,
@@ -755,6 +851,12 @@ function HrRecruitment() {
           // New fields - check both column and payload as fallback
           interview_confirmed: row.interview_confirmed ?? payloadObj.interview_confirmed ?? false,
           interview_confirmed_at: row.interview_confirmed_at ?? payloadObj.interview_confirmed_at ?? null,
+          // Agreement signing schedule (stored in payload)
+          agreement_signing_date: agreementSigning?.date || null,
+          agreement_signing_time: agreementSigning?.time || null,
+          agreement_signing_location: agreementSigning?.location || null,
+          agreement_signing_confirmed: payloadObj.agreement_signing_confirmed ?? payloadObj.agreementSigningConfirmed ?? 'Idle',
+          agreement_signing_confirmed_at: payloadObj.agreement_signing_confirmed_at ?? payloadObj.agreementSigningConfirmedAt ?? null,
           interview_details_file: row.interview_details_file ?? payloadObj.interview_details_file ?? null,
           assessment_results_file: row.assessment_results_file ?? payloadObj.assessment_results_file ?? null,
           appointment_letter_file: row.appointment_letter_file ?? payloadObj.appointment_letter_file ?? null,
@@ -1819,6 +1921,88 @@ function HrRecruitment() {
       interview_type: interviewType,
     });
     setShowInterviewModal(true);
+  };
+
+  // ---- OPEN agreement signing modal
+  const openAgreementSigningModal = (application) => {
+    setSelectedApplicationForSigning(application);
+
+    let payloadObj = application?.raw?.payload || {};
+    if (typeof payloadObj === 'string') {
+      try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+    }
+
+    const signing =
+      payloadObj?.agreement_signing ||
+      payloadObj?.agreementSigning ||
+      payloadObj?.signing_interview ||
+      payloadObj?.signingInterview ||
+      {};
+
+    setAgreementSigningForm({
+      date: signing?.date || application?.agreement_signing_date || "",
+      time: signing?.time || application?.agreement_signing_time || "",
+      location: signing?.location || application?.agreement_signing_location || "",
+    });
+    setShowAgreementSigningModal(true);
+  };
+
+  // ---- SCHEDULE agreement signing appointment
+  const scheduleAgreementSigning = async () => {
+    if (!selectedApplicationForSigning) return;
+    if (!agreementSigningForm.date || !agreementSigningForm.time || !agreementSigningForm.location) {
+      setErrorMessage("Please fill date, time and location.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    const apptDateTime = new Date(`${agreementSigningForm.date}T${agreementSigningForm.time}`);
+    const now = new Date();
+    if (apptDateTime <= now) {
+      setErrorMessage("Appointment must be scheduled for a future date and time.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    setSchedulingAgreementSigning(true);
+    try {
+      const r = await scheduleAgreementSigningClient(selectedApplicationForSigning.id, agreementSigningForm);
+      if (!r.ok) {
+        console.error("Edge function error:", r.error);
+        const maybeMsg = r.error?.message || String(r.error || '');
+        setErrorMessage(maybeMsg.includes('Failed') || maybeMsg.length > 8
+          ? `Failed to schedule agreement signing: ${maybeMsg}`
+          : "Failed to schedule agreement signing. Check console and function logs.");
+        setShowErrorAlert(true);
+        setSchedulingAgreementSigning(false);
+        return;
+      }
+
+      // Update selectedApplicant immediately with signing data (payload-based)
+      if (selectedApplicant && selectedApplicant.id === selectedApplicationForSigning.id) {
+        setSelectedApplicant((prev) => ({
+          ...prev,
+          agreement_signing_date: agreementSigningForm.date,
+          agreement_signing_time: agreementSigningForm.time,
+          agreement_signing_location: agreementSigningForm.location,
+          agreement_signing_confirmed: 'Idle',
+          agreement_signing_confirmed_at: null,
+        }));
+      }
+
+      await loadApplications();
+      setShowAgreementSigningModal(false);
+
+      const apptSummary = `${selectedApplicationForSigning.name} - ${agreementSigningForm.date} at ${agreementSigningForm.time}, ${agreementSigningForm.location}`;
+      setSuccessMessage(`Agreement signing ${r.data?.isReschedule ? 'Rescheduled' : 'Scheduled'}: ${apptSummary}. Applicant has been notified.`);
+      setShowSuccessAlert(true);
+    } catch (err) {
+      console.error("scheduleAgreementSigning unexpected error:", err);
+      setErrorMessage("Unexpected error scheduling agreement signing. See console.");
+      setShowErrorAlert(true);
+    } finally {
+      setSchedulingAgreementSigning(false);
+    }
   };
 
   // ---- SCHEDULE interview (calls scheduleInterviewClient)
@@ -3014,6 +3198,88 @@ function HrRecruitment() {
     }
   }, [searchTerm, positionFilter, depotFilter, statusFilter, sortOrder]);
 
+  const exportApplicantsCsv = useCallback((rows, title = "Applicants") => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+      setErrorMessage("No applicants to export for the current filters.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    try {
+      const exportedAt = new Date();
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const rawParts = [
+        title,
+        statusFilter !== "All" ? statusFilter : null,
+        positionFilter !== "All" ? positionFilter : null,
+        depotFilter !== "All" ? depotFilter : null,
+        yyyyMmDd,
+      ]
+        .filter(Boolean)
+        .join("_");
+      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".csv";
+
+      const csvEscape = (value) => {
+        const s = String(value ?? "");
+        return `"${s.replace(/"/g, '""')}"`;
+      };
+
+      const safeText = (v) => {
+        const s = String(v ?? "").trim();
+        return s.length ? s : "—";
+      };
+
+      const interviewDateText = (v) => {
+        if (!v) return "—";
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
+      };
+
+      const header = [
+        "Applicant",
+        "Position",
+        "Depot",
+        "Status",
+        "Date Applied",
+        "Interview Date",
+        "Interview Time",
+      ];
+
+      const lines = [header.map(csvEscape).join(",")];
+      for (const a of list) {
+        const statusLabel = getApplicationStatus(a).label;
+        const row = [
+          safeText(a.name),
+          safeText(a.position),
+          safeText(a.depot),
+          safeText(statusLabel),
+          safeText(a.dateApplied),
+          interviewDateText(a.interview_date),
+          safeText(a.interview_time),
+        ];
+        lines.push(row.map(csvEscape).join(","));
+      }
+
+      // UTF-8 BOM helps Excel open UTF-8 CSV correctly.
+      const csv = `\ufeff${lines.join("\r\n")}`;
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("exportApplicantsCsv error:", err);
+      setErrorMessage("Failed to export CSV. Please try again.");
+      setShowErrorAlert(true);
+    }
+  }, [statusFilter, positionFilter, depotFilter]);
+
   return (
     <>
       {/* Main Content */}
@@ -3365,19 +3631,44 @@ function HrRecruitment() {
 
 
                   {/* Export Button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      exportApplicantsPdf(filteredAllApplicants, "Applicants");
-                    }}
-                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
-                    title="Export the currently filtered list to PDF"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Export
-                  </button>
+                  <div className="relative" ref={exportMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setShowExportMenu((prev) => !prev)}
+                      className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
+                      title="Export the currently filtered list"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Export
+                    </button>
+
+                    {showExportMenu && (
+                      <div className="absolute right-0 mt-2 w-44 bg-white border rounded-lg shadow-lg z-10 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowExportMenu(false);
+                            exportApplicantsPdf(filteredAllApplicants, "Applicants");
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                        >
+                          Export list as PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowExportMenu(false);
+                            exportApplicantsCsv(filteredAllApplicants, "Applicants");
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                        >
+                          Export list as CSV
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -4008,32 +4299,46 @@ function HrRecruitment() {
 
                           {/* Character References */}
                           {(() => {
-                            // Filter out empty references - must have at least a name
-                            const validReferences = payloadObj.characterReferences?.filter(ref => 
-                              ref.name && ref.name.trim() !== ''
-                            ) || [];
-                            
-                            return validReferences.length > 0 && (
+                            if (isAgency(selectedApplicant)) return null;
+
+                            const rawReferences = Array.isArray(payloadObj.characterReferences)
+                              ? payloadObj.characterReferences
+                              : [];
+                            const displayReferences = rawReferences.length > 0 ? rawReferences : [{}];
+
+                            return (
                               <div className="mb-6">
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
                                   Character References
                                 </h5>
                                 <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
-                                  {validReferences.map((ref, idx) => (
+                                  {displayReferences.map((ref, idx) => (
                                     <div key={idx} className="border-b border-gray-200 pb-4 last:border-b-0 last:pb-0">
                                       <div className="font-medium text-gray-700 mb-2">Reference #{idx + 1}:</div>
                                       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                         <div>
-                                          <span className="text-gray-500">Name:</span>
-                                          <span className="ml-2 text-gray-800">{ref.name}</span>
+                                          <span className="text-gray-500">Full Name:</span>
+                                          <span className="ml-2 text-gray-800">{ref?.fullName || ref?.name || ''}</span>
                                         </div>
                                         <div>
-                                          <span className="text-gray-500">Contact Number:</span>
-                                          <span className="ml-2 text-gray-800">{ref.contact || ref.contactNumber || <span className="text-gray-500 italic">None</span>}</span>
+                                          <span className="text-gray-500">Relationship:</span>
+                                          <span className="ml-2 text-gray-800">{ref?.relationship || ref?.relation || ''}</span>
                                         </div>
-                                        <div className="md:col-span-2">
-                                          <span className="text-gray-500">Remarks:</span>
-                                          <span className="ml-2 text-gray-800">{ref.remarks || ref.company || <span className="text-gray-500 italic">None</span>}</span>
+                                        <div>
+                                          <span className="text-gray-500">Job Title:</span>
+                                          <span className="ml-2 text-gray-800">{ref?.jobTitle || ref?.title || ref?.position || ''}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Company:</span>
+                                          <span className="ml-2 text-gray-800">{ref?.company || ref?.remarks || ''}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Phone:</span>
+                                          <span className="ml-2 text-gray-800">{ref?.phone || ref?.contact || ref?.contactNumber || ref?.contact_number || ''}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">Email:</span>
+                                          <span className="ml-2 text-gray-800">{ref?.email || ''}</span>
                                         </div>
                                       </div>
                                     </div>
@@ -4693,6 +4998,65 @@ function HrRecruitment() {
                 {/* Agreements Tab - simplified to agreement-related upload table only */}
                 {activeDetailTab === "Agreements" && (
                   <section className="px-4 pb-4">
+                    {/* Agreement Signing Appointment (separate from interview) */}
+                    <div className="pt-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-lg font-semibold text-gray-800">Agreement Signing Appointment</h2>
+                        <button
+                          type="button"
+                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                          onClick={() => {
+                            if (!selectedApplicant) return;
+                            openAgreementSigningModal(selectedApplicant);
+                          }}
+                        >
+                          {selectedApplicant?.agreement_signing_date ? 'Reschedule Agreement Signing' : 'Schedule Agreement Signing'}
+                        </button>
+                      </div>
+
+                      {selectedApplicant?.agreement_signing_date ? (
+                        <div className="bg-gray-50 border rounded-md p-4 mb-4">
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="text-sm text-gray-800 font-semibold">Schedule</div>
+                            {(() => {
+                              const signingStatus = selectedApplicant?.agreement_signing_confirmed || 'Idle';
+                              if (signingStatus === 'Confirmed') {
+                                return (
+                                  <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
+                                    Confirmed
+                                  </span>
+                                );
+                              }
+                              if (signingStatus === 'Rejected') {
+                                return (
+                                  <span className="text-sm px-3 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300 font-medium">
+                                    Reschedule Requested
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-medium">
+                                  Awaiting Response
+                                </span>
+                              );
+                            })()}
+                          </div>
+                          <div className="text-sm text-gray-700 space-y-1">
+                            <div><span className="font-medium">Date:</span> {selectedApplicant.agreement_signing_date}</div>
+                            <div><span className="font-medium">Time:</span> {selectedApplicant.agreement_signing_time || <span className="text-gray-500 italic">None</span>}</div>
+                            <div><span className="font-medium">Location / Link:</span> {selectedApplicant.agreement_signing_location || <span className="text-gray-500 italic">None</span>}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-gray-50 border rounded-md p-4 mb-4">
+                          <div className="text-sm text-gray-700">
+                            <span className="font-medium">No agreement signing appointment yet.</span>
+                            <span className="text-gray-500"> Schedule it here to notify the applicant.</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
                     <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
                       <div className="col-span-6">&nbsp;</div>
@@ -5412,6 +5776,153 @@ function HrRecruitment() {
                 className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {scheduling ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Scheduling...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    Schedule & Email
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Agreement Signing Modal */}
+      {showAgreementSigningModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowAgreementSigningModal(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-600 to-red-700 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Schedule Agreement Signing</h3>
+                    <p className="text-sm text-white/90">{selectedApplicationForSigning?.name}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAgreementSigningModal(false)}
+                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-4">
+              {/* Date */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Date <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="date"
+                    value={agreementSigningForm.date}
+                    onChange={(e) => setAgreementSigningForm((f) => ({ ...f, date: e.target.value }))}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Time */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Time <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="time"
+                    value={agreementSigningForm.time}
+                    onChange={(e) => {
+                      const selectedDate = new Date(agreementSigningForm.date);
+                      const today = new Date();
+                      const selectedTime = e.target.value;
+                      if (agreementSigningForm.date && selectedDate.toDateString() === today.toDateString()) {
+                        const currentTime = today.toTimeString().slice(0, 5);
+                        if (selectedTime <= currentTime) {
+                          setErrorMessage("Please select a future time for today's date.");
+                          setShowErrorAlert(true);
+                          return;
+                        }
+                      }
+                      setAgreementSigningForm((f) => ({ ...f, time: selectedTime }));
+                    }}
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Location */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Location / Meeting Link <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    value={agreementSigningForm.location}
+                    onChange={(e) => setAgreementSigningForm((f) => ({ ...f, location: e.target.value }))}
+                    placeholder="Enter location address or meeting link"
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    required
+                  />
+                </div>
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => setShowAgreementSigningModal(false)}
+                className="px-5 py-2.5 border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={scheduleAgreementSigning}
+                disabled={schedulingAgreementSigning || !agreementSigningForm.date || !agreementSigningForm.time || !agreementSigningForm.location}
+                className="px-5 py-2.5 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {schedulingAgreementSigning ? (
                   <>
                     <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>

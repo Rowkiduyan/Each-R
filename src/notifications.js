@@ -548,3 +548,69 @@ export async function notifyHRAboutApplicationRetraction({
     return { success: false, error: err };
   }
 }
+
+// Helper function to notify HR about agreement signing responses
+export async function notifyHRAboutAgreementSigningResponse({
+  applicationId,
+  applicantName,
+  position,
+  responseType, // 'confirmed' or 'rejected'
+  signingDate,
+  signingTime
+}) {
+  try {
+    // Get all HR users (including Admin)
+    const { data: hrUsers, error: hrError } = await supabase
+      .from('profiles')
+      .select('id')
+      .or('role.eq.HR,role.eq.Admin');
+
+    if (hrError) {
+      console.error('Error fetching HR users:', hrError);
+      return { success: false, error: hrError };
+    }
+
+    if (!hrUsers || hrUsers.length === 0) {
+      console.log('No HR users found');
+      return { success: true, message: 'No HR users to notify' };
+    }
+
+    const formattedDate = signingDate
+      ? new Date(signingDate).toLocaleDateString('en-US', {
+          weekday: 'long',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric'
+        })
+      : 'scheduled date';
+
+    const title = `Agreement Signing ${responseType === 'confirmed' ? 'Confirmed' : 'Reschedule Requested'}`;
+    const message = `${applicantName} has ${responseType === 'confirmed' ? 'confirmed' : 'requested a reschedule for'} the agreement signing for ${position} position${signingDate ? ` scheduled on ${formattedDate}${signingTime ? ` at ${signingTime}` : ''}` : ''}.`;
+
+    const notifications = await Promise.all(
+      hrUsers.map((hrUser) =>
+        createNotification({
+          userId: hrUser.id,
+          applicationId,
+          type: `agreement_signing_${responseType}`,
+          title,
+          message
+        })
+      )
+    );
+
+    const successful = notifications.filter((n) => n.success).length;
+    const failed = notifications.filter((n) => !n.success).length;
+
+    console.log(`Notified ${successful} HR users, ${failed} failed`);
+    return {
+      success: true,
+      notified: successful,
+      failed,
+      details: notifications
+    };
+  } catch (err) {
+    console.error('Unexpected error notifying HR:', err);
+    return { success: false, error: err };
+  }
+}
