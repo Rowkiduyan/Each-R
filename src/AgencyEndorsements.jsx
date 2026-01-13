@@ -319,6 +319,20 @@ function AgencyEndorsements() {
           const app = payload?.applicant || payload?.form || payload || null;
           const meta = payload?.meta || {};
 
+          const endorsedByProfileId =
+            meta?.endorsed_by_profile_id ||
+            meta?.endorsedByProfileId ||
+            meta?.endorsed_by_agency_id ||
+            meta?.endorsedByAgencyId ||
+            null;
+
+          const endorsedByAuthUserId =
+            meta?.endorsed_by_auth_user_id ||
+            meta?.endorsedByAuthUserId ||
+            meta?.endorsed_by_user_id ||
+            meta?.endorsedByUserId ||
+            null;
+
           const first = app?.firstName || app?.fname || app?.first_name || null;
           const last = app?.lastName || app?.lname || app?.last_name || null;
           const middle = app?.middleName || app?.mname || null;
@@ -378,7 +392,8 @@ function AgencyEndorsements() {
             position: pos || "—",
             depot: depot || "—",
             status,
-            agency_profile_id: meta?.endorsed_by_profile_id || null,
+            agency_profile_id: endorsedByProfileId,
+            endorsed_by_auth_user_id: endorsedByAuthUserId,
             payload,
             endorsed_employee_id: endorsedEmployeeId,
             job_id: r.job_id || null,
@@ -403,13 +418,15 @@ function AgencyEndorsements() {
         }).filter(item => {
           // Filter 1: Remove null items (already deployed agency employees)
           if (item === null) return false;
-          
+
           // Filter 2: Only show endorsements made by the current agency
-          // If agency_profile_id (endorsed_by_profile_id from meta) exists, it must match the current user
-          if (item.agency_profile_id && item.agency_profile_id !== user.id) {
-            return false;
-          }
-          
+          // IMPORTANT: If the endorsement isn't explicitly stamped to an agency user, do not show it.
+          const hasStamp = Boolean(item.agency_profile_id || item.endorsed_by_auth_user_id);
+          if (!hasStamp) return false;
+
+          if (item.agency_profile_id && item.agency_profile_id !== user.id) return false;
+          if (item.endorsed_by_auth_user_id && item.endorsed_by_auth_user_id !== user.id) return false;
+
           return true;
         });
 
@@ -429,12 +446,19 @@ function AgencyEndorsements() {
     setHiredLoading(true);
     setHiredError(null);
     try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('Error getting user:', userError);
+        setHiredError('Unable to verify user');
+        setHiredEmployees([]);
+        return;
+      }
+
       const { data, error } = await supabase
         .from("employees")
         .select("id, email, fname, lname, mname, contact_number, position, depot, hired_at, agency_profile_id, endorsed_by_agency_id, is_agency, source, status")
-        // Only include employees that are agency-sourced / endorsed
-        // Explicitly exclude source: "internal" (direct applicants)
-        .or("is_agency.eq.true,agency_profile_id.not.is.null,endorsed_by_agency_id.not.is.null,source.eq.recruitment,source.eq.agency")
+        // Only include employees that belong to the current agency.
+        .or(`agency_profile_id.eq.${user.id},endorsed_by_agency_id.eq.${user.id}`)
         .neq("source", "internal")
         .order("hired_at", { ascending: false });
 
@@ -485,6 +509,12 @@ function AgencyEndorsements() {
   // ---------- Fetch interviews for calendar ----------
   const fetchInterviews = async () => {
     try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('Error getting user:', userError);
+        return;
+      }
+
       const { data, error } = await supabase
         .from('applications')
         .select(`
@@ -509,6 +539,26 @@ function AgencyEndorsements() {
         if (typeof payloadObj === 'string') {
           try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
         }
+
+        const meta = payloadObj?.meta || {};
+        const endorsedByProfileId =
+          meta?.endorsed_by_profile_id ||
+          meta?.endorsedByProfileId ||
+          meta?.endorsed_by_agency_id ||
+          meta?.endorsedByAgencyId ||
+          null;
+        const endorsedByAuthUserId =
+          meta?.endorsed_by_auth_user_id ||
+          meta?.endorsedByAuthUserId ||
+          meta?.endorsed_by_user_id ||
+          meta?.endorsedByUserId ||
+          null;
+
+        // If not explicitly stamped to this agency, ignore.
+        const hasStamp = Boolean(endorsedByProfileId || endorsedByAuthUserId);
+        if (!hasStamp) return null;
+        if (endorsedByProfileId && endorsedByProfileId !== user.id) return null;
+        if (endorsedByAuthUserId && endorsedByAuthUserId !== user.id) return null;
         
         // For endorsed applicants, get name from payload.applicant or payload.form
         let applicant_name = 'Unknown';
@@ -538,7 +588,10 @@ function AgencyEndorsements() {
         };
       });
 
-      setInterviews(formatted.filter(i => (i.status || '').toLowerCase() !== 'hired'));
+      setInterviews(formatted
+        .filter(Boolean)
+        .filter(i => (i.status || '').toLowerCase() !== 'hired')
+      );
     } catch (err) {
       console.error('Error fetching interviews:', err);
     }

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "./supabaseClient";
 import { useNavigate } from "react-router-dom";
 import Logo from "./Logo.png";
-import { isRememberMeEnabled, setRememberMeEnabled, setStoredJson } from "./authStorage";
+import { setStoredJson } from "./authStorage";
 
 function EmployeeLogin() {
   const [email, setEmail] = useState("");
@@ -11,7 +11,6 @@ function EmployeeLogin() {
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(() => isRememberMeEnabled());
   const navigate = useNavigate();
 
   const redirectAfterLogin = async (user) => {
@@ -106,7 +105,7 @@ function EmployeeLogin() {
     // Refresh session to apply updated role metadata
     await supabase.auth.refreshSession();
 
-    // Save HR/admin info in preferred storage (localStorage if rememberMe is on, otherwise sessionStorage)
+    // Save HR/admin info for this browser session.
     const userDataToSave = {
       email: user.email,
       id: user.id,
@@ -161,9 +160,6 @@ function EmployeeLogin() {
     e?.preventDefault(); // Add optional chaining in case called without event
     setError("");
     setLoading(true);
-
-    // Configure whether auth should persist across browser restarts.
-    setRememberMeEnabled(rememberMe);
 
     // Step 1: Try to log in using Supabase
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -265,16 +261,7 @@ function EmployeeLogin() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="rounded border-gray-300 text-red-600 focus:ring-red-500"
-                />
-                <span className="ml-2 text-gray-600">Remember me</span>
-              </label>
+            <div className="flex justify-end text-sm">
               <button
                 type="button"
                 className="text-red-600 hover:text-red-700 font-medium"

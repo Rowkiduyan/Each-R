@@ -16,7 +16,7 @@
     "bcryptjs": "^3.0.2",
     "buffer": "^6.0.3",
     "docx": "^9.5.1",
-    "docx-templates": "^4.11.2",
+    "docx-templates": "^4.15.0",
     "events": "^3.3.0",
     "events-browserify": "^0.0.1",
     "file-saver": "^2.0.5",

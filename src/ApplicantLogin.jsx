@@ -2,7 +2,6 @@ import Logo from './Logo.png';
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
-import { isRememberMeEnabled, setRememberMeEnabled } from "./authStorage";
 
 function ApplicantLogin() {
   const navigate = useNavigate();
@@ -13,7 +12,6 @@ function ApplicantLogin() {
   const [error, setError] = useState("");
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(() => isRememberMeEnabled());
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
@@ -79,9 +77,6 @@ function ApplicantLogin() {
   e.preventDefault();
   setLoading(true);
   setError("");
-
-  // Configure whether auth should persist across browser restarts.
-  setRememberMeEnabled(rememberMe);
 
   // 1️⃣ Log in the user
   const { data, error } = await supabase.auth.signInWithPassword({
@@ -203,16 +198,7 @@ function ApplicantLogin() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between text-sm">
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="rounded border-gray-300 text-red-600 focus:ring-red-500"
-                />
-                <span className="ml-2 text-gray-600">Remember me</span>
-              </label>
+            <div className="flex justify-end text-sm">
               <button
                 type="button"
                 onClick={() => setShowForgotPassword(true)}
