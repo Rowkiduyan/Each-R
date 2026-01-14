@@ -1664,9 +1664,9 @@ function Employees() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 overflow-hidden min-h-0">
             {/* Search and Filters */}
             <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
-              <div className="flex flex-col lg:flex-row gap-3">
+              <div className="flex flex-col gap-3">
                 {/* Search */}
-                <div className="relative flex-1">
+                <div className="relative">
                   <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
@@ -1679,16 +1679,16 @@ function Employees() {
                   />
                 </div>
 
-                {/* Controls (wrap under search on smaller screens) */}
-                <div className="flex flex-wrap gap-3 lg:flex-nowrap lg:justify-end lg:items-center lg:flex-none">
+                {/* Filters row (below search, uniform with HrRecruitment) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))_auto] gap-2 items-center">
                   {/* Depot Filter */}
                   <select
                     value={depotFilter}
                     onChange={(e) => setDepotFilter(e.target.value)}
-                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[140px]"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
                   >
                     <option value="All">All Depots</option>
-                    {depotOptions.map((d) => (
+                    {depotOptions.filter(d => d !== "All").map((d) => (
                       <option key={d} value={d}>{d}</option>
                     ))}
                   </select>
@@ -1697,7 +1697,7 @@ function Employees() {
                   <select
                     value={departmentFilter}
                     onChange={(e) => setDepartmentFilter(e.target.value)}
-                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[140px]"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
                   >
                     <option value="All">All Departments</option>
                     {departments.map((d) => (
@@ -1709,7 +1709,7 @@ function Employees() {
                   <select
                     value={positionFilter}
                     onChange={(e) => setPositionFilter(e.target.value)}
-                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
                   >
                     <option value="All">All Positions</option>
                     {positions.filter(p => p !== "All").map((p) => (
@@ -1721,7 +1721,7 @@ function Employees() {
                   <select
                     value={employmentStatusFilter}
                     onChange={(e) => setEmploymentStatusFilter(e.target.value)}
-                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[160px]"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
                   >
                     <option value="All">Employment Status</option>
                     {employmentStatuses.filter((s) => s !== "All").map((status) => (
@@ -1733,7 +1733,7 @@ function Employees() {
                   <select
                     value={recruitmentTypeFilter}
                     onChange={(e) => setRecruitmentTypeFilter(e.target.value)}
-                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[180px]"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
                   >
                     <option value="All">All Recruitment Type</option>
                     {recruitmentTypes.filter((t) => t !== "All").map((t) => (
@@ -1746,7 +1746,7 @@ function Employees() {
                     value={sortOption}
                     onChange={(e) => setSortOption(e.target.value)}
                     aria-label="Sort"
-                    className="px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white min-w-[190px]"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
                   >
                     <option value="name-asc">Alphabetically (A → Z)</option>
                     <option value="name-desc">Alphabetically (Z → A)</option>
@@ -1755,7 +1755,7 @@ function Employees() {
                   </select>
 
                   {/* Export Button */}
-                  <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
+                  <button className="w-full sm:w-auto px-4 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>

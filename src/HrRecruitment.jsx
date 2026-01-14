@@ -291,6 +291,28 @@ function HrRecruitment() {
     ],
   };
 
+  const getPositionsForDepartment = (department) => {
+    if (department === "All") {
+      const all = new Set();
+      Object.values(departmentToPositions).forEach((list) => {
+        (list || []).forEach((p) => all.add(p));
+      });
+      return Array.from(all);
+    }
+
+    // Backward-compat alias (in case existing data uses "and" instead of "&")
+    if (department === "Security & Safety Department") {
+      return departmentToPositions["Security & Safety Department"] || [];
+    }
+
+    return departmentToPositions[department] || [];
+  };
+
+  const normalizeDepartmentName = (name) => {
+    if (!name) return "";
+    return String(name).replace(/\s+/g, " ").trim().replace(/\sand\s/g, " & ");
+  };
+
   const getDepartmentForPosition = (position) => {
     if (!position) return "";
     for (const [dept, list] of Object.entries(departmentToPositions)) {
@@ -317,6 +339,7 @@ function HrRecruitment() {
   // ---- UI state
   const [activeSubTab, setActiveSubTab] = useState("Applications"); // "Applications" | "JobPosts"
   const [searchTerm, setSearchTerm] = useState("");
+  const [listMode, setListMode] = useState('pending'); // 'pending' | 'rejected'
   const [currentPage, setCurrentPage] = useState(1);
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionType, setActionType] = useState(null);
@@ -338,12 +361,12 @@ function HrRecruitment() {
   const [isOpeningConfirmDialog, setIsOpeningConfirmDialog] = useState(false);
   
   // Filters for unified applications table
+  const [departmentFilter, setDepartmentFilter] = useState("All");
   const [positionFilter, setPositionFilter] = useState("All");
   const [depotFilter, setDepotFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [recruitmentTypeFilter, setRecruitmentTypeFilter] = useState("All");
   const [sortOrder, setSortOrder] = useState("asc");
-  const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const filterMenuRef = useRef(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef(null);
   
@@ -395,7 +418,139 @@ function HrRecruitment() {
   
   // Interview calendar state
   const [interviews, setInterviews] = useState([]);
+  const [signingSchedules, setSigningSchedules] = useState([]);
   const [activeTab, setActiveTab] = useState('today'); // 'today', 'tomorrow', 'week', 'past'
+
+  // Schedule mode (left panel)
+  const [scheduleMode, setScheduleMode] = useState('interview'); // 'interview' | 'signing'
+
+  // Track which scheduled interviews have been viewed (for red-dot indicator)
+  const [viewedInterviewIds, setViewedInterviewIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem('hrViewedInterviewIds');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return new Set();
+      return new Set(arr.map(String));
+    } catch {
+      return new Set();
+    }
+  });
+
+  const markInterviewViewed = (id) => {
+    const key = String(id);
+    setViewedInterviewIds((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      try {
+        localStorage.setItem('hrViewedInterviewIds', JSON.stringify(Array.from(next)));
+      } catch {
+        // ignore storage failures
+      }
+      return next;
+    });
+  };
+
+  const isInterviewViewed = (id) => viewedInterviewIds.has(String(id));
+
+  // Track which signing schedules have been viewed (separate from interview schedules)
+  const [viewedSigningScheduleIds, setViewedSigningScheduleIds] = useState(() => {
+    try {
+      const raw = localStorage.getItem('hrViewedSigningScheduleIds');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return new Set();
+      return new Set(arr.map(String));
+    } catch {
+      return new Set();
+    }
+  });
+
+  const markSigningScheduleViewed = (id) => {
+    const key = String(id);
+    setViewedSigningScheduleIds((prev) => {
+      if (prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.add(key);
+      try {
+        localStorage.setItem('hrViewedSigningScheduleIds', JSON.stringify(Array.from(next)));
+      } catch {
+        // ignore storage failures
+      }
+      return next;
+    });
+  };
+
+  const isSigningScheduleViewed = (id) => viewedSigningScheduleIds.has(String(id));
+
+  useEffect(() => {
+    if (!selectedApplicant?.id) return;
+
+    const hasInterviewSchedule = Boolean(
+      selectedApplicant.interview_date ||
+      selectedApplicant.interview_time ||
+      selectedApplicant.interview_location
+    );
+    if (hasInterviewSchedule) {
+      markInterviewViewed(selectedApplicant.id);
+    }
+
+    const hasSigningSchedule = Boolean(
+      selectedApplicant.agreement_signing_date ||
+      selectedApplicant.agreement_signing_time ||
+      selectedApplicant.agreement_signing_location
+    );
+    if (hasSigningSchedule) {
+      markSigningScheduleViewed(selectedApplicant.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedApplicant]);
+
+  // Auto-mark all schedules in the active tab as read once they are visible.
+  // This removes the need to click each card to clear the "new" highlight.
+  useEffect(() => {
+    const list = (getActiveSchedules && typeof getActiveSchedules === 'function') ? getActiveSchedules() : [];
+    const ids = (list || []).map((i) => String(i?.id)).filter(Boolean);
+    if (ids.length === 0) return;
+
+    if (scheduleMode === 'signing') {
+      setViewedSigningScheduleIds((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        ids.forEach((id) => {
+          if (!next.has(id)) {
+            next.add(id);
+            changed = true;
+          }
+        });
+        if (!changed) return prev;
+        try {
+          localStorage.setItem('hrViewedSigningScheduleIds', JSON.stringify(Array.from(next)));
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+      return;
+    }
+
+    setViewedInterviewIds((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      ids.forEach((id) => {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      });
+      if (!changed) return prev;
+      try {
+        localStorage.setItem('hrViewedInterviewIds', JSON.stringify(Array.from(next)));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, [activeTab, scheduleMode, interviews, signingSchedules]);
   
   // Requirements state
   const [_documentStatus, setDocumentStatus] = useState({});
@@ -428,9 +583,6 @@ function HrRecruitment() {
   // Close filter dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
-      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
-        setShowFilterMenu(false);
-      }
       if (exportMenuRef.current && !exportMenuRef.current.contains(event.target)) {
         setShowExportMenu(false);
       }
@@ -752,7 +904,7 @@ function HrRecruitment() {
           undertaking_duties_file,
           pre_employment_requirements_file,
           id_form_file,
-          job_posts:job_posts ( id, title, depot )
+          job_posts:job_posts ( id, title, department, depot )
         `)
         .neq("status", "hired")
         .order("created_at", { ascending: false });
@@ -812,6 +964,7 @@ function HrRecruitment() {
         const fullName = `${first}${middle}${last}`.trim() || source.fullName || source.name || "Unnamed Applicant";
 
         const position = row.job_posts?.title ?? source.position ?? "—";
+        const department = normalizeDepartmentName(row.job_posts?.department ?? source.department ?? "");
         const depot = row.job_posts?.depot ?? source.depot ?? "—";
 
         const rawStatus = row.status || payloadObj.status || source.status || null;
@@ -827,6 +980,8 @@ function HrRecruitment() {
           payloadObj.signingInterview ||
           null;
 
+        const agencyFlag = isAgency({ raw: { payload: payloadObj }, payload: payloadObj, agency: payloadObj?.agency });
+
         return {
           id: row.id,
           user_id: row.user_id,
@@ -834,6 +989,7 @@ function HrRecruitment() {
           status: statusNormalized,
           name: fullName,
           position,
+          department,
           depot,
           dateApplied: new Date(row.created_at).toLocaleDateString("en-US", {
             month: "short", day: "2-digit", year: "numeric",
@@ -841,6 +997,7 @@ function HrRecruitment() {
           email: source.email || source.contact || "",
           phone: source.contact || source.phone || "",
           resume_path: resumePath,
+          agency: agencyFlag,
           raw: row,
           // surface interview fields if present (helpful in table later)
           interview_date: row.interview_date || row.payload?.interview?.date || null,
@@ -1042,6 +1199,7 @@ function HrRecruitment() {
   // Fetch interviews for calendar
   useEffect(() => {
     fetchInterviews();
+    fetchSigningSchedules();
   }, []);
 
   const fetchInterviews = async () => {
@@ -1150,6 +1308,109 @@ function HrRecruitment() {
     }
   };
 
+  const fetchSigningSchedules = async () => {
+    console.log('[fetchSigningSchedules] Starting to fetch signing schedules...');
+    try {
+      const { data: applicationsData, error: appsError } = await supabase
+        .from('applications')
+        .select('id, user_id, payload, status, job_posts:job_posts ( title )')
+        .order('created_at', { ascending: false });
+
+      if (appsError) {
+        console.error('[fetchSigningSchedules] Error fetching applications:', appsError);
+        setSigningSchedules([]);
+        return;
+      }
+
+      const rows = applicationsData || [];
+      if (rows.length === 0) {
+        setSigningSchedules([]);
+        return;
+      }
+
+      const applicantIds = [...new Set(rows.map(app => app.user_id).filter(Boolean))];
+
+      let applicantMap = {};
+      if (applicantIds.length > 0) {
+        const { data: applicantsData, error: applicantsError } = await supabase
+          .from('applicants')
+          .select('id, fname, lname')
+          .in('id', applicantIds);
+
+        if (applicantsError) {
+          console.error('[fetchSigningSchedules] Error fetching applicants:', applicantsError);
+        }
+
+        if (applicantsData) {
+          applicantsData.forEach(applicant => {
+            applicantMap[applicant.id] = `${applicant.fname} ${applicant.lname}`;
+          });
+        }
+      }
+
+      const transformed = rows
+        .map((app) => {
+          let payloadObj = app.payload;
+          if (typeof payloadObj === 'string') {
+            try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+          }
+
+          const agreementSigning =
+            payloadObj?.agreement_signing ||
+            payloadObj?.agreementSigning ||
+            payloadObj?.signing_interview ||
+            payloadObj?.signingInterview ||
+            null;
+
+          const signingDate = agreementSigning?.date || null;
+          const signingTime = agreementSigning?.time || 'Not set';
+          const signingLocation = agreementSigning?.location || null;
+
+          if (!signingDate && (!agreementSigning?.time || agreementSigning?.time === '')) return null;
+
+          let applicantName = 'Unknown';
+          if (app.user_id && applicantMap[app.user_id]) {
+            applicantName = applicantMap[app.user_id];
+          } else {
+            const applicantData = payloadObj.applicant || payloadObj.form || {};
+            const fname = applicantData.firstName || applicantData.fname || '';
+            const lname = applicantData.lastName || applicantData.lname || '';
+            if (fname || lname) {
+              applicantName = `${fname} ${lname}`.trim();
+            }
+          }
+
+          const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
+          const position = app.job_posts?.title ?? source.position ?? source.title ?? 'Position Not Set';
+
+          return {
+            id: app.id,
+            applicant_name: applicantName,
+            position,
+            time: signingTime,
+            date: signingDate,
+            location: signingLocation,
+            status: app.status || 'scheduled',
+            interview_type: 'onsite',
+          };
+        })
+        .filter(Boolean)
+        .sort((a, b) => {
+          const ad = String(a.date || '');
+          const bd = String(b.date || '');
+          if (ad !== bd) return ad.localeCompare(bd);
+          const at = String(a.time || '');
+          const bt = String(b.time || '');
+          return at.localeCompare(bt);
+        });
+
+      setSigningSchedules(transformed);
+    } catch (error) {
+      console.error('[fetchSigningSchedules] Unexpected error:', error);
+      setSigningSchedules([]);
+    }
+  };
+
   // Calendar helper functions
   const formatTime = (time24) => {
     if (!time24 || time24 === 'Not set') return 'Not set';
@@ -1163,7 +1424,7 @@ function HrRecruitment() {
 
   const getTodayInterviews = () => {
     const today = new Date().toISOString().split('T')[0];
-    const todayInterviews = interviews.filter(interview => interview.date === today);
+    const todayInterviews = interviews.filter(interview => interview.date === today && String(interview.status || '').toLowerCase() !== 'hired');
     return todayInterviews.sort((a, b) => {
       if (!a.time || a.time === 'Not set') return 1;
       if (!b.time || b.time === 'Not set') return -1;
@@ -1175,7 +1436,7 @@ function HrRecruitment() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowDate = tomorrow.toISOString().split('T')[0];
-    const tomorrowInterviews = interviews.filter(interview => interview.date === tomorrowDate);
+    const tomorrowInterviews = interviews.filter(interview => interview.date === tomorrowDate && String(interview.status || '').toLowerCase() !== 'hired');
     return tomorrowInterviews.sort((a, b) => {
       if (!a.time || a.time === 'Not set') return 1;
       if (!b.time || b.time === 'Not set') return -1;
@@ -1192,8 +1453,10 @@ function HrRecruitment() {
       const interviewDate = new Date(interview.date);
       return interviewDate >= today && interviewDate <= nextWeek;
     });
+
+    const filteredWeek = weekInterviews.filter((interview) => String(interview.status || '').toLowerCase() !== 'hired');
     
-    return weekInterviews.sort((a, b) => {
+    return filteredWeek.sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       if (!a.time || a.time === 'Not set') return 1;
       if (!b.time || b.time === 'Not set') return -1;
@@ -1203,12 +1466,70 @@ function HrRecruitment() {
 
   const getPastInterviews = () => {
     const todayStr = new Date().toISOString().split('T')[0];
-    const pastInterviews = interviews.filter(interview => interview.date && interview.date < todayStr);
+    const pastInterviews = interviews.filter(interview =>
+      String(interview.status || '').toLowerCase() === 'hired' ||
+      (interview.date && interview.date < todayStr)
+    );
     return pastInterviews.sort((a, b) => {
       if (a.date !== b.date) return b.date.localeCompare(a.date);
       if (!a.time || a.time === 'Not set') return 1;
       if (!b.time || b.time === 'Not set') return -1;
       return b.time.localeCompare(a.time);
+    });
+  };
+
+  const getTodaySigningSchedules = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const todaySchedules = signingSchedules.filter((s) => s.date === today && String(s.status || '').toLowerCase() !== 'hired');
+    return todaySchedules.sort((a, b) => {
+      if (!a.time || a.time === 'Not set') return 1;
+      if (!b.time || b.time === 'Not set') return -1;
+      return String(a.time).localeCompare(String(b.time));
+    });
+  };
+
+  const getTomorrowSigningSchedules = () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowDate = tomorrow.toISOString().split('T')[0];
+    const tomorrowSchedules = signingSchedules.filter((s) => s.date === tomorrowDate && String(s.status || '').toLowerCase() !== 'hired');
+    return tomorrowSchedules.sort((a, b) => {
+      if (!a.time || a.time === 'Not set') return 1;
+      if (!b.time || b.time === 'Not set') return -1;
+      return String(a.time).localeCompare(String(b.time));
+    });
+  };
+
+  const getThisWeekSigningSchedules = () => {
+    const today = new Date();
+    const nextWeek = new Date(today);
+    nextWeek.setDate(today.getDate() + 7);
+
+    const weekSchedules = signingSchedules.filter((s) => {
+      const d = new Date(s.date);
+      return d >= today && d <= nextWeek;
+    });
+
+    const filteredWeek = weekSchedules.filter((s) => String(s.status || '').toLowerCase() !== 'hired');
+    return filteredWeek.sort((a, b) => {
+      if (a.date !== b.date) return String(a.date).localeCompare(String(b.date));
+      if (!a.time || a.time === 'Not set') return 1;
+      if (!b.time || b.time === 'Not set') return -1;
+      return String(a.time).localeCompare(String(b.time));
+    });
+  };
+
+  const getPastSigningSchedules = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const past = signingSchedules.filter((s) =>
+      String(s.status || '').toLowerCase() === 'hired' ||
+      (s.date && s.date < todayStr)
+    );
+    return past.sort((a, b) => {
+      if (a.date !== b.date) return String(b.date).localeCompare(String(a.date));
+      if (!a.time || a.time === 'Not set') return 1;
+      if (!b.time || b.time === 'Not set') return -1;
+      return String(b.time).localeCompare(String(a.time));
     });
   };
 
@@ -1222,13 +1543,51 @@ function HrRecruitment() {
     }
   };
 
+  const getActiveSchedules = () => {
+    if (scheduleMode === 'signing') {
+      switch (activeTab) {
+        case 'today': return getTodaySigningSchedules();
+        case 'tomorrow': return getTomorrowSigningSchedules();
+        case 'week': return getThisWeekSigningSchedules();
+        case 'past': return getPastSigningSchedules();
+        default: return getTodaySigningSchedules();
+      }
+    }
+    return getActiveInterviews();
+  };
+
+  const hasNewScheduleInTab = (tabKey) => {
+    const list = scheduleMode === 'signing'
+      ? tabKey === 'today'
+        ? getTodaySigningSchedules()
+        : tabKey === 'tomorrow'
+        ? getTomorrowSigningSchedules()
+        : tabKey === 'week'
+        ? getThisWeekSigningSchedules()
+        : tabKey === 'past'
+        ? getPastSigningSchedules()
+        : []
+      : tabKey === 'today'
+        ? getTodayInterviews()
+        : tabKey === 'tomorrow'
+        ? getTomorrowInterviews()
+        : tabKey === 'week'
+        ? getThisWeekInterviews()
+        : tabKey === 'past'
+        ? getPastInterviews()
+        : [];
+
+    return list.some((i) => scheduleMode === 'signing' ? !isSigningScheduleViewed(i.id) : !isInterviewViewed(i.id));
+  };
+
   const getTabTitle = () => {
+    const label = scheduleMode === 'signing' ? 'Signings' : 'Interviews';
     switch (activeTab) {
-      case 'today': return "Today's Interviews";
-      case 'tomorrow': return "Tomorrow's Interviews";
-      case 'week': return "This Week's Interviews";
-      case 'past': return "Past Interviews";
-      default: return "Today's Interviews";
+      case 'today': return `Today's ${label}`;
+      case 'tomorrow': return `Tomorrow's ${label}`;
+      case 'week': return `This Week's ${label}`;
+      case 'past': return `Past ${label}`;
+      default: return `Today's ${label}`;
     }
   };
 
@@ -1991,6 +2350,7 @@ function HrRecruitment() {
       }
 
       await loadApplications();
+      await fetchSigningSchedules();
       setShowAgreementSigningModal(false);
 
       const apptSummary = `${selectedApplicationForSigning.name} - ${agreementSigningForm.date} at ${agreementSigningForm.time}, ${agreementSigningForm.location}`;
@@ -3051,24 +3411,79 @@ function HrRecruitment() {
   const filterOptionApplicants = allApplicants;
 
   // Distinct positions/depots for filters
-  const positions = useMemo(() => {
-    const s = new Set(filterOptionApplicants.map((a) => a.position).filter(Boolean));
-    return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
-  }, [filterOptionApplicants]);
-
   const depots = useMemo(() => {
     const s = new Set(filterOptionApplicants.map((a) => a.depot).filter(Boolean));
     return ["All", ...Array.from(s).sort((a, b) => a.localeCompare(b))];
   }, [filterOptionApplicants]);
+
+  const departmentOptions = useMemo(() => {
+    const extras = new Set();
+    const known = new Set(departments.map((d) => normalizeDepartmentName(d)));
+
+    (filterOptionApplicants || []).forEach((a) => {
+      const derived = normalizeDepartmentName(a.department || getDepartmentForPosition(a.position));
+      if (!derived) return;
+      if (!known.has(derived)) extras.add(derived);
+    });
+
+    return [
+      "All",
+      ...departments,
+      ...Array.from(extras).sort((a, b) => a.localeCompare(b)),
+    ];
+  }, [filterOptionApplicants]);
+
+  const positions = useMemo(() => {
+    const set = new Set();
+
+    if (departmentFilter === "All") {
+      getPositionsForDepartment("All").forEach((p) => set.add(p));
+      (filterOptionApplicants || []).forEach((a) => {
+        if (a?.position) set.add(a.position);
+      });
+    } else {
+      getPositionsForDepartment(departmentFilter).forEach((p) => set.add(p));
+      (filterOptionApplicants || []).forEach((a) => {
+        const derivedDept = normalizeDepartmentName(a.department || getDepartmentForPosition(a.position));
+        if (normalizeDepartmentName(derivedDept) !== normalizeDepartmentName(departmentFilter)) return;
+        if (a?.position) set.add(a.position);
+      });
+    }
+
+    return ["All", ...Array.from(set).sort((a, b) => a.localeCompare(b))];
+  }, [filterOptionApplicants, departmentFilter]);
+
+  useEffect(() => {
+    if (positionFilter === "All") return;
+    const allowed = new Set(positions.filter((p) => p && p !== "All"));
+    if (!allowed.has(positionFilter)) setPositionFilter("All");
+  }, [positions, positionFilter]);
+
+  const recruitmentTypes = ["All", "Agency", "Direct"];
   
   const statusOptions = ["All", "SUBMITTED", "IN REVIEW", "INTERVIEW SET", "INTERVIEW CONFIRMED", "RESCHEDULE REQUESTED", "REQUIREMENTS", "AGREEMENT", "HIRED", "REJECTED"];
+
+  const isRejectedApplicant = useCallback(
+    (applicant) => String(getApplicationStatus(applicant)?.label || '').trim().toUpperCase() === 'REJECTED',
+    [getApplicationStatus]
+  );
+
+  useEffect(() => {
+    if (listMode === 'rejected') {
+      if (statusFilter !== 'All') setStatusFilter('All');
+      return;
+    }
+
+    if (String(statusFilter || '').trim().toUpperCase() === 'REJECTED') {
+      setStatusFilter('All');
+    }
+  }, [listMode, statusFilter]);
 
   // Use actual job posts from database - loaded via loadJobPosts()
   // This replaces the previous aggregation-based approach
   const jobPostStats = jobPosts;
 
-  // Filtered + sorted applicants based on search and filters
-  const filteredAllApplicants = useMemo(() => {
+  const filteredApplicantsNoStatus = useMemo(() => {
     let list = allApplicants;
 
     const term = searchTerm.toLowerCase();
@@ -3085,12 +3500,42 @@ function HrRecruitment() {
       list = list.filter((a) => a.position === positionFilter);
     }
 
+    list = list.filter((a) => {
+      if (recruitmentTypeFilter === "All") return true;
+      if (recruitmentTypeFilter === "Agency") return !!a.agency;
+      if (recruitmentTypeFilter === "Direct") return !a.agency;
+      return true;
+    });
+
+    list = list.filter((a) => {
+      if (departmentFilter === "All") return true;
+      const derived = normalizeDepartmentName(a.department || getDepartmentForPosition(a.position));
+      return normalizeDepartmentName(derived) === normalizeDepartmentName(departmentFilter);
+    });
+
     if (depotFilter !== "All") {
       list = list.filter((a) => a.depot === depotFilter);
     }
 
-    if (statusFilter !== "All") {
-      list = list.filter((a) => getApplicationStatus(a).label === statusFilter);
+    return list;
+  }, [allApplicants, searchTerm, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter]);
+
+  const listModeCounts = useMemo(() => {
+    const rejected = (filteredApplicantsNoStatus || []).filter(isRejectedApplicant).length;
+    const pending = (filteredApplicantsNoStatus || []).length - rejected;
+    return { pending, rejected };
+  }, [filteredApplicantsNoStatus, isRejectedApplicant]);
+
+  // Filtered + sorted applicants based on search and filters
+  const filteredAllApplicants = useMemo(() => {
+    let list = filteredApplicantsNoStatus;
+
+    list = listMode === 'rejected'
+      ? list.filter(isRejectedApplicant)
+      : list.filter((a) => !isRejectedApplicant(a));
+
+    if (listMode !== 'rejected' && statusFilter !== "All") {
+      list = list.filter((a) => String(getApplicationStatus(a).label || '').trim() === statusFilter);
     }
 
     // Sort by name
@@ -3101,7 +3546,7 @@ function HrRecruitment() {
     );
 
     return list;
-  }, [allApplicants, searchTerm, positionFilter, depotFilter, statusFilter, sortOrder]);
+  }, [filteredApplicantsNoStatus, listMode, statusFilter, sortOrder, isRejectedApplicant]);
 
 
   // Pagination for unified table
@@ -3398,27 +3843,55 @@ function HrRecruitment() {
                   {/* Left: Interview Schedule - 30% */}
                   <div className="w-[30%]">
                     <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col p-4 h-[calc(100vh-200px)]">
-                      <h2 className="text-base font-bold text-gray-800 mb-3">Interview Schedule</h2>
-                      
-                      {/* Stats Overview */}
-                      <div className="grid grid-cols-3 gap-2 mb-3">
-                        <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg p-2 text-white">
-                          <p className="text-xs opacity-90">Total</p>
-                          <p className="text-lg font-bold">{getActiveInterviews().length}</p>
-                        </div>
-                        <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg p-2 text-white">
-                          <p className="text-xs opacity-90">Online</p>
-                          <p className="text-lg font-bold">
-                            {getActiveInterviews().filter(i => i.interview_type === 'online').length}
-                          </p>
-                        </div>
-                        <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg p-2 text-white">
-                          <p className="text-xs opacity-90">Onsite</p>
-                          <p className="text-lg font-bold">
-                            {getActiveInterviews().filter(i => i.interview_type === 'onsite').length}
-                          </p>
+                      <div className="flex items-center justify-between gap-3 mb-3">
+                        <h2 className="text-base font-bold text-gray-800">Schedules</h2>
+                        <div className="inline-flex rounded-lg bg-gray-100 p-1">
+                          <button
+                            type="button"
+                            onClick={() => setScheduleMode('interview')}
+                            className={`px-2 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                              scheduleMode === 'interview'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-800'
+                            }`}
+                          >
+                            Interview
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setScheduleMode('signing')}
+                            className={`px-2 py-1 text-[11px] font-semibold rounded-md transition-all ${
+                              scheduleMode === 'signing'
+                                ? 'bg-white text-blue-600 shadow-sm'
+                                : 'text-gray-600 hover:text-gray-800'
+                            }`}
+                          >
+                            Signing
+                          </button>
                         </div>
                       </div>
+
+                      {/* Stats Overview (Interview only) */}
+                      {scheduleMode !== 'signing' && (
+                        <div className="grid grid-cols-3 gap-2 mb-3">
+                          <div className="bg-gradient-to-br from-indigo-500 to-indigo-600 rounded-lg p-2 text-white">
+                            <p className="text-xs opacity-90">Total</p>
+                            <p className="text-lg font-bold">{getActiveSchedules().length}</p>
+                          </div>
+                          <div className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-lg p-2 text-white">
+                            <p className="text-xs opacity-90">Online</p>
+                            <p className="text-lg font-bold">
+                              {getActiveSchedules().filter(i => i.interview_type === 'online').length}
+                            </p>
+                          </div>
+                          <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-lg p-2 text-white">
+                            <p className="text-xs opacity-90">Onsite</p>
+                            <p className="text-lg font-bold">
+                              {getActiveSchedules().filter(i => i.interview_type === 'onsite').length}
+                            </p>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Tabs */}
                       <div className="flex gap-1 mb-3 bg-gray-100 p-1 rounded-lg">
@@ -3430,7 +3903,10 @@ function HrRecruitment() {
                               : 'text-gray-600 hover:text-gray-800'
                           }`}
                         >
-                          Today
+                          <span className="inline-flex items-center gap-1">
+                            Today
+                            {hasNewScheduleInTab('today') && <span className="w-2 h-2 bg-red-500 rounded-full" />}
+                          </span>
                         </button>
                         <button
                           onClick={() => setActiveTab('tomorrow')}
@@ -3440,7 +3916,10 @@ function HrRecruitment() {
                               : 'text-gray-600 hover:text-gray-800'
                           }`}
                         >
-                          Tomorrow
+                          <span className="inline-flex items-center gap-1">
+                            Tomorrow
+                            {hasNewScheduleInTab('tomorrow') && <span className="w-2 h-2 bg-red-500 rounded-full" />}
+                          </span>
                         </button>
                         <button
                           onClick={() => setActiveTab('week')}
@@ -3450,7 +3929,10 @@ function HrRecruitment() {
                               : 'text-gray-600 hover:text-gray-800'
                           }`}
                         >
-                          Week
+                          <span className="inline-flex items-center gap-1">
+                            Week
+                            {hasNewScheduleInTab('week') && <span className="w-2 h-2 bg-red-500 rounded-full" />}
+                          </span>
                         </button>
                         <button
                           onClick={() => setActiveTab('past')}
@@ -3460,7 +3942,10 @@ function HrRecruitment() {
                               : 'text-gray-600 hover:text-gray-800'
                           }`}
                         >
-                          Past
+                          <span className="inline-flex items-center gap-1">
+                            Past
+                            {hasNewScheduleInTab('past') && <span className="w-2 h-2 bg-red-500 rounded-full" />}
+                          </span>
                         </button>
                       </div>
 
@@ -3470,24 +3955,40 @@ function HrRecruitment() {
                       </div>
                       
                       <div className="flex-1 overflow-y-auto space-y-2">
-                        {getActiveInterviews().length === 0 ? (
+                        {getActiveSchedules().length === 0 ? (
                           <div className="text-center py-12 bg-gray-50 rounded-lg">
                             <svg className="w-12 h-12 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                             </svg>
-                            <p className="text-xs text-gray-500">No interviews scheduled</p>
+                            <p className="text-xs text-gray-500">No schedules</p>
                           </div>
                         ) : (
-                          getActiveInterviews().map((interview) => (
+                          getActiveSchedules().map((interview) => {
+                            const isNew = scheduleMode === 'signing'
+                              ? !isSigningScheduleViewed(interview.id)
+                              : !isInterviewViewed(interview.id);
+
+                            return (
                             <div
                               key={interview.id}
-                              className="bg-gradient-to-r from-gray-50 to-white rounded-lg p-3 cursor-pointer hover:shadow-md transition-all border border-gray-200 hover:border-indigo-300"
+                              className={[
+                                'rounded-lg p-3 cursor-pointer transition-all border',
+                                isNew
+                                  ? 'bg-gradient-to-r from-blue-50 to-white border-blue-200 shadow-sm motion-safe:animate-pulse'
+                                  : 'bg-gradient-to-r from-gray-50 to-white border-gray-200',
+                                'hover:shadow-md hover:border-indigo-300'
+                              ].join(' ')}
                               onClick={() => {
+                                if (scheduleMode === 'signing') {
+                                  markSigningScheduleViewed(interview.id);
+                                } else {
+                                  markInterviewViewed(interview.id);
+                                }
                                 // Find the applicant in the list
                                 const applicant = filteredApplicantsByDepot.find(a => a.id === interview.id);
                                 if (applicant) {
                                   setSelectedApplicant(applicant);
-                                  setActiveDetailTab('Assessment');
+                                  setActiveDetailTab(scheduleMode === 'signing' ? 'Agreements' : 'Assessment');
                                 }
                               }}
                             >
@@ -3508,26 +4009,9 @@ function HrRecruitment() {
                                   {new Date(interview.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                 </p>
                               )}
-                              {(String(interview.status || '').toLowerCase() !== 'rejected' && String(interview.status || '').toLowerCase() !== 'hired') && (
-                                <div className="mt-2 flex justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      const fromApplicants = applicants.find(a => a.id === interview.id);
-                                      const applicantLike = fromApplicants || { id: interview.id, name: interview.applicant_name };
-                                      openRejectForApplicant(applicantLike);
-                                    }}
-                                    className="px-3 py-1 rounded-full border border-red-300 text-xs font-medium text-red-700 hover:bg-red-50"
-                                    title="Reject applicant"
-                                  >
-                                    Reject
-                                  </button>
-                                </div>
-                              )}
                             </div>
-                          ))
+                          );
+                          })
                         )}
                       </div>
                     </div>
@@ -3538,8 +4022,9 @@ function HrRecruitment() {
                     <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col h-[calc(100vh-200px)]">
             {/* Search and Filters Bar (always visible) */}
             <div className="p-4 border-b border-gray-100 bg-gray-50/50">
-                <div className="flex flex-col sm:flex-row gap-3">
-                  {/* Search */}
+              <div className="flex flex-col gap-3">
+                {/* Search */}
+                <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
                   <div className="relative flex-1">
                     <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -3556,21 +4041,49 @@ function HrRecruitment() {
                     />
                   </div>
 
-                  {/* Position Filter */}
-                  <select
-                    value={positionFilter}
-                    onChange={(e) => {
-                      setPositionFilter(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white min-w-[160px]"
-                  >
-                    <option value="All">All Positions</option>
-                    {positions.filter(p => p !== "All").map((p) => (
-                      <option key={p} value={p}>{p}</option>
-                    ))}
-                  </select>
+                  <div className="flex justify-end sm:flex-none w-full sm:w-auto">
+                    <div className="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setListMode('pending');
+                          setCurrentPage(1);
+                        }}
+                        className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
+                          listMode === 'pending'
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        Pending ({listModeCounts.pending})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setListMode('rejected');
+                          setCurrentPage(1);
+                        }}
+                        className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
+                          listMode === 'rejected'
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        Rejected ({listModeCounts.rejected})
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
+                {/* Filters row (below search, reference layout) */}
+                <div
+                  className={[
+                    'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 items-center',
+                    listMode === 'rejected'
+                      ? 'xl:grid-cols-[repeat(6,minmax(0,1fr))]'
+                      : 'xl:grid-cols-[repeat(7,minmax(0,1fr))]',
+                  ].join(' ')}
+                >
                   {/* Depot Filter */}
                   <select
                     value={depotFilter}
@@ -3578,7 +4091,7 @@ function HrRecruitment() {
                       setDepotFilter(e.target.value);
                       setCurrentPage(1);
                     }}
-                    className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white min-w-[140px]"
+                    className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
                   >
                     <option value="All">All Depots</option>
                     {depots.filter(d => d !== "All").map((d) => (
@@ -3586,56 +4099,91 @@ function HrRecruitment() {
                     ))}
                   </select>
 
-                  {/* More Filters Button */}
-                  <div className="relative" ref={filterMenuRef}>
-                    <button
-                      onClick={() => setShowFilterMenu(!showFilterMenu)}
-                      className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                      </svg>
-                      Filters
-                    </button>
-                    {showFilterMenu && (
-                      <div className="absolute right-0 mt-2 w-64 bg-white border rounded-lg shadow-lg z-10 p-4">
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Sort by Name</label>
-                            <button
-                              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                              className="w-full px-3 py-2 bg-gray-100 rounded-lg text-left hover:bg-gray-200 text-sm"
-                            >
-                              {sortOrder === "asc" ? "A → Z" : "Z → A"}
-                            </button>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                            <select
-                              value={statusFilter}
-                              onChange={(e) => {
-                                setStatusFilter(e.target.value);
-                                setCurrentPage(1);
-                              }}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                            >
-                              {statusOptions.map((s) => (
-                                <option key={s} value={s}>{s}</option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  {/* Department Filter */}
+                  <select
+                    value={departmentFilter}
+                    onChange={(e) => {
+                      setDepartmentFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                  >
+                    <option value="All">All Departments</option>
+                    {departmentOptions.filter((d) => d !== "All").map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
 
+                  {/* Position Filter */}
+                  <select
+                    value={positionFilter}
+                    onChange={(e) => {
+                      setPositionFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                  >
+                    <option value="All">All Positions</option>
+                    {positions.filter(p => p !== "All").map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+
+                  {/* Status (hidden in Rejected mode) */}
+                  {listMode !== 'rejected' && (
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => {
+                        setStatusFilter(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                    >
+                      <option value="All">Status</option>
+                      {statusOptions
+                        .filter((s) => s !== 'All')
+                        .filter((s) => String(s).trim().toUpperCase() !== 'REJECTED')
+                        .map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                    </select>
+                  )}
+
+                  {/* Recruitment Type */}
+                  <select
+                    value={recruitmentTypeFilter}
+                    onChange={(e) => {
+                      setRecruitmentTypeFilter(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                  >
+                    <option value="All">All Recruitment Type</option>
+                    {recruitmentTypes.filter((t) => t !== 'All').map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+
+                  {/* Sort */}
+                  <select
+                    value={sortOrder}
+                    onChange={(e) => {
+                      setSortOrder(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    aria-label="Sort"
+                    className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-[12px] focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
+                  >
+                    <option value="asc">Alphabetically (A → Z)</option>
+                    <option value="desc">Alphabetically (Z → A)</option>
+                  </select>
 
                   {/* Export Button */}
                   <div className="relative" ref={exportMenuRef}>
                     <button
                       type="button"
                       onClick={() => setShowExportMenu((prev) => !prev)}
-                      className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white"
+                      className="w-full px-2.5 py-2 border border-gray-200 rounded-lg text-[12px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white"
                       title="Export the currently filtered list"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3671,6 +4219,7 @@ function HrRecruitment() {
                   </div>
                 </div>
               </div>
+            </div>
 
               {/* Table only when no applicant detail is open */}
               {!selectedApplicant && (
