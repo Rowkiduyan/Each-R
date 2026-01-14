@@ -1,7 +1,7 @@
 // src/HrRequirements.jsx
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import { supabase } from "./supabaseClient";
-import { PieChart, Pie, Cell, Tooltip } from "recharts";
+import { PieChart, Pie, Cell } from "recharts";
 import { getStoredJson } from "./authStorage";
 
 function HrRequirements() {
@@ -179,7 +179,8 @@ function HrRequirements() {
     "Calbayog","Catbalogan","Tuguegarao","Baler","Iligan","Koronadal City"
   ];
   
-  const COLORS = ["#4ade80", "#f87171"];
+  // Modern palette: green for compliant, neutral for the remainder
+  const COLORS = ["#22c55e", "#e5e7eb"];
 
   // Depot compliance data
   const depotCompliance = depots.map((d, i) => ({
@@ -190,7 +191,7 @@ function HrRequirements() {
 
   const displayedDepots = showAllDepots
     ? depotCompliance
-    : depotCompliance.slice(0, 5);
+    : depotCompliance.slice(0, 6);
 
   // Load all employees and their requirements
   useEffect(() => {
@@ -627,7 +628,6 @@ function HrRequirements() {
     }
 
     return {
-      actionRequired: filteredEmployees.filter(e => getEmployeeStatus(e) === 'action_required').length,
       incomplete: filteredEmployees.filter(e => getEmployeeStatus(e) === 'incomplete').length,
       pending: filteredEmployees.filter(e => hasPendingItems(e)).length,
       complete: filteredEmployees.filter(e => getEmployeeStatus(e) === 'complete').length,
@@ -1372,49 +1372,90 @@ function HrRequirements() {
         </div>
 
         {/* Depot Compliance Monitoring */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-          <h2 className="text-xl font-bold mb-4 text-gray-700">
-            Depot Compliance Monitoring
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Depot Compliance Monitoring</h2>
+              <p className="text-sm text-gray-500">Compliance rate per depot</p>
+            </div>
+
+            {depotCompliance.length > 6 && (
+              <button
+                onClick={() => setShowAllDepots((v) => !v)}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                {showAllDepots ? "Show less" : `Show all (${depotCompliance.length})`}
+                <svg
+                  className={`w-4 h-4 transition-transform ${showAllDepots ? "rotate-180" : ""}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
             {displayedDepots.map((depot) => {
               const data = [
-                { name: "Compliance", value: depot.compliance },
-                { name: "Non-Compliance", value: depot.nonCompliance },
+                { name: "Compliant", value: depot.compliance },
+                { name: "Remaining", value: depot.nonCompliance },
               ];
+
               return (
                 <div
                   key={depot.name}
-                  className="relative bg-white p-4 rounded-2xl shadow-md flex flex-col items-center hover:shadow-xl transition-transform cursor-pointer"
+                  className="group rounded-2xl border border-gray-100 bg-gradient-to-b from-white to-gray-50 p-3 shadow-sm hover:shadow-md hover:border-gray-200 transition"
                 >
-                  <PieChart width={180} height={180}>
-                    <Pie data={data} cx="50%" cy="50%" outerRadius={70} dataKey="value">
-                      {data.map((entry, i) => (
-                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-sm font-semibold">{depot.name}</span>
-                    <span className="font-bold text-black">
-                      {depot.compliance}%
-                    </span>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-gray-900 truncate">{depot.name}</div>
+                      <div className="mt-0.5 flex items-baseline gap-2">
+                        <div className="text-lg sm:text-xl font-bold text-gray-900">{depot.compliance}%</div>
+                        <div className="text-xs font-medium text-gray-500">compliant</div>
+                      </div>
+                    </div>
+
+                    <div className="relative shrink-0">
+                      <PieChart width={76} height={76}>
+                        <Pie
+                          data={data}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={22}
+                          outerRadius={32}
+                          paddingAngle={2}
+                          cornerRadius={6}
+                          dataKey="value"
+                          startAngle={90}
+                          endAngle={-270}
+                        >
+                          {data.map((_, i) => (
+                            <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </div>
+                  </div>
+
+                  <div className="mt-2">
+                    <div className="h-2 w-full rounded-full bg-gray-200 overflow-hidden">
+                      <div
+                        className="h-2 rounded-full bg-green-500"
+                        style={{ width: `${depot.compliance}%` }}
+                      />
+                    </div>
+                    <div className="mt-1.5 flex items-center justify-between text-xs">
+                      <span className="text-gray-500">Non-compliant</span>
+                      <span className="font-medium text-red-600">{depot.nonCompliance}%</span>
+                    </div>
                   </div>
                 </div>
               );
             })}
           </div>
-          {depotCompliance.length > 5 && (
-            <div className="flex justify-end mt-2">
-              <button
-                onClick={() => setShowAllDepots((v) => !v)}
-                className="text-gray-700 text-xl font-bold"
-              >
-                {showAllDepots ? "▲" : "▼"}
-              </button>
-            </div>
-          )}
         </div>
 
         {/* Filters and Search */}
@@ -1580,20 +1621,6 @@ function HrRequirements() {
                 }`}
               >
                 Pending Review ({stats.pending})
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('action_required');
-                  setCurrentPage(1);
-                  setExpandedRow(null);
-                }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === 'action_required'
-                    ? 'bg-red-600 text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                Action Required ({stats.actionRequired})
               </button>
               <button
                 onClick={() => {

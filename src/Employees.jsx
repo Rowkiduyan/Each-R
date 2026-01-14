@@ -1587,8 +1587,8 @@ function Employees() {
       `}</style>
 
       {/* Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="w-full py-4 flex flex-col flex-1 overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-y-auto">
+        <div className="w-full py-4 flex flex-col flex-1">
           {/* Page Header */}
           <div className="mb-4">
             <h1 className="text-2xl font-bold text-gray-800">Employees</h1>
@@ -1776,7 +1776,7 @@ function Employees() {
                 <>
                   <div className="flex flex-col lg:flex-row gap-4 flex-1 overflow-hidden min-h-0">
                     {/* Table on the left */}
-                    <div className={`${selectedEmployee ? 'lg:w-[35%]' : 'w-full'} overflow-x-auto overflow-y-auto no-scrollbar`}>
+                    <div className={`${selectedEmployee ? 'lg:w-[35%] max-h-[35vh] lg:max-h-none' : 'w-full'} overflow-x-auto overflow-y-auto no-scrollbar min-h-0`}>
                       <table className="w-full">
                         <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
                           <tr>
@@ -1845,7 +1845,7 @@ function Employees() {
 
                     {/* Detail panel on the right */}
                     {selectedEmployee && (
-                      <div className="lg:w-[65%] overflow-y-auto flex flex-col">
+                      <div className="lg:w-[65%] flex-1 min-h-0 overflow-hidden flex flex-col">
                         {/* Employee Header */}
                         <div className="bg-white border border-gray-300 rounded-t-lg p-4 relative">
                           <button 
@@ -1875,7 +1875,7 @@ function Employees() {
                         </div>
 
                         {/* Tabs */}
-                        <div className="flex border-b border-gray-300 bg-white overflow-x-auto">
+                        <div className="flex border-b border-gray-300 bg-white overflow-x-auto flex-shrink-0">
                           {detailTabs.map((tab) => (
                             <button
                               key={tab.key}
@@ -1892,7 +1892,7 @@ function Employees() {
                         </div>
 
                         {/* Tab Content */}
-                        <div className="bg-white border border-t-0 border-gray-300 rounded-b-lg p-6 flex-1 overflow-y-auto">
+                        <div className="bg-white border border-t-0 border-gray-300 rounded-b-lg p-6 flex-1 overflow-y-auto min-h-0">
                           
                           {/* PROFILING TAB */}
                           {activeTab === 'profiling' && (
