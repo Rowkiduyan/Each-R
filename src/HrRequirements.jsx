@@ -1,8 +1,11 @@
 // src/HrRequirements.jsx
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "./supabaseClient";
 import { PieChart, Pie, Cell, Tooltip } from "recharts";
 import { getStoredJson } from "./authStorage";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import ExcelJS from "exceljs";
 
 function HrRequirements() {
   // Tab, filter, and search state
@@ -26,6 +29,10 @@ function HrRequirements() {
   const [departmentFilter, setDepartmentFilter] = useState('All');
   const [employmentStatusFilter, setEmploymentStatusFilter] = useState('All');
   const [recruitmentTypeFilter, setRecruitmentTypeFilter] = useState('All');
+
+  // Export menu state
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef(null);
 
   // master department list (shared with Employees.jsx)
   const departments = [
@@ -441,6 +448,16 @@ function HrRequirements() {
     loadEmployees();
   }, [reloadTrigger]);
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (!showExportMenu) return;
+      const el = exportMenuRef.current;
+      if (el && !el.contains(e.target)) setShowExportMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showExportMenu]);
+
   // Calculate requirement status for an employee
   const getEmployeeStatus = (employee) => {
     const reqs = employee.requirements;
@@ -755,46 +772,184 @@ function HrRequirements() {
     return data;
   };
 
-  // Export function
-  const handleExport = () => {
-    const filteredData = getFilteredData();
-    
-    // Prepare CSV data
-    const headers = ['Name', 'Email', 'Position', 'Depot', 'Type', 'Status', 'Progress', 'Deployed Date'];
-    const rows = filteredData.map(emp => {
-      const status = getEmployeeStatus(emp);
-      const statusBadge = getEmployeeStatusBadge(status);
-      const progress = getRequirementsProgress(emp);
-      
-      return [
-        emp.name || '',
-        emp.email || '',
-        emp.position || '',
-        emp.depot || '',
-        emp.isAgency ? 'Agency' : 'Direct',
-        statusBadge.label,
-        `${progress.approved}/${progress.total}`,
-        formatDate(emp.deployedDate) || '',
-      ];
-    });
+  const exportRequirementsPdf = useCallback((rows, title = "Employee Requirements") => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+      setAlertMessage("No employees to export for the current filters.");
+      setShowErrorAlert(true);
+      return;
+    }
 
-    // Create CSV content
-    const csvContent = [
-      headers.join(','),
-      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    ].join('\n');
+    try {
+      const exportedAt = new Date();
+      const exportedAtLabel = exportedAt.toLocaleString("en-US");
 
-    // Create blob and download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `employee_requirements_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
+      const filterSummary = [
+        activeTab && activeTab !== 'all' ? `Tab: ${activeTab}` : null,
+        searchQuery ? `Search: ${searchQuery}` : null,
+        depotFilter !== 'All' ? `Depot: ${depotFilter}` : null,
+        departmentFilter !== 'All' ? `Department: ${departmentFilter}` : null,
+        positionFilter !== 'All' ? `Position: ${positionFilter}` : null,
+        employmentStatusFilter !== 'All' ? `Employment: ${employmentStatusFilter}` : null,
+        recruitmentTypeFilter !== 'All' ? `Recruitment: ${recruitmentTypeFilter}` : null,
+        `Sort: ${sortOption}`,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      const safeText = (v) => {
+        const s = String(v ?? "").trim();
+        return s.length ? s : "—";
+      };
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "a4",
+      });
+
+      doc.setFontSize(16);
+      doc.text(`${title} (${list.length})`, 28, 40);
+
+      doc.setFontSize(10);
+      doc.setTextColor(80);
+      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
+      if (filterSummary) doc.text(filterSummary, 28, 74);
+      doc.setTextColor(0);
+
+      const body = list.map((emp) => {
+        const status = getEmployeeStatus(emp);
+        const statusBadge = getEmployeeStatusBadge(status);
+        const progress = getRequirementsProgress(emp);
+        return [
+          safeText(emp.name),
+          safeText(emp.email),
+          safeText(emp.position),
+          safeText(emp.depot),
+          emp.isAgency ? "Agency" : "Direct",
+          safeText(statusBadge.label),
+          `${progress.approved}/${progress.total}`,
+          safeText(formatDate(emp.deployedDate)),
+        ];
+      });
+
+      autoTable(doc, {
+        startY: filterSummary ? 90 : 78,
+        head: [["Name", "Email", "Position", "Depot", "Type", "Status", "Progress", "Deployed"]],
+        body,
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
+        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
+        margin: { left: 28, right: 28 },
+        columnStyles: {
+          0: { cellWidth: 85 },
+          1: { cellWidth: 115 },
+          2: { cellWidth: 85 },
+          3: { cellWidth: 50 },
+          4: { cellWidth: 40 },
+          5: { cellWidth: 60 },
+          6: { cellWidth: 55 },
+          7: { cellWidth: 50 },
+        },
+      });
+
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const rawParts = [
+        "requirements",
+        activeTab && activeTab !== 'all' ? activeTab : null,
+        depotFilter !== 'All' ? depotFilter : null,
+        departmentFilter !== 'All' ? departmentFilter : null,
+        positionFilter !== 'All' ? positionFilter : null,
+        employmentStatusFilter !== 'All' ? employmentStatusFilter : null,
+        recruitmentTypeFilter !== 'All' ? recruitmentTypeFilter : null,
+        yyyyMmDd,
+      ]
+        .filter(Boolean)
+        .join("_");
+      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".pdf";
+      doc.save(fileName);
+    } catch (err) {
+      console.error("exportRequirementsPdf error:", err);
+      setAlertMessage("Failed to export PDF. Please try again.");
+      setShowErrorAlert(true);
+    }
+  }, [activeTab, searchQuery, depotFilter, departmentFilter, positionFilter, employmentStatusFilter, recruitmentTypeFilter, sortOption]);
+
+  const exportRequirementsExcel = useCallback(async (rows, title = "Employee Requirements") => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+      setAlertMessage("No employees to export for the current filters.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    try {
+      const exportedAt = new Date();
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const rawParts = [
+        "requirements",
+        activeTab && activeTab !== 'all' ? activeTab : null,
+        depotFilter !== 'All' ? depotFilter : null,
+        departmentFilter !== 'All' ? departmentFilter : null,
+        positionFilter !== 'All' ? positionFilter : null,
+        employmentStatusFilter !== 'All' ? employmentStatusFilter : null,
+        recruitmentTypeFilter !== 'All' ? recruitmentTypeFilter : null,
+        yyyyMmDd,
+      ]
+        .filter(Boolean)
+        .join("_");
+      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".xlsx";
+
+      const safeText = (v) => {
+        const s = String(v ?? "").trim();
+        return s.length ? s : "—";
+      };
+
+      const header = ["Name", "Email", "Position", "Depot", "Type", "Status", "Progress", "Deployed Date"];
+      const rowsAoa = [];
+
+      for (const emp of list) {
+        const status = getEmployeeStatus(emp);
+        const statusBadge = getEmployeeStatusBadge(status);
+        const progress = getRequirementsProgress(emp);
+        rowsAoa.push([
+          safeText(emp.name),
+          safeText(emp.email),
+          safeText(emp.position),
+          safeText(emp.depot),
+          emp.isAgency ? "Agency" : "Direct",
+          safeText(statusBadge.label),
+          `${progress.approved}/${progress.total}`,
+          safeText(formatDate(emp.deployedDate)),
+        ]);
+      }
+
+      const sheetName = String(title || "Requirements").slice(0, 31) || "Requirements";
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet(sheetName);
+      worksheet.addRow(header);
+      worksheet.addRows(rowsAoa);
+      worksheet.getRow(1).font = { bold: true };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("exportRequirementsExcel error:", err);
+      setAlertMessage("Failed to export Excel file. Please try again.");
+      setShowErrorAlert(true);
+    }
+  }, [activeTab, depotFilter, departmentFilter, positionFilter, employmentStatusFilter, recruitmentTypeFilter]);
 
   const filteredData = getFilteredData();
   const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
@@ -1539,15 +1694,44 @@ function HrRequirements() {
                 </select>
 
                 {/* Export Button */}
-                <button
-                  onClick={handleExport}
-                  className="w-full sm:w-auto px-4 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Export
-                </button>
+                <div className="relative" ref={exportMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setShowExportMenu((prev) => !prev)}
+                    className="w-full sm:w-auto px-4 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white"
+                    title="Export the currently filtered list"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    Export
+                  </button>
+
+                  {showExportMenu && (
+                    <div className="absolute right-0 mt-2 w-48 bg-white border rounded-lg shadow-lg z-50 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowExportMenu(false);
+                          exportRequirementsPdf(getFilteredData(), "Employee Requirements");
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                      >
+                        Export list as PDF
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowExportMenu(false);
+                          exportRequirementsExcel(getFilteredData(), "Employee Requirements");
+                        }}
+                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                      >
+                        Export list as Excel
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

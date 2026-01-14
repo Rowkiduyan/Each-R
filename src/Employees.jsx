@@ -1,7 +1,10 @@
 // src/Employees.jsx
-import React, { useEffect, useMemo, useState, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import ExcelJS from "exceljs";
 
 function Employees() {
   const navigate = useNavigate();
@@ -91,6 +94,10 @@ function Employees() {
   const [employmentStatusFilter, setEmploymentStatusFilter] = useState("All");
   const [recruitmentTypeFilter, setRecruitmentTypeFilter] = useState("All");
 
+  // Export menu state
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef(null);
+
 
   // data
   const [employees, setEmployees] = useState([]);
@@ -106,6 +113,7 @@ function Employees() {
   const [employeeDocuments, setEmployeeDocuments] = useState([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [showRequestModal, setShowRequestModal] = useState(false);
+  const [requestedDocs, setRequestedDocs] = useState([]);
   const [terminationData, setTerminationData] = useState(null);
   const [onboardingItems, setOnboardingItems] = useState([]);
   const onboardingFileRefs = useRef({});
@@ -121,6 +129,11 @@ function Employees() {
   const [applicationData, setApplicationData] = useState(null);
   const [loadingApplication, setLoadingApplication] = useState(false);
   const [applicantExtras, setApplicantExtras] = useState({ work_experiences: [], character_references: [] });
+
+  // Driver-only profiling extras (agency + driver roles)
+  const [driverLicense, setDriverLicense] = useState({ frontUrl: null, backUrl: null });
+  const [driverExtraInfo, setDriverExtraInfo] = useState({ drivingHistory: null, medicalInfo: null });
+  const [loadingDriverInfo, setLoadingDriverInfo] = useState(false);
 
   // Termination modal states
   const [showTerminateModal, setShowTerminateModal] = useState(false);
@@ -151,6 +164,70 @@ function Employees() {
       return {};
     }
   };
+
+  const normalizeWs = (value) => {
+    if (value === null || value === undefined) return "";
+    return String(value).replace(/\s+/g, " ").trim();
+  };
+
+  const formatNameLastFirstMiddle = ({ last, first, middle }) => {
+    const l = normalizeWs(last);
+    const f = normalizeWs(first);
+    const m = normalizeWs(middle);
+    if (!l && !f && !m) return "";
+    const rest = [f, m].filter(Boolean).join(" ").trim();
+    if (!l) return rest;
+    if (!rest) return l;
+    return `${l}, ${rest}`;
+  };
+
+  const calculateAge = (birthday) => {
+    if (!birthday) return null;
+    const birthDate = new Date(birthday);
+    if (Number.isNaN(birthDate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age;
+  };
+
+  const formatFullAddressOneLine = (data) => {
+    if (!data || typeof data !== 'object') return "";
+
+    // Support agency payloads that already store a one-line address
+    const oneLine =
+      data.fullAddress ||
+      data.full_address ||
+      data.currentAddress ||
+      data.current_address ||
+      data.presentAddress ||
+      data.present_address ||
+      data.address ||
+      data.current_address_text ||
+      null;
+    const oneLineStr = normalizeWs(oneLine);
+    if (oneLineStr) return oneLineStr;
+
+    const parts = [
+      data.unit_house_number,
+      data.house_number,
+      data.unit,
+      data.street,
+      data.subdivision,
+      data.village,
+      data.subdivision_village,
+      data.barangay,
+      data.city,
+      data.province,
+      data.zip,
+    ]
+      .map(normalizeWs)
+      .filter(Boolean);
+    return parts.join(", ");
+  };
+
+  const isDriverRole = (position) => /\bdriver\b/i.test(String(position || ""));
 
   // extract candidate email(s) from a payload object
   const extractEmailsFromPayload = (payloadObj) => {
@@ -219,6 +296,7 @@ function Employees() {
       return {
         id: row.id, // uuid
         name:
+          formatNameLastFirstMiddle({ last: row.lname, first: row.fname, middle: row.mname }) ||
           [row.fname, row.mname, row.lname]
             .filter(Boolean)
             .join(" ")
@@ -229,6 +307,7 @@ function Employees() {
         mname: row.mname || "",
         position: row.position || null, // null means "try to fill"
         depot: row.depot || null,
+        department: normalizeDepartmentName(row.department || getDepartmentForPosition(row.position) || ""),
         email: row.email || "",
         contact: row.contact_number || "",
         role: row.role || "Employee",
@@ -248,7 +327,7 @@ function Employees() {
       try {
         const { data: empRows, error: empErr } = await supabase
           .from("employees")
-          .select("id, email, fname, lname, mname, contact_number, position, depot, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency, personal_email")
+          .select("id, email, fname, lname, mname, contact_number, position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency, personal_email")
           .order("hired_at", { ascending: false });
 
         if (empErr) throw empErr;
@@ -435,6 +514,16 @@ function Employees() {
       });
   }, [employees, search, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (!showExportMenu) return;
+      const el = exportMenuRef.current;
+      if (el && !el.contains(e.target)) setShowExportMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showExportMenu]);
+
 
   // Stats
   const stats = {
@@ -469,6 +558,191 @@ function Employees() {
     const index = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
     return colors[index];
   };
+
+  const exportEmployeesPdf = useCallback((rows, title = "Employees") => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+      setErrorMessage("No employees to export for the current filters.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    try {
+      const exportedAt = new Date();
+      const exportedAtLabel = exportedAt.toLocaleString("en-US");
+      const filterSummary = [
+        search ? `Search: ${search}` : null,
+        depotFilter !== "All" ? `Depot: ${depotFilter}` : null,
+        departmentFilter !== "All" ? `Department: ${departmentFilter}` : null,
+        positionFilter !== "All" ? `Position: ${positionFilter}` : null,
+        employmentStatusFilter !== "All" ? `Employment: ${employmentStatusFilter}` : null,
+        recruitmentTypeFilter !== "All" ? `Recruitment: ${recruitmentTypeFilter}` : null,
+        `Sort: ${sortOption}`,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      const safeText = (v) => {
+        const s = String(v ?? "").trim();
+        return s.length ? s : "—";
+      };
+
+      const hiredDateText = (v) => {
+        if (!v) return "—";
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
+      };
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "a4",
+      });
+
+      doc.setFontSize(16);
+      doc.text(`${title} (${list.length})`, 28, 40);
+
+      doc.setFontSize(10);
+      doc.setTextColor(80);
+      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
+      if (filterSummary) {
+        doc.text(filterSummary, 28, 74);
+      }
+      doc.setTextColor(0);
+
+      const body = list.map((e) => {
+        const recruitmentType = e.agency ? "Agency" : "Direct";
+        return [
+          safeText(e.name),
+          safeText(e.email),
+          safeText(e.position),
+          safeText(e.depot),
+          safeText(e.employmentStatus),
+          hiredDateText(e.hired_at),
+          safeText(recruitmentType),
+        ];
+      });
+
+      autoTable(doc, {
+        startY: filterSummary ? 90 : 78,
+        head: [["Employee", "Email", "Position", "Depot", "Employment Status", "Date Hired", "Recruitment"]],
+        body,
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
+        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
+        margin: { left: 28, right: 28 },
+        columnStyles: {
+          0: { cellWidth: 95 },
+          1: { cellWidth: 110 },
+          2: { cellWidth: 85 },
+          3: { cellWidth: 55 },
+          4: { cellWidth: 70 },
+          5: { cellWidth: 60 },
+          6: { cellWidth: 55 },
+        },
+      });
+
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const rawParts = [
+        title,
+        employmentStatusFilter !== "All" ? employmentStatusFilter : null,
+        departmentFilter !== "All" ? departmentFilter : null,
+        positionFilter !== "All" ? positionFilter : null,
+        depotFilter !== "All" ? depotFilter : null,
+        recruitmentTypeFilter !== "All" ? recruitmentTypeFilter : null,
+        yyyyMmDd,
+      ]
+        .filter(Boolean)
+        .join("_");
+      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".pdf";
+      doc.save(fileName);
+    } catch (err) {
+      console.error("exportEmployeesPdf error:", err);
+      setErrorMessage("Failed to export PDF. Please try again.");
+      setShowErrorAlert(true);
+    }
+  }, [search, depotFilter, departmentFilter, positionFilter, employmentStatusFilter, recruitmentTypeFilter, sortOption]);
+
+  const exportEmployeesExcel = useCallback(async (rows, title = "Employees") => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+      setErrorMessage("No employees to export for the current filters.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    try {
+      const exportedAt = new Date();
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const rawParts = [
+        title,
+        employmentStatusFilter !== "All" ? employmentStatusFilter : null,
+        departmentFilter !== "All" ? departmentFilter : null,
+        positionFilter !== "All" ? positionFilter : null,
+        depotFilter !== "All" ? depotFilter : null,
+        recruitmentTypeFilter !== "All" ? recruitmentTypeFilter : null,
+        yyyyMmDd,
+      ]
+        .filter(Boolean)
+        .join("_");
+      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".xlsx";
+
+      const safeText = (v) => {
+        const s = String(v ?? "").trim();
+        return s.length ? s : "—";
+      };
+
+      const hiredDateText = (v) => {
+        if (!v) return "—";
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
+      };
+
+      const header = ["Employee", "Email", "Position", "Depot", "Employment Status", "Date Hired", "Recruitment"];
+      const rowsAoa = [];
+
+      for (const e of list) {
+        const recruitmentType = e.agency ? "Agency" : "Direct";
+        rowsAoa.push([
+          safeText(e.name),
+          safeText(e.email),
+          safeText(e.position),
+          safeText(e.depot),
+          safeText(e.employmentStatus),
+          hiredDateText(e.hired_at),
+          safeText(recruitmentType),
+        ]);
+      }
+
+      const sheetName = String(title || "Employees").slice(0, 31) || "Employees";
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet(sheetName);
+      worksheet.addRow(header);
+      worksheet.addRows(rowsAoa);
+
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("exportEmployeesExcel error:", err);
+      setErrorMessage("Failed to export Excel file. Please try again.");
+      setShowErrorAlert(true);
+    }
+  }, [employmentStatusFilter, departmentFilter, positionFilter, depotFilter, recruitmentTypeFilter]);
 
   // Fetch external certificates for selected employee
   const fetchExternalCertificates = async (employee) => {
@@ -936,6 +1210,102 @@ function Employees() {
     fetchEmployeeDocuments();
   }, [selectedEmployee, activeTab]);
 
+    // Fetch agency profiling info (license front/back + driving/medical info)
+    useEffect(() => {
+      const fetchDriverInfo = async () => {
+        const isAgencyEmployee = !!selectedEmployee && !!selectedEmployee.agency;
+        const positionText =
+          selectedEmployee?.position ||
+          selectedEmployee?.job_title ||
+          selectedEmployee?.jobTitle ||
+          selectedEmployee?.role ||
+          applicationData?.position ||
+          applicationData?.positionApplied ||
+          applicationData?.position_applied ||
+          applicationData?.jobTitle ||
+          applicationData?.job_title ||
+          '';
+        const isAgencyDriver = isAgencyEmployee && isDriverRole(positionText);
+
+        if (!isAgencyEmployee) {
+          setDriverLicense({ frontUrl: null, backUrl: null });
+          setDriverExtraInfo({ drivingHistory: null, medicalInfo: null });
+          setLoadingDriverInfo(false);
+          return;
+        }
+
+        setLoadingDriverInfo(true);
+        try {
+          const { data, error } = await supabase
+            .from('employees')
+            .select('requirements')
+            .eq('id', selectedEmployee.id)
+            .single();
+
+          if (error) throw error;
+
+          let requirementsData = data?.requirements || null;
+          if (requirementsData && typeof requirementsData === 'string') {
+            try {
+              requirementsData = JSON.parse(requirementsData);
+            } catch {
+              requirementsData = null;
+            }
+          }
+
+          const license = requirementsData?.license || {};
+          const frontPath =
+            license.frontFilePath ||
+            license.front_file_path ||
+            license.front_path ||
+            license.front ||
+            null;
+          const backPath =
+            license.backFilePath ||
+            license.back_file_path ||
+            license.back_path ||
+            license.back ||
+            null;
+
+          const getPublicUrl = (filePath) => {
+            if (!filePath) return null;
+            return supabase.storage.from('application-files').getPublicUrl(filePath)?.data?.publicUrl || null;
+          };
+
+          setDriverLicense({
+            frontUrl: isAgencyDriver ? getPublicUrl(frontPath) : null,
+            backUrl: isAgencyDriver ? getPublicUrl(backPath) : null,
+          });
+
+          const drivingHistory =
+            requirementsData?.drivingHistory ||
+            requirementsData?.driving_history ||
+            applicationData?.drivingHistory ||
+            applicationData?.driving_history ||
+            null;
+
+          const medicalInfo =
+            requirementsData?.medicalInfo ||
+            requirementsData?.medical_information ||
+            requirementsData?.medicalInformation ||
+            applicationData?.medicalInfo ||
+            applicationData?.medical_information ||
+            applicationData?.medicalInformation ||
+            null;
+
+          setDriverExtraInfo({ drivingHistory, medicalInfo });
+        } catch (err) {
+          console.error('Error fetching driver info:', err);
+          setDriverLicense({ frontUrl: null, backUrl: null });
+          setDriverExtraInfo({ drivingHistory: null, medicalInfo: null });
+        } finally {
+          setLoadingDriverInfo(false);
+        }
+      };
+
+      fetchDriverInfo();
+    }, [selectedEmployee?.id, selectedEmployee?.agency, selectedEmployee?.position, selectedEmployee?.job_title, selectedEmployee?.jobTitle, selectedEmployee?.role, applicationData?.position, applicationData?.positionApplied, applicationData?.position_applied, applicationData?.jobTitle, applicationData?.job_title]);
+
   // Load assessment and agreement records when employee is selected and documents tab is active
   useEffect(() => {
     const loadAssessmentRecords = async () => {
@@ -1249,18 +1619,25 @@ function Employees() {
     loadAssessmentRecords();
   }, [selectedEmployee?.email, selectedEmployee?.personal_email, selectedEmployee?.name, selectedEmployee?.hired_at, activeTab]);
 
-  // Fetch application data when employee is selected and profiling tab is active
+  // Fetch application data when employee is selected and Profiling/Documents tabs need it
   useEffect(() => {
     const fetchEmployeeApplication = async () => {
-      if (!selectedEmployee || activeTab !== 'profiling') {
-        setResumeData(null);
-        setApplicationFormData(null);
-        setApplicationData(null);
-        setApplicantExtras({ work_experiences: [], character_references: [] });
+      if (!selectedEmployee || !['profiling', 'documents'].includes(activeTab)) {
         return;
       }
 
-      const applicantEmail = selectedEmployee.personal_email?.trim() || selectedEmployee.email?.trim();
+      const primaryEmail = selectedEmployee.personal_email?.trim() || '';
+      const secondaryEmail = selectedEmployee.email?.trim() || '';
+      const emailCandidates = Array.from(
+        new Set([primaryEmail, secondaryEmail].map((e) => String(e || '').trim().toLowerCase()).filter(Boolean))
+      );
+
+      const applicantEmail = primaryEmail || secondaryEmail;
+      const employeeEmail = (applicantEmail || '').toLowerCase();
+      const employeeName = (selectedEmployee.name || '').toLowerCase();
+      const employeeFname = (selectedEmployee.fname || '').toLowerCase();
+      const employeeLname = (selectedEmployee.lname || '').toLowerCase();
+      const employeeHiredAt = selectedEmployee.hired_at;
 
       setLoadingApplication(true);
       setLoadingFiles(true);
@@ -1270,40 +1647,100 @@ function Employees() {
         let applications = null;
         let error = null;
 
-        // Try querying by email in payload root
-        const { data: apps1, error: err1 } = await supabase
-          .from('applications')
-          .select('id, payload, created_at')
-          .eq('payload->>email', applicantEmail)
-          .order('created_at', { ascending: false })
-          .limit(1);
+        // Try querying by email in payload root/form/applicant (try both personal_email and employee email)
+        const tryEmail = async (emailValue) => {
+          if (!emailValue) return null;
 
-        if (!err1 && apps1 && apps1.length > 0) {
-          applications = apps1;
-        } else {
-          // Try querying by email in payload.form
-          const { data: apps2, error: err2 } = await supabase
+          const { data: a1, error: e1 } = await supabase
             .from('applications')
-            .select('id, payload, created_at')
-            .eq('payload->form->>email', applicantEmail)
+            .select('id, payload, created_at, status, endorsed')
+            .eq('payload->>email', emailValue)
             .order('created_at', { ascending: false })
             .limit(1);
+          if (!e1 && a1 && a1.length > 0) return a1;
 
-          if (!err2 && apps2 && apps2.length > 0) {
-            applications = apps2;
-          } else {
-            // Try querying by email in payload.applicant
-            const { data: apps3, error: err3 } = await supabase
-              .from('applications')
-              .select('id, payload, created_at')
-              .eq('payload->applicant->>email', applicantEmail)
-              .order('created_at', { ascending: false })
-              .limit(1);
+          const { data: a2, error: e2 } = await supabase
+            .from('applications')
+            .select('id, payload, created_at, status, endorsed')
+            .eq('payload->form->>email', emailValue)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (!e2 && a2 && a2.length > 0) return a2;
 
-            if (!err3 && apps3 && apps3.length > 0) {
-              applications = apps3;
-            } else {
-              error = err3 || err2 || err1;
+          const { data: a3, error: e3 } = await supabase
+            .from('applications')
+            .select('id, payload, created_at, status, endorsed')
+            .eq('payload->applicant->>email', emailValue)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          if (!e3 && a3 && a3.length > 0) return a3;
+
+          // return null, but preserve last error for debugging
+          error = e3 || e2 || e1 || error;
+          return null;
+        };
+
+        for (const emailValue of emailCandidates) {
+          const found = await tryEmail(emailValue);
+          if (found && found.length > 0) {
+            applications = found;
+            error = null;
+            break;
+          }
+        }
+
+        // Fallback: match application by name/email + date proximity (important for agency hires)
+        // NOTE: do NOT require status=hired here; agency endorsement applications may remain submitted.
+        if ((!applications || applications.length === 0) && employeeHiredAt) {
+          const hiredDateStart = new Date(new Date(employeeHiredAt).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString();
+          const hiredDateEnd = new Date(new Date(employeeHiredAt).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+          const { data: hiredApps, error: hiredAppsError } = await supabase
+            .from('applications')
+            .select('id, payload, created_at, status, endorsed')
+            .gte('created_at', hiredDateStart)
+            .lte('created_at', hiredDateEnd)
+            .order('created_at', { ascending: false })
+            .limit(500);
+
+          if (!hiredAppsError && hiredApps && hiredApps.length > 0) {
+            const pickSource = (payloadObj) => {
+              const p = payloadObj && typeof payloadObj === 'object' ? payloadObj : {};
+              const formObj = p.form && typeof p.form === 'object' ? p.form : {};
+              const applicantObj = p.applicant && typeof p.applicant === 'object' ? p.applicant : {};
+              // Merge to cover agency payloads that store fields under applicant
+              return { ...formObj, ...applicantObj };
+            };
+
+            const matches = hiredApps.filter((app) => {
+              if (!app.payload) return false;
+              try {
+                const payloadObj = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload;
+                const source = pickSource(payloadObj);
+
+                const appEmail = String(source.email || '').trim().toLowerCase();
+                if (emailCandidates.length > 0 && appEmail && emailCandidates.includes(appEmail)) return true;
+
+                const appFname = String(source.firstName || source.fname || source.first_name || '').toLowerCase().trim();
+                const appLname = String(source.lastName || source.lname || source.last_name || '').toLowerCase().trim();
+                const appFullName = String(source.fullName || source.name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                const normalizedEmpName = employeeName.replace(/\s+/g, ' ').trim();
+
+                if (employeeFname && employeeLname && appFname && appLname) {
+                  return employeeFname === appFname && employeeLname === appLname;
+                }
+                if (normalizedEmpName && appFullName) {
+                  return normalizedEmpName === appFullName;
+                }
+                return false;
+              } catch {
+                return false;
+              }
+            });
+
+            if (matches.length > 0) {
+              applications = [matches[0]];
+              error = null;
             }
           }
         }
@@ -1313,7 +1750,11 @@ function Employees() {
         if (applications && applications.length > 0) {
           const app = applications[0];
           const payload = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload;
-          const baseForm = payload?.form && typeof payload.form === 'object' ? payload.form : (payload || {});
+          const formObj = payload?.form && typeof payload.form === 'object' ? payload.form : {};
+          const applicantObj = payload?.applicant && typeof payload.applicant === 'object' ? payload.applicant : {};
+          const baseForm = Object.keys(formObj).length || Object.keys(applicantObj).length
+            ? { ...formObj, ...applicantObj }
+            : (payload || {});
 
           // Important: for direct applicants the application payload usually looks like:
           // { form: {...}, workExperiences: [...], characterReferences: [...] }
@@ -1663,7 +2104,7 @@ function Employees() {
           {/* Employee Table Card */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col flex-1 overflow-hidden min-h-0">
             {/* Search and Filters */}
-            <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0">
+            <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex-shrink-0 relative z-20">
               <div className="flex flex-col gap-3">
                 {/* Search */}
                 <div className="relative">
@@ -1755,12 +2196,44 @@ function Employees() {
                   </select>
 
                   {/* Export Button */}
-                  <button className="w-full sm:w-auto px-4 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Export
-                  </button>
+                  <div className="relative" ref={exportMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setShowExportMenu((prev) => !prev)}
+                      className="w-full sm:w-auto px-4 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white"
+                      title="Export the currently filtered list"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Export
+                    </button>
+
+                    {showExportMenu && (
+                      <div className="absolute right-0 mt-2 w-44 bg-white border rounded-lg shadow-lg z-50 overflow-hidden">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowExportMenu(false);
+                            exportEmployeesPdf(filtered, "Employees");
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                        >
+                          Export list as PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowExportMenu(false);
+                            exportEmployeesExcel(filtered, "Employees");
+                          }}
+                          className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                        >
+                          Export list as Excel
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1783,7 +2256,7 @@ function Employees() {
                             <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
                             {!selectedEmployee && (
                               <>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Dept / Depot</th>
                                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                               </>
                             )}
@@ -1822,6 +2295,7 @@ function Employees() {
                                   <>
                                     <td className="px-6 py-4">
                                       <p className="text-sm text-gray-800">{emp.position || "—"}</p>
+                                      <p className="text-xs text-gray-500">{emp.department || "—"}</p>
                                       <p className="text-xs text-gray-500">{emp.depot || "—"}</p>
                                     </td>
                                     <td className="px-6 py-4">
@@ -1896,13 +2370,17 @@ function Employees() {
                           
                           {/* PROFILING TAB */}
                           {activeTab === 'profiling' && (
-                            <div className="space-y-6">
+                            <div className="space-y-4">
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Job Details</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Position:</span>
                                     <span className="ml-2 text-gray-800">{selectedEmployee.position || "—"}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Department:</span>
+                                    <span className="ml-2 text-gray-800">{selectedEmployee.department || getDepartmentForPosition(selectedEmployee.position) || "—"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Depot:</span>
@@ -1921,25 +2399,66 @@ function Employees() {
 
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Personal Information</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Full Name:</span>
                                     <span className="ml-2 text-gray-800">
-                                      {applicationData?.firstName || selectedEmployee.fname || ""} {applicationData?.middleName || selectedEmployee.mname || ""} {applicationData?.lastName || selectedEmployee.lname || ""}
+                                      {(() => {
+                                        const first = applicationData?.firstName || selectedEmployee.fname || "";
+                                        const middle = applicationData?.middleName || selectedEmployee.mname || "";
+                                        const last = applicationData?.lastName || selectedEmployee.lname || "";
+                                        return (
+                                          formatNameLastFirstMiddle({ last, first, middle }) ||
+                                          [first, middle, last].filter(Boolean).join(" ") ||
+                                          "—"
+                                        );
+                                      })()}
                                     </span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Email:</span>
-                                    <span className="ml-2 text-gray-800">{applicationData?.email || selectedEmployee.email || "—"}</span>
+                                    <span className="ml-2 text-gray-800">
+                                      {applicationData?.email ||
+                                        (selectedEmployee.personal_email && String(selectedEmployee.personal_email).includes('@')
+                                          ? selectedEmployee.personal_email
+                                          : null) ||
+                                        selectedEmployee.email ||
+                                        "—"}
+                                    </span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Contact Number:</span>
-                                    <span className="ml-2 text-gray-800">{applicationData?.contact || selectedEmployee.contact || "—"}</span>
+                                    <span className="ml-2 text-gray-800">
+                                      {applicationData?.contact ||
+                                        applicationData?.contactNumber ||
+                                        applicationData?.contact_number ||
+                                        applicationData?.phone ||
+                                        applicationData?.mobile ||
+                                        applicationData?.mobileNumber ||
+                                        applicationData?.mobile_number ||
+                                        selectedEmployee.contact ||
+                                        "—"}
+                                    </span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Birthday:</span>
                                     <span className="ml-2 text-gray-800">
-                                      {applicationData?.birthday ? new Date(applicationData.birthday).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : "—"}
+                                      {(() => {
+                                        const b = applicationData?.birthday || applicationData?.birth_date || applicationData?.dateOfBirth;
+                                        return b
+                                          ? new Date(b).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+                                          : "—";
+                                      })()}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Age:</span>
+                                    <span className="ml-2 text-gray-800">
+                                      {(() => {
+                                        const b = applicationData?.birthday || applicationData?.birth_date || applicationData?.dateOfBirth;
+                                        const age = calculateAge(b);
+                                        return age === null ? "—" : age;
+                                      })()}
                                     </span>
                                   </div>
                                   <div>
@@ -1961,150 +2480,168 @@ function Employees() {
                                 </div>
                               </div>
 
-                              {applicationData && (applicationData.street || applicationData.barangay || applicationData.city || applicationData.zip) && (
+                              {applicationData && (
+                                applicationData.street ||
+                                applicationData.barangay ||
+                                applicationData.city ||
+                                applicationData.zip ||
+                                applicationData.currentAddress ||
+                                applicationData.current_address ||
+                                applicationData.presentAddress ||
+                                applicationData.present_address ||
+                                applicationData.fullAddress ||
+                                applicationData.full_address ||
+                                applicationData.address
+                              ) && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Address</h5>
-                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 gap-y-2">
                                     <div>
-                                      <span className="text-gray-500">Street/Village:</span>
-                                      <span className="ml-2 text-gray-800">{applicationData.street || "—"}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">Barangay:</span>
-                                      <span className="ml-2 text-gray-800">{applicationData.barangay || "—"}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">City:</span>
-                                      <span className="ml-2 text-gray-800">{applicationData.city || "—"}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">Zip Code:</span>
-                                      <span className="ml-2 text-gray-800">{applicationData.zip || "—"}</span>
+                                      <span className="text-gray-500">Full Address:</span>
+                                      <span className="ml-2 text-gray-800">{formatFullAddressOneLine(applicationData) || "—"}</span>
                                     </div>
                                   </div>
                                 </div>
                               )}
 
-                              {applicationData && (applicationData.edu1Institution || applicationData.edu2Institution || applicationData.skills) && (
+                              {applicationData && (
+                                applicationData.edu1Institution ||
+                                applicationData.edu2Institution ||
+                                applicationData.skills ||
+                                applicationData.skills_text ||
+                                applicationData.educationalLevel ||
+                                applicationData.educationLevel ||
+                                applicationData.education ||
+                                applicationData.schoolInstitution ||
+                                applicationData.school ||
+                                applicationData.tertiarySchool ||
+                                applicationData.tertiaryProgram ||
+                                applicationData.courseProgram ||
+                                applicationData.course_program ||
+                                applicationData.yearGraduated ||
+                                applicationData.year_graduated ||
+                                applicationData.tertiaryYear
+                              ) && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Education & Skills</h5>
-                                  <div className="space-y-4 text-sm">
-                                    {applicationData.edu1Institution && (
-                                      <div>
-                                        <span className="text-gray-500 font-medium">{applicationData.edu1Level || "Education 1"}:</span>
-                                        <div className="ml-2 mt-1">
-                                          <div className="text-gray-800">{applicationData.edu1Institution}</div>
-                                          {applicationData.edu1Year && (
-                                            <div className="text-gray-600 text-xs">Year: {applicationData.edu1Year}</div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {applicationData.edu2Institution && (
-                                      <div>
-                                        <span className="text-gray-500 font-medium">{applicationData.edu2Level || "Education 2"}:</span>
-                                        <div className="ml-2 mt-1">
-                                          <div className="text-gray-800">{applicationData.edu2Institution}</div>
-                                          {applicationData.edu2Year && (
-                                            <div className="text-gray-600 text-xs">Year: {applicationData.edu2Year}</div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )}
-                                    {applicationData.skills && (
-                                      <div>
-                                        <span className="text-gray-500 font-medium">Skills:</span>
-                                        <span className="ml-2 text-gray-800">{applicationData.skills}</span>
-                                      </div>
-                                    )}
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                    {(() => {
+                                      const level =
+                                        applicationData.edu1Level ||
+                                        applicationData.educationalLevel ||
+                                        applicationData.educationLevel ||
+                                        applicationData.education ||
+                                        null;
+                                      const institution =
+                                        applicationData.edu1Institution ||
+                                        applicationData.schoolInstitution ||
+                                        applicationData.school ||
+                                        applicationData.tertiarySchool ||
+                                        null;
+                                      const year =
+                                        applicationData.edu1Year ||
+                                        applicationData.yearGraduated ||
+                                        applicationData.year_graduated ||
+                                        applicationData.tertiaryYear ||
+                                        null;
+                                      const course =
+                                        applicationData.edu1Course ||
+                                        applicationData.edu1Program ||
+                                        applicationData.courseProgram ||
+                                        applicationData.course_program ||
+                                        applicationData.tertiaryProgram ||
+                                        null;
+
+                                      const skillsVal = applicationData.skills;
+                                      const skillsText = Array.isArray(skillsVal)
+                                        ? skillsVal
+                                            .filter(Boolean)
+                                            .map((s) => (typeof s === 'string' ? s.trim() : String(s).trim()))
+                                            .filter(Boolean)
+                                            .join(', ')
+                                        : typeof skillsVal === 'string'
+                                          ? skillsVal.trim()
+                                          : '';
+                                      const skillsTextFinal = skillsText || (applicationData.skills_text ? String(applicationData.skills_text).trim() : '');
+
+                                      const hasEducation = Boolean(String(level || '').trim() || String(institution || '').trim() || String(year || '').trim() || String(course || '').trim());
+
+                                      return (
+                                        <>
+                                          <div className="font-medium text-gray-700 mb-2">Highest Educational Attainment:</div>
+                                          <div className="grid grid-cols-1 md:grid-cols-4 gap-x-8 gap-y-2 mb-4">
+                                            <div>
+                                              <span className="text-gray-500">Educational Level:</span>
+                                              <span className="ml-2 text-gray-800">{hasEducation && level ? String(level) : <span className="text-gray-500 italic">None</span>}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-500">Year Graduated:</span>
+                                              <span className="ml-2 text-gray-800">{hasEducation && year ? String(year) : <span className="text-gray-500 italic">None</span>}</span>
+                                            </div>
+                                            <div className="md:col-span-2">
+                                              <span className="text-gray-500">School/Institution:</span>
+                                              <span className="ml-2 text-gray-800">{hasEducation && institution ? String(institution) : <span className="text-gray-500 italic">None</span>}</span>
+                                            </div>
+                                            <div className="md:col-span-2">
+                                              <span className="text-gray-500">Course/Program:</span>
+                                              <span className="ml-2 text-gray-800">{hasEducation && course ? String(course) : <span className="text-gray-500 italic">None</span>}</span>
+                                            </div>
+                                          </div>
+
+                                          <div>
+                                            <span className="text-gray-500">Skills:</span>
+                                            <span className="ml-2 text-gray-800">{skillsTextFinal || <span className="text-gray-500 italic">None</span>}</span>
+                                          </div>
+                                        </>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
                               )}
-
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
-                                <div className="space-y-3 text-sm">
-                                  {(() => {
-                                    const rawFromApplication = Array.isArray(applicationData?.workExperiences)
-                                      ? applicationData.workExperiences
-                                      : [];
-                                    const rawFromProfile = Array.isArray(applicantExtras?.work_experiences)
-                                      ? applicantExtras.work_experiences
-                                      : [];
-                                    const raw = rawFromApplication.length > 0 ? rawFromApplication : rawFromProfile;
-                                    const display = raw.length > 0 ? raw : [{}];
-
-                                    return display.map((exp, idx) => {
-                                      const company = exp?.company || '';
-                                      const role = exp?.position || exp?.role || exp?.title || '';
-                                      const period =
-                                        exp?.period ||
-                                        exp?.date ||
-                                        exp?.year ||
-                                        (exp?.startDate || exp?.endDate ? `${exp?.startDate || ''}${exp?.startDate && exp?.endDate ? ' - ' : ''}${exp?.endDate || ''}` : '') ||
-                                        '';
-                                      const details = exp?.reason || exp?.description || exp?.remarks || '';
-
-                                      return (
-                                        <div key={idx} className="border border-gray-200 rounded-lg p-3">
-                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                            <div>
-                                              <span className="text-gray-500">Company:</span>
-                                              <span className="ml-2 text-gray-800">{company}</span>
-                                            </div>
-                                            <div>
-                                              <span className="text-gray-500">Role/Title:</span>
-                                              <span className="ml-2 text-gray-800">{role}</span>
-                                            </div>
-                                            <div className="md:col-span-2">
-                                              <span className="text-gray-500">Period:</span>
-                                              <span className="ml-2 text-gray-800">{period}</span>
-                                            </div>
-                                            <div className="md:col-span-2">
-                                              <span className="text-gray-500">Details:</span>
-                                              <span className="ml-2 text-gray-800">{details}</span>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      );
-                                    });
-                                  })()}
-                                </div>
-                              </div>
 
                               {!selectedEmployee?.agency && (
                                 <div>
-                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Work Experience</h5>
                                   <div className="space-y-3 text-sm">
                                     {(() => {
-                                      const rawFromApplication = Array.isArray(applicationData?.characterReferences)
-                                        ? applicationData.characterReferences
+                                      const rawFromApplication = Array.isArray(applicationData?.workExperiences)
+                                        ? applicationData.workExperiences
                                         : [];
-                                      const rawFromProfile = Array.isArray(applicantExtras?.character_references)
-                                        ? applicantExtras.character_references
+                                      const rawFromProfile = Array.isArray(applicantExtras?.work_experiences)
+                                        ? applicantExtras.work_experiences
                                         : [];
                                       const raw = rawFromApplication.length > 0 ? rawFromApplication : rawFromProfile;
-                                      const displayRefs = raw.length > 0 ? raw : [{}];
+                                      const display = raw.length > 0 ? raw : [{}];
 
-                                      return displayRefs.map((ref, idx) => {
-                                        const name = ref?.name || ref?.fullName || '';
-                                        const contact = ref?.contact || ref?.contactNumber || ref?.phone || '';
-                                        const relationship = ref?.relationship || '';
+                                      return display.map((exp, idx) => {
+                                        const company = exp?.company || '';
+                                        const role = exp?.position || exp?.role || exp?.title || '';
+                                        const period =
+                                          exp?.period ||
+                                          exp?.date ||
+                                          exp?.year ||
+                                          (exp?.startDate || exp?.endDate ? `${exp?.startDate || ''}${exp?.startDate && exp?.endDate ? ' - ' : ''}${exp?.endDate || ''}` : '') ||
+                                          '';
+                                        const details = exp?.reason || exp?.description || exp?.remarks || '';
 
                                         return (
                                           <div key={idx} className="border border-gray-200 rounded-lg p-3">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                                               <div>
-                                                <span className="text-gray-500">Name:</span>
-                                                <span className="ml-2 text-gray-800">{name}</span>
+                                                <span className="text-gray-500">Company:</span>
+                                                <span className="ml-2 text-gray-800">{company}</span>
                                               </div>
                                               <div>
-                                                <span className="text-gray-500">Contact:</span>
-                                                <span className="ml-2 text-gray-800">{contact}</span>
+                                                <span className="text-gray-500">Role/Title:</span>
+                                                <span className="ml-2 text-gray-800">{role}</span>
                                               </div>
                                               <div className="md:col-span-2">
-                                                <span className="text-gray-500">Relationship:</span>
-                                                <span className="ml-2 text-gray-800">{relationship}</span>
+                                                <span className="text-gray-500">Period:</span>
+                                                <span className="ml-2 text-gray-800">{period}</span>
+                                              </div>
+                                              <div className="md:col-span-2">
+                                                <span className="text-gray-500">Details:</span>
+                                                <span className="ml-2 text-gray-800">{details}</span>
                                               </div>
                                             </div>
                                           </div>
@@ -2115,28 +2652,403 @@ function Employees() {
                                 </div>
                               )}
 
-                              {applicationData && (applicationData.licenseType || applicationData.licenseExpiry) && (
+                              {!selectedEmployee?.agency && (
                                 <div>
-                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
-                                  <div className="grid grid-cols-2 gap-4 text-sm">
-                                    <div>
-                                      <span className="text-gray-500">License Type:</span>
-                                      <span className="ml-2 text-gray-800">{applicationData.licenseType || "—"}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">License Expiry:</span>
-                                      <span className="ml-2 text-gray-800">
-                                        {applicationData.licenseExpiry ? new Date(applicationData.licenseExpiry).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : "—"}
-                                      </span>
-                                    </div>
-                                  </div>
+                                  {(() => {
+                                    const rawFromApplication = Array.isArray(applicationData?.characterReferences)
+                                      ? applicationData.characterReferences
+                                      : [];
+                                    const rawFromProfile = Array.isArray(applicantExtras?.character_references)
+                                      ? applicantExtras.character_references
+                                      : [];
+                                    const raw = rawFromApplication.length > 0 ? rawFromApplication : rawFromProfile;
+                                    const hasAnyValue = (ref) => {
+                                      if (!ref || typeof ref !== 'object') return false;
+                                      const fields = [
+                                        ref.name,
+                                        ref.fullName,
+                                        ref.contact,
+                                        ref.contactNumber,
+                                        ref.phone,
+                                        ref.relationship,
+                                      ];
+                                      return fields.some((v) => String(v || '').trim().length > 0);
+                                    };
+
+                                    const displayRefs = raw.filter(hasAnyValue);
+                                    const isEmpty = displayRefs.length === 0;
+
+                                    return (
+                                      <>
+                                        <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded flex items-center justify-between">
+                                          <span>Character References</span>
+                                          {isEmpty && <span className="text-xs text-gray-500 italic">None</span>}
+                                        </h5>
+                                        <div className="space-y-3 text-sm">
+                                          {isEmpty ? (
+                                            <div className="border border-gray-200 rounded-lg p-3 text-gray-400 italic">None</div>
+                                          ) : (
+                                            displayRefs.map((ref, idx) => {
+                                              const name = ref?.name || ref?.fullName || '';
+                                              const contact = ref?.contact || ref?.contactNumber || ref?.phone || '';
+                                              const relationship = ref?.relationship || '';
+
+                                              return (
+                                                <div key={idx} className="border border-gray-200 rounded-lg p-3">
+                                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                    <div>
+                                                      <span className="text-gray-500">Name:</span>
+                                                      <span className="ml-2 text-gray-800">{name}</span>
+                                                    </div>
+                                                    <div>
+                                                      <span className="text-gray-500">Contact:</span>
+                                                      <span className="ml-2 text-gray-800">{contact}</span>
+                                                    </div>
+                                                    <div className="md:col-span-2">
+                                                      <span className="text-gray-500">Relationship:</span>
+                                                      <span className="ml-2 text-gray-800">{relationship}</span>
+                                                    </div>
+                                                  </div>
+                                                </div>
+                                              );
+                                            })
+                                          )}
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               )}
+
+                              {/* Medical Information (ALL positions) */}
+                              {(() => {
+                                const yesNo = (v) => {
+                                  if (v === true) return 'Yes';
+                                  if (v === false) return 'No';
+                                  if (typeof v === 'string') {
+                                    const s = v.toLowerCase().trim();
+                                    if (s === 'yes' || s === 'y' || s === 'true') return 'Yes';
+                                    if (s === 'no' || s === 'n' || s === 'false') return 'No';
+                                  }
+                                  return null;
+                                };
+
+                                const fmtDate = (v) => {
+                                  if (!v) return null;
+                                  try {
+                                    const d = new Date(v);
+                                    if (Number.isNaN(d.getTime())) return String(v);
+                                    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+                                  } catch {
+                                    return String(v);
+                                  }
+                                };
+
+                                const takingMedications =
+                                  applicationData?.takingMedications ??
+                                  applicationData?.taking_medications ??
+                                  applicationData?.medications ??
+                                  null;
+                                const medicationReason =
+                                  applicationData?.medicationReason ||
+                                  applicationData?.medication_reason ||
+                                  null;
+                                const tookMedicalTest =
+                                  applicationData?.tookMedicalTest ??
+                                  applicationData?.took_medical_test ??
+                                  null;
+                                const medicalTestDate =
+                                  applicationData?.medicalTestDate ||
+                                  applicationData?.medical_test_date ||
+                                  null;
+
+                                const agencyMedical = driverExtraInfo.medicalInfo;
+                                const hasAgencyMedical = !!selectedEmployee?.agency && !!agencyMedical;
+
+                                return (
+                                  <div>
+                                    <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Medical Information</h5>
+                                    <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                      <div>
+                                        <span className="text-gray-500">Taking Medications:</span>
+                                        <span className="ml-2">{yesNo(takingMedications) ?? <span className="text-gray-400 italic">None</span>}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Medication Reason:</span>
+                                        <span className="ml-2">{medicationReason ? <span className="text-gray-800">{medicationReason}</span> : <span className="text-gray-400 italic">None</span>}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Has Taken Medical Test:</span>
+                                        <span className="ml-2">{yesNo(tookMedicalTest) ?? <span className="text-gray-400 italic">None</span>}</span>
+                                      </div>
+                                      <div>
+                                        <span className="text-gray-500">Medical Test Date:</span>
+                                        <span className="ml-2">
+                                          {fmtDate(medicalTestDate)
+                                            ? <span className="text-gray-800">{fmtDate(medicalTestDate)}</span>
+                                            : <span className="text-gray-400 italic">None</span>}
+                                        </span>
+                                      </div>
+                                    </div>
+
+                                    {hasAgencyMedical && (
+                                      <div className="mt-3 border border-gray-200 rounded-lg p-3 text-sm text-gray-800">
+                                        <div className="text-xs font-semibold text-gray-600 mb-2">Additional Medical Details</div>
+                                        {loadingDriverInfo ? (
+                                          <span className="text-gray-400">Loading…</span>
+                                        ) : (
+                                          <pre className="whitespace-pre-wrap break-words text-xs text-gray-700">
+                                            {typeof agencyMedical === 'string'
+                                              ? agencyMedical
+                                              : JSON.stringify(agencyMedical, null, 2)}
+                                          </pre>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })()}
+
+                              {(() => {
+                                const positionText =
+                                  selectedEmployee?.position ||
+                                  selectedEmployee?.job_title ||
+                                  selectedEmployee?.jobTitle ||
+                                  selectedEmployee?.role ||
+                                  applicationData?.position ||
+                                  applicationData?.positionApplied ||
+                                  applicationData?.position_applied ||
+                                  applicationData?.jobTitle ||
+                                  applicationData?.job_title ||
+                                  '';
+                                const isAgencyDriver = !!selectedEmployee?.agency && isDriverRole(positionText);
+                                const hasLicenseFields =
+                                  !!(applicationData && (applicationData.licenseType || applicationData.licenseExpiry));
+
+                                if (!hasLicenseFields && !isAgencyDriver) return null;
+
+                                const renderNone = () => <span className="text-gray-400 italic">None</span>;
+                                const displayYesNo = (v) => {
+                                  if (v === true) return 'Yes';
+                                  if (v === false) return 'No';
+                                  if (typeof v === 'string') {
+                                    const s = v.toLowerCase().trim();
+                                    if (s === 'yes' || s === 'y' || s === 'true') return 'Yes';
+                                    if (s === 'no' || s === 'n' || s === 'false') return 'No';
+                                  }
+                                  return null;
+                                };
+
+                                const displayDate = (v) => {
+                                  if (!v) return renderNone();
+                                  try {
+                                    const d = new Date(v);
+                                    if (Number.isNaN(d.getTime())) return <span className="text-gray-800">{String(v)}</span>;
+                                    return (
+                                      <span className="text-gray-800">
+                                        {d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                      </span>
+                                    );
+                                  } catch {
+                                    return <span className="text-gray-800">{String(v)}</span>;
+                                  }
+                                };
+
+                                const displayValue = (v) => {
+                                  if (v === null || v === undefined) return renderNone();
+                                  if (typeof v === 'string') {
+                                    const s = v.trim();
+                                    return s ? <span className="text-gray-800">{s}</span> : renderNone();
+                                  }
+                                  if (Array.isArray(v)) {
+                                    const list = v
+                                      .filter(Boolean)
+                                      .map((x) => String(x).trim())
+                                      .filter(Boolean);
+                                    return list.length ? (
+                                      <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                        {list.map((item, idx) => (
+                                          <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                            {item}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <span className="ml-2">{renderNone()}</span>
+                                    );
+                                  }
+                                  return <span className="text-gray-800">{String(v)}</span>;
+                                };
+
+                                const licenseClassification =
+                                  applicationData?.licenseClassification ||
+                                  applicationData?.license_classification ||
+                                  applicationData?.licenseType ||
+                                  applicationData?.license_type ||
+                                  null;
+                                const licenseExpiry =
+                                  applicationData?.licenseExpiry ||
+                                  applicationData?.license_expiry ||
+                                  applicationData?.licenseExpiryDate ||
+                                  applicationData?.license_expiry_date ||
+                                  null;
+                                const restrictionCodes =
+                                  applicationData?.restrictionCodes ||
+                                  applicationData?.restriction_codes ||
+                                  applicationData?.restrictions ||
+                                  null;
+
+                                const parseObj = (v) => {
+                                  if (!v) return null;
+                                  if (typeof v === 'object') return v;
+                                  if (typeof v === 'string') {
+                                    const s = v.trim();
+                                    if (!s) return null;
+                                    try {
+                                      return JSON.parse(s);
+                                    } catch {
+                                      return null;
+                                    }
+                                  }
+                                  return null;
+                                };
+
+                                const drivingHistoryObj =
+                                  parseObj(driverExtraInfo?.drivingHistory) ||
+                                  parseObj(applicationData?.drivingHistory) ||
+                                  parseObj(applicationData?.driving_history) ||
+                                  null;
+
+                                const yearsDriving =
+                                  drivingHistoryObj?.yearsDriving ||
+                                  drivingHistoryObj?.years_driving ||
+                                  applicationData?.yearsDriving ||
+                                  applicationData?.years_driving ||
+                                  null;
+                                const truckKnowledge =
+                                  drivingHistoryObj?.truckKnowledge ||
+                                  drivingHistoryObj?.truck_knowledge ||
+                                  drivingHistoryObj?.truckKnowledgeYn ||
+                                  applicationData?.truckKnowledge ||
+                                  applicationData?.truck_knowledge ||
+                                  null;
+                                const vehicleTypes =
+                                  drivingHistoryObj?.vehicleTypes ||
+                                  drivingHistoryObj?.vehicle_types ||
+                                  applicationData?.vehicleTypes ||
+                                  applicationData?.vehicle_types ||
+                                  null;
+                                const troubleshootingTasks =
+                                  drivingHistoryObj?.troubleshootingTasks ||
+                                  drivingHistoryObj?.troubleshooting_tasks ||
+                                  applicationData?.troubleshootingTasks ||
+                                  applicationData?.troubleshooting_tasks ||
+                                  null;
+
+                                const hasDrivingHistoryData = !!(
+                                  yearsDriving ||
+                                  truckKnowledge !== null ||
+                                  (Array.isArray(vehicleTypes) ? vehicleTypes.filter(Boolean).length > 0 : vehicleTypes) ||
+                                  (Array.isArray(troubleshootingTasks) ? troubleshootingTasks.filter(Boolean).length > 0 : troubleshootingTasks)
+                                );
+                                const shouldShowDrivingHistory = isDriverRole(positionText) || hasDrivingHistoryData;
+
+                                return (
+                                  <>
+                                    <div>
+                                      <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
+                                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                        <div>
+                                          <span className="text-gray-500">License Classification:</span>
+                                          <span className="ml-2">{licenseClassification ? displayValue(licenseClassification) : renderNone()}</span>
+                                        </div>
+                                        <div>
+                                          <span className="text-gray-500">License Expiry Date:</span>
+                                          <span className="ml-2">{displayDate(licenseExpiry)}</span>
+                                        </div>
+                                        {Array.isArray(restrictionCodes) && restrictionCodes.filter(Boolean).length > 0 && (
+                                          <div className="md:col-span-2">
+                                            <span className="text-gray-500">Restriction Codes:</span>
+                                            {displayValue(restrictionCodes)}
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {isAgencyDriver && (
+                                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          <div className="border border-gray-200 rounded-lg p-3">
+                                            <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
+                                            {loadingDriverInfo ? (
+                                              <div className="text-xs text-gray-400">Loading…</div>
+                                            ) : driverLicense.frontUrl ? (
+                                              <a href={driverLicense.frontUrl} target="_blank" rel="noopener noreferrer">
+                                                <img
+                                                  src={driverLicense.frontUrl}
+                                                  alt="Driver's License Front"
+                                                  className="w-full h-40 object-contain bg-gray-50 rounded"
+                                                />
+                                              </a>
+                                            ) : (
+                                              <div className="text-xs text-gray-400 italic">None</div>
+                                            )}
+                                          </div>
+                                          <div className="border border-gray-200 rounded-lg p-3">
+                                            <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
+                                            {loadingDriverInfo ? (
+                                              <div className="text-xs text-gray-400">Loading…</div>
+                                            ) : driverLicense.backUrl ? (
+                                              <a href={driverLicense.backUrl} target="_blank" rel="noopener noreferrer">
+                                                <img
+                                                  src={driverLicense.backUrl}
+                                                  alt="Driver's License Back"
+                                                  className="w-full h-40 object-contain bg-gray-50 rounded"
+                                                />
+                                              </a>
+                                            ) : (
+                                              <div className="text-xs text-gray-400 italic">None</div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {shouldShowDrivingHistory && (
+                                      <div>
+                                        <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Driving History</h5>
+                                        <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                                          <div>
+                                            <span className="text-gray-500">Years of Driving Experience:</span>
+                                            <span className="ml-2">{yearsDriving ? displayValue(yearsDriving) : renderNone()}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">Has Truck Troubleshooting Knowledge:</span>
+                                            <span className="ml-2">{displayYesNo(truckKnowledge) ?? renderNone()}</span>
+                                          </div>
+                                          <div className="md:col-span-2">
+                                            <span className="text-gray-500">Vehicles Driven:</span>
+                                            {vehicleTypes ? displayValue(vehicleTypes) : <span className="ml-2">{renderNone()}</span>}
+                                          </div>
+                                          {troubleshootingTasks && Array.isArray(troubleshootingTasks) && troubleshootingTasks.filter(Boolean).length > 0 && (
+                                            <div className="md:col-span-2">
+                                              <span className="text-gray-500">Troubleshooting Capabilities:</span>
+                                              {displayValue(troubleshootingTasks)}
+                                            </div>
+                                          )}
+                                          {!hasDrivingHistoryData && (
+                                            <div className="md:col-span-2 text-gray-400 italic">None</div>
+                                          )}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                  </>
+                                );
+                              })()}
 
                               {applicationData && (applicationData.startDate || applicationData.heardFrom || applicationData.preferred_depot) && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Application Details</h5>
-                                  <div className="grid grid-cols-2 gap-4 text-sm">
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                     {applicationData.startDate && (
                                       <div>
                                         <span className="text-gray-500">Preferred Start Date:</span>
@@ -2163,7 +3075,7 @@ function Employees() {
 
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Files</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Resume:</span>
                                     {resumeData && resumeData.url ? (
@@ -2264,6 +3176,81 @@ function Employees() {
                                   </table>
                                 </div>
                               )}
+
+                              {/* Specialized Training */}
+                              <div className="mt-6">
+                                <div className="mb-4">
+                                  <h5 className="font-semibold text-gray-800">Specialized Training</h5>
+                                </div>
+
+                                {(() => {
+                                  const trainingName = applicationData?.specializedTraining || applicationData?.specialized_training || null;
+                                  const trainingYear = applicationData?.specializedYear || applicationData?.specialized_year || null;
+
+                                  const trainingCertPath =
+                                    applicationData?.trainingCertFilePath ||
+                                    applicationData?.training_cert_file_path ||
+                                    applicationData?.trainingCertPath ||
+                                    applicationData?.training_cert_path ||
+                                    applicationData?.specializedTrainingCertFilePath ||
+                                    applicationData?.specialized_training_cert_file_path ||
+                                    null;
+
+                                  const trainingCertUrl = trainingCertPath
+                                    ? supabase.storage.from('application-files').getPublicUrl(trainingCertPath)?.data?.publicUrl
+                                    : null;
+
+                                  const hasAnything = Boolean(String(trainingName || '').trim() || String(trainingYear || '').trim() || trainingCertPath);
+
+                                  if (!hasAnything) {
+                                    return (
+                                      <div className="border border-gray-200 rounded-lg p-6 text-center">
+                                        <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <p className="text-sm text-gray-500">No uploaded specialized training yet.</p>
+                                      </div>
+                                    );
+                                  }
+
+                                  return (
+                                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                      <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                                        <div className="col-span-5">Training</div>
+                                        <div className="col-span-2">Year</div>
+                                        <div className="col-span-5">Certificate</div>
+                                      </div>
+                                      <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                                        <div className="col-span-12 md:col-span-5 text-sm text-gray-800">
+                                          {trainingName ? String(trainingName) : <span className="text-gray-400 italic">None</span>}
+                                        </div>
+                                        <div className="col-span-12 md:col-span-2 text-sm text-gray-700">
+                                          {trainingYear ? String(trainingYear) : <span className="text-gray-400 italic">—</span>}
+                                        </div>
+                                        <div className="col-span-12 md:col-span-5 text-sm">
+                                          {trainingCertUrl ? (
+                                            <div className="flex items-center gap-2">
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                                                <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                              </svg>
+                                              <a
+                                                href={trainingCertUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                              >
+                                                {String(trainingCertPath).split('/').pop() || 'View File'}
+                                              </a>
+                                            </div>
+                                          ) : (
+                                            <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
 
                               {/* Assessment and Agreement Records Section */}
                               <div className="mt-6">

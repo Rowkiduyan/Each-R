@@ -17,6 +17,21 @@ function getPayloadMeta(payload: any): any {
   return payload?.meta || payload?.form?.meta || payload?.applicant?.meta || null;
 }
 
+function extractApplicantContact(payload: any): { email: string | null; firstName: string | null; lastName: string | null } {
+  const src = payload?.form || payload?.applicant || payload || {};
+  const email =
+    src?.email ||
+    src?.contactEmail ||
+    payload?.email ||
+    payload?.form?.email ||
+    payload?.applicant?.email ||
+    payload?.meta?.email ||
+    null;
+  const firstName = src?.firstName || src?.fname || src?.first_name || null;
+  const lastName = src?.lastName || src?.lname || src?.last_name || null;
+  return { email: email ? String(email).trim() : null, firstName: firstName ? String(firstName).trim() : null, lastName: lastName ? String(lastName).trim() : null };
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -107,7 +122,7 @@ serve(async (req) => {
     // Prepare updated payload (used for agreement signing and also to keep interview details consistent)
     const updatedPayload: any = (() => {
       if (scheduleKind === 'interview') {
-        const interviewType = interview.type || parsedPayload?.interview_type || parsedPayload?.interview?.type || 'onsite';
+        const interviewType = interview.type || interview.interview_type || parsedPayload?.interview_type || parsedPayload?.interview?.type || 'onsite';
         return {
           ...parsedPayload,
           interview_type: interviewType,
@@ -243,10 +258,16 @@ serve(async (req) => {
     }
 
     // --- Send email notification via SendGrid ---
+    let emailSent = false;
+    let emailMessageId: string | null = null;
+    let emailError: any = null;
+    let emailTo: string | null = null;
+
     if (!SENDGRID_API_KEY) {
+      emailError = { code: 'missing_sendgrid_api_key', message: 'SENDGRID_API_KEY not configured' };
       console.error("SENDGRID_API_KEY not configured - skipping interview email");
     } else {
-      // Look up applicant email & name from applicants table
+      // Prefer applicants table; fallback to payload email/name (some environments may not have an applicants row)
       const { data: applicant, error: applicantError } = await supabase
         .from('applicants')
         .select('email, fname, lname')
@@ -255,20 +276,26 @@ serve(async (req) => {
 
       if (applicantError) {
         console.error('Error fetching applicant for email:', applicantError);
-      } else if (!applicant?.email) {
+      }
+
+      const payloadContact = extractApplicantContact(parsedPayload);
+      const toEmail = (applicant?.email || payloadContact.email || '').trim();
+      const firstName = (applicant?.fname || payloadContact.firstName || 'Applicant').trim();
+      const lastName = (applicant?.lname || payloadContact.lastName || '').trim();
+      const fullName = `${firstName} ${lastName}`.trim();
+
+      if (!toEmail) {
+        emailError = { code: 'missing_recipient_email', message: 'No applicant email found in applicants table or application payload' };
         console.warn('No applicant email found for user:', userId);
       } else {
-        const toEmail = applicant.email;
-        const firstName = applicant.fname || 'Applicant';
-        const lastName = applicant.lname || '';
-        const fullName = `${firstName} ${lastName}`.trim();
-
-        const emailSubject = isReschedule
-          ? `Updated ${scheduleLabel} Schedule for ${jobTitle}`
-          : `${scheduleLabel} Schedule for ${jobTitle}`;
+        emailTo = toEmail;
 
         const interviewDateDisplay = formattedDate;
         const interviewTimeDisplay = interview.time || 'To be confirmed';
+
+        const emailSubject = isReschedule
+          ? `Updated ${scheduleLabel}: ${jobTitle} (${interviewDateDisplay} ${interviewTimeDisplay})`
+          : `${scheduleLabel}: ${jobTitle} (${interviewDateDisplay} ${interviewTimeDisplay})`;
         const interviewLocationDisplay = interview.location || 'To be confirmed';
 
         const pillText = isReschedule ? `${scheduleLabel} Rescheduled` : `${scheduleLabel} Scheduled`;
@@ -281,6 +308,9 @@ serve(async (req) => {
           : (isReschedule
             ? 'Your interview schedule has been <span class="highlight">updated</span>. Please review the updated details below:'
             : 'Thank you for your interest in joining Roadwise. We are pleased to invite you for an interview. Please review the details below:');
+
+        const generatedAtIso = new Date().toISOString();
+        const scheduleRef = `${applicationId}:${generatedAtIso}`;
 
         // HTML email template for schedule details
         const htmlContent = `
@@ -442,6 +472,12 @@ serve(async (req) => {
       If you are unable to attend at this schedule, please contact us as soon as possible through the portal or reach out to HR to arrange a different time.
     </p>
 
+    <p style="font-size: 12px; color: #9ca3af; margin-top: 12px;">
+      Reference: ${scheduleRef}<br/>
+      Generated: ${generatedAtIso}<br/>
+      Note: Email delivery may be delayed by spam filtering. Your latest schedule in the portal is the source of truth.
+    </p>
+
     <div class="footer">
       <p>This is an automated message from <span class="highlight">Roadwise</span>. Please do not reply directly to this email.</p>
       <p>&copy; ${new Date().getFullYear()} Roadwise. All rights reserved.</p>
@@ -477,6 +513,10 @@ If you are unable to attend at this schedule, please contact HR as soon as possi
 This is an automated message from Roadwise. Please do not reply directly to this email.
 
 © ${new Date().getFullYear()} Roadwise. All rights reserved.
+
+Reference: ${scheduleRef}
+Generated: ${generatedAtIso}
+Note: Email delivery may be delayed by spam filtering. Your latest schedule in the portal is the source of truth.
         `;
 
         try {
@@ -491,9 +531,17 @@ This is an automated message from Roadwise. Please do not reply directly to this
                 {
                   to: [{ email: toEmail }],
                   subject: emailSubject,
+                  custom_args: {
+                    applicationId: String(applicationId),
+                    scheduleKind: String(scheduleKind),
+                    isReschedule: String(Boolean(isReschedule)),
+                    scheduleRef,
+                    generatedAt: generatedAtIso,
+                  },
                 },
               ],
               from: { email: SENDGRID_FROM_EMAIL, name: "Roadwise HR" },
+              reply_to: { email: SENDGRID_FROM_EMAIL, name: "Roadwise HR" },
               content: [
                 {
                   type: "text/plain",
@@ -509,9 +557,19 @@ This is an automated message from Roadwise. Please do not reply directly to this
 
           if (!sendGridResponse.ok) {
             const errorText = await sendGridResponse.text();
+            emailError = {
+              code: 'sendgrid_rejected',
+              status: sendGridResponse.status,
+              statusText: sendGridResponse.statusText,
+              body: errorText,
+            };
             console.error("SendGrid interview email error:", errorText);
+          } else {
+            emailSent = true;
+            emailMessageId = sendGridResponse.headers.get('x-message-id') || sendGridResponse.headers.get('X-Message-Id');
           }
         } catch (emailErr) {
+          emailError = { code: 'sendgrid_exception', message: String((emailErr as any)?.message || emailErr) };
           console.error("Unexpected error sending interview email via SendGrid:", emailErr);
         }
       }
@@ -524,7 +582,11 @@ This is an automated message from Roadwise. Please do not reply directly to this
         message: scheduleKind === 'agreement_signing'
           ? 'Agreement signing scheduled and notification sent successfully'
           : 'Interview scheduled and notification sent successfully',
-        isReschedule 
+        isReschedule,
+        emailSent,
+        emailTo,
+        emailMessageId,
+        emailError,
       }),
       { 
         status: 200, 

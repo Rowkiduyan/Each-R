@@ -10,23 +10,13 @@ import { supabase } from "./supabaseClient";
  */
 async function scheduleInterviewClient(applicationId, interview) {
   try {
-    const functionName = "dynamic-task"; // must match your Edge Function name exactly
-    const res = await supabase.functions.invoke(functionName, {
-      body: JSON.stringify({ applicationId, interview }),
+    const functionName = "schedule-interview-with-notification";
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: { applicationId, interview },
     });
 
-    // SDK may return a Response (fetch) or a plain object with .error or .data
-    if (res instanceof Response) {
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(JSON.stringify(json || { status: res.status }));
-      }
-      return { ok: true, data: json };
-    } else if (res?.error) {
-      throw res.error;
-    } else {
-      return { ok: true, data: res };
-    }
+    if (error) throw error;
+    return { ok: true, data };
   } catch (err) {
     console.error("scheduleInterviewClient error:", err);
     return { ok: false, error: err };

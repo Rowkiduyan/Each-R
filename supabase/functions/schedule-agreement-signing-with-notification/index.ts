@@ -23,6 +23,21 @@ function getPayloadMeta(payload: any): any {
   return payload?.meta || payload?.form?.meta || payload?.applicant?.meta || null;
 }
 
+function extractApplicantContact(payload: any): { email: string | null; firstName: string | null; lastName: string | null } {
+  const src = payload?.form || payload?.applicant || payload || {};
+  const email =
+    src?.email ||
+    src?.contactEmail ||
+    payload?.email ||
+    payload?.form?.email ||
+    payload?.applicant?.email ||
+    payload?.meta?.email ||
+    null;
+  const firstName = src?.firstName || src?.fname || src?.first_name || null;
+  const lastName = src?.lastName || src?.lname || src?.last_name || null;
+  return { email: email ? String(email).trim() : null, firstName: firstName ? String(firstName).trim() : null, lastName: lastName ? String(lastName).trim() : null };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
@@ -218,7 +233,13 @@ serve(async (req) => {
     }
 
     // Email via SendGrid
+    let emailSent = false;
+    let emailMessageId: string | null = null;
+    let emailError: any = null;
+    let emailTo: string | null = null;
+
     if (!SENDGRID_API_KEY) {
+      emailError = { code: 'missing_sendgrid_api_key', message: 'SENDGRID_API_KEY not configured' };
       console.error("SENDGRID_API_KEY not configured - skipping agreement signing email");
     } else {
       const { data: applicant, error: applicantError } = await supabase
@@ -229,17 +250,28 @@ serve(async (req) => {
 
       if (applicantError) {
         console.error("Error fetching applicant for email:", applicantError);
-      } else if (!applicant?.email) {
+      }
+
+      const payloadContact = extractApplicantContact(parsedPayload);
+      const toEmail = (applicant?.email || payloadContact.email || '').trim();
+      const firstName = (applicant?.fname || payloadContact.firstName || 'Applicant').trim();
+      const lastName = (applicant?.lname || payloadContact.lastName || '').trim();
+      const fullName = `${firstName} ${lastName}`.trim();
+
+      if (!toEmail) {
+        emailError = { code: 'missing_recipient_email', message: 'No applicant email found in applicants table or application payload' };
         console.warn("No applicant email found for user:", userId);
       } else {
-        const toEmail = applicant.email;
-        const firstName = applicant.fname || "Applicant";
-        const lastName = applicant.lname || "";
-        const fullName = `${firstName} ${lastName}`.trim();
+        emailTo = toEmail;
 
+        const generatedAtIso = new Date().toISOString();
+        const scheduleRef = `${applicationId}:${generatedAtIso}`;
+
+        const apptDateDisplay = formattedDate;
+        const apptTimeDisplay = safeTime;
         const emailSubject = isReschedule
-          ? `Updated Agreement Signing Schedule for ${jobTitle}`
-          : `Agreement Signing Schedule for ${jobTitle}`;
+          ? `Updated Agreement Signing: ${jobTitle} (${apptDateDisplay} ${apptTimeDisplay})`
+          : `Agreement Signing: ${jobTitle} (${apptDateDisplay} ${apptTimeDisplay})`;
 
         const pillText = isReschedule ? "Agreement Signing Rescheduled" : "Agreement Signing Scheduled";
         const introHtml = isReschedule
@@ -304,6 +336,12 @@ serve(async (req) => {
       <p>This is an automated message from <span class="highlight">Roadwise</span>. Please do not reply directly to this email.</p>
       <p>&copy; ${new Date().getFullYear()} Roadwise. All rights reserved.</p>
     </div>
+
+    <p style="margin-top: 12px; font-size: 12px; color: #9ca3af; text-align: center;">
+      Reference: ${scheduleRef}<br/>
+      Generated: ${generatedAtIso}<br/>
+      Note: Email delivery may be delayed by spam filtering. Your latest schedule in the portal is the source of truth.
+    </p>
   </div>
 </body>
 </html>
@@ -323,6 +361,10 @@ Location: ${safeLocation}
 Please confirm your availability through the applicant portal.
 
 This is an automated message from Roadwise. Please do not reply directly to this email.
+
+Reference: ${scheduleRef}
+Generated: ${generatedAtIso}
+Note: Email delivery may be delayed by spam filtering. Your latest schedule in the portal is the source of truth.
         `;
 
         try {
@@ -333,8 +375,19 @@ This is an automated message from Roadwise. Please do not reply directly to this
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              personalizations: [{ to: [{ email: toEmail }], subject: emailSubject }],
+              personalizations: [{
+                to: [{ email: toEmail }],
+                subject: emailSubject,
+                custom_args: {
+                  applicationId: String(applicationId),
+                  scheduleKind: 'agreement_signing',
+                  isReschedule: String(Boolean(isReschedule)),
+                  scheduleRef,
+                  generatedAt: generatedAtIso,
+                },
+              }],
               from: { email: SENDGRID_FROM_EMAIL, name: "Roadwise HR" },
+              reply_to: { email: SENDGRID_FROM_EMAIL, name: "Roadwise HR" },
               content: [
                 { type: "text/plain", value: textContent },
                 { type: "text/html", value: htmlContent },
@@ -344,9 +397,19 @@ This is an automated message from Roadwise. Please do not reply directly to this
 
           if (!sendGridResponse.ok) {
             const errorText = await sendGridResponse.text();
+            emailError = {
+              code: 'sendgrid_rejected',
+              status: sendGridResponse.status,
+              statusText: sendGridResponse.statusText,
+              body: errorText,
+            };
             console.error("SendGrid agreement signing email error:", errorText);
+          } else {
+            emailSent = true;
+            emailMessageId = sendGridResponse.headers.get('x-message-id') || sendGridResponse.headers.get('X-Message-Id');
           }
         } catch (emailErr) {
+          emailError = { code: 'sendgrid_exception', message: String((emailErr as any)?.message || emailErr) };
           console.error("Unexpected error sending agreement signing email via SendGrid:", emailErr);
         }
       }
@@ -358,6 +421,11 @@ This is an automated message from Roadwise. Please do not reply directly to this
         message: isReschedule
           ? "Agreement signing rescheduled and notification sent successfully"
           : "Agreement signing scheduled and notification sent successfully",
+        isReschedule,
+        emailSent,
+        emailTo,
+        emailMessageId,
+        emailError,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );

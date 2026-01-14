@@ -5,6 +5,7 @@ import { supabase } from "./supabaseClient";
 import { getStoredJson } from "./authStorage";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import ExcelJS from "exceljs";
 
 /**
  * scheduleInterviewClient
@@ -14,41 +15,12 @@ import autoTable from "jspdf-autotable";
 async function scheduleInterviewClient(applicationId, interview) {
   try {
     const functionName = "schedule-interview-with-notification"; // Updated to use notification-enabled function
-    const res = await supabase.functions.invoke(functionName, {
-      body: JSON.stringify({ applicationId, interview }),
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: { applicationId, interview },
     });
 
-    // SDK may return a Response (fetch) or a plain object with .error or .data
-                                const agencyApplicant = isAgency(selectedApplicant);
-
-                                if (agencyApplicant) {
-                                  if (interviewStatus === 'Rejected') {
-                                    return (
-                                      <span className="text-sm px-3 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300 font-medium">
-                                        Reschedule Requested
-                                      </span>
-                                    );
-                                  }
-                                  if (selectedApplicant.interview_date) {
-                                    return (
-                                      <span className="text-sm px-3 py-1 rounded bg-cyan-100 text-cyan-800 border border-cyan-300 font-medium">
-                                        Schedule Set
-                                      </span>
-                                    );
-                                  }
-                                  return null;
-                                }
-    if (res instanceof Response) {
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(JSON.stringify(json || { status: res.status }));
-      }
-      return { ok: true, data: json };
-    } else if (res?.error) {
-      throw res.error;
-    } else {
-      return { ok: true, data: res };
-    }
+    if (error) throw error;
+    return { ok: true, data };
   } catch (err) {
     console.error("scheduleInterviewClient error:", err);
     return { ok: false, error: err };
@@ -62,19 +34,13 @@ async function scheduleInterviewClient(applicationId, interview) {
 async function scheduleAgreementSigningClient(applicationId, appointment) {
   try {
     const functionName = "schedule-agreement-signing-with-notification";
-    const res = await supabase.functions.invoke(functionName, {
-      body: JSON.stringify({ applicationId, appointment }),
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: { applicationId, appointment },
     });
 
-    if (res instanceof Response) {
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(JSON.stringify(json || { status: res.status }));
-      }
-      return { ok: true, data: json };
-    } else if (res?.error) {
+    if (error) {
       // Try to surface server-provided details for easier debugging
-      const anyErr = res.error;
+      const anyErr = error;
 
       let details = anyErr?.message || String(anyErr);
       try {
@@ -88,7 +54,6 @@ async function scheduleAgreementSigningClient(applicationId, appointment) {
         } else if (ctx?.body && typeof ctx.body === 'string') {
           details = ctx.body;
         } else if (ctx?.body) {
-          // Some environments provide a ReadableStream body
           try {
             const bodyText = await new Response(ctx.body).text();
             if (bodyText) details = bodyText;
@@ -100,7 +65,6 @@ async function scheduleAgreementSigningClient(applicationId, appointment) {
         // ignore
       }
 
-      // If it's JSON, make it more readable
       try {
         const parsed = JSON.parse(details);
         if (parsed?.error && parsed?.details) {
@@ -115,9 +79,9 @@ async function scheduleAgreementSigningClient(applicationId, appointment) {
       }
 
       throw new Error(details);
-    } else {
-      return { ok: true, data: res };
     }
+
+    return { ok: true, data };
   } catch (err) {
     console.error("scheduleAgreementSigningClient error:", err);
     return { ok: false, error: err };
@@ -876,6 +840,84 @@ function HrRecruitment() {
     return false;
   };
 
+  const isEmailLike = (value) => {
+    if (typeof value !== 'string') return false;
+    const s = value.trim();
+    if (!s) return false;
+    return /.+@.+\..+/.test(s);
+  };
+
+  const pickFirstEmail = (...candidates) => {
+    for (const c of candidates) {
+      if (isEmailLike(c)) return String(c).trim();
+    }
+    return "";
+  };
+
+  const pickFirstNonEmail = (...candidates) => {
+    for (const c of candidates) {
+      if (typeof c !== 'string' && typeof c !== 'number') continue;
+      const s = String(c).trim();
+      if (!s) continue;
+      if (isEmailLike(s)) continue;
+      return s;
+    }
+    return "";
+  };
+
+  const normalizeWs = (value) => {
+    if (value === null || value === undefined) return "";
+    return String(value).replace(/\s+/g, " ").trim();
+  };
+
+  const formatNameLastFirstMiddle = ({ last, first, middle }) => {
+    const l = normalizeWs(last);
+    const f = normalizeWs(first);
+    const m = normalizeWs(middle);
+    if (!l && !f && !m) return "";
+    const rest = [f, m].filter(Boolean).join(" ").trim();
+    if (!l) return rest;
+    if (!rest) return l;
+    return `${l}, ${rest}`;
+  };
+
+  const formatFullAddressOneLine = (form) => {
+    if (!form || typeof form !== 'object') return "";
+
+    // Support agency payloads that already store a one-line address
+    const oneLine =
+      form.fullAddress ||
+      form.full_address ||
+      form.currentAddress ||
+      form.current_address ||
+      form.presentAddress ||
+      form.present_address ||
+      form.address ||
+      form.current_address_text ||
+      null;
+    const oneLineStr = normalizeWs(oneLine);
+    if (oneLineStr) return oneLineStr;
+    const parts = [
+      form.unit_house_number,
+      form.house_number,
+      form.unit,
+      form.street,
+      form.subdivision,
+      form.village,
+      form.subdivision_village,
+      form.barangay,
+      form.city,
+      form.province,
+      form.zip,
+    ]
+      .map(normalizeWs)
+      .filter(Boolean);
+
+    return parts.join(", ");
+  };
+
+  const isDriverRole = (position) => /\bdriver\b/i.test(String(position || ""));
+
   // Normalize and load applications from Supabase
   const loadApplications = async () => {
     setLoading(true);
@@ -958,10 +1000,14 @@ function HrRecruitment() {
         // applicant might live in payload.form, payload.applicant, or payload root
         const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
         // name fallbacks
-        const first = source.firstName || source.fname || source.first_name || "";
-        const middle = source.middleName || source.mname || source.middle_name ? ` ${source.middleName || source.mname || source.middle_name}` : "";
-        const last = source.lastName || source.lname || source.last_name ? ` ${source.lastName || source.lname || source.last_name}` : "";
-        const fullName = `${first}${middle}${last}`.trim() || source.fullName || source.name || "Unnamed Applicant";
+        const firstName = source.firstName || source.fname || source.first_name || "";
+        const middleName = source.middleName || source.mname || source.middle_name || "";
+        const lastName = source.lastName || source.lname || source.last_name || "";
+        const fullName =
+          formatNameLastFirstMiddle({ last: lastName, first: firstName, middle: middleName }) ||
+          normalizeWs(source.fullName || source.name) ||
+          normalizeWs([firstName, middleName, lastName].filter(Boolean).join(" ")) ||
+          "Unnamed Applicant";
 
         const position = row.job_posts?.title ?? source.position ?? "—";
         const department = normalizeDepartmentName(row.job_posts?.department ?? source.department ?? "");
@@ -982,6 +1028,21 @@ function HrRecruitment() {
 
         const agencyFlag = isAgency({ raw: { payload: payloadObj }, payload: payloadObj, agency: payloadObj?.agency });
 
+        const email = pickFirstEmail(
+          source.email,
+          source.personal_email,
+          payloadObj.email,
+          // legacy payloads sometimes stored email in contact
+          source.contact
+        );
+        const phone = pickFirstNonEmail(
+          source.contact,
+          source.phone,
+          source.contact_number,
+          payloadObj.phone,
+          payloadObj.contact_number
+        );
+
         return {
           id: row.id,
           user_id: row.user_id,
@@ -994,8 +1055,8 @@ function HrRecruitment() {
           dateApplied: new Date(row.created_at).toLocaleDateString("en-US", {
             month: "short", day: "2-digit", year: "numeric",
           }),
-          email: source.email || source.contact || "",
-          phone: source.contact || source.phone || "",
+          email,
+          phone,
           resume_path: resumePath,
           agency: agencyFlag,
           raw: row,
@@ -1854,7 +1915,13 @@ function HrRecruitment() {
         const firstName = source.firstName || source.fname || source.first_name || "";
         const lastName = source.lastName || source.lname || source.last_name || "";
         const middleName = source.middleName || source.mname || source.middle_name || "";
-        const applicantEmail = source.email || source.contact || "";
+        const applicantEmail = pickFirstEmail(
+          source.email,
+          source.personal_email,
+          payloadObj.email,
+          // legacy payloads sometimes stored email in contact
+          source.contact
+        );
         const birthday = source.birthday || source.birth_date || source.dateOfBirth || null;
         
         // Log payload structure for debugging
@@ -2017,11 +2084,19 @@ function HrRecruitment() {
         // Ensure there's a matching row in employees table (for HR/Agency modules)
         let employeeCreated = false;
         try {
-          // Set source based on whether applicant is from agency or direct
-          const employeeSource = isAgencyApplicant ? "recruitment" : "internal";
+          // Source should match reality for profiling/filters:
+          // - agency/endorsed: "agency"
+          // - direct applicants hired via recruitment: "recruitment"
+          const employeeSource = isAgencyApplicant ? "agency" : "recruitment";
           
           // Extract additional fields from application payload
-          const contactNumber = source.contact || source.contact_number || source.phone || null;
+          const contactNumber = pickFirstNonEmail(
+            source.contact,
+            source.contact_number,
+            source.phone,
+            payloadObj.phone,
+            payloadObj.contact_number
+          ) || null;
           // Use depot from RPC response (already extracted from payload), fallback to other sources
           const depot = rpcData?.depot || applicationData.job_posts?.depot || source.depot || source.preferred_depot || null;
           // Use position from RPC response (already extracted from payload)
@@ -2062,7 +2137,7 @@ function HrRecruitment() {
             hired_at: new Date().toISOString(),
             source: employeeSource,
             status: "Probationary", // Set new employees as Probationary
-            personal_email: applicantEmail || null, // Carry over applicant's email to personal_email
+            personal_email: applicantEmail || null, // Carry over applicant's personal email
             // For agency applicants, preserve agency metadata
             ...(isAgencyApplicant && {
               is_agency: true,
@@ -2107,7 +2182,7 @@ function HrRecruitment() {
               hired_at: new Date().toISOString(),
               source: employeeSource,
               status: "Probationary", // Set new employees as Probationary
-              personal_email: applicantEmail || null, // Carry over applicant's email to personal_email
+              personal_email: applicantEmail || null, // Carry over applicant's personal email
             };
 
             const { data: retryData, error: retryError } = await supabase
@@ -2262,21 +2337,31 @@ function HrRecruitment() {
   };
 
   // ---- OPEN interview modal
-  const openInterviewModal = (application) => {
+  const openInterviewModal = (application, options = {}) => {
+    const { reset = false } = options || {};
     setSelectedApplicationForInterview(application);
-    // Extract interview_type from payload or use default
-    let interviewType = "onsite";
+
+    // Extract interview type safely (payload may be string or invalid JSON)
+    let interviewType = application?.interview_type || "onsite";
     if (application?.raw?.payload) {
-      const payload = typeof application.raw.payload === 'string' 
-        ? JSON.parse(application.raw.payload) 
-        : application.raw.payload;
-      interviewType = payload.interview_type || payload.interview?.type || "onsite";
+      try {
+        const payload = typeof application.raw.payload === 'string'
+          ? JSON.parse(application.raw.payload)
+          : application.raw.payload;
+        interviewType = payload?.interview_type || payload?.interview?.type || interviewType || 'onsite';
+      } catch {
+        // ignore
+      }
     }
+
+    // For rescheduling, open a fresh form to avoid accidentally re-sending the old schedule.
+    const shouldReset = reset || Boolean(application?.interview_date);
+
     setInterviewForm({
-      date: application?.interview_date || "",
-      time: application?.interview_time || "",
-      location: application?.interview_location || "",
-      interviewer: application?.interviewer || "",
+      date: shouldReset ? "" : (application?.interview_date || ""),
+      time: shouldReset ? "" : (application?.interview_time || ""),
+      location: shouldReset ? "" : (application?.interview_location || ""),
+      interviewer: shouldReset ? "" : (application?.interviewer || ""),
       interview_type: interviewType,
     });
     setShowInterviewModal(true);
@@ -2354,7 +2439,21 @@ function HrRecruitment() {
       setShowAgreementSigningModal(false);
 
       const apptSummary = `${selectedApplicationForSigning.name} - ${agreementSigningForm.date} at ${agreementSigningForm.time}, ${agreementSigningForm.location}`;
-      setSuccessMessage(`Agreement signing ${r.data?.isReschedule ? 'Rescheduled' : 'Scheduled'}: ${apptSummary}. Applicant has been notified.`);
+      const signingIsReschedule = Boolean(r.data?.isReschedule);
+      const signingHasEmailStatus = typeof r.data?.emailSent === 'boolean' || r.data?.emailError;
+      const signingEmailSent = Boolean(r.data?.emailSent);
+      const signingEmailNote = !signingHasEmailStatus
+        ? 'Email status unknown (redeploy edge function to see email status).'
+        : signingEmailSent
+          ? 'Email sent.'
+          : (r.data?.emailError?.body || r.data?.emailError?.message)
+            ? `Email not sent: ${r.data?.emailError?.body || r.data?.emailError?.message}`
+            : 'Email not sent (check function logs).';
+
+      setSuccessMessage(
+        `Agreement signing ${signingIsReschedule ? 'Rescheduled' : 'Scheduled'}: ${apptSummary}. ` +
+        `In-app notification created. ${signingEmailNote}`
+      );
       setShowSuccessAlert(true);
     } catch (err) {
       console.error("scheduleAgreementSigning unexpected error:", err);
@@ -2393,60 +2492,21 @@ function HrRecruitment() {
     setScheduling(true);
     try {
       // Use the deployed Edge Function for interview scheduling and notifications
-      const r = await scheduleInterviewClient(selectedApplicationForInterview.id, interviewForm);
+      const interviewPayload = {
+        ...interviewForm,
+        // Edge Function expects interview.type; keep interview_type for local UI/use
+        type: interviewForm.interview_type,
+      };
+      const r = await scheduleInterviewClient(selectedApplicationForInterview.id, interviewPayload);
       if (!r.ok) {
         console.error("Edge function error:", r.error);
-        setErrorMessage("Failed to schedule interview. Check console and function logs.");
+        const maybeMsg = r.error?.message || String(r.error || '');
+        setErrorMessage(maybeMsg && maybeMsg.length > 8
+          ? `Failed to schedule interview: ${maybeMsg}`
+          : "Failed to schedule interview. Check console and function logs.");
         setShowErrorAlert(true);
         setScheduling(false);
         return;
-      }
-      
-      // Also update the application record directly to ensure interview_type is stored
-      try {
-        const currentPayload = selectedApplicationForInterview.raw?.payload || {};
-        let payloadObj = currentPayload;
-        if (typeof payloadObj === 'string') {
-          try {
-            payloadObj = JSON.parse(payloadObj);
-          } catch {
-            payloadObj = {};
-          }
-        }
-        
-        const updatedPayload = {
-          ...payloadObj,
-          interview_type: interviewForm.interview_type,
-          interview: {
-            ...(payloadObj.interview || {}),
-            type: interviewForm.interview_type,
-            date: interviewForm.date,
-            time: interviewForm.time,
-            location: interviewForm.location,
-            interviewer: interviewForm.interviewer,
-          }
-        };
-
-        // Try to update interview_type column if it exists, otherwise store in payload
-        const updateData = {
-          interview_date: interviewForm.date,
-          interview_time: interviewForm.time,
-          interview_location: interviewForm.location,
-          interviewer: interviewForm.interviewer || null,
-          payload: updatedPayload
-        };
-
-        // Try to add interview_type column if it exists
-        const { error: updateError } = await supabase
-          .from('applications')
-          .update(updateData)
-          .eq('id', selectedApplicationForInterview.id);
-
-        if (updateError && updateError.code !== 'PGRST204') {
-          console.warn('Error updating interview_type:', updateError);
-        }
-      } catch (err) {
-        console.warn('Error updating interview_type in database:', err);
       }
       
       // Update selectedApplicant immediately with interview data
@@ -2468,8 +2528,21 @@ function HrRecruitment() {
       
       // Format interview summary
       const interviewSummary = `${selectedApplicationForInterview.name} - ${interviewForm.date} at ${interviewForm.time}, ${interviewForm.location}`;
-      const isReschedule = r.data?.isReschedule;
-      setSuccessMessage(`Interview ${isReschedule ? 'Rescheduled' : 'Scheduled'}: ${interviewSummary}. Applicant has been notified.`);
+      const isReschedule = Boolean(r.data?.isReschedule);
+      const hasEmailStatus = typeof r.data?.emailSent === 'boolean' || r.data?.emailError;
+      const emailSent = Boolean(r.data?.emailSent);
+      const emailNote = !hasEmailStatus
+        ? 'Email status unknown (redeploy edge function to see email status).'
+        : emailSent
+          ? 'Email sent.'
+          : (r.data?.emailError?.body || r.data?.emailError?.message)
+            ? `Email not sent: ${r.data?.emailError?.body || r.data?.emailError?.message}`
+            : 'Email not sent (check function logs).';
+
+      setSuccessMessage(
+        `Interview ${isReschedule ? 'Rescheduled' : 'Scheduled'}: ${interviewSummary}. ` +
+        `In-app notification created. ${emailNote}`
+      );
       setShowSuccessAlert(true);
     } catch (err) {
       console.error("scheduleInterview unexpected error:", err);
@@ -3590,19 +3663,19 @@ function HrRecruitment() {
       };
 
       const doc = new jsPDF({
-        orientation: "landscape",
+        orientation: "portrait",
         unit: "pt",
         format: "a4",
       });
 
       doc.setFontSize(16);
-      doc.text(`${title} (${list.length})`, 40, 40);
+      doc.text(`${title} (${list.length})`, 28, 40);
 
       doc.setFontSize(10);
       doc.setTextColor(80);
-      doc.text(`Exported: ${exportedAtLabel}`, 40, 58);
+      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
       if (filterSummary) {
-        doc.text(filterSummary, 40, 74);
+        doc.text(filterSummary, 28, 74);
       }
       doc.setTextColor(0);
 
@@ -3624,9 +3697,18 @@ function HrRecruitment() {
         head: [["Applicant", "Position", "Depot", "Status", "Date Applied", "Interview Date", "Interview Time"]],
         body,
         theme: "grid",
-        styles: { fontSize: 9, cellPadding: 6, overflow: "linebreak" },
+        styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
         headStyles: { fillColor: [245, 245, 245], textColor: 20 },
-        margin: { left: 40, right: 40 },
+        margin: { left: 28, right: 28 },
+        columnStyles: {
+          0: { cellWidth: 110 },
+          1: { cellWidth: 100 },
+          2: { cellWidth: 50 },
+          3: { cellWidth: 60 },
+          4: { cellWidth: 60 },
+          5: { cellWidth: 65 },
+          6: { cellWidth: 50 },
+        },
       });
 
       const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
@@ -3643,7 +3725,7 @@ function HrRecruitment() {
     }
   }, [searchTerm, positionFilter, depotFilter, statusFilter, sortOrder]);
 
-  const exportApplicantsCsv = useCallback((rows, title = "Applicants") => {
+  const exportApplicantsExcel = useCallback(async (rows, title = "Applicants") => {
     const list = Array.isArray(rows) ? rows : [];
     if (list.length === 0) {
       setErrorMessage("No applicants to export for the current filters.");
@@ -3663,12 +3745,7 @@ function HrRecruitment() {
       ]
         .filter(Boolean)
         .join("_");
-      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".csv";
-
-      const csvEscape = (value) => {
-        const s = String(value ?? "");
-        return `"${s.replace(/"/g, '""')}"`;
-      };
+      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".xlsx";
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
@@ -3691,10 +3768,10 @@ function HrRecruitment() {
         "Interview Time",
       ];
 
-      const lines = [header.map(csvEscape).join(",")];
+      const rowsAoa = [];
       for (const a of list) {
         const statusLabel = getApplicationStatus(a).label;
-        const row = [
+        rowsAoa.push([
           safeText(a.name),
           safeText(a.position),
           safeText(a.depot),
@@ -3702,13 +3779,23 @@ function HrRecruitment() {
           safeText(a.dateApplied),
           interviewDateText(a.interview_date),
           safeText(a.interview_time),
-        ];
-        lines.push(row.map(csvEscape).join(","));
+        ]);
       }
 
-      // UTF-8 BOM helps Excel open UTF-8 CSV correctly.
-      const csv = `\ufeff${lines.join("\r\n")}`;
-      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const sheetName = String(title || "Applicants").slice(0, 31) || "Applicants";
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet(sheetName);
+      worksheet.addRow(header);
+      worksheet.addRows(rowsAoa);
+
+      const headerRow = worksheet.getRow(1);
+      headerRow.font = { bold: true };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
       const url = URL.createObjectURL(blob);
 
       const link = document.createElement("a");
@@ -3719,8 +3806,8 @@ function HrRecruitment() {
       link.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("exportApplicantsCsv error:", err);
-      setErrorMessage("Failed to export CSV. Please try again.");
+      console.error("exportApplicantsExcel error:", err);
+      setErrorMessage("Failed to export Excel file. Please try again.");
       setShowErrorAlert(true);
     }
   }, [statusFilter, positionFilter, depotFilter]);
@@ -4208,11 +4295,11 @@ function HrRecruitment() {
                           type="button"
                           onClick={() => {
                             setShowExportMenu(false);
-                            exportApplicantsCsv(filteredAllApplicants, "Applicants");
+                            exportApplicantsExcel(filteredAllApplicants, "Applicants");
                           }}
                           className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
                         >
-                          Export list as CSV
+                          Export list as Excel
                         </button>
                       </div>
                     )}
@@ -4233,7 +4320,7 @@ function HrRecruitment() {
                       <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Applicant</th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Dept / Depot</th>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date Applied</th>
                         </tr>
@@ -4285,6 +4372,7 @@ function HrRecruitment() {
                               </td>
                               <td className="px-6 py-4">
                                 <p className="text-sm text-gray-800">{a.position || "—"}</p>
+                                <p className="text-xs text-gray-500">{a.department || "—"}</p>
                                 <p className="text-xs text-gray-500">{a.depot || "—"}</p>
                               </td>
                               <td className="px-6 py-4">
@@ -4596,6 +4684,10 @@ function HrRecruitment() {
                           <span className="ml-2 text-gray-800">{selectedApplicant.position || <span className="text-gray-500 italic">None</span>}</span>
                         </div>
                         <div>
+                          <span className="text-gray-500">Department:</span>
+                          <span className="ml-2 text-gray-800">{selectedApplicant.department || <span className="text-gray-500 italic">None</span>}</span>
+                        </div>
+                        <div>
                           <span className="text-gray-500">Depot:</span>
                           <span className="ml-2 text-gray-800">{selectedApplicant.depot || <span className="text-gray-500 italic">None</span>}</span>
                         </div>
@@ -4617,7 +4709,39 @@ function HrRecruitment() {
                         console.error('Error parsing payload:', e);
                         payloadObj = {};
                       }
-                      const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
+                      const formObj = payloadObj?.form && typeof payloadObj.form === 'object' ? payloadObj.form : {};
+                      const applicantObj = payloadObj?.applicant && typeof payloadObj.applicant === 'object' ? payloadObj.applicant : {};
+                      const form = { ...formObj, ...applicantObj };
+
+                      const firstName = form.firstName || form.fname || form.first_name || "";
+                      const middleName = form.middleName || form.mname || form.middle_name || "";
+                      const lastName = form.lastName || form.lname || form.last_name || "";
+                      const birthday = form.birthday || form.birth_date || form.dateOfBirth || null;
+                      const contactNumber = pickFirstNonEmail(
+                        form.contact,
+                        form.contactNumber,
+                        form.contact_number,
+                        form.phone,
+                        selectedApplicant.phone,
+                        selectedApplicant.raw?.phone,
+                        payloadObj.phone,
+                        payloadObj.contact_number
+                      );
+                      const email = pickFirstEmail(
+                        form.email,
+                        form.personal_email,
+                        selectedApplicant.email,
+                        selectedApplicant.raw?.email,
+                        payloadObj.email,
+                        // legacy payloads sometimes stored email in contact
+                        form.contact
+                      );
+
+                      const nameDisplay = formatNameLastFirstMiddle({
+                        last: lastName,
+                        first: firstName,
+                        middle: middleName,
+                      });
                       
                       // Calculate age from birthday
                       const calculateAge = (birthday) => {
@@ -4657,23 +4781,23 @@ function HrRecruitment() {
                             <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                               <div>
                                 <span className="font-semibold text-gray-600">Name:</span>{' '}
-                                <span className="text-gray-800">{form.firstName || ''} {form.middleName || ''} {form.lastName || ''}</span>
+                                <span className="text-gray-800">{nameDisplay || <span className="text-gray-400 italic">None</span>}</span>
                               </div>
                               <div>
-                                <span className="font-semibold text-gray-600">Contact Number:</span> {form.contact || selectedApplicant.phone ? <span className="text-gray-800">{form.contact || selectedApplicant.phone}</span> : <span className="text-gray-400 italic">None</span>}
+                                <span className="font-semibold text-gray-600">Contact Number:</span> {contactNumber ? <span className="text-gray-800">{contactNumber}</span> : <span className="text-gray-400 italic">None</span>}
                               </div>
                               <div>
                                 <span className="font-semibold text-gray-600">Email:</span>{' '}
-                                {form.email || selectedApplicant.email ? <span className="text-gray-800">{form.email || selectedApplicant.email}</span> : <span className="text-gray-400 italic">None</span>}
+                                {email ? <span className="text-gray-800">{email}</span> : <span className="text-gray-400 italic">None</span>}
                               </div>
                               <div>
                                 <span className="font-semibold text-gray-600">Birthday:</span>{' '}
-                                {form.birthday ? <span className="text-gray-800">{new Date(form.birthday).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span> : <span className="text-gray-400 italic">None</span>}
+                                {birthday ? <span className="text-gray-800">{new Date(birthday).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span> : <span className="text-gray-400 italic">None</span>}
                               </div>
                               <div>
                                 <span className="font-semibold text-gray-600">Age:</span>{' '}
-                                {form.birthday ? 
-                                  <span className="text-gray-800">{calculateAge(form.birthday)}</span> : <span className="text-gray-400 italic">None</span>}
+                                {birthday ? 
+                                  <span className="text-gray-800">{calculateAge(birthday)}</span> : <span className="text-gray-400 italic">None</span>}
                               </div>
                               <div>
                                 <span className="font-semibold text-gray-600">Marital Status:</span>{' '}
@@ -4720,42 +4844,12 @@ function HrRecruitment() {
                             <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
                               Address Information
                             </h5>
-                            <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                            <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 gap-y-2">
                               <div>
-                                <span className="text-gray-500">Unit/House Number, Street Name, Subdivision/Village:</span>
+                                <span className="text-gray-500">Full Address:</span>
                                 <span className="ml-2 text-gray-800">
-                                  {(() => {
-                                    const line = [
-                                      form.unit_house_number,
-                                      form.street,
-                                      form.subdivision,
-                                      form.village,
-                                      form.subdivision_village,
-                                    ]
-                                      .filter(Boolean)
-                                      .map((s) => (typeof s === 'string' ? s.trim() : String(s).trim()))
-                                      .filter(Boolean)
-                                      .join(', ');
-
-                                    return line ? line : <span className="text-gray-500 italic">None</span>;
-                                  })()}
+                                  {formatFullAddressOneLine(form) || <span className="text-gray-500 italic">None</span>}
                                 </span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Barangay:</span>
-                                <span className="ml-2 text-gray-800">{form.barangay || <span className="text-gray-500 italic">None</span>}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">City/Municipality:</span>
-                                <span className="ml-2 text-gray-800">{form.city || <span className="text-gray-500 italic">None</span>}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">Province:</span>
-                                <span className="ml-2 text-gray-800">{form.province || <span className="text-gray-500 italic">None</span>}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">ZIP Code:</span>
-                                <span className="ml-2 text-gray-800">{form.zip || <span className="text-gray-500 italic">None</span>}</span>
                               </div>
                             </div>
                           </div>
@@ -4812,8 +4906,74 @@ function HrRecruitment() {
                             </div>
                           </div>
 
+                          {/* Specialized Training (Certificate) */}
+                          {(() => {
+                            const trainingName = form.specializedTraining || form.specialized_training || null;
+                            const trainingYear = form.specializedYear || form.specialized_year || null;
+
+                            const trainingCertPath =
+                              form.trainingCertFilePath ||
+                              form.training_cert_file_path ||
+                              form.trainingCertPath ||
+                              form.training_cert_path ||
+                              form.specializedTrainingCertFilePath ||
+                              form.specialized_training_cert_file_path ||
+                              payloadObj?.trainingCertFilePath ||
+                              payloadObj?.training_cert_file_path ||
+                              payloadObj?.trainingCertPath ||
+                              payloadObj?.training_cert_path ||
+                              null;
+
+                            const trainingCertUrl = trainingCertPath
+                              ? supabase.storage.from('application-files').getPublicUrl(trainingCertPath)?.data?.publicUrl
+                              : null;
+
+                            const hasAnything = Boolean(String(trainingName || '').trim() || String(trainingYear || '').trim() || trainingCertPath);
+                            if (!hasAnything) {
+                              return (
+                                <div className="mb-6">
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Specialized Training</h5>
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                    <div className="text-gray-500 italic">No uploaded specialized training yet.</div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div className="mb-6">
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Specialized Training</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                  <div>
+                                    <span className="text-gray-500">Training/Certification Name:</span>
+                                    <span className="ml-2">{trainingName ? <span className="text-gray-800">{String(trainingName)}</span> : <span className="text-gray-500 italic">None</span>}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Year Completed:</span>
+                                    <span className="ml-2">{trainingYear ? <span className="text-gray-800">{String(trainingYear)}</span> : <span className="text-gray-500 italic">None</span>}</span>
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <span className="text-gray-500">Certificate:</span>
+                                    {trainingCertUrl ? (
+                                      <a
+                                        href={trainingCertUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="ml-2 text-blue-600 hover:underline"
+                                      >
+                                        View File
+                                      </a>
+                                    ) : (
+                                      <span className="ml-2 text-gray-500 italic">No file</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           {/* Work Experience */}
-                          {payloadObj.workExperiences && Array.isArray(payloadObj.workExperiences) && payloadObj.workExperiences.length > 0 && (
+                          {!isAgency(selectedApplicant) && payloadObj.workExperiences && Array.isArray(payloadObj.workExperiences) && payloadObj.workExperiences.length > 0 && (
                             <div className="mb-6">
                               <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
                                 Work Experience
@@ -4846,6 +5006,292 @@ function HrRecruitment() {
                             </div>
                           )}
 
+                          {/* Driver-specific sections (Agency + Driver role) */}
+                          {(() => {
+                            const agencyApplicant = isAgency(selectedApplicant);
+                            const positionText =
+                              selectedApplicant?.position ||
+                              selectedApplicant?.job_post?.position ||
+                              selectedApplicant?.jobPost?.position ||
+                              selectedApplicant?.raw?.position ||
+                              payloadObj?.position ||
+                              form?.position ||
+                              '';
+                            const driverApplicant = agencyApplicant && isDriverRole(positionText);
+                            if (!driverApplicant) return null;
+
+                            const renderNone = () => <span className="text-gray-500 italic">None</span>;
+                            const displayValue = (v) => {
+                              if (v === null || v === undefined) return renderNone();
+                              if (typeof v === 'string') {
+                                const s = v.trim();
+                                return s ? <span className="text-gray-800">{s}</span> : renderNone();
+                              }
+                              if (Array.isArray(v)) {
+                                const list = v
+                                  .filter(Boolean)
+                                  .map((x) => String(x).trim())
+                                  .filter(Boolean);
+                                return list.length ? (
+                                  <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                    {list.map((item, idx) => (
+                                      <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                        {item}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="ml-2">{renderNone()}</span>
+                                );
+                              }
+                              return <span className="text-gray-800">{String(v)}</span>;
+                            };
+
+                            const displayYesNo = (v) => {
+                              if (v === true) return 'Yes';
+                              if (v === false) return 'No';
+                              if (typeof v === 'string') {
+                                const s = v.toLowerCase().trim();
+                                if (s === 'yes' || s === 'y' || s === 'true') return 'Yes';
+                                if (s === 'no' || s === 'n' || s === 'false') return 'No';
+                              }
+                              return null;
+                            };
+
+                            const displayDate = (v) => {
+                              if (!v) return renderNone();
+                              try {
+                                const d = new Date(v);
+                                if (Number.isNaN(d.getTime())) return <span className="text-gray-800">{String(v)}</span>;
+                                return <span className="text-gray-800">{d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>;
+                              } catch {
+                                return <span className="text-gray-800">{String(v)}</span>;
+                              }
+                            };
+
+                            const requirements =
+                              payloadObj?.requirements ||
+                              payloadObj?.form?.requirements ||
+                              payloadObj?.applicant?.requirements ||
+                              payloadObj?.docs ||
+                              {};
+
+                            const licenseReq = requirements?.license || {};
+                            const frontPath =
+                              licenseReq.frontFilePath ||
+                              licenseReq.front_file_path ||
+                              licenseReq.front_path ||
+                              licenseReq.front ||
+                              null;
+                            const backPath =
+                              licenseReq.backFilePath ||
+                              licenseReq.back_file_path ||
+                              licenseReq.back_path ||
+                              licenseReq.back ||
+                              null;
+                            const frontUrl = frontPath
+                              ? String(frontPath).startsWith('http')
+                                ? String(frontPath)
+                                : supabase.storage.from('application-files').getPublicUrl(frontPath)?.data?.publicUrl
+                              : null;
+                            const backUrl = backPath
+                              ? String(backPath).startsWith('http')
+                                ? String(backPath)
+                                : supabase.storage.from('application-files').getPublicUrl(backPath)?.data?.publicUrl
+                              : null;
+
+                            const licenseClassification =
+                              form.licenseClassification ||
+                              form.license_classification ||
+                              form.licenseType ||
+                              form.license_type ||
+                              null;
+                            const licenseExpiry =
+                              form.licenseExpiry ||
+                              form.license_expiry ||
+                              form.licenseExpiryDate ||
+                              form.license_expiry_date ||
+                              null;
+                            const restrictionCodes =
+                              form.restrictionCodes ||
+                              form.restriction_codes ||
+                              form.restrictions ||
+                              null;
+
+                            const drivingHistoryObj =
+                              (form.drivingHistory && typeof form.drivingHistory === 'object' ? form.drivingHistory : null) ||
+                              (form.driving_history && typeof form.driving_history === 'object' ? form.driving_history : null) ||
+                              null;
+
+                            const yearsDriving =
+                              drivingHistoryObj?.yearsDriving ||
+                              drivingHistoryObj?.years_driving ||
+                              form.yearsDriving ||
+                              form.years_driving ||
+                              null;
+                            const truckKnowledge =
+                              drivingHistoryObj?.truckKnowledge ||
+                              drivingHistoryObj?.truck_knowledge ||
+                              form.truckKnowledge ||
+                              form.truck_knowledge ||
+                              null;
+                            const vehicleTypes =
+                              drivingHistoryObj?.vehicleTypes ||
+                              drivingHistoryObj?.vehicle_types ||
+                              form.vehicleTypes ||
+                              form.vehicle_types ||
+                              null;
+                            const troubleshootingTasks =
+                              drivingHistoryObj?.troubleshootingTasks ||
+                              drivingHistoryObj?.troubleshooting_tasks ||
+                              form.troubleshootingTasks ||
+                              form.troubleshooting_tasks ||
+                              null;
+
+                            return (
+                              <>
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                    <div>
+                                      <span className="text-gray-500">License Classification:</span>
+                                      <span className="ml-2">{licenseClassification ? displayValue(licenseClassification) : renderNone()}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">License Expiry Date:</span>
+                                      <span className="ml-2">{displayDate(licenseExpiry)}</span>
+                                    </div>
+                                    {Array.isArray(restrictionCodes) && restrictionCodes.filter(Boolean).length > 0 && (
+                                      <div className="md:col-span-2">
+                                        <span className="text-gray-500">Restriction Codes:</span>
+                                        {displayValue(restrictionCodes)}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="border border-gray-200 rounded-lg p-3">
+                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
+                                      {frontUrl ? (
+                                        <a href={frontUrl} target="_blank" rel="noopener noreferrer">
+                                          <img
+                                            src={frontUrl}
+                                            alt="Driver's License Front"
+                                            className="w-full h-40 object-contain bg-gray-50 rounded"
+                                          />
+                                        </a>
+                                      ) : (
+                                        <div className="text-xs text-gray-400 italic">None</div>
+                                      )}
+                                    </div>
+                                    <div className="border border-gray-200 rounded-lg p-3">
+                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
+                                      {backUrl ? (
+                                        <a href={backUrl} target="_blank" rel="noopener noreferrer">
+                                          <img
+                                            src={backUrl}
+                                            alt="Driver's License Back"
+                                            className="w-full h-40 object-contain bg-gray-50 rounded"
+                                          />
+                                        </a>
+                                      ) : (
+                                        <div className="text-xs text-gray-400 italic">None</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Driving History</h5>
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+                                    <div>
+                                      <span className="text-gray-500">Years of Driving Experience:</span>
+                                      <span className="ml-2">{yearsDriving ? displayValue(yearsDriving) : renderNone()}</span>
+                                    </div>
+                                    <div>
+                                      <span className="text-gray-500">Has Truck Troubleshooting Knowledge:</span>
+                                      <span className="ml-2">{displayYesNo(truckKnowledge) ?? renderNone()}</span>
+                                    </div>
+                                    <div className="md:col-span-2">
+                                      <span className="text-gray-500">Vehicles Driven:</span>
+                                      {vehicleTypes ? displayValue(vehicleTypes) : <span className="ml-2">{renderNone()}</span>}
+                                    </div>
+                                    {troubleshootingTasks && Array.isArray(troubleshootingTasks) && troubleshootingTasks.filter(Boolean).length > 0 && (
+                                      <div className="md:col-span-2">
+                                        <span className="text-gray-500">Troubleshooting Capabilities:</span>
+                                        {displayValue(troubleshootingTasks)}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
+
+                          {/* Medical Information (ALL positions) */}
+                          {(() => {
+                            const renderNone = () => <span className="text-gray-500 italic">None</span>;
+                            const displayValue = (v) => {
+                              if (v === null || v === undefined) return renderNone();
+                              if (typeof v === 'string') {
+                                const s = v.trim();
+                                return s ? <span className="text-gray-800">{s}</span> : renderNone();
+                              }
+                              return <span className="text-gray-800">{String(v)}</span>;
+                            };
+
+                            const displayYesNo = (v) => {
+                              if (v === true) return 'Yes';
+                              if (v === false) return 'No';
+                              if (typeof v === 'string') {
+                                const s = v.toLowerCase().trim();
+                                if (s === 'yes' || s === 'y' || s === 'true') return 'Yes';
+                                if (s === 'no' || s === 'n' || s === 'false') return 'No';
+                              }
+                              return null;
+                            };
+
+                            const displayDate = (v) => {
+                              if (!v) return renderNone();
+                              try {
+                                const d = new Date(v);
+                                if (Number.isNaN(d.getTime())) return <span className="text-gray-800">{String(v)}</span>;
+                                return <span className="text-gray-800">{d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>;
+                              } catch {
+                                return <span className="text-gray-800">{String(v)}</span>;
+                              }
+                            };
+
+                            const takingMedications = form.takingMedications ?? form.taking_medications ?? null;
+                            const medicationReason = form.medicationReason || form.medication_reason || null;
+                            const tookMedicalTest = form.tookMedicalTest ?? form.took_medical_test ?? null;
+                            const medicalTestDate = form.medicalTestDate || form.medical_test_date || null;
+
+                            return (
+                              <div className="mb-6">
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Medical Information</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                  <div>
+                                    <span className="text-gray-500">Taking Medications:</span>
+                                    <span className="ml-2">{displayYesNo(takingMedications) ?? renderNone()}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Medication Reason:</span>
+                                    <span className="ml-2">{takingMedications ? (medicationReason ? displayValue(medicationReason) : renderNone()) : renderNone()}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Has Taken Medical Test:</span>
+                                    <span className="ml-2">{displayYesNo(tookMedicalTest) ?? renderNone()}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Medical Test Date:</span>
+                                    <span className="ml-2">{tookMedicalTest ? displayDate(medicalTestDate) : renderNone()}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           {/* Character References */}
                           {(() => {
                             if (isAgency(selectedApplicant)) return null;
@@ -4853,45 +5299,71 @@ function HrRecruitment() {
                             const rawReferences = Array.isArray(payloadObj.characterReferences)
                               ? payloadObj.characterReferences
                               : [];
-                            const displayReferences = rawReferences.length > 0 ? rawReferences : [{}];
+                            const hasAnyValue = (ref) => {
+                              if (!ref || typeof ref !== 'object') return false;
+                              const fields = [
+                                ref.fullName,
+                                ref.name,
+                                ref.relationship,
+                                ref.relation,
+                                ref.jobTitle,
+                                ref.title,
+                                ref.position,
+                                ref.company,
+                                ref.remarks,
+                                ref.phone,
+                                ref.contact,
+                                ref.contactNumber,
+                                ref.contact_number,
+                                ref.email,
+                              ];
+                              return fields.some((v) => String(v || '').trim().length > 0);
+                            };
+                            const displayReferences = rawReferences.filter(hasAnyValue);
+                            const isEmpty = displayReferences.length === 0;
 
                             return (
                               <div className="mb-6">
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
-                                  Character References
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded flex items-center justify-between">
+                                  <span>Character References</span>
+                                  {isEmpty && <span className="text-xs text-gray-500 italic">None</span>}
                                 </h5>
                                 <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 space-y-4">
-                                  {displayReferences.map((ref, idx) => (
-                                    <div key={idx} className="border-b border-gray-200 pb-4 last:border-b-0 last:pb-0">
-                                      <div className="font-medium text-gray-700 mb-2">Reference #{idx + 1}:</div>
-                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                        <div>
-                                          <span className="text-gray-500">Full Name:</span>
-                                          <span className="ml-2 text-gray-800">{ref?.fullName || ref?.name || ''}</span>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Relationship:</span>
-                                          <span className="ml-2 text-gray-800">{ref?.relationship || ref?.relation || ''}</span>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Job Title:</span>
-                                          <span className="ml-2 text-gray-800">{ref?.jobTitle || ref?.title || ref?.position || ''}</span>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Company:</span>
-                                          <span className="ml-2 text-gray-800">{ref?.company || ref?.remarks || ''}</span>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Phone:</span>
-                                          <span className="ml-2 text-gray-800">{ref?.phone || ref?.contact || ref?.contactNumber || ref?.contact_number || ''}</span>
-                                        </div>
-                                        <div>
-                                          <span className="text-gray-500">Email:</span>
-                                          <span className="ml-2 text-gray-800">{ref?.email || ''}</span>
+                                  {isEmpty ? (
+                                    <div className="text-gray-400 italic">None</div>
+                                  ) : (
+                                    displayReferences.map((ref, idx) => (
+                                      <div key={idx} className="border-b border-gray-200 pb-4 last:border-b-0 last:pb-0">
+                                        <div className="font-medium text-gray-700 mb-2">Reference #{idx + 1}:</div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                          <div>
+                                            <span className="text-gray-500">Full Name:</span>
+                                            <span className="ml-2 text-gray-800">{ref?.fullName || ref?.name || ''}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">Relationship:</span>
+                                            <span className="ml-2 text-gray-800">{ref?.relationship || ref?.relation || ''}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">Job Title:</span>
+                                            <span className="ml-2 text-gray-800">{ref?.jobTitle || ref?.title || ref?.position || ''}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">Company:</span>
+                                            <span className="ml-2 text-gray-800">{ref?.company || ref?.remarks || ''}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">Phone:</span>
+                                            <span className="ml-2 text-gray-800">{ref?.phone || ref?.contact || ref?.contactNumber || ref?.contact_number || ''}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">Email:</span>
+                                            <span className="ml-2 text-gray-800">{ref?.email || ''}</span>
+                                          </div>
                                         </div>
                                       </div>
-                                    </div>
-                                  ))}
+                                    ))
+                                  )}
                                 </div>
                               </div>
                             );
@@ -4952,8 +5424,7 @@ function HrRecruitment() {
                           type="button"
                           className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
                           onClick={() => {
-                            setSelectedApplicationForInterview(selectedApplicant);
-                            openInterviewModal(selectedApplicant);
+                            openInterviewModal(selectedApplicant, { reset: true });
                           }}
                         >
                           Set Interview Schedule
@@ -5048,8 +5519,7 @@ function HrRecruitment() {
                               type="button"
                               className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
                               onClick={() => {
-                                setSelectedApplicationForInterview(selectedApplicant);
-                                openInterviewModal(selectedApplicant);
+                                openInterviewModal(selectedApplicant, { reset: true });
                               }}
                             >
                               Schedule Another Interview
@@ -5551,16 +6021,27 @@ function HrRecruitment() {
                     <div className="pt-4">
                       <div className="flex items-center justify-between mb-3">
                         <h2 className="text-lg font-semibold text-gray-800">Agreement Signing Appointment</h2>
-                        <button
-                          type="button"
-                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
-                          onClick={() => {
-                            if (!selectedApplicant) return;
-                            openAgreementSigningModal(selectedApplicant);
-                          }}
-                        >
-                          {selectedApplicant?.agreement_signing_date ? 'Reschedule Agreement Signing' : 'Schedule Agreement Signing'}
-                        </button>
+                        {(() => {
+                          const hasSigning = !!selectedApplicant?.agreement_signing_date;
+                          const signingStatus = selectedApplicant?.agreement_signing_confirmed || 'Idle';
+                          const canSchedule = !hasSigning;
+                          const canReschedule = hasSigning && signingStatus === 'Rejected';
+
+                          if (!canSchedule && !canReschedule) return null;
+
+                          return (
+                            <button
+                              type="button"
+                              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                              onClick={() => {
+                                if (!selectedApplicant) return;
+                                openAgreementSigningModal(selectedApplicant);
+                              }}
+                            >
+                              {canReschedule ? 'Reschedule Agreement Signing' : 'Schedule Agreement Signing'}
+                            </button>
+                          );
+                        })()}
                       </div>
 
                       {selectedApplicant?.agreement_signing_date ? (
