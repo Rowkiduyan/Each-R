@@ -1,7 +1,6 @@
   import { Link, useNavigate, useLocation } from 'react-router-dom';
   import { useState, useEffect, useRef } from 'react';
   import { supabase } from './supabaseClient';
-  import Roadwise from './Roadwise.png';
   import AutocompleteInput from './components/AutocompleteInput';
 import SkillsInput from './components/SkillsInput';
 
@@ -153,6 +152,7 @@ import SkillsInput from './components/SkillsInput';
     const [resumeFile, setResumeFile] = useState(null);
     const [profileResumeFile, setProfileResumeFile] = useState(null);
     const [userApplication, setUserApplication] = useState(null);
+    const [userApplications, setUserApplications] = useState([]);
 
     // PSGC API states for location dropdowns
     const [provinces, setProvinces] = useState([]);
@@ -989,18 +989,16 @@ const formatDateForInput = (dateString) => {
         .select('id, job_id, created_at, payload, status')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
-        .limit(1);
+        .limit(200);
 
       if (error) {
-        console.error('Error fetching user application:', error);
+        console.error('Error fetching user application(s):', error);
         return;
       }
 
-      if (data && data.length > 0) {
-        setUserApplication(data[0]);
-      } else {
-        setUserApplication(null);
-      }
+      const list = Array.isArray(data) ? data : [];
+      setUserApplications(list);
+      setUserApplication(list.length > 0 ? list[0] : null); // keep backward-compatible “latest”
     };
 
     const updateWork = (idx, key, value) => {
@@ -1476,6 +1474,20 @@ const formatDateForInput = (dateString) => {
 
       if (insertedData && insertedData.length > 0) {
         setUserApplication(insertedData[0]);
+        setUserApplications((prev) => {
+          const next = [insertedData[0], ...(Array.isArray(prev) ? prev : [])];
+          // Ensure newest first and avoid duplicate ids
+          const seen = new Set();
+          const deduped = [];
+          for (const item of next) {
+            const id = item?.id;
+            if (!id || seen.has(id)) continue;
+            seen.add(id);
+            deduped.push(item);
+          }
+          deduped.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+          return deduped;
+        });
       }
 
       setShowSummary(false);
@@ -1483,8 +1495,28 @@ const formatDateForInput = (dateString) => {
     };
 
     const [authChecked, setAuthChecked] = useState(false);
+
+    const latestApplicationStatus = String(userApplication?.status || '').toLowerCase();
     const hasExistingApplication = Boolean(userApplication);
     const appliedJobId = userApplication?.job_id || null;
+    // Keep the existing “only show my job” behavior except when the latest application is rejected.
+    const shouldLockToAppliedJob = hasExistingApplication && !!appliedJobId && latestApplicationStatus !== 'rejected';
+
+    const getLatestStatusForJob = (jobId) => {
+      if (!jobId) return '';
+      let best = null;
+      for (const app of (Array.isArray(userApplications) ? userApplications : [])) {
+        if (app?.job_id !== jobId) continue;
+        if (!best) {
+          best = app;
+          continue;
+        }
+        const a = new Date(app?.created_at || 0);
+        const b = new Date(best?.created_at || 0);
+        if (a > b) best = app;
+      }
+      return String(best?.status || '').toLowerCase();
+    };
     
 
     useEffect(() => {
@@ -1901,9 +1933,10 @@ const formatDateForInput = (dateString) => {
 
       const loadJobs = async () => {
         setJobsLoading(true);
+        const activeIds = new Set();
         const { data, error } = await supabase
           .from('job_posts')
-          .select('id, title, depot, department, description, responsibilities, urgent, created_at, job_type, expires_at, positions_needed, duration')
+          .select('id, title, depot, department, description, responsibilities, urgent, created_at, job_type, expires_at, positions_needed, duration, is_active')
           .eq('is_active', true)
           .order('created_at', { ascending: false });
 
@@ -1915,13 +1948,35 @@ const formatDateForInput = (dateString) => {
         }
 
         const list = data || [];
+        list.forEach((j) => j?.id && activeIds.add(j.id));
         // Only show office_employee jobs for applicants
         const officeJobs = list.filter((job) => job.job_type?.toLowerCase() === 'office_employee');
         
         // ensure redirected job appears even if cache delay (avoid dupe)
-        const merged = newJob
+        let merged = newJob
           ? [officeJobs.find(j => j.id === newJob.id) ? null : newJob, ...officeJobs].filter(Boolean)
           : officeJobs;
+
+        // Always include the job the user applied to, even if it becomes inactive/filled.
+        // This allows showing a stable "Hired"/"Applied"/"Rejected" badge on the job card.
+        if (appliedJobId) {
+          try {
+            const { data: appliedJobRow, error: appliedJobErr } = await supabase
+              .from('job_posts')
+              .select('id, title, depot, department, description, responsibilities, urgent, created_at, job_type, expires_at, positions_needed, duration, is_active')
+              .eq('id', appliedJobId)
+              .maybeSingle();
+
+            if (!appliedJobErr && appliedJobRow && appliedJobRow.job_type?.toLowerCase() === 'office_employee') {
+              const exists = merged.some((j) => j?.id === appliedJobRow.id);
+              if (!exists) {
+                merged = [appliedJobRow, ...merged];
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to fetch applied job post:', e);
+          }
+        }
 
         const withStats = await attachHiringStats(merged);
 
@@ -1935,11 +1990,14 @@ const formatDateForInput = (dateString) => {
 
         if (closable.length > 0) {
           await Promise.all(
-            closable.map((job) => supabase.from('job_posts').update({ is_active: false }).eq('id', job.id))
+            closable
+              .filter((job) => activeIds.has(job.id))
+              .map((job) => supabase.from('job_posts').update({ is_active: false }).eq('id', job.id))
           );
         }
 
         const openJobs = withStats.filter((job) => {
+          if (job?.is_active === false) return false;
           const expired = isJobExpired(job);
           const totalNum = Number(job?.positions_needed);
           const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
@@ -1947,7 +2005,16 @@ const formatDateForInput = (dateString) => {
           return !expired && !filled;
         });
 
-        setJobs(openJobs);
+        // Ensure applied job stays visible even if inactive/filled/expired
+        let finalList = openJobs;
+        if (appliedJobId) {
+          const applied = withStats.find((j) => j?.id === appliedJobId);
+          if (applied && !finalList.some((j) => j?.id === appliedJobId)) {
+            finalList = [applied, ...finalList];
+          }
+        }
+
+        setJobs(finalList);
         setJobsLoading(false);
       };
 
@@ -1970,7 +2037,7 @@ const formatDateForInput = (dateString) => {
       return () => {
         if (channel) supabase.removeChannel(channel);
       };
-    }, [newJob]);
+    }, [newJob, appliedJobId, latestApplicationStatus]);
 
     // ✅ Safe early return AFTER the hook has been called this render
     if (!authChecked) {
@@ -2020,8 +2087,9 @@ const formatDateForInput = (dateString) => {
     console.log('Show search suggestions:', showSearchSuggestions);
 
     const filteredJobs = jobs.filter((job) => {
-      // If user has already applied, only show the job they applied for
-      if (hasExistingApplication && appliedJobId) {
+      // If user has an active (non-rejected) latest application, only show that job.
+      // If rejected, allow browsing/applying to other job offers.
+      if (shouldLockToAppliedJob && appliedJobId) {
         return job.id === appliedJobId;
       }
       
@@ -2079,7 +2147,10 @@ const formatDateForInput = (dateString) => {
         ? createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : 'Not available';
       const isSelected = selectedJob?.id === job.id;
+      const jobStatus = getLatestStatusForJob(job.id);
+      const hasApplicationForJob = !!jobStatus;
       const isCurrentApplication = appliedJobId === job.id;
+      const isLockedCurrent = shouldLockToAppliedJob && isCurrentApplication;
       const isPreferredDepot = profileForm.preferred_depot && job.depot === profileForm.preferred_depot;
 
       return (
@@ -2089,7 +2160,7 @@ const formatDateForInput = (dateString) => {
             isSelected ? 'border-2 border-red-600' : 'border border-transparent'
           } hover:bg-gray-100`}
           onClick={() => {
-            if (isCurrentApplication) return;
+            if (isLockedCurrent) return;
             handleCardSelect(job);
           }}
         >
@@ -2125,9 +2196,17 @@ const formatDateForInput = (dateString) => {
                   : (job.positions_needed == null ? 'Open until manually closed' : 'Closes when filled')}
               </span>
             </div>
-            {isCurrentApplication && (
-              <div className="mt-2 px-3 py-1 bg-green-100 text-green-700 text-sm font-medium rounded-full text-center">
-                Applied
+            {hasApplicationForJob && (
+              <div
+                className={`mt-2 px-3 py-1 text-sm font-medium rounded-full text-center ${
+                  jobStatus === 'hired'
+                    ? 'bg-green-100 text-green-700'
+                    : jobStatus === 'rejected'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-green-100 text-green-700'
+                }`}
+              >
+                {jobStatus === 'hired' ? 'Hired' : jobStatus === 'rejected' ? 'Rejected' : 'Applied'}
               </div>
             )}
           </div>
@@ -2151,9 +2230,14 @@ const formatDateForInput = (dateString) => {
           <div className="relative -mx-6" style={{ width: 'calc(100% + 3rem)' }}>
             <div className="relative">
               <img
-                src={Roadwise}
+                src={'/roadwise-banner.png'}
                 alt="Delivery trucks on the road"
                 className="w-full h-[200px] object-cover"
+                onError={(e) => {
+                  // Fallback to a bundled asset if the public file is missing
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = '/vite.svg';
+                }}
               />
               <div className="absolute inset-0 bg-black/30" />
               <div className="absolute inset-0 flex items-center justify-center px-4">
@@ -2309,30 +2393,61 @@ const formatDateForInput = (dateString) => {
                             )}
                             <div className="flex items-start justify-between gap-4">
                               <h2 className="text-2xl font-bold text-gray-800">{selectedJob.title}</h2>
-                              {appliedJobId === selectedJob.id ? (
-                                <span className="px-10 py-2 rounded bg-green-100 text-green-700 font-medium">
-                                  Already Applied
-                                </span>
-                              ) : hasExistingApplication ? (
-                                <span className="px-10 py-2 rounded bg-gray-300 text-gray-600 cursor-not-allowed">
-                                  Apply (Disabled)
-                                </span>
-                              ) : !isProfileComplete ? (
-                                <button
-                                  className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
-                                  onClick={proceedToApplicationForm}
-                                  title="Complete your profile to apply"
-                                >
-                                  Apply
-                                </button>
-                              ) : (
-                                <button
-                                  className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
-                                  onClick={proceedToApplicationForm}
-                                >
-                                  Apply
-                                </button>
-                              )}
+                                {(() => {
+                                  const selectedStatus = getLatestStatusForJob(selectedJob.id);
+                                  const hasAppliedToSelected = !!selectedStatus;
+
+                                  if (hasAppliedToSelected) {
+                                    if (selectedStatus === 'hired') {
+                                      return (
+                                        <span className="px-10 py-2 rounded bg-green-100 text-green-700 font-medium">
+                                          Hired
+                                        </span>
+                                      );
+                                    }
+                                    if (selectedStatus === 'rejected') {
+                                      return (
+                                        <span className="px-10 py-2 rounded bg-red-100 text-red-700 font-medium">
+                                          Rejected
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span className="px-10 py-2 rounded bg-green-100 text-green-700 font-medium">
+                                        Already Applied
+                                      </span>
+                                    );
+                                  }
+
+                                  if (shouldLockToAppliedJob) {
+                                    return (
+                                      <span className="px-10 py-2 rounded bg-gray-300 text-gray-600 cursor-not-allowed">
+                                        Apply (Disabled)
+                                      </span>
+                                    );
+                                  }
+
+                                  if (!isProfileComplete) {
+                                    return (
+                                      <button
+                                        className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                                        onClick={proceedToApplicationForm}
+                                        title="Complete your profile to apply"
+                                      >
+                                        Apply
+                                      </button>
+                                    );
+                                  }
+
+                                  return (
+                                    <button
+                                      className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                                      onClick={proceedToApplicationForm}
+                                    >
+                                      Apply
+                                    </button>
+                                  );
+                                })()}
                             </div>
                             <div className="text-sm text-gray-600 flex flex-col gap-1">
                               <div className="flex items-center gap-2">
@@ -2444,9 +2559,22 @@ const formatDateForInput = (dateString) => {
                               </button>
                             </div>
                             <div className="ml-3 flex-shrink-0">
-                              <div className="px-4 py-2 bg-green-100 text-green-700 text-sm font-semibold rounded-lg border-2 border-green-500">
-                                ✓ Applied
-                              </div>
+                                {(() => {
+                                  const status = getLatestStatusForJob(filteredJobs[0]?.id) || latestApplicationStatus;
+                                  const isHired = status === 'hired';
+                                  const isRejected = status === 'rejected';
+                                  const label = isHired ? '✓ Hired' : isRejected ? '✕ Rejected' : '✓ Applied';
+                                  const colors = isHired
+                                    ? 'bg-green-100 text-green-700 border-green-500'
+                                    : isRejected
+                                    ? 'bg-red-100 text-red-700 border-red-500'
+                                    : 'bg-green-100 text-green-700 border-green-500';
+                                  return (
+                                    <div className={`px-4 py-2 text-sm font-semibold rounded-lg border-2 ${colors}`}>
+                                      {label}
+                                    </div>
+                                  );
+                                })()}
                             </div>
                           </div>
                           

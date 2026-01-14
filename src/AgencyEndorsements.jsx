@@ -364,7 +364,6 @@ function AgencyEndorsements() {
                 hiredEmp.is_agency ||
                 !!hiredEmp.agency_profile_id ||
                 !!hiredEmp.endorsed_by_agency_id ||
-                hiredEmp.source === "recruitment" ||
                 hiredEmp.source === "agency";
               hasAgencyEmployee = isAgencyEmployee;
 
@@ -805,6 +804,8 @@ function AgencyEndorsements() {
     return '';
   };
 
+  const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+
   // Sync endorsed list with agency-sourced employees
   // - If an endorsed application has a matching agency employee, mark it as deployed and link employee row
   // - If there is an agency employee without an application row (but still endorsed/from agency), add it to the list as deployed
@@ -819,13 +820,14 @@ function AgencyEndorsements() {
       const byEmail = new Map(
         existing
           .filter(e => e.email)
-          .map(e => [e.email, e])
+          .map(e => [normalizeEmail(e.email), e])
       );
 
       // First, update existing endorsements that now have an employee row
       const updatedList = existing.map((emp) => {
         if (!emp.email) return emp;
-        const hiredEmp = hiredEmployees.find(h => h.email === emp.email);
+        const empKey = normalizeEmail(emp.email);
+        const hiredEmp = hiredEmployees.find(h => normalizeEmail(h.email) === empKey);
         if (!hiredEmp) return emp;
 
         // Explicitly exclude internal/direct applicants
@@ -835,7 +837,6 @@ function AgencyEndorsements() {
           hiredEmp.is_agency ||
           !!hiredEmp.agency_profile_id ||
           !!hiredEmp.endorsed_by_agency_id ||
-          hiredEmp.source === "recruitment" ||
           hiredEmp.source === "agency";
 
         if (!isAgencyEmployee) return emp;
@@ -865,12 +866,12 @@ function AgencyEndorsements() {
           h.is_agency ||
           !!h.agency_profile_id ||
           !!h.endorsed_by_agency_id ||
-          h.source === "recruitment" ||
           h.source === "agency";
 
         if (!isAgencyEmployee) return;
         if (!h.email) return;
-        if (byEmail.has(h.email)) return;
+        const key = normalizeEmail(h.email);
+        if (byEmail.has(key)) return;
 
         updatedList.push({
           id: `emp-${h.id}`,
@@ -901,7 +902,7 @@ function AgencyEndorsements() {
           raw: { source: h.source || null, from: "employees" },
         });
 
-        byEmail.set(h.email, true);
+        byEmail.set(key, true);
       });
 
       return updatedList;
@@ -938,10 +939,15 @@ function AgencyEndorsements() {
 
     const getEmploymentStatus = (emp) => {
       if (emp?.employmentStatus) return emp.employmentStatus;
-      const hired = emp?.endorsed_employee_id
+      const hiredById = emp?.endorsed_employee_id
         ? hiredEmployees.find(h => h.id === emp.endorsed_employee_id)
         : null;
-      return hired?.employmentStatus || null;
+      if (hiredById?.employmentStatus) return hiredById.employmentStatus;
+
+      const key = normalizeEmail(emp?.email);
+      if (!key) return null;
+      const hiredByEmail = hiredEmployees.find((h) => normalizeEmail(h?.email) === key);
+      return hiredByEmail?.employmentStatus || null;
     };
 
     const getIsAgency = (emp) => {
@@ -951,10 +957,15 @@ function AgencyEndorsements() {
     };
 
     const getHiredAt = (emp) => {
-      const hired = emp?.endorsed_employee_id
+      const hiredById = emp?.endorsed_employee_id
         ? hiredEmployees.find(h => h.id === emp.endorsed_employee_id)
         : null;
-      return hired?.hired_at || null;
+      if (hiredById?.hired_at) return hiredById.hired_at;
+
+      const key = normalizeEmail(emp?.email);
+      if (!key) return null;
+      const hiredByEmail = hiredEmployees.find((h) => normalizeEmail(h?.email) === key);
+      return hiredByEmail?.hired_at || null;
     };
 
     return (endorsedEmployees || [])
@@ -1359,6 +1370,40 @@ function AgencyEndorsements() {
   const displayDate = (val) => {
     if (!val) return renderNone();
     return formatDate(val);
+  };
+
+  const formatNameLastFirstMiddle = ({ last, first, middle }) => {
+    const l = String(last ?? '').trim();
+    const f = String(first ?? '').trim();
+    const m = String(middle ?? '').trim();
+
+    if (!l && !f && !m) return null;
+    if (l && (f || m)) {
+      const tail = [f, m].filter(Boolean).join(' ').trim();
+      return tail ? `${l}, ${tail}` : l;
+    }
+    return [f, m, l].filter(Boolean).join(' ').trim();
+  };
+
+  const getEmploymentStatusForEmployee = (emp) => {
+    if (!emp) return null;
+    if (emp?.employmentStatus) return emp.employmentStatus;
+
+    const byEndorsedId = emp?.endorsed_employee_id
+      ? hiredEmployees.find((h) => h.id === emp.endorsed_employee_id)
+      : null;
+    if (byEndorsedId?.employmentStatus) return byEndorsedId.employmentStatus;
+
+    const empKey = normalizeEmail(emp?.email);
+    if (empKey) {
+      const byEmail = hiredEmployees.find((h) => normalizeEmail(h?.email) === empKey);
+      if (byEmail?.employmentStatus) return byEmail.employmentStatus;
+    }
+
+    const fallback = hiredEmployees.find(
+      (h) => h.id === emp.id || h.endorsed_employee_id === emp.id
+    );
+    return fallback?.employmentStatus || null;
   };
 
   const calculateAge = (birthday) => {
@@ -2468,6 +2513,10 @@ function AgencyEndorsements() {
                                     <span className="text-gray-500">Currently Employed:</span>
                                     <span className="ml-2">{displayValue(formData.employed)}</span>
                                   </div>
+                                  <div>
+                                    <span className="text-gray-500">Employment Status:</span>
+                                    <span className="ml-2">{displayValue(getEmploymentStatusForEmployee(selectedEmployee))}</span>
+                                  </div>
                                 </div>
                               </div>
 
@@ -2475,17 +2524,17 @@ function AgencyEndorsements() {
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Personal Information</h5>
                                 <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                  <div>
-                                    <span className="text-gray-500">Last Name:</span>
-                                    <span className="ml-2">{displayValue(formData.lastName || formData.lname || selectedEmployee.last)}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">First Name:</span>
-                                    <span className="ml-2">{displayValue(formData.firstName || formData.fname || selectedEmployee.first)}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Middle Name:</span>
-                                    <span className="ml-2">{displayValue(formData.middleName || formData.mname || selectedEmployee.middle)}</span>
+                                  <div className="md:col-span-2">
+                                    <span className="text-gray-500">Name:</span>
+                                    <span className="ml-2">
+                                      {displayValue(
+                                        formatNameLastFirstMiddle({
+                                          last: formData.lastName || formData.lname || selectedEmployee.last,
+                                          first: formData.firstName || formData.fname || selectedEmployee.first,
+                                          middle: formData.middleName || formData.mname || selectedEmployee.middle,
+                                        })
+                                      )}
+                                    </span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Sex:</span>
@@ -2551,58 +2600,6 @@ function AgencyEndorsements() {
                                     <span className="text-gray-500">Email Address:</span>
                                     <span className="ml-2">{displayValue(formData.email || selectedEmployee.email)}</span>
                                   </div>
-                                </div>
-                              </div>
-
-                              {/* Uploaded Endorsement Files */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Uploaded Endorsement Files</h5>
-                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
-                                  {(() => {
-                                    const uploads = [
-                                      { label: 'Interview Details', path: selectedEmployee?.interview_details_file },
-                                      { label: 'Assessment Results', path: selectedEmployee?.assessment_results_file },
-                                      { label: 'Appointment Letter', path: selectedEmployee?.appointment_letter_file },
-                                      { label: 'Undertaking', path: selectedEmployee?.undertaking_file },
-                                      { label: 'Application Form', path: selectedEmployee?.application_form_file },
-                                      { label: 'Undertaking Duties', path: selectedEmployee?.undertaking_duties_file },
-                                      { label: 'Pre-employment Requirements', path: selectedEmployee?.pre_employment_requirements_file },
-                                      { label: 'ID Form', path: selectedEmployee?.id_form_file },
-                                    ].filter((f) => !!f.path);
-
-                                    if (uploads.length === 0) {
-                                      return <div className="text-gray-500">No uploaded files yet.</div>;
-                                    }
-
-                                    return (
-                                      <div className="space-y-2">
-                                        {uploads.map((f) => {
-                                          const url = getFileUrl(f.path);
-                                          const filename = String(f.path).split('/').pop();
-                                          return (
-                                            <div key={f.label} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
-                                              <div className="min-w-0">
-                                                <div className="font-medium text-gray-800">{f.label}</div>
-                                                <div className="text-xs text-gray-500 truncate">{filename || f.path}</div>
-                                              </div>
-                                              {url ? (
-                                                <a
-                                                  href={url}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="shrink-0 text-[#800000] hover:underline font-medium"
-                                                >
-                                                  View
-                                                </a>
-                                              ) : (
-                                                <span className="shrink-0 text-gray-400">—</span>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    );
-                                  })()}
                                 </div>
                               </div>
 
@@ -2773,26 +2770,7 @@ function AgencyEndorsements() {
                                 </>
                               )}
 
-                              {/* Character References */}
-                              {!selectedEmployee?.is_agency && (
-                                <div>
-                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
-                                  <div className="space-y-2">
-                                    {(() => {
-                                      const rawRefs = Array.isArray(characterReferences) ? characterReferences : [];
-                                      const displayRefs = rawRefs.length > 0 ? rawRefs : [{}];
-
-                                      return displayRefs.map((ref, idx) => (
-                                        <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
-                                          <div className="font-medium text-gray-800">{ref?.name || ''}</div>
-                                          <div className="text-gray-600">{ref?.contact || ref?.contactNumber || ''}</div>
-                                          <div className="text-gray-500 text-xs mt-1">{ref?.remarks || ''}</div>
-                                        </div>
-                                      ));
-                                    })()}
-                                  </div>
-                                </div>
-                              )}
+                              {/* Character References removed (Agency-side) */}
                             </div>
                           )}
 
@@ -2886,6 +2864,133 @@ function AgencyEndorsements() {
                                       })()}
                                     </tbody>
                                   </table>
+                                </div>
+                              </div>
+
+                              {/* Upload Endorsement Files */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Upload Endorsement Files</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                  {(() => {
+                                    const uploads = [
+                                      { label: 'Interview Details', path: selectedEmployee?.interview_details_file },
+                                      { label: 'Assessment Results', path: selectedEmployee?.assessment_results_file },
+                                      { label: 'Appointment Letter', path: selectedEmployee?.appointment_letter_file },
+                                      { label: 'Undertaking', path: selectedEmployee?.undertaking_file },
+                                      { label: 'Application Form', path: selectedEmployee?.application_form_file },
+                                      { label: 'Undertaking Duties', path: selectedEmployee?.undertaking_duties_file },
+                                      { label: 'Pre-employment Requirements', path: selectedEmployee?.pre_employment_requirements_file },
+                                      { label: 'ID Form', path: selectedEmployee?.id_form_file },
+                                    ].filter((f) => !!f.path);
+
+                                    if (uploads.length === 0) {
+                                      return <div className="text-gray-500">No uploaded files yet.</div>;
+                                    }
+
+                                    return (
+                                      <div className="space-y-2">
+                                        {uploads.map((f) => {
+                                          const url = getFileUrl(f.path);
+                                          const filename = String(f.path).split('/').pop();
+                                          return (
+                                            <div key={f.label} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
+                                              <div className="min-w-0">
+                                                <div className="font-medium text-gray-800">{f.label}</div>
+                                                <div className="text-xs text-gray-500 truncate">{filename || f.path}</div>
+                                              </div>
+                                              {url ? (
+                                                <a
+                                                  href={url}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="shrink-0 text-[#800000] hover:underline font-medium"
+                                                >
+                                                  View
+                                                </a>
+                                              ) : (
+                                                <span className="shrink-0 text-gray-400">—</span>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+
+                              {/* Specialized Training */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Specialized Training</h5>
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                  {(() => {
+                                    const rawPayload = selectedEmployee?.payload || selectedEmployee?.raw?.payload || {};
+                                    let payloadObj = {};
+                                    try {
+                                      payloadObj = typeof rawPayload === 'string' ? JSON.parse(rawPayload) : rawPayload;
+                                    } catch {
+                                      payloadObj = {};
+                                    }
+
+                                    const form = payloadObj?.applicant || payloadObj?.form || payloadObj || {};
+
+                                    const trainingName = form?.specializedTraining || form?.specialized_training || null;
+                                    const trainingYear = form?.specializedYear || form?.specialized_year || null;
+
+                                    const trainingCertPath =
+                                      form?.trainingCertFilePath ||
+                                      form?.training_cert_file_path ||
+                                      form?.trainingCertPath ||
+                                      form?.training_cert_path ||
+                                      form?.specializedTrainingCertFilePath ||
+                                      form?.specialized_training_cert_file_path ||
+                                      payloadObj?.trainingCertFilePath ||
+                                      payloadObj?.training_cert_file_path ||
+                                      payloadObj?.trainingCertPath ||
+                                      payloadObj?.training_cert_path ||
+                                      null;
+
+                                    const url = trainingCertPath ? getFileUrl(trainingCertPath) : null;
+                                    const hasAnything = Boolean(String(trainingName || '').trim() || String(trainingYear || '').trim() || trainingCertPath);
+
+                                    if (!hasAnything) {
+                                      return <div className="text-gray-500">No uploaded specialized training yet.</div>;
+                                    }
+
+                                    return (
+                                      <div className="space-y-2">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                          <div>
+                                            <span className="text-gray-500">Training/Certification Name:</span>
+                                            <span className="ml-2">{trainingName ? String(trainingName) : <span className="text-gray-400 italic">None</span>}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">Year Completed:</span>
+                                            <span className="ml-2">{trainingYear ? String(trainingYear) : <span className="text-gray-400 italic">None</span>}</span>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
+                                          <div className="min-w-0">
+                                            <div className="font-medium text-gray-800">Training Certificate</div>
+                                            <div className="text-xs text-gray-500 truncate">{trainingCertPath ? String(trainingCertPath).split('/').pop() : '—'}</div>
+                                          </div>
+                                          {url ? (
+                                            <a
+                                              href={url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="shrink-0 text-[#800000] hover:underline font-medium"
+                                            >
+                                              View
+                                            </a>
+                                          ) : (
+                                            <span className="shrink-0 text-gray-400">—</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               </div>
 
@@ -3436,6 +3541,10 @@ function AgencyEndorsements() {
                                     <span className="text-gray-500">Currently Employed:</span>
                                     <span className="ml-2">{displayValue(formData.employed)}</span>
                                   </div>
+                                  <div>
+                                    <span className="text-gray-500">Employment Status:</span>
+                                    <span className="ml-2">{displayValue(getEmploymentStatusForEmployee(selectedEmployee))}</span>
+                                  </div>
                                 </div>
                               </div>
 
@@ -3443,17 +3552,17 @@ function AgencyEndorsements() {
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Personal Information</h5>
                                 <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                  <div>
-                                    <span className="text-gray-500">Last Name:</span>
-                                    <span className="ml-2">{displayValue(formData.lastName || formData.lname || selectedEmployee.last)}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">First Name:</span>
-                                    <span className="ml-2">{displayValue(formData.firstName || formData.fname || selectedEmployee.first)}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Middle Name:</span>
-                                    <span className="ml-2">{displayValue(formData.middleName || formData.mname || selectedEmployee.middle)}</span>
+                                  <div className="md:col-span-2">
+                                    <span className="text-gray-500">Name:</span>
+                                    <span className="ml-2">
+                                      {displayValue(
+                                        formatNameLastFirstMiddle({
+                                          last: formData.lastName || formData.lname || selectedEmployee.last,
+                                          first: formData.firstName || formData.fname || selectedEmployee.first,
+                                          middle: formData.middleName || formData.mname || selectedEmployee.middle,
+                                        })
+                                      )}
+                                    </span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Sex:</span>
@@ -3519,58 +3628,6 @@ function AgencyEndorsements() {
                                     <span className="text-gray-500">Email Address:</span>
                                     <span className="ml-2">{displayValue(formData.email || selectedEmployee.email)}</span>
                                   </div>
-                                </div>
-                              </div>
-
-                              {/* Uploaded Endorsement Files */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Uploaded Endorsement Files</h5>
-                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
-                                  {(() => {
-                                    const uploads = [
-                                      { label: 'Interview Details', path: selectedEmployee?.interview_details_file },
-                                      { label: 'Assessment Results', path: selectedEmployee?.assessment_results_file },
-                                      { label: 'Appointment Letter', path: selectedEmployee?.appointment_letter_file },
-                                      { label: 'Undertaking', path: selectedEmployee?.undertaking_file },
-                                      { label: 'Application Form', path: selectedEmployee?.application_form_file },
-                                      { label: 'Undertaking Duties', path: selectedEmployee?.undertaking_duties_file },
-                                      { label: 'Pre-employment Requirements', path: selectedEmployee?.pre_employment_requirements_file },
-                                      { label: 'ID Form', path: selectedEmployee?.id_form_file },
-                                    ].filter((f) => !!f.path);
-
-                                    if (uploads.length === 0) {
-                                      return <div className="text-gray-500">No uploaded files yet.</div>;
-                                    }
-
-                                    return (
-                                      <div className="space-y-2">
-                                        {uploads.map((f) => {
-                                          const url = getFileUrl(f.path);
-                                          const filename = String(f.path).split('/').pop();
-                                          return (
-                                            <div key={f.label} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
-                                              <div className="min-w-0">
-                                                <div className="font-medium text-gray-800">{f.label}</div>
-                                                <div className="text-xs text-gray-500 truncate">{filename || f.path}</div>
-                                              </div>
-                                              {url ? (
-                                                <a
-                                                  href={url}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="shrink-0 text-[#800000] hover:underline font-medium"
-                                                >
-                                                  View
-                                                </a>
-                                              ) : (
-                                                <span className="shrink-0 text-gray-400">—</span>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    );
-                                  })()}
                                 </div>
                               </div>
 
@@ -3764,26 +3821,7 @@ function AgencyEndorsements() {
                                 </>
                               )}
 
-                              {/* Character References */}
-                              {!selectedEmployee?.is_agency && (
-                                <div>
-                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Character References</h5>
-                                  <div className="space-y-2">
-                                    {(() => {
-                                      const rawRefs = Array.isArray(characterReferences) ? characterReferences : [];
-                                      const displayRefs = rawRefs.length > 0 ? rawRefs : [{}];
-
-                                      return displayRefs.map((ref, idx) => (
-                                        <div key={idx} className="border border-gray-200 rounded p-3 text-sm">
-                                          <div className="font-medium text-gray-800">{ref?.name || ''}</div>
-                                          <div className="text-gray-600">{ref?.contact || ref?.contactNumber || ''}</div>
-                                          <div className="text-gray-500 text-xs mt-1">{ref?.remarks || ''}</div>
-                                        </div>
-                                      ));
-                                    })()}
-                                  </div>
-                                </div>
-                              )}
+                              {/* Character References removed (Agency-side) */}
                             </div>
                           )}
 

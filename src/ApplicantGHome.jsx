@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
-import Roadwise from './Roadwise.png';
 
 function ApplicantGHome() {
   const navigate = useNavigate();
@@ -281,9 +280,13 @@ function ApplicantGHome() {
       <div className="w-full">
         <div className="relative">
           <img
-            src={Roadwise}
+            src={'/roadwise-banner.png'}
             alt="Delivery trucks on the road"
             className="w-full h-[200px] object-cover"
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = '/vite.svg';
+            }}
           />
           <div className="absolute inset-0 bg-black/30" />
           <div className="absolute inset-0 flex items-center justify-center px-4">

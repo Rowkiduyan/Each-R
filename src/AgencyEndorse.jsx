@@ -1340,24 +1340,72 @@ function AgencyEndorse() {
         }
       }
 
+      // Upload specialized training certificate (optional) to application-files.
+      // IMPORTANT: never store raw File/Blob objects in the DB payload.
+      // Also preserve any pre-existing stored path if present.
+      let trainingCertFilePath =
+        vals.trainingCertFilePath ||
+        vals.training_cert_file_path ||
+        vals.trainingCertPath ||
+        vals.training_cert_path ||
+        vals.specializedTrainingCertFilePath ||
+        vals.specialized_training_cert_file_path ||
+        null;
+
+      const trainingCertFile = vals.trainingCertFile || null;
+      const isUploadableBlob =
+        trainingCertFile &&
+        typeof trainingCertFile === 'object' &&
+        typeof trainingCertFile.size === 'number' &&
+        typeof trainingCertFile.type === 'string' &&
+        typeof Blob !== 'undefined' &&
+        trainingCertFile instanceof Blob;
+
+      if (isUploadableBlob) {
+        const fileName = String(trainingCertFile.name || 'training-certificate').replace(/\s+/g, '_');
+        const safeEmail = String(email || 'unknown').replace(/[^a-z0-9@._-]/gi, '_');
+        const prefix = authUserId || agencyProfileId || 'agency';
+        const filePath = `${prefix}/specialized-training/${safeEmail}/${Date.now()}-${fileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('application-files')
+          .upload(filePath, trainingCertFile, {
+            upsert: true,
+            contentType: trainingCertFile.type || undefined,
+          });
+
+        if (uploadError) {
+          throw new Error('Failed to upload training certificate: ' + uploadError.message);
+        }
+
+        trainingCertFilePath = uploadData?.path || filePath;
+      }
+
       // Include resume in applicant data if available
       // Avoid including raw File objects in DB payload.
       // eslint-disable-next-line no-unused-vars
-      const { resumeFile: _resumeFile, ...valsNoResumeFile } = vals;
+      const {
+        resumeFile: _resumeFile,
+        trainingCertFile: _trainingCertFile,
+        licenseFile: _licenseFile,
+        ...valsNoFileObjects
+      } = vals;
 
       const { depot: jobDepot, position: jobPosition, department: jobDepartment } = getJobPrefill();
       const applicantData = {
-        ...valsNoResumeFile,
+        ...valsNoFileObjects,
         contactNumber: contact,
         depot: jobDepot || vals.depot || null,
         position: jobPosition || vals.position || null,
         department: jobDepartment || vals.department || null,
-        ...(applicantResumePath && { resumePath: applicantResumePath })
+        ...(applicantResumePath && { resumePath: applicantResumePath }),
+        ...(trainingCertFilePath && { trainingCertFilePath }),
       };
 
       // prepare payload
       const payload = {
         applicant: applicantData,
+        ...(trainingCertFilePath && { trainingCertFilePath }),
         workExperiences,
         meta: {
           source: "agency",
