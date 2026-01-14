@@ -601,7 +601,11 @@ function ApplicantApplications() {
                         </span>
                       )}
                     </div>
-                    {String(applicationData?.status || applicationData?.payload?.status || '').trim().toLowerCase() !== 'hired' && (
+                    {(() => {
+                      const statusLower = String(applicationData?.status || applicationData?.payload?.status || '').trim().toLowerCase();
+                      const canRetract = statusLower !== 'hired' && statusLower !== 'rejected';
+                      if (!canRetract) return null;
+                      return (
                       <button 
                         type="button" 
                         className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
@@ -610,7 +614,8 @@ function ApplicantApplications() {
                       >
                         {applicationRetracted ? "Application Retracted" : "Retract Application"}
                       </button>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
 
@@ -1059,7 +1064,11 @@ function ApplicantApplications() {
                 </div>
                 <div className="text-right">
                   <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
-                  {String(applicationData?.status || applicationData?.payload?.status || '').trim().toLowerCase() !== 'hired' && (
+                  {(() => {
+                    const statusLower = String(applicationData?.status || applicationData?.payload?.status || '').trim().toLowerCase();
+                    const canRetract = statusLower !== 'hired' && statusLower !== 'rejected';
+                    if (!canRetract) return null;
+                    return (
                     <button 
                       type="button" 
                       className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
@@ -1068,7 +1077,8 @@ function ApplicantApplications() {
                     >
                       {applicationRetracted ? "Application Retracted" : "Retract Application"}
                     </button>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -1137,6 +1147,89 @@ function ApplicantApplications() {
                       </div>
                     );
                   })}
+                </div>
+              );
+            })()}
+
+            {/* Specialized Training (read-only; provided during endorsement) */}
+            {(() => {
+              const payloadObj = typeof applicationData?.payload === 'string'
+                ? (() => {
+                    try {
+                      return JSON.parse(applicationData.payload);
+                    } catch {
+                      return {};
+                    }
+                  })()
+                : applicationData?.payload || {};
+
+              const form = payloadObj?.form || payloadObj?.applicant || payloadObj || {};
+
+              const specializedTraining =
+                form?.specializedTraining ||
+                form?.specialized_training ||
+                payloadObj?.specializedTraining ||
+                payloadObj?.specialized_training ||
+                '';
+
+              const specializedYear =
+                form?.specializedYear ||
+                form?.specialized_year ||
+                payloadObj?.specializedYear ||
+                payloadObj?.specialized_year ||
+                '';
+
+              const trainingCertFilePath =
+                form?.trainingCertFilePath ||
+                form?.training_cert_file_path ||
+                form?.specializedTrainingCertFilePath ||
+                form?.specialized_training_cert_file_path ||
+                payloadObj?.trainingCertFilePath ||
+                payloadObj?.training_cert_file_path ||
+                payloadObj?.specializedTrainingCertFilePath ||
+                payloadObj?.specialized_training_cert_file_path ||
+                null;
+
+              const certUrl = trainingCertFilePath
+                ? supabase.storage.from('application-files').getPublicUrl(trainingCertFilePath)?.data?.publicUrl
+                : null;
+
+              const fileName = trainingCertFilePath ? trainingCertFilePath.split('/').pop() : null;
+
+              return (
+                <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm mb-4">
+                  <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">
+                    Specialized Training
+                  </div>
+                  <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Training/Certification</div>
+                      <div className={specializedTraining ? "text-gray-900" : "text-gray-400 italic"}>
+                        {specializedTraining || 'None provided'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Year Completed</div>
+                      <div className={specializedYear ? "text-gray-900" : "text-gray-400 italic"}>
+                        {specializedYear || '—'}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 mb-1">Certificate File</div>
+                      {certUrl ? (
+                        <a
+                          href={certUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline text-sm"
+                        >
+                          {fileName || 'View File'}
+                        </a>
+                      ) : (
+                        <div className="text-gray-400 italic">No file uploaded</div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               );
             })()}
@@ -1686,24 +1779,40 @@ function ApplicantApplications() {
                         </div>
                       </div>
 
-                      {String(applicationData?.status || '').toLowerCase() !== 'hired' && String(signingStatus || '').toLowerCase() !== 'confirmed' && (
-                        <div className="px-4 pb-4 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700 text-sm"
-                            onClick={() => setShowAgreementConfirmDialog(true)}
-                          >
-                            Confirm Signing Schedule
-                          </button>
-                          <button
-                            type="button"
-                            className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 text-sm"
-                            onClick={() => setShowAgreementRescheduleDialog(true)}
-                          >
-                            Request Reschedule
-                          </button>
-                        </div>
-                      )}
+                      {(() => {
+                        const statusLower = String(signingStatus || '').toLowerCase();
+                        const isHired = String(applicationData?.status || '').toLowerCase() === 'hired';
+                        const alreadyRequested = statusLower === 'rejected';
+                        const isConfirmed = statusLower === 'confirmed';
+
+                        if (isHired || alreadyRequested) return null;
+
+                        const canConfirm = !isConfirmed;
+                        const canRequest = true;
+
+                        return (
+                          <div className="px-4 pb-4 flex flex-wrap gap-2">
+                            {canConfirm && (
+                              <button
+                                type="button"
+                                className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700 text-sm"
+                                onClick={() => setShowAgreementConfirmDialog(true)}
+                              >
+                                Confirm Signing Schedule
+                              </button>
+                            )}
+                            {canRequest && (
+                              <button
+                                type="button"
+                                className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 text-sm"
+                                onClick={() => setShowAgreementRescheduleDialog(true)}
+                              >
+                                Request for re-schedule
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   );
                 })()}
@@ -1934,10 +2043,10 @@ function ApplicantApplications() {
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowAgreementRescheduleDialog(false)}>
           <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
             <div className="p-4 border-b">
-              <h3 className="text-lg font-semibold text-gray-800">Request Reschedule</h3>
+              <h3 className="text-lg font-semibold text-gray-800">Request for re-schedule</h3>
             </div>
             <div className="p-4 text-sm text-gray-700">
-              Are you sure you want to request a reschedule for your agreement signing?
+              Are you sure you want to request for re-schedule of your agreement signing?
             </div>
             <div className="p-4 border-t flex justify-end gap-2">
               <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowAgreementRescheduleDialog(false)}>Cancel</button>
@@ -1993,7 +2102,7 @@ function ApplicantApplications() {
                   }
                 }}
               >
-                Request
+                Request for re-schedule
               </button>
             </div>
           </div>

@@ -1,5 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "./supabaseClient";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import ExcelJS from "exceljs";
 
 function HrEval() {
   // Tab and filter state
@@ -8,6 +11,10 @@ function HrEval() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedRow, setExpandedRow] = useState(null);
+
+  // Export menu
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef(null);
   const [evalSearchQuery, setEvalSearchQuery] = useState("");
   const [evalDateSort, setEvalDateSort] = useState("newest");
   const [evalRemarksFilter, setEvalRemarksFilter] = useState("all");
@@ -643,6 +650,16 @@ function HrEval() {
     currentPage * itemsPerPage
   );
 
+  useEffect(() => {
+    const handler = (e) => {
+      if (!showExportMenu) return;
+      const el = exportMenuRef.current;
+      if (el && !el.contains(e.target)) setShowExportMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showExportMenu]);
+
   // Helpers for UI
   const getInitials = (name) => {
     return name
@@ -688,6 +705,162 @@ function HrEval() {
     };
     return styles[status] || styles.uptodate;
   };
+
+  const exportEvaluationsPdf = useCallback((rows, title = "Employee Evaluations") => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+      showAlert("No employees to export for the current filters.", "error");
+      return;
+    }
+
+    try {
+      const exportedAt = new Date();
+      const exportedAtLabel = exportedAt.toLocaleString("en-US");
+      const filterSummary = [
+        searchQuery ? `Search: ${searchQuery}` : null,
+        employmentFilter !== 'all' ? `Employment: ${employmentFilter}` : null,
+        statusFilter !== 'all' ? `Status: ${getStatusBadge(statusFilter).label}` : null,
+        'Sort: status priority',
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      const safeText = (v) => {
+        const s = String(v ?? "").trim();
+        return s.length ? s : "—";
+      };
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "a4",
+      });
+
+      doc.setFontSize(16);
+      doc.text(`${title} (${list.length})`, 28, 40);
+
+      doc.setFontSize(10);
+      doc.setTextColor(80);
+      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
+      if (filterSummary) doc.text(filterSummary, 28, 74);
+      doc.setTextColor(0);
+
+      const body = list.map((e) => {
+        const statusLabel = getStatusBadge(e.status).label;
+        return [
+          safeText(e.name),
+          safeText(e.position),
+          safeText(e.depot),
+          safeText(e.employmentType),
+          safeText(formatDate(e.lastEvaluation)),
+          safeText(formatDate(e.nextEvaluation)),
+          safeText(statusLabel),
+        ];
+      });
+
+      autoTable(doc, {
+        startY: filterSummary ? 90 : 78,
+        head: [["Employee", "Position", "Depot", "Type", "Last Eval", "Next Due", "Status"]],
+        body,
+        theme: "grid",
+        styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
+        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
+        margin: { left: 28, right: 28 },
+        columnStyles: {
+          0: { cellWidth: 110 },
+          1: { cellWidth: 95 },
+          2: { cellWidth: 55 },
+          3: { cellWidth: 55 },
+          4: { cellWidth: 60 },
+          5: { cellWidth: 60 },
+          6: { cellWidth: 55 },
+        },
+      });
+
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const rawParts = [
+        'evaluations',
+        employmentFilter !== 'all' ? employmentFilter : null,
+        statusFilter !== 'all' ? statusFilter : null,
+        yyyyMmDd,
+      ]
+        .filter(Boolean)
+        .join('_');
+      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".pdf";
+
+      doc.save(fileName);
+    } catch (err) {
+      console.error("exportEvaluationsPdf error:", err);
+      showAlert("Failed to export PDF. Please try again.", "error");
+    }
+  }, [employmentFilter, searchQuery, statusFilter]);
+
+  const exportEvaluationsExcel = useCallback(async (rows, title = "Employee Evaluations") => {
+    const list = Array.isArray(rows) ? rows : [];
+    if (list.length === 0) {
+      showAlert("No employees to export for the current filters.", "error");
+      return;
+    }
+
+    try {
+      const exportedAt = new Date();
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const rawParts = [
+        'evaluations',
+        employmentFilter !== 'all' ? employmentFilter : null,
+        statusFilter !== 'all' ? statusFilter : null,
+        yyyyMmDd,
+      ]
+        .filter(Boolean)
+        .join('_');
+      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".xlsx";
+
+      const safeText = (v) => {
+        const s = String(v ?? "").trim();
+        return s.length ? s : "—";
+      };
+
+      const header = ["Employee", "Position", "Depot", "Type", "Last Evaluation", "Next Due", "Status"];
+      const rowsAoa = [];
+
+      for (const e of list) {
+        const statusLabel = getStatusBadge(e.status).label;
+        rowsAoa.push([
+          safeText(e.name),
+          safeText(e.position),
+          safeText(e.depot),
+          safeText(e.employmentType),
+          safeText(formatDate(e.lastEvaluation)),
+          safeText(formatDate(e.nextEvaluation)),
+          safeText(statusLabel),
+        ]);
+      }
+
+      const sheetName = String(title || "Evaluations").slice(0, 31) || "Evaluations";
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet(sheetName);
+      worksheet.addRow(header);
+      worksheet.addRows(rowsAoa);
+      worksheet.getRow(1).font = { bold: true };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("exportEvaluationsExcel error:", err);
+      showAlert("Failed to export Excel file. Please try again.", "error");
+    }
+  }, [employmentFilter, statusFilter]);
 
   const getRatingColor = (rating) => {
     if (!rating) return "text-gray-600";
@@ -851,7 +1024,7 @@ function HrEval() {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
 
           {/* Search and Filters */}
-          <div className="p-4 border-b border-gray-100 bg-gray-50/50">
+          <div className="p-4 border-b border-gray-100 bg-gray-50/50 relative z-20">
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <svg
@@ -908,6 +1081,45 @@ function HrEval() {
                 <option value="overdue">Overdue</option>
                 <option value="uptodate">Up to Date</option>
               </select>
+
+              <div className="relative" ref={exportMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setShowExportMenu((prev) => !prev)}
+                  className="w-full sm:w-auto px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white"
+                  title="Export the currently filtered list"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export
+                </button>
+
+                {showExportMenu && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white border rounded-lg shadow-lg z-50 overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowExportMenu(false);
+                        exportEvaluationsPdf(filteredData, "Employee Evaluations");
+                      }}
+                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                    >
+                      Export list as PDF
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowExportMenu(false);
+                        exportEvaluationsExcel(filteredData, "Employee Evaluations");
+                      }}
+                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
+                    >
+                      Export list as Excel
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
