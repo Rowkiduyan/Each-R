@@ -115,7 +115,7 @@ function HrRequirements() {
   // Request Document modal state
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [requestTarget, setRequestTarget] = useState(null); // { employeeId, employeeName, isAgency }
-  const [requestForm, setRequestForm] = useState({ documentType: '', description: '', priority: 'normal', deadline: '' });
+  const [requestForm, setRequestForm] = useState({ documentType: '', deadline: '' });
   const [requesting, setRequesting] = useState(false);
 
   // View Document modal state
@@ -169,29 +169,9 @@ function HrRequirements() {
 
   // Depot Compliance Monitoring state
   const [showAllDepots, setShowAllDepots] = useState(false);
-
-  // Depot list for compliance monitoring
-  const depots = [
-    "Pasig","Cagayan","Butuan","Davao","Cebu","Laguna","Iloilo",
-    "Bacolod","Zamboanga","Manila","Quezon City","Taguig",
-    "Baguio","General Santos","Palawan","Olongapo","Tacloban",
-    "Roxas","Legazpi","Cauayan","Cavite","Batangas","Ormoc","Koronadal",
-    "Calbayog","Catbalogan","Tuguegarao","Baler","Iligan","Koronadal City"
-  ];
   
   // Modern palette: green for compliant, neutral for the remainder
   const COLORS = ["#22c55e", "#e5e7eb"];
-
-  // Depot compliance data
-  const depotCompliance = depots.map((d, i) => ({
-    name: d,
-    compliance: 70 + (i % 10),
-    nonCompliance: 30 - (i % 10),
-  }));
-
-  const displayedDepots = showAllDepots
-    ? depotCompliance
-    : depotCompliance.slice(0, 6);
 
   // Load all employees and their requirements
   useEffect(() => {
@@ -202,15 +182,63 @@ function HrRequirements() {
         // Get all deployed employees (have hired_at)
         const { data: employeesData, error: empError } = await supabase
           .from('employees')
-          .select('id, email, fname, lname, mname, position, depot, hired_at, date_hired, requirements, is_agency, agency_profile_id, status')
+          // Use '*' so we don't hard-fail when optional profile-like columns differ by schema
+          .select('*')
           .not('hired_at', 'is', null) // Only deployed employees
           .order('hired_at', { ascending: false });
 
         if (empError) throw empError;
 
         if (employeesData && employeesData.length > 0) {
+          // Pull marital status + educational attainment from the recruitment/applicants record.
+          // In this project, `applications.user_id` matches `applicants.id` and also becomes `employees.id` on hire.
+          // (See HrRecruitment.jsx: applications -> applicants, then employees.id = applicationData.user_id)
+          const applicantsById = {};
+          const applicantsByEmail = {};
+
+          try {
+            const employeeIds = [...new Set(employeesData.map((e) => e?.id).filter(Boolean))];
+            if (employeeIds.length > 0) {
+              let applicantsData = null;
+              let applicantsErr = null;
+
+              ({ data: applicantsData, error: applicantsErr } = await supabase
+                .from('applicants')
+                .select('id, email, marital_status, educational_attainment')
+                .in('id', employeeIds));
+
+              // If schema differs, fall back gracefully.
+              const missingColumns =
+                applicantsErr &&
+                (applicantsErr.code === 'PGRST204' ||
+                  String(applicantsErr.message || '').toLowerCase().includes('marital_status') ||
+                  String(applicantsErr.message || '').toLowerCase().includes('educational_attainment'));
+
+              if (missingColumns) {
+                ({ data: applicantsData, error: applicantsErr } = await supabase
+                  .from('applicants')
+                  .select('id, email')
+                  .in('id', employeeIds));
+              }
+
+              if (!applicantsErr && Array.isArray(applicantsData)) {
+                applicantsData.forEach((a) => {
+                  if (a?.id) applicantsById[a.id] = a;
+                  const em = String(a?.email || '').trim().toLowerCase();
+                  if (em) applicantsByEmail[em] = a;
+                });
+              }
+            }
+          } catch (e) {
+            // Don't block the page if applicants lookup fails.
+            console.warn('[HrRequirements] Failed to load applicants enrichment:', e);
+          }
+
           // Map employees to the expected structure
           const mappedEmployees = employeesData.map(emp => {
+            const enrichmentEmail = String(emp?.personal_email || emp?.email || '').trim().toLowerCase();
+            const enrichedApplicant = applicantsById[emp?.id] || (enrichmentEmail ? applicantsByEmail[enrichmentEmail] : null);
+
             // Parse requirements directly from employee record
             let requirementsData = null;
             
@@ -388,6 +416,7 @@ function HrRequirements() {
             let hrRequests = [];
             if (requirementsData?.hr_requests && Array.isArray(requirementsData.hr_requests)) {
               hrRequests = requirementsData.hr_requests.map(req => ({
+                // Normalize file path early (avoid showing placeholder/local paths)
                 id: req.id || Date.now().toString(),
                 document: req.document_type || req.document || '',
                 description: req.description || req.remarks || '',
@@ -397,8 +426,22 @@ function HrRequirements() {
                 status: req.status || 'pending',
                 deadline: req.deadline || null,
                 remarks: req.remarks || req.description || null,
-                file_path: req.file_path || null,
+                // Support both snake_case and camelCase to avoid UI mismatches
+                file_path: (() => {
+                  const raw = req.file_path || req.filePath || null;
+                  if (!raw) return null;
+                  const p = String(raw);
+                  return p.includes('local-file-path') || p.startsWith('local-') || !p.includes('/') ? null : p;
+                })(),
+                filePath: (() => {
+                  const raw = req.filePath || req.file_path || null;
+                  if (!raw) return null;
+                  const p = String(raw);
+                  return p.includes('local-file-path') || p.startsWith('local-') || !p.includes('/') ? null : p;
+                })(),
                 submitted_at: req.submitted_at || null,
+                validated_at: req.validated_at || null,
+                validated_file_path: req.validated_file_path || null,
               }));
             }
 
@@ -424,6 +467,8 @@ function HrRequirements() {
               email: emp.email,
               isAgency: emp.is_agency === true,
               employmentStatus,
+              marital_status: emp.marital_status ?? enrichedApplicant?.marital_status ?? null,
+              educational_attainment: emp.educational_attainment ?? enrichedApplicant?.educational_attainment ?? null,
             };
           });
 
@@ -444,180 +489,373 @@ function HrRequirements() {
 
   // Calculate requirement status for an employee
   const getEmployeeStatus = (employee) => {
-    const reqs = employee.requirements;
-    const isAgency = employee.isAgency;
-    
-    if (isAgency) {
-      // Agency employees: check ID number requirements
-      const hasResubmit = Object.values(reqs).some(r => r && typeof r === 'object' && r.status === 'resubmit');
-      const hasMissing = Object.values(reqs).some(r => r && typeof r === 'object' && r.status === 'missing');
-      const hasPending = Object.values(reqs).some(r => r && typeof r === 'object' && r.status === 'pending');
-      const allApproved = Object.values(reqs).every(r => r && typeof r === 'object' && r.status === 'approved');
-      
-      if (hasResubmit) return 'action_required';
-      if (hasMissing) return 'incomplete';
-      if (hasPending) return 'pending';
-      if (allApproved) return 'complete';
-      return 'pending';
-    } else {
-      // Direct applicants: check all document sections
-      const idNums = reqs.id_numbers || {};
-      const license = reqs.license || {};
-      const medicalExams = reqs.medicalExams || {};
-      const personalDocs = reqs.personalDocuments || {};
-      const clearances = reqs.clearances || {};
-      const educationalDocs = reqs.educationalDocuments || {};
-      const documents = reqs.documents || []; // Legacy documents array
-      
-      // Helper function to get status from a document object
-      const getDocStatus = (doc) => {
-        if (!doc) return 'missing';
-        if (typeof doc === 'string') return doc;
-        return doc.status || 'missing';
-      };
-      
-      // Check ID numbers status
-      const idStatuses = Object.values(idNums).map(id => id?.status || 'missing');
-      const hasIdResubmit = idStatuses.some(s => s === 'Re-submit');
-      const hasIdMissing = idStatuses.some(s => s === 'missing');
-      const hasIdPending = idStatuses.some(s => s === 'Submitted' || s === 'pending');
-      const allIdsValidated = idStatuses.every(s => s === 'Validated');
-      
-      // Check license status
-      const licenseStatus = getDocStatus(license);
-      const hasLicenseResubmit = licenseStatus === 'resubmit' || licenseStatus === 'Re-submit';
-      const hasLicenseMissing = licenseStatus === 'missing';
-      const hasLicensePending = licenseStatus === 'pending' || licenseStatus === 'Submitted';
-      const licenseValidated = licenseStatus === 'approved' || licenseStatus === 'Validated';
-      
-      // Check medical exams status
-      const medicalStatuses = Object.values(medicalExams).map(getDocStatus);
-      const hasMedicalResubmit = medicalStatuses.some(s => s === 'resubmit' || s === 'Re-submit');
-      const hasMedicalMissing = medicalStatuses.some(s => s === 'missing');
-      const hasMedicalPending = medicalStatuses.some(s => s === 'pending' || s === 'Submitted');
-      const allMedicalValidated = medicalStatuses.length > 0 && medicalStatuses.every(s => s === 'approved' || s === 'Validated');
-      
-      // Check personal documents status
-      const personalStatuses = Object.values(personalDocs).map(getDocStatus);
-      const hasPersonalResubmit = personalStatuses.some(s => s === 'resubmit' || s === 'Re-submit');
-      const hasPersonalMissing = personalStatuses.some(s => s === 'missing');
-      const hasPersonalPending = personalStatuses.some(s => s === 'pending' || s === 'Submitted');
-      const allPersonalValidated = personalStatuses.length > 0 && personalStatuses.every(s => s === 'approved' || s === 'Validated');
-      
-      // Check clearances status
-      const clearanceStatuses = Object.values(clearances).map(getDocStatus);
-      const hasClearanceResubmit = clearanceStatuses.some(s => s === 'resubmit' || s === 'Re-submit');
-      const hasClearanceMissing = clearanceStatuses.some(s => s === 'missing');
-      const hasClearancePending = clearanceStatuses.some(s => s === 'pending' || s === 'Submitted');
-      const allClearanceValidated = clearanceStatuses.length > 0 && clearanceStatuses.every(s => s === 'approved' || s === 'Validated');
-      
-      // Check educational documents status
-      const educationalStatuses = Object.values(educationalDocs).map(getDocStatus);
-      const hasEducationalResubmit = educationalStatuses.some(s => s === 'resubmit' || s === 'Re-submit');
-      const hasEducationalMissing = educationalStatuses.some(s => s === 'missing');
-      const hasEducationalPending = educationalStatuses.some(s => s === 'pending' || s === 'Submitted');
-      const allEducationalValidated = educationalStatuses.length > 0 && educationalStatuses.every(s => s === 'approved' || s === 'Validated');
-      
-      // Check legacy documents status
-      const docStatuses = documents.map(doc => doc?.status || 'No File');
-      const hasDocResubmit = docStatuses.some(s => s === 'Re-submit');
-      const hasDocMissing = docStatuses.some(s => s === 'No File' || s === 'missing');
-      const hasDocPending = docStatuses.some(s => s === 'Submitted' || s === 'pending');
-      const allDocsValidated = docStatuses.length > 0 && docStatuses.every(s => s === 'Validated');
-      
-      // Aggregate all statuses
-      const hasResubmit = hasIdResubmit || hasLicenseResubmit || hasMedicalResubmit || hasPersonalResubmit || hasClearanceResubmit || hasEducationalResubmit || hasDocResubmit;
-      const hasMissing = hasIdMissing || hasLicenseMissing || hasMedicalMissing || hasPersonalMissing || hasClearanceMissing || hasEducationalMissing || hasDocMissing;
-      const hasPending = hasIdPending || hasLicensePending || hasMedicalPending || hasPersonalPending || hasClearancePending || hasEducationalPending || hasDocPending;
-      const allValidated = allIdsValidated && licenseValidated && allMedicalValidated && allPersonalValidated && allClearanceValidated && allEducationalValidated && allDocsValidated;
-      
-      if (hasResubmit) return 'action_required';
-      if (hasMissing) return 'incomplete';
-      if (hasPending) return 'pending';
-      if (allValidated) return 'complete';
-      return 'pending';
-    }
+    const entries = getRequirementEntries(employee);
+    const included = entries.filter((e) => e.includeInStatus);
+    const required = included.filter((e) => e.requiredForCompletion);
+
+    const hasResubmit = included.some((e) => e.status === 'resubmit');
+    const hasMissingOrExpired = required.some((e) => e.status === 'missing' || e.status === 'expired');
+    // Pending only if there's something actually submitted and waiting for validation.
+    const hasPending = included.some((e) => e.status === 'pending' && e.submitted);
+    const allRequiredApproved = required.length > 0 && required.every((e) => e.status === 'approved');
+
+    if (allRequiredApproved) return 'complete';
+    // If there's anything awaiting validation, show Pending (even if other items are missing).
+    if (hasPending) return 'pending';
+    if (hasMissingOrExpired || hasResubmit) return 'incomplete';
+    return 'incomplete';
   };
 
   // Helper function to check if employee has ANY pending items (regardless of overall status)
   const hasPendingItems = (employee) => {
-    if (!employee || !employee.requirements) return false;
-    const reqs = employee.requirements;
-    const isAgency = employee.isAgency;
-    
-    if (isAgency) {
-      // Agency employees: check ID number requirements
-      const hasPendingReqs = Object.values(reqs).some(r => r && typeof r === 'object' && r.status === 'pending');
-      const hasPendingHrRequests = employee.hrRequests && employee.hrRequests.length > 0 
-        ? employee.hrRequests.some(r => r && (r.status === 'pending' || r.status === 'submitted'))
-        : false;
-      return hasPendingReqs || hasPendingHrRequests;
+    const entries = getRequirementEntries(employee);
+    const included = entries.filter((e) => e.includeInStatus);
+    // Only consider pending when a file is present (i.e., truly waiting for validation).
+    return included.some((e) => e.status === 'pending' && e.submitted);
+  };
+
+  const normalizeStatus = (value) => {
+    if (value == null) return 'missing';
+    const s = String(value).trim().toLowerCase();
+    if (!s || s === 'no file') return 'missing';
+    if (s === 'validated' || s === 'approved') return 'approved';
+    if (s === 'submitted' || s === 'pending') return 'pending';
+    if (s === 're-submit' || s === 'resubmit') return 'resubmit';
+    if (s === 'expired') return 'expired';
+    if (s === 'missing') return 'missing';
+    return s;
+  };
+
+  function parseToLocalDateOnly(dateStr) {
+    if (!dateStr) return null;
+    const raw = String(dateStr).trim();
+    if (!raw) return null;
+
+    // Handle common date-only format (YYYY-MM-DD) as local time to avoid UTC shifting.
+    const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) {
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const d = Number(m[3]);
+      const dt = new Date(y, mo - 1, d);
+      if (!Number.isFinite(dt.getTime())) return null;
+      return dt;
+    }
+
+    const dt = new Date(raw);
+    if (!Number.isFinite(dt.getTime())) return null;
+    return new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+  }
+
+  function isExpiredDate(validUntil) {
+    const d = parseToLocalDateOnly(validUntil);
+    if (!d) return false;
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    return d.getTime() < today.getTime();
+  }
+
+  function normalizeStoragePath(value) {
+    if (!value) return null;
+    let s = String(value).trim();
+    if (!s) return null;
+
+    // Drop query/hash (common for public URLs).
+    s = s.split('#')[0].split('?')[0];
+
+    // If a full public URL was stored, reduce it back to the storage key.
+    // Example: .../storage/v1/object/public/application-files/<key>
+    const marker = '/storage/v1/object/public/application-files/';
+    const idx = s.indexOf(marker);
+    if (idx >= 0) s = s.slice(idx + marker.length);
+
+    // If the bucket name is embedded, strip it.
+    s = s.replace(/^application-files\//, '');
+    const bucketSeg = '/application-files/';
+    const idx2 = s.indexOf(bucketSeg);
+    if (idx2 >= 0) s = s.slice(idx2 + bucketSeg.length);
+
+    try {
+      s = decodeURIComponent(s);
+    } catch {
+      // ignore
+    }
+
+    return s.trim() || null;
+  }
+
+  function isSameStoragePath(a, b) {
+    const na = normalizeStoragePath(a);
+    const nb = normalizeStoragePath(b);
+    if (!na || !nb) return false;
+    return na === nb;
+  }
+
+  function isAfterDateTime(a, b) {
+    if (!a || !b) return false;
+    const da = new Date(a);
+    const db = new Date(b);
+    if (!Number.isFinite(da.getTime()) || !Number.isFinite(db.getTime())) return false;
+    return da.getTime() > db.getTime();
+  }
+
+  function canonicalizeDocType(value) {
+    return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+  }
+
+  function isDuplicateDocType(candidate, requiredCanonicalList) {
+    const c = canonicalizeDocType(candidate);
+    if (!c) return false;
+    if (requiredCanonicalList.includes(c)) return true;
+    if (c.length < 3) return false;
+    return requiredCanonicalList.some((r) => r.includes(c) || c.includes(r));
+  }
+
+  function getDaysUntil(dateStr) {
+    if (!dateStr) return null;
+    const d = new Date(dateStr);
+    if (!Number.isFinite(d.getTime())) return null;
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfDeadline = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diffMs = startOfDeadline.getTime() - startOfToday.getTime();
+    return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  }
+
+  function getRequiredDocTypeLabelsForEmployee(employee) {
+    if (!employee) return [];
+
+    const labels = [];
+
+    if (employee.isAgency) {
+      for (const r of agencyRequirements) labels.push(r.name);
     } else {
-      // Direct applicants: check all document sections
+      // Always-required government IDs
+      labels.push('SSS', 'TIN', 'PAG-IBIG', 'PhilHealth');
+
+      // Conditional: driver/delivery license
+      if (isDeliveryCrew(employee)) labels.push("Driver's License");
+
+      // Medical exams
+      for (const exam of medicalExams) labels.push(exam.name);
+
+      // Personal docs: only those required for this employee
+      for (const docDef of personalDocuments) {
+        const rule = getPersonalDocRule(docDef, employee);
+        if (!rule.applicable) continue;
+        if (rule.required) labels.push(docDef.name);
+      }
+
+      // Clearances
+      for (const c of clearances) labels.push(c.name);
+
+      // Educational docs only if educational attainment exists
+      if (hasEducationalAttainment(employee)) {
+        for (const e of educationalDocuments) labels.push(e.name);
+      }
+    }
+
+    // Already-requested HR docs are also "currently required"
+    if (employee.hrRequests && employee.hrRequests.length > 0) {
+      for (const r of employee.hrRequests) {
+        const name = r?.document || r?.document_type;
+        if (name) labels.push(name);
+      }
+    }
+
+    // De-dupe
+    return Array.from(new Set(labels.map((x) => String(x || '').trim()).filter(Boolean)));
+  }
+
+  function getDocTypeCatalog() {
+    const all = [];
+    for (const r of agencyRequirements) all.push(r.name);
+    all.push('SSS', 'TIN', 'PAG-IBIG', 'PhilHealth', "Driver's License");
+    for (const exam of medicalExams) all.push(exam.name);
+    for (const docDef of personalDocuments) all.push(docDef.name);
+    for (const c of clearances) all.push(c.name);
+    for (const e of educationalDocuments) all.push(e.name);
+    return Array.from(new Set(all.map((x) => String(x || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  }
+
+  const hasEducationalAttainment = (employee) => {
+    const raw = employee?.educational_attainment ?? employee?.educationalAttainment ?? '';
+    const s = String(raw).trim();
+    if (!s) return false;
+    return s.toLowerCase() !== 'n/a';
+  };
+
+  const isMarriedEmployee = (employee) => {
+    const raw = employee?.marital_status ?? employee?.maritalStatus ?? '';
+    const s = String(raw).trim().toLowerCase();
+    return s === 'married';
+  };
+
+  const isDeliveryCrew = (employee) => {
+    const p = String(employee?.position || '').toLowerCase();
+    return /(driver|helper|rider|messenger|delivery)/.test(p);
+  };
+
+  const isOfficeEmployee = (employee) => !isDeliveryCrew(employee);
+
+  const getPersonalDocRule = (doc, employee) => {
+    const key = String(doc?.key || '').trim();
+    if (!key) return { applicable: false, required: false };
+
+    if (key === 'marriage_contract') {
+      return { applicable: isMarriedEmployee(employee), required: false };
+    }
+
+    if (key === 'residence_sketch') {
+      const applicable = isOfficeEmployee(employee);
+      return { applicable, required: applicable };
+    }
+
+    const required = Boolean(doc?.required);
+    return { applicable: true, required };
+  };
+
+  function getRequirementEntries(employee) {
+    if (!employee || !employee.requirements || typeof employee.requirements !== 'object') return [];
+
+    const entries = [];
+    const reqs = employee.requirements;
+
+    const pushEntry = ({ status, submitted, requiredForCompletion }) => {
+      let s = normalizeStatus(status);
+      // If a file is present but status is still missing/empty, treat it as pending validation.
+      // This prevents employees from showing as "Incomplete" when they already submitted the document.
+      if (Boolean(submitted) && s === 'missing') s = 'pending';
+      const includeOptional = Boolean(submitted);
+      const required = Boolean(requiredForCompletion);
+      entries.push({
+        status: s,
+        submitted: Boolean(submitted),
+        requiredForCompletion: required,
+        includeInProgress: required || includeOptional,
+        includeInStatus: required || includeOptional,
+      });
+    };
+
+    if (employee.isAgency) {
+      // Agency employees: government IDs (always required)
+      const reqVals = Object.values(reqs).filter((r) => r && typeof r === 'object');
+      for (const r of reqVals) {
+        pushEntry({
+          status: r.status,
+          submitted: Boolean(r.hasFile || r.filePath),
+          requiredForCompletion: true,
+        });
+      }
+    } else {
       const idNums = reqs.id_numbers || {};
       const license = reqs.license || {};
-      const medicalExams = reqs.medicalExams || {};
-      const personalDocs = reqs.personalDocuments || {};
-      const clearances = reqs.clearances || {};
-      const educationalDocs = reqs.educationalDocuments || {};
-      const documents = reqs.documents || [];
-      
-      // Helper function to get status from a document object
-      const getDocStatus = (doc) => {
-        if (!doc) return 'missing';
-        if (typeof doc === 'string') return doc;
-        return doc.status || 'missing';
-      };
-      
-      // Check ID numbers for pending
-      const hasIdPending = Object.values(idNums).some(id => {
-        const status = id?.status || 'missing';
-        return status === 'Submitted' || status === 'pending';
-      });
-      
-      // Check license for pending
-      const licenseStatus = getDocStatus(license);
-      const hasLicensePending = licenseStatus === 'pending' || licenseStatus === 'Submitted';
-      
-      // Check medical exams for pending
-      const hasMedicalPending = Object.values(medicalExams).some(doc => {
-        const status = getDocStatus(doc);
-        return status === 'pending' || status === 'Submitted';
-      });
-      
-      // Check personal documents for pending
-      const hasPersonalPending = Object.values(personalDocs).some(doc => {
-        const status = getDocStatus(doc);
-        return status === 'pending' || status === 'Submitted';
-      });
-      
-      // Check clearances for pending
-      const hasClearancePending = Object.values(clearances).some(doc => {
-        const status = getDocStatus(doc);
-        return status === 'pending' || status === 'Submitted';
-      });
-      
-      // Check educational documents for pending
-      const hasEducationalPending = Object.values(educationalDocs).some(doc => {
-        const status = getDocStatus(doc);
-        return status === 'pending' || status === 'Submitted';
-      });
-      
-      // Check legacy documents for pending
-      const hasDocPending = documents.some(doc => {
-        const status = doc?.status || 'No File';
-        return status === 'Submitted' || status === 'pending';
-      });
-      
-      // Check HR requests for pending
-      const hasPendingHrRequests = employee.hrRequests && employee.hrRequests.length > 0 
-        ? employee.hrRequests.some(r => r && (r.status === 'pending' || r.status === 'submitted'))
-        : false;
-      
-      return hasIdPending || hasLicensePending || hasMedicalPending || hasPersonalPending || 
-             hasClearancePending || hasEducationalPending || hasDocPending || hasPendingHrRequests;
+      const medical = reqs.medicalExams || {};
+      const personal = reqs.personalDocuments || {};
+      const clearance = reqs.clearances || {};
+      const education = reqs.educationalDocuments || {};
+      const legacyDocs = Array.isArray(reqs.documents) ? reqs.documents : [];
+
+      // IDs (always required)
+      for (const key of ['sss', 'tin', 'pagibig', 'philhealth']) {
+        const id = idNums?.[key] || {};
+        const hasFile = Boolean(id?.file_path || id?.filePath);
+        const hasValue = Boolean(String(id?.value || '').trim());
+        pushEntry({
+          status: id?.status,
+          submitted: hasFile && hasValue,
+          requiredForCompletion: true,
+        });
+      }
+
+      // License (required only for drivers/delivery crew)
+      if (isDeliveryCrew(employee)) {
+        const front = license?.frontFilePath || license?.front_file_path;
+        const back = license?.backFilePath || license?.back_file_path;
+        const hasFile = Boolean(front && back);
+        const expiry = license?.licenseExpiry || license?.license_expiry;
+        const expired = hasFile && isExpiredDate(expiry);
+        pushEntry({
+          status: expired ? 'expired' : license?.status,
+          submitted: hasFile,
+          requiredForCompletion: true,
+        });
+      }
+
+      // Medical exams (required)
+      for (const exam of medicalExams) {
+        const doc = medical?.[exam.key] || {};
+        const hasFile = Boolean(doc?.filePath || doc?.file_path);
+        const expired = hasFile && isExpiredDate(doc?.validUntil || doc?.valid_until);
+        pushEntry({
+          status: expired ? 'expired' : doc?.status,
+          submitted: hasFile,
+          requiredForCompletion: true,
+        });
+      }
+
+      // Personal docs (some optional / conditional)
+      for (const docDef of personalDocuments) {
+        const rule = getPersonalDocRule(docDef, employee);
+        if (!rule.applicable) continue;
+
+        const doc = personal?.[docDef.key] || {};
+        const submitted = Boolean(doc?.filePath || doc?.file_path);
+        pushEntry({
+          status: doc?.status,
+          submitted,
+          requiredForCompletion: rule.required,
+        });
+      }
+
+      // Clearances (required)
+      for (const docDef of clearances) {
+        const doc = clearance?.[docDef.key] || {};
+        const hasFile = Boolean(doc?.filePath || doc?.file_path);
+        const expired = hasFile && isExpiredDate(doc?.dateValidity || doc?.date_validity);
+        pushEntry({
+          status: expired ? 'expired' : doc?.status,
+          submitted: hasFile,
+          requiredForCompletion: true,
+        });
+      }
+
+      // Educational docs (only if educational attainment exists)
+      if (hasEducationalAttainment(employee)) {
+        for (const docDef of educationalDocuments) {
+          const doc = education?.[docDef.key] || {};
+          pushEntry({
+            status: doc?.status,
+            submitted: Boolean(doc?.filePath || doc?.file_path),
+            requiredForCompletion: true,
+          });
+        }
+      }
+
+      // Legacy docs (required once present)
+      for (const doc of legacyDocs) {
+        const hasFile = Boolean(doc?.file_path || doc?.filePath);
+        pushEntry({
+          status: doc?.status,
+          submitted: hasFile,
+          requiredForCompletion: true,
+        });
+      }
     }
-  };
+
+    // HR requested docs (variable count; required once requested)
+    if (employee?.hrRequests && employee.hrRequests.length > 0) {
+      for (const r of employee.hrRequests) {
+        pushEntry({
+          status: r?.status,
+          submitted: Boolean(r?.file_path || r?.filePath),
+          requiredForCompletion: true,
+        });
+      }
+    }
+
+    return entries;
+  }
 
   // Calculate stats
   const stats = useMemo(() => {
@@ -724,10 +962,10 @@ function HrRequirements() {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       data = data.filter(e => 
-        e.name.toLowerCase().includes(query) ||
-        e.position.toLowerCase().includes(query) ||
-        e.depot.toLowerCase().includes(query) ||
-        e.email.toLowerCase().includes(query) ||
+        String(e?.name || '').toLowerCase().includes(query) ||
+        String(e?.position || '').toLowerCase().includes(query) ||
+        String(e?.depot || '').toLowerCase().includes(query) ||
+        String(e?.email || '').toLowerCase().includes(query) ||
         String(e.id).includes(query)
       );
     }
@@ -796,13 +1034,75 @@ function HrRequirements() {
     document.body.removeChild(link);
   };
 
-  const filteredData = getFilteredData();
+  const filteredData = useMemo(() => getFilteredData(), [
+    employees,
+    currentUser,
+    recruitmentTypeFilter,
+    activeTab,
+    departmentFilter,
+    positionFilter,
+    depotFilter,
+    employmentStatusFilter,
+    searchQuery,
+    sortOption,
+  ]);
+
+  const depotCompliance = useMemo(() => {
+    const byDepot = new Map();
+
+    for (const emp of filteredData) {
+      const depotName = String(emp?.depot || '').trim();
+      if (!depotName || depotName === '—') continue;
+
+      const progress = getRequirementsProgress(emp);
+      const approved = Number(progress?.approved || 0);
+      const total = Number(progress?.total || 0);
+
+      if (!byDepot.has(depotName)) {
+        byDepot.set(depotName, { name: depotName, approved: 0, total: 0, employees: 0 });
+      }
+
+      const agg = byDepot.get(depotName);
+      agg.approved += approved;
+      agg.total += total;
+      agg.employees += 1;
+    }
+
+    const rows = Array.from(byDepot.values()).map((d) => {
+      const raw = d.total > 0 ? (d.approved / d.total) * 100 : 0;
+      const safeRaw = Number.isFinite(raw) ? raw : 0;
+      const compliance = Math.max(0, Math.min(100, Math.round(safeRaw)));
+      return {
+        name: d.name,
+        employees: d.employees,
+        approved: d.approved,
+        total: d.total,
+        compliance,
+        nonCompliance: 100 - compliance,
+      };
+    });
+
+    rows.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    return rows;
+  }, [filteredData]);
+
+  const displayedDepots = showAllDepots
+    ? depotCompliance
+    : depotCompliance.slice(0, 6);
   const totalPages = Math.max(1, Math.ceil(filteredData.length / itemsPerPage));
   const paginatedData = filteredData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   // Helpers
   const getInitials = (name) => {
-    return name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+    const s = String(name || '').trim();
+    if (!s) return '--';
+    return s
+      .split(' ')
+      .filter(Boolean)
+      .map(n => n[0])
+      .join('')
+      .substring(0, 2)
+      .toUpperCase();
   };
 
   const getAvatarColor = (name) => {
@@ -816,13 +1116,15 @@ function HrRequirements() {
       'from-teal-500 to-teal-600',
       'from-indigo-500 to-indigo-600',
     ];
-    const index = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+    const s = String(name || '');
+    const index = s.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
     return colors[index];
   };
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '—';
     const date = new Date(dateStr);
+    if (!Number.isFinite(date.getTime())) return '—';
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
@@ -832,6 +1134,7 @@ function HrRequirements() {
       pending: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pending' },
       submitted: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Submitted' },
       resubmit: { bg: 'bg-red-100', text: 'text-red-700', label: 'Re-submit' },
+      expired: { bg: 'bg-red-100', text: 'text-red-700', label: 'Expired' },
       missing: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Missing' },
     };
     return styles[status] || styles.pending;
@@ -840,114 +1143,24 @@ function HrRequirements() {
   const getEmployeeStatusBadge = (status) => {
     const styles = {
       complete: { text: 'text-green-600', label: 'Complete' },
-      pending: { text: 'text-yellow-600', label: 'Doc Requests' },
-      incomplete: { text: 'text-orange-600', label: 'Incomplete' },
-      action_required: { text: 'text-red-600', label: 'Action Required' },
+      pending: { text: 'text-orange-600', label: 'Pending' },
+      incomplete: { text: 'text-red-600', label: 'Incomplete' },
     };
     return styles[status] || styles.pending;
   };
 
-  const getRequirementsProgress = (employee) => {
-    const isAgency = employee.isAgency;
-    
-    if (isAgency) {
-      // Agency employees: count ID number requirements
-      const reqs = Object.values(employee.requirements).filter(r => r && typeof r === 'object');
-      // Count files that have been uploaded (hasFile) or are approved
-      const uploaded = reqs.filter(r => r.hasFile || r.status === 'approved' || r.status === 'pending').length;
-      const approved = reqs.filter(r => r.status === 'approved').length;
-      return { approved, uploaded, total: reqs.length || 4 }; // Default to 4 if empty
-    } else {
-      // Direct applicants: count all sections
-      const idNums = employee.requirements.id_numbers || {};
-      const license = employee.requirements.license || {};
-      const medicalExams = employee.requirements.medicalExams || {};
-      const personalDocs = employee.requirements.personalDocuments || {};
-      const clearances = employee.requirements.clearances || {};
-      const educationalDocs = employee.requirements.educationalDocuments || {};
-      const documents = employee.requirements.documents || []; // Legacy documents
-      
-      // Helper to get status
-      const getDocStatus = (doc) => {
-        if (!doc) return 'missing';
-        if (typeof doc === 'string') return doc;
-        return doc.status || 'missing';
-      };
-      
-      // Count totals - use actual expected counts, not defaults
-      // ID Numbers: SSS, TIN, PAG-IBIG, PhilHealth = 4
-      const idCount = 4;
-      // Driver's License = 1
-      const licenseCount = 1;
-      // Medical Exams: X-ray, Stool, Urine, HEPA, CBC, Drug Test = 6
-      const medicalCount = 6;
-      // Personal Documents: 2x2 Picture, PSA Birth Cert, Marriage Contract, Dependents Birth Cert, Residence Sketch = 5
-      const personalCount = 5;
-      // Clearances: NBI, Police, Barangay = 3
-      const clearanceCount = 3;
-      // Educational Documents: Diploma, Transcript of Records = 2
-      const educationalCount = 2;
-      // Legacy documents (if any)
-      const legacyDocCount = Array.isArray(documents) ? documents.length : 0;
-      
-      const total = idCount + licenseCount + medicalCount + personalCount + clearanceCount + educationalCount + legacyDocCount;
-      
-      // Count uploaded files (have file_path or status is Submitted/Validated)
-      const uploadedIds = Object.values(idNums).filter(id => 
-        !!(id?.file_path || id?.filePath) || id?.status === 'Submitted' || id?.status === 'Validated'
-      ).length;
-      
-      const uploadedLicense = (license && (!!(license?.frontFilePath || license?.front_file_path || license?.backFilePath || license?.back_file_path) || 
-        license?.status === 'Submitted' || license?.status === 'Validated')) ? 1 : 0;
-      
-      const uploadedMedical = Object.values(medicalExams).filter(doc => 
-        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
-      ).length;
-      
-      const uploadedPersonal = Object.values(personalDocs).filter(doc => 
-        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
-      ).length;
-      
-      const uploadedClearances = Object.values(clearances).filter(doc => 
-        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
-      ).length;
-      
-      const uploadedEducational = Object.values(educationalDocs).filter(doc => 
-        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
-      ).length;
-      
-      const uploadedDocs = documents.filter(doc => 
-        !!(doc?.file_path || doc?.filePath) || doc?.status === 'Submitted' || doc?.status === 'Validated'
-      ).length;
-      
-      const uploaded = uploadedIds + uploadedLicense + uploadedMedical + uploadedPersonal + uploadedClearances + uploadedEducational + uploadedDocs;
-      
-      // Count approved
-      const approvedIds = Object.values(idNums).filter(id => id?.status === 'Validated').length;
-      const licenseApproved = (license && (getDocStatus(license) === 'approved' || getDocStatus(license) === 'Validated')) ? 1 : 0;
-      const medicalApproved = Object.values(medicalExams).filter(doc => {
-        const status = getDocStatus(doc);
-        return status === 'approved' || status === 'Validated';
-      }).length;
-      const personalApproved = Object.values(personalDocs).filter(doc => {
-        const status = getDocStatus(doc);
-        return status === 'approved' || status === 'Validated';
-      }).length;
-      const clearanceApproved = Object.values(clearances).filter(doc => {
-        const status = getDocStatus(doc);
-        return status === 'approved' || status === 'Validated';
-      }).length;
-      const educationalApproved = Object.values(educationalDocs).filter(doc => {
-        const status = getDocStatus(doc);
-        return status === 'approved' || status === 'Validated';
-      }).length;
-      const legacyDocsApproved = Array.isArray(documents) ? documents.filter(doc => doc?.status === 'Validated').length : 0;
-      
-      const approved = approvedIds + licenseApproved + medicalApproved + personalApproved + clearanceApproved + educationalApproved + legacyDocsApproved;
-      
-      return { approved, uploaded, total };
-    }
-  };
+  function getRequirementsProgress(employee) {
+    const entries = getRequirementEntries(employee);
+    const included = entries.filter((e) => e.includeInProgress);
+    const total = included.length;
+    const approved = included.filter((e) => e.status === 'approved').length;
+    const expired = included.filter((e) => e.status === 'expired' && e.submitted).length;
+    // Pending progress includes submitted items waiting validation, plus resubmits that have a file.
+    // (Unuploaded HR requests are excluded because e.submitted is false.)
+    const pending = included.filter((e) => (e.status === 'pending' || e.status === 'resubmit') && e.submitted).length;
+    const submitted = approved + pending + expired;
+    return { approved, pending, expired, submitted, total };
+  }
 
   // Validation Modal Functions
   const openValidationModal = (employeeId, type, key, name, currentStatus = 'pending', currentRemarks = '') => {
@@ -1053,10 +1266,16 @@ function HrRequirements() {
             currentRequirements.license = {};
           }
 
+          const front = currentRequirements.license?.frontFilePath || currentRequirements.license?.front_file_path || null;
+          const back = currentRequirements.license?.backFilePath || currentRequirements.license?.back_file_path || null;
+
           currentRequirements.license = {
             ...currentRequirements.license,
             status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
             remarks: validationForm.remarks.trim() || null,
+            validated_at: new Date().toISOString(),
+            validated_front_file_path: front,
+            validated_back_file_path: back,
           };
         } else if (validationTarget.type === 'medical') {
           // Update medical exam
@@ -1069,10 +1288,17 @@ function HrRequirements() {
             currentRequirements.medicalExams[medicalKey] = {};
           }
 
+          const fp =
+            currentRequirements.medicalExams[medicalKey]?.filePath ||
+            currentRequirements.medicalExams[medicalKey]?.file_path ||
+            null;
+
           currentRequirements.medicalExams[medicalKey] = {
             ...currentRequirements.medicalExams[medicalKey],
             status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
             remarks: validationForm.remarks.trim() || null,
+            validated_at: new Date().toISOString(),
+            validated_file_path: fp,
           };
         } else if (validationTarget.type === 'personal') {
           // Update personal document
@@ -1085,10 +1311,17 @@ function HrRequirements() {
             currentRequirements.personalDocuments[personalKey] = {};
           }
 
+          const fp =
+            currentRequirements.personalDocuments[personalKey]?.filePath ||
+            currentRequirements.personalDocuments[personalKey]?.file_path ||
+            null;
+
           currentRequirements.personalDocuments[personalKey] = {
             ...currentRequirements.personalDocuments[personalKey],
             status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
             remarks: validationForm.remarks.trim() || null,
+            validated_at: new Date().toISOString(),
+            validated_file_path: fp,
           };
         } else if (validationTarget.type === 'clearance') {
           // Update clearance
@@ -1101,10 +1334,17 @@ function HrRequirements() {
             currentRequirements.clearances[clearanceKey] = {};
           }
 
+          const fp =
+            currentRequirements.clearances[clearanceKey]?.filePath ||
+            currentRequirements.clearances[clearanceKey]?.file_path ||
+            null;
+
           currentRequirements.clearances[clearanceKey] = {
             ...currentRequirements.clearances[clearanceKey],
             status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
             remarks: validationForm.remarks.trim() || null,
+            validated_at: new Date().toISOString(),
+            validated_file_path: fp,
           };
         } else if (validationTarget.type === 'educational') {
           // Update educational document
@@ -1117,10 +1357,17 @@ function HrRequirements() {
             currentRequirements.educationalDocuments[educationalKey] = {};
           }
 
+          const fp =
+            currentRequirements.educationalDocuments[educationalKey]?.filePath ||
+            currentRequirements.educationalDocuments[educationalKey]?.file_path ||
+            null;
+
           currentRequirements.educationalDocuments[educationalKey] = {
             ...currentRequirements.educationalDocuments[educationalKey],
             status: validationForm.status === 'Validated' ? 'approved' : validationForm.status === 'Re-submit' ? 'resubmit' : 'pending',
             remarks: validationForm.remarks.trim() || null,
+            validated_at: new Date().toISOString(),
+            validated_file_path: fp,
           };
         } else if (validationTarget.type === 'doc') {
           // Legacy documents array (for backward compatibility)
@@ -1148,6 +1395,43 @@ function HrRequirements() {
               status: validationForm.status,
               remarks: validationForm.remarks.trim() || null,
               validated_at: validationForm.status === 'Validated' ? new Date().toISOString() : null,
+            });
+          }
+        } else if (validationTarget.type === 'hr_request') {
+          // HR requested documents
+          if (!Array.isArray(currentRequirements.hr_requests)) {
+            currentRequirements.hr_requests = [];
+          }
+
+          const requestId = validationTarget.key;
+          const idx = currentRequirements.hr_requests.findIndex((r) => String(r?.id || '') === String(requestId));
+
+          const nextStatus =
+            validationForm.status === 'Validated'
+              ? 'approved'
+              : validationForm.status === 'Re-submit'
+                ? 'resubmit'
+                : 'pending';
+
+          if (idx >= 0) {
+            const fp = currentRequirements.hr_requests[idx]?.file_path || currentRequirements.hr_requests[idx]?.filePath || null;
+            currentRequirements.hr_requests[idx] = {
+              ...currentRequirements.hr_requests[idx],
+              status: nextStatus,
+              remarks: validationForm.remarks.trim() || null,
+              validated_at: new Date().toISOString(),
+              validated_file_path: fp,
+            };
+          } else {
+            // Fallback: if request wasn't found by id, add a minimal record to preserve validation.
+            currentRequirements.hr_requests.push({
+              id: requestId,
+              document_type: validationTarget.name,
+              document: validationTarget.name,
+              status: nextStatus,
+              remarks: validationForm.remarks.trim() || null,
+              validated_at: new Date().toISOString(),
+              validated_file_path: null,
             });
           }
         }
@@ -1183,14 +1467,14 @@ function HrRequirements() {
   // Request Document Functions
   const openRequestModal = (employeeId, employeeName, isAgency) => {
     setRequestTarget({ employeeId, employeeName, isAgency });
-    setRequestForm({ documentType: '', description: '', priority: 'normal' });
+    setRequestForm({ documentType: '', deadline: '' });
     setShowRequestModal(true);
   };
 
   const closeRequestModal = () => {
     setShowRequestModal(false);
     setRequestTarget(null);
-    setRequestForm({ documentType: '', description: '', priority: 'normal', deadline: '' });
+    setRequestForm({ documentType: '', deadline: '' });
   };
 
   const handleRequestSubmit = async () => {
@@ -1202,6 +1486,16 @@ function HrRequirements() {
 
     if (!requestForm.documentType.trim()) {
       setAlertMessage('Please specify the document type');
+      setShowErrorAlert(true);
+      return;
+    }
+
+    // Block duplicates against currently-required docs for the target employee
+    const targetEmployee = employees.find((e) => e?.employeeId === requestTarget.employeeId) || null;
+    const requiredLabels = getRequiredDocTypeLabelsForEmployee(targetEmployee);
+    const requiredCanon = requiredLabels.map(canonicalizeDocType);
+    if (isDuplicateDocType(requestForm.documentType, requiredCanon)) {
+      setAlertMessage('That document is already required for this employee. Please choose a different document.');
       setShowErrorAlert(true);
       return;
     }
@@ -1255,9 +1549,9 @@ function HrRequirements() {
         id: Date.now().toString(),
         document_type: requestForm.documentType.trim(),
         document: requestForm.documentType.trim(), // Also add 'document' for compatibility
-        description: requestForm.description.trim() || null,
-        remarks: requestForm.description.trim() || null, // Also add 'remarks' for compatibility
-        priority: requestForm.priority,
+        description: null,
+        remarks: null,
+        priority: 'normal',
         requested_at: new Date().toISOString(),
         requested_by: currentUser?.email || 'HR',
         status: 'pending',
@@ -1331,6 +1625,25 @@ function HrRequirements() {
     return data?.publicUrl || null;
   };
 
+  const requestTargetEmployee = requestTarget
+    ? employees.find((e) => e?.employeeId === requestTarget.employeeId)
+    : null;
+
+  const requestRequiredLabels = requestTargetEmployee
+    ? getRequiredDocTypeLabelsForEmployee(requestTargetEmployee)
+    : [];
+  const requestRequiredCanon = requestRequiredLabels.map(canonicalizeDocType);
+
+  const requestDocCatalog = getDocTypeCatalog();
+  const requestDocSuggestions = requestDocCatalog.filter(
+    (name) => !isDuplicateDocType(name, requestRequiredCanon)
+  );
+
+  const requestDocDuplicate = isDuplicateDocType(requestForm.documentType, requestRequiredCanon);
+  const requestDeadlineDays = getDaysUntil(requestForm.deadline);
+  const requestDeadlineSoon =
+    requestDeadlineDays != null && requestDeadlineDays >= 0 && requestDeadlineDays <= 7;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <style>{`
@@ -1397,6 +1710,11 @@ function HrRequirements() {
             )}
           </div>
 
+          {depotCompliance.length === 0 ? (
+            <div className="p-6 text-sm text-gray-600 bg-gray-50 rounded-xl border border-gray-100">
+              No depot compliance data to display for the current list.
+            </div>
+          ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3">
             {displayedDepots.map((depot) => {
               const data = [
@@ -1440,22 +1758,11 @@ function HrRequirements() {
                     </div>
                   </div>
 
-                  <div className="mt-2">
-                    <div className="h-2 w-full rounded-full bg-gray-200 overflow-hidden">
-                      <div
-                        className="h-2 rounded-full bg-green-500"
-                        style={{ width: `${depot.compliance}%` }}
-                      />
-                    </div>
-                    <div className="mt-1.5 flex items-center justify-between text-xs">
-                      <span className="text-gray-500">Non-compliant</span>
-                      <span className="font-medium text-red-600">{depot.nonCompliance}%</span>
-                    </div>
-                  </div>
                 </div>
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Filters and Search */}
@@ -1720,12 +2027,37 @@ function HrRequirements() {
                           <td className="px-6 py-4">
                             <div className="flex items-center gap-2">
                               <div className="flex-1 h-2 bg-gray-200 rounded-full max-w-[80px]">
-                                <div 
-                                  className={`h-2 rounded-full ${progress.approved === progress.total ? 'bg-green-500' : (progress.uploaded || progress.approved) > 0 ? 'bg-yellow-500' : 'bg-gray-300'}`}
-                                  style={{ width: `${Math.max(((progress.uploaded || progress.approved) / progress.total) * 100, 0)}%` }}
-                                ></div>
+                                <div className="h-2 w-full rounded-full overflow-hidden flex">
+                                  {(() => {
+                                    const total = Number(progress.total || 0);
+                                    if (!Number.isFinite(total) || total <= 0) return null;
+
+                                    const approved = Math.max(0, Number(progress.approved || 0));
+                                    const pending = Math.max(0, Number(progress.pending || 0));
+                                    const expired = Math.max(0, Number(progress.expired || 0));
+
+                                    const toPct = (n) => Math.max(0, Math.min((n / total) * 100, 100));
+                                    const approvedPct = toPct(approved);
+                                    const pendingPct = toPct(pending);
+                                    const expiredPct = toPct(expired);
+
+                                    return (
+                                      <>
+                                        {approvedPct > 0 && (
+                                          <div className="h-2 bg-green-500" style={{ width: `${approvedPct}%` }} />
+                                        )}
+                                        {pendingPct > 0 && (
+                                          <div className="h-2 bg-orange-500" style={{ width: `${pendingPct}%` }} />
+                                        )}
+                                        {expiredPct > 0 && (
+                                          <div className="h-2 bg-red-500" style={{ width: `${expiredPct}%` }} />
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
                               </div>
-                              <span className="text-xs text-gray-600">{progress.uploaded || progress.approved}/{progress.total}</span>
+                              <span className="text-xs text-gray-600">{progress.submitted}/{progress.total}</span>
                             </div>
                           </td>
                           <td className="px-6 py-4">
@@ -2011,7 +2343,7 @@ function HrRequirements() {
                                     </div>
 
                                     {/* Driver's License Information Section */}
-                                    {!employee.isAgency && employee.requirements.license !== undefined && (
+                                    {!employee.isAgency && isDeliveryCrew(employee) && employee.requirements.license !== undefined && (
                                       <div>
                                         <div className="flex items-center gap-2 mb-4">
                                           <div className="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center">
@@ -2025,29 +2357,58 @@ function HrRequirements() {
                                           {(() => {
                                             const licenseData = employee.requirements.license;
                                             const licenseStatus = typeof licenseData === 'object' ? (licenseData.status || 'missing') : 'missing';
-                                            const statusStyle = getStatusStyle(
-                                              licenseStatus === 'approved' || licenseStatus === 'Validated' ? 'approved' :
-                                              licenseStatus === 'resubmit' || licenseStatus === 'Re-submit' ? 'resubmit' :
-                                              licenseStatus === 'pending' || licenseStatus === 'Submitted' ? 'pending' : 'missing'
-                                            );
-                                            const needsAction = licenseStatus === 'missing' || licenseStatus === 'resubmit' || licenseStatus === 'Re-submit';
+                                            const front = licenseData?.frontFilePath || licenseData?.front_file_path;
+                                            const back = licenseData?.backFilePath || licenseData?.back_file_path;
+                                            const hasFile = Boolean(front && back);
+                                            const rawStatus = normalizeStatus(licenseStatus);
+                                            const validatedFront = licenseData?.validated_front_file_path || null;
+                                            const validatedBack = licenseData?.validated_back_file_path || null;
+                                            const alreadyReviewedThisFile =
+                                              hasFile &&
+                                              isSameStoragePath(front, validatedFront) &&
+                                              isSameStoragePath(back, validatedBack);
+                                            const hasNewUpload =
+                                              hasFile &&
+                                              (Boolean(validatedFront || validatedBack)) &&
+                                              !alreadyReviewedThisFile;
+
+                                            const effectiveStatus = hasFile
+                                              ? (hasNewUpload
+                                                  ? 'pending'
+                                                  : (rawStatus === 'missing' ? 'pending' : rawStatus))
+                                              : 'missing';
+                                            const expired = hasFile && isExpiredDate(licenseData?.licenseExpiry || licenseData?.license_expiry);
+                                            const displayStatus = expired ? 'expired' : effectiveStatus;
+                                            const statusStyle = getStatusStyle(displayStatus);
+                                            const canValidate =
+                                              hasFile &&
+                                              !alreadyReviewedThisFile &&
+                                              // Allow validating if not approved yet, or if a new file was uploaded after approval.
+                                              (rawStatus !== 'approved' || hasNewUpload);
                                             
                                             return (
                                               <div 
                                                 className={`p-4 rounded-xl border-2 transition-all ${
-                                                  licenseStatus === 'resubmit' || licenseStatus === 'Re-submit'
-                                                    ? 'bg-red-50 border-red-200 shadow-sm' 
-                                                    : licenseStatus === 'missing' 
-                                                      ? 'bg-orange-50/50 border-orange-200 border-dashed' 
-                                                      : licenseStatus === 'approved' || licenseStatus === 'Validated'
-                                                        ? 'bg-green-50/50 border-green-200'
-                                                        : 'bg-white border-gray-200'
+                                                  expired
+                                                    ? 'bg-red-50 border-red-300 shadow-sm'
+                                                    : effectiveStatus === 'resubmit'
+                                                      ? 'bg-red-50 border-red-200 shadow-sm' 
+                                                      : effectiveStatus === 'missing' 
+                                                        ? 'bg-orange-50/50 border-orange-200 border-dashed' 
+                                                        : effectiveStatus === 'approved'
+                                                          ? 'bg-green-50/50 border-green-200'
+                                                          : 'bg-white border-gray-200'
                                                 }`}
                                               >
                                                 <div className="flex items-start justify-between gap-3">
                                                   <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2 mb-1">
                                                       <p className="text-sm font-semibold text-gray-800">Driver's License</p>
+                                                      {expired && (
+                                                        <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-700 border border-red-200">
+                                                          Expired
+                                                        </span>
+                                                      )}
                                                     </div>
                                                     {licenseData.licenseNumber && (
                                                       <div className="flex items-center gap-1.5 mt-1">
@@ -2126,7 +2487,10 @@ function HrRequirements() {
                                                     <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
                                                       {statusStyle.label}
                                                     </span>
-                                                    {(needsAction || licenseStatus === 'pending' || licenseStatus === 'Submitted') && (
+                                                    {alreadyReviewedThisFile && rawStatus === 'resubmit' && (
+                                                      <span className="text-[10px] text-gray-500">Awaiting new upload</span>
+                                                    )}
+                                                    {canValidate && (
                                                       <button 
                                                         onClick={(e) => {
                                                           e.stopPropagation();
@@ -2135,15 +2499,13 @@ function HrRequirements() {
                                                             'license',
                                                             'license',
                                                             'Driver\'s License',
-                                                            licenseStatus === 'approved' || licenseStatus === 'Validated' ? 'approved' :
-                                                            licenseStatus === 'resubmit' || licenseStatus === 'Re-submit' ? 'resubmit' :
-                                                            licenseStatus === 'pending' || licenseStatus === 'Submitted' ? 'pending' : 'missing',
+                                                            effectiveStatus,
                                                             licenseData.remarks || ''
                                                           );
                                                         }}
-                                                        disabled={!licenseData.frontFilePath || !licenseData.backFilePath}
+                                                        disabled={!front || !back}
                                                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                                          !licenseData.frontFilePath || !licenseData.backFilePath
+                                                          !front || !back
                                                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                             : 'bg-red-600 text-white hover:bg-red-700'
                                                         }`}
@@ -2182,37 +2544,75 @@ function HrRequirements() {
                                           {medicalExams.map((exam) => {
                                             const examData = employee.requirements.medicalExams?.[exam.key] || {};
                                             const examStatus = typeof examData === 'object' && examData !== null ? (examData.status || 'missing') : 'missing';
-                                            const statusStyle = getStatusStyle(
-                                              examStatus === 'approved' || examStatus === 'Validated' ? 'approved' :
-                                              examStatus === 'resubmit' || examStatus === 'Re-submit' ? 'resubmit' :
-                                              examStatus === 'pending' || examStatus === 'Submitted' ? 'pending' : 'missing'
-                                            );
-                                            const needsAction = examStatus === 'missing' || examStatus === 'resubmit' || examStatus === 'Re-submit';
+                                            const validUntil = examData?.validUntil || examData?.valid_until;
+                                            const filePath = examData?.filePath || examData?.file_path;
+                                            const hasFile = Boolean(filePath);
+                                            const rawStatus = normalizeStatus(examStatus);
+                                            const validatedPath = examData?.validated_file_path || examData?.validatedFilePath || null;
+                                            const submittedAt =
+                                              examData?.submittedDate ||
+                                              examData?.submitted_at ||
+                                              examData?.uploaded_at ||
+                                              null;
+                                            const validatedAt = examData?.validated_at || examData?.validatedAt || null;
+
+                                            // Legacy support: older records may not have validated_file_path.
+                                            // If HR reviewed it and no newer upload happened since, treat the current file as the reviewed one.
+                                            const hasNewUploadSinceReview =
+                                              Boolean(validatedAt) && Boolean(submittedAt) && isAfterDateTime(submittedAt, validatedAt);
+                                            const reviewedPath =
+                                              validatedPath ||
+                                              (validatedAt && !hasNewUploadSinceReview ? filePath : null);
+
+                                            const alreadyReviewedThisFile =
+                                              hasFile && Boolean(reviewedPath) && isSameStoragePath(filePath, reviewedPath);
+                                            const hasNewUpload =
+                                              hasFile && (hasNewUploadSinceReview || (Boolean(validatedPath) && !alreadyReviewedThisFile));
+
+                                            const effectiveStatus = hasFile
+                                              ? (hasNewUpload
+                                                  ? 'pending'
+                                                  : (rawStatus === 'missing' ? 'pending' : rawStatus))
+                                              : 'missing';
+                                            const expired = hasFile && isExpiredDate(validUntil);
+                                            const displayStatus = expired ? 'expired' : effectiveStatus;
+                                            const statusStyle = getStatusStyle(displayStatus);
+                                            const canValidate =
+                                              hasFile &&
+                                              !alreadyReviewedThisFile &&
+                                              (rawStatus !== 'approved' || hasNewUpload);
                                             
                                             return (
                                               <div 
                                                 key={exam.key}
                                                 className={`p-4 rounded-xl border-2 transition-all ${
-                                                  examStatus === 'resubmit' || examStatus === 'Re-submit'
-                                                    ? 'bg-red-50 border-red-200 shadow-sm' 
-                                                    : examStatus === 'missing' 
-                                                      ? 'bg-orange-50/50 border-orange-200 border-dashed' 
-                                                      : examStatus === 'approved' || examStatus === 'Validated'
-                                                        ? 'bg-green-50/50 border-green-200'
-                                                        : 'bg-white border-gray-200'
+                                                  expired
+                                                    ? 'bg-red-50 border-red-300 shadow-sm'
+                                                    : effectiveStatus === 'resubmit'
+                                                      ? 'bg-red-50 border-red-200 shadow-sm' 
+                                                      : effectiveStatus === 'missing' 
+                                                        ? 'bg-orange-50/50 border-orange-200 border-dashed' 
+                                                        : effectiveStatus === 'approved'
+                                                          ? 'bg-green-50/50 border-green-200'
+                                                          : 'bg-white border-gray-200'
                                                 }`}
                                               >
                                                 <div className="flex items-start justify-between gap-3">
                                                   <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2 mb-1">
                                                       <p className="text-sm font-semibold text-gray-800">{exam.name}</p>
+                                                      {expired && (
+                                                        <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-700 border border-red-200">
+                                                          Expired
+                                                        </span>
+                                                      )}
                                                     </div>
-                                                    {examData.validUntil && (
+                                                    {validUntil && (
                                                       <div className="flex items-center gap-1.5 mt-1">
                                                         <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                                         </svg>
-                                                        <p className="text-xs text-gray-500">Valid until: <span className="font-medium">{formatDate(examData.validUntil)}</span></p>
+                                                        <p className="text-xs text-gray-500">Valid until: <span className="font-medium">{formatDate(validUntil)}</span></p>
                                                       </div>
                                                     )}
                                                     {examData.submittedDate && (
@@ -2223,14 +2623,14 @@ function HrRequirements() {
                                                         <p className="text-xs text-gray-500">Submitted {formatDate(examData.submittedDate)}</p>
                                                       </div>
                                                     )}
-                                                    {examData.filePath && (
+                                                    {filePath && (
                                                       <div className="flex items-center gap-1.5 mt-1">
                                                         <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                                         </svg>
-                                                        {getDocumentUrl(examData.filePath) ? (
+                                                        {getDocumentUrl(filePath) ? (
                                                           <a
-                                                            href={getDocumentUrl(examData.filePath)}
+                                                            href={getDocumentUrl(filePath)}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             onClick={(e) => e.stopPropagation()}
@@ -2256,7 +2656,10 @@ function HrRequirements() {
                                                     <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
                                                       {statusStyle.label}
                                                     </span>
-                                                    {(needsAction || examStatus === 'pending' || examStatus === 'Submitted') && (
+                                                    {alreadyReviewedThisFile && rawStatus === 'resubmit' && (
+                                                      <span className="text-[10px] text-gray-500">Awaiting new upload</span>
+                                                    )}
+                                                    {canValidate && (
                                                       <button 
                                                         onClick={(e) => {
                                                           e.stopPropagation();
@@ -2265,15 +2668,13 @@ function HrRequirements() {
                                                             'medical',
                                                             exam.key,
                                                             exam.name,
-                                                            examStatus === 'approved' || examStatus === 'Validated' ? 'approved' :
-                                                            examStatus === 'resubmit' || examStatus === 'Re-submit' ? 'resubmit' :
-                                                            examStatus === 'pending' || examStatus === 'Submitted' ? 'pending' : 'missing',
+                                                            effectiveStatus,
                                                             examData.remarks || ''
                                                           );
                                                         }}
-                                                        disabled={!examData.filePath}
+                                                        disabled={!filePath}
                                                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                                          !examData.filePath
+                                                          !filePath
                                                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                             : 'bg-red-600 text-white hover:bg-red-700'
                                                         }`}
@@ -2310,6 +2711,8 @@ function HrRequirements() {
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                           {personalDocuments.map((doc) => {
+                                            const rule = getPersonalDocRule(doc, employee);
+                                            if (!rule.applicable) return null;
                                             const docData = employee.requirements.personalDocuments?.[doc.key] || {};
                                             const docStatus = typeof docData === 'object' && docData !== null ? (docData.status || 'missing') : 'missing';
                                             const statusStyle = getStatusStyle(
@@ -2437,37 +2840,73 @@ function HrRequirements() {
                                           {clearances.map((clearance) => {
                                             const clearanceData = employee.requirements.clearances?.[clearance.key] || {};
                                             const clearanceStatus = typeof clearanceData === 'object' && clearanceData !== null ? (clearanceData.status || 'missing') : 'missing';
-                                            const statusStyle = getStatusStyle(
-                                              clearanceStatus === 'approved' || clearanceStatus === 'Validated' ? 'approved' :
-                                              clearanceStatus === 'resubmit' || clearanceStatus === 'Re-submit' ? 'resubmit' :
-                                              clearanceStatus === 'pending' || clearanceStatus === 'Submitted' ? 'pending' : 'missing'
-                                            );
-                                            const needsAction = clearanceStatus === 'missing' || clearanceStatus === 'resubmit' || clearanceStatus === 'Re-submit';
+                                            const validUntil = clearanceData?.dateValidity || clearanceData?.date_validity;
+                                            const filePath = clearanceData?.filePath || clearanceData?.file_path;
+                                            const hasFile = Boolean(filePath);
+                                            const rawStatus = normalizeStatus(clearanceStatus);
+                                            const validatedPath = clearanceData?.validated_file_path || clearanceData?.validatedFilePath || null;
+                                            const submittedAt =
+                                              clearanceData?.submittedDate ||
+                                              clearanceData?.submitted_at ||
+                                              clearanceData?.uploaded_at ||
+                                              null;
+                                            const validatedAt = clearanceData?.validated_at || clearanceData?.validatedAt || null;
+
+                                            const hasNewUploadSinceReview =
+                                              Boolean(validatedAt) && Boolean(submittedAt) && isAfterDateTime(submittedAt, validatedAt);
+                                            const reviewedPath =
+                                              validatedPath ||
+                                              (validatedAt && !hasNewUploadSinceReview ? filePath : null);
+
+                                            const alreadyReviewedThisFile =
+                                              hasFile && Boolean(reviewedPath) && isSameStoragePath(filePath, reviewedPath);
+                                            const hasNewUpload =
+                                              hasFile && (hasNewUploadSinceReview || (Boolean(validatedPath) && !alreadyReviewedThisFile));
+
+                                            const effectiveStatus = hasFile
+                                              ? (hasNewUpload
+                                                  ? 'pending'
+                                                  : (rawStatus === 'missing' ? 'pending' : rawStatus))
+                                              : 'missing';
+                                            const expired = hasFile && isExpiredDate(validUntil);
+                                            const displayStatus = expired ? 'expired' : effectiveStatus;
+                                            const statusStyle = getStatusStyle(displayStatus);
+                                            const canValidate =
+                                              hasFile &&
+                                              !alreadyReviewedThisFile &&
+                                              (rawStatus !== 'approved' || hasNewUpload);
                                             
                                             return (
                                               <div 
                                                 key={clearance.key}
                                                 className={`p-4 rounded-xl border-2 transition-all ${
-                                                  clearanceStatus === 'resubmit' || clearanceStatus === 'Re-submit'
-                                                    ? 'bg-red-50 border-red-200 shadow-sm' 
-                                                    : clearanceStatus === 'missing' 
-                                                      ? 'bg-orange-50/50 border-orange-200 border-dashed' 
-                                                      : clearanceStatus === 'approved' || clearanceStatus === 'Validated'
-                                                        ? 'bg-green-50/50 border-green-200'
-                                                        : 'bg-white border-gray-200'
+                                                  expired
+                                                    ? 'bg-red-50 border-red-300 shadow-sm'
+                                                    : effectiveStatus === 'resubmit'
+                                                      ? 'bg-red-50 border-red-200 shadow-sm' 
+                                                      : effectiveStatus === 'missing' 
+                                                        ? 'bg-orange-50/50 border-orange-200 border-dashed' 
+                                                        : effectiveStatus === 'approved'
+                                                          ? 'bg-green-50/50 border-green-200'
+                                                          : 'bg-white border-gray-200'
                                                 }`}
                                               >
                                                 <div className="flex items-start justify-between gap-3">
                                                   <div className="flex-1 min-w-0">
                                                     <div className="flex items-center gap-2 mb-1">
                                                       <p className="text-sm font-semibold text-gray-800">{clearance.name}</p>
+                                                      {expired && (
+                                                        <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-red-100 text-red-700 border border-red-200">
+                                                          Expired
+                                                        </span>
+                                                      )}
                                                     </div>
-                                                    {clearanceData.dateValidity && (
+                                                    {validUntil && (
                                                       <div className="flex items-center gap-1.5 mt-1">
                                                         <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                                                         </svg>
-                                                        <p className="text-xs text-gray-500">Valid until: <span className="font-medium">{formatDate(clearanceData.dateValidity)}</span></p>
+                                                        <p className="text-xs text-gray-500">Valid until: <span className="font-medium">{formatDate(validUntil)}</span></p>
                                                       </div>
                                                     )}
                                                     {clearanceData.submittedDate && (
@@ -2478,14 +2917,14 @@ function HrRequirements() {
                                                         <p className="text-xs text-gray-500">Submitted {formatDate(clearanceData.submittedDate)}</p>
                                                       </div>
                                                     )}
-                                                    {clearanceData.filePath && (
+                                                    {filePath && (
                                                       <div className="flex items-center gap-1.5 mt-1">
                                                         <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                                         </svg>
-                                                        {getDocumentUrl(clearanceData.filePath) ? (
+                                                        {getDocumentUrl(filePath) ? (
                                                           <a
-                                                            href={getDocumentUrl(clearanceData.filePath)}
+                                                            href={getDocumentUrl(filePath)}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             onClick={(e) => e.stopPropagation()}
@@ -2511,7 +2950,10 @@ function HrRequirements() {
                                                     <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
                                                       {statusStyle.label}
                                                     </span>
-                                                    {(needsAction || clearanceStatus === 'pending' || clearanceStatus === 'Submitted') && (
+                                                    {alreadyReviewedThisFile && rawStatus === 'resubmit' && (
+                                                      <span className="text-[10px] text-gray-500">Awaiting new upload</span>
+                                                    )}
+                                                    {canValidate && (
                                                       <button 
                                                         onClick={(e) => {
                                                           e.stopPropagation();
@@ -2520,15 +2962,13 @@ function HrRequirements() {
                                                             'clearance',
                                                             clearance.key,
                                                             clearance.name,
-                                                            clearanceStatus === 'approved' || clearanceStatus === 'Validated' ? 'approved' :
-                                                            clearanceStatus === 'resubmit' || clearanceStatus === 'Re-submit' ? 'resubmit' :
-                                                            clearanceStatus === 'pending' || clearanceStatus === 'Submitted' ? 'pending' : 'missing',
+                                                            effectiveStatus,
                                                             clearanceData.remarks || ''
                                                           );
                                                         }}
-                                                        disabled={!clearanceData.filePath}
+                                                        disabled={!filePath}
                                                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                                                          !clearanceData.filePath
+                                                          !filePath
                                                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                                                             : 'bg-red-600 text-white hover:bg-red-700'
                                                         }`}
@@ -2553,7 +2993,7 @@ function HrRequirements() {
                                     )}
 
                                     {/* Educational Documents Section */}
-                                    {!employee.isAgency && employee.requirements.educationalDocuments !== undefined && (
+                                    {!employee.isAgency && hasEducationalAttainment(employee) && employee.requirements.educationalDocuments !== undefined && (
                                       <div>
                                         <div className="flex items-center gap-2 mb-4">
                                           <div className="w-8 h-8 bg-teal-100 rounded-lg flex items-center justify-center">
@@ -2689,27 +3129,52 @@ function HrRequirements() {
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                       {employee.hrRequests.map((req) => {
-                                        const reqStatus = req.status || 'pending';
+                                        const reqStatus = normalizeStatus(req.status || 'pending');
+                                        const reqFilePath = req.file_path || req.filePath || null;
+                                        const hasFile = Boolean(reqFilePath);
+                                        const validatedPath = req.validated_file_path || null;
+                                        const submittedAt = req.submitted_at || req.uploaded_at || null;
+                                        const validatedAt = req.validated_at || null;
+
+                                        const hasNewUploadSinceReview =
+                                          Boolean(validatedAt) && Boolean(submittedAt) && isAfterDateTime(submittedAt, validatedAt);
+                                        const reviewedPath =
+                                          validatedPath ||
+                                          (validatedAt && !hasNewUploadSinceReview ? reqFilePath : null);
+
+                                        const alreadyReviewedThisFile =
+                                          hasFile && Boolean(reviewedPath) && isSameStoragePath(reqFilePath, reviewedPath);
+                                        const hasNewUpload =
+                                          hasFile && (hasNewUploadSinceReview || (Boolean(validatedPath) && !alreadyReviewedThisFile));
+                                        // Normalize to match other cards:
+                                        // - no file => missing
+                                        // - file + missing => pending (awaiting validation)
+                                        // - file + pending => pending
+                                        // - resubmit/approved remain
+                                        const effectiveStatus = hasFile
+                                          ? (hasNewUpload
+                                              ? 'pending'
+                                              : (reqStatus === 'missing' ? 'pending' : reqStatus))
+                                          : 'missing';
                                         const statusStyle = getStatusStyle(
-                                          reqStatus === 'approved' || reqStatus === 'Validated' ? 'approved' :
-                                          reqStatus === 'resubmit' || reqStatus === 'Re-submit' ? 'resubmit' :
-                                          reqStatus === 'submitted' ? 'submitted' :
-                                          reqStatus === 'pending' ? 'pending' : 'missing'
+                                          effectiveStatus === 'approved' || effectiveStatus === 'Validated' ? 'approved' :
+                                          effectiveStatus === 'resubmit' || effectiveStatus === 'Re-submit' ? 'resubmit' :
+                                          effectiveStatus === 'pending' ? 'pending' : 'missing'
                                         );
+                                        const needsAction = effectiveStatus === 'missing' || effectiveStatus === 'resubmit' || effectiveStatus === 'Re-submit';
+                                        const canValidate = hasFile && !alreadyReviewedThisFile && (reqStatus !== 'approved' || hasNewUpload);
                                         
                                         return (
                                           <div 
                                             key={req.id} 
                                             className={`p-4 rounded-xl border-2 transition-all ${
-                                              reqStatus === 'resubmit' || reqStatus === 'Re-submit'
+                                              effectiveStatus === 'resubmit' || effectiveStatus === 'Re-submit'
                                                 ? 'bg-red-50 border-red-200 shadow-sm' 
-                                                : reqStatus === 'pending' 
+                                                : effectiveStatus === 'missing' 
                                                   ? 'bg-orange-50/50 border-orange-200 border-dashed' 
-                                                  : reqStatus === 'approved' || reqStatus === 'Validated'
+                                                  : effectiveStatus === 'approved' || effectiveStatus === 'Validated'
                                                     ? 'bg-green-50/50 border-green-200'
-                                                    : reqStatus === 'submitted'
-                                                      ? 'bg-blue-50/50 border-blue-200'
-                                                      : 'bg-white border-gray-200'
+                                                    : 'bg-white border-gray-200'
                                             }`}
                                           >
                                             <div className="flex items-start justify-between gap-3">
@@ -2736,14 +3201,14 @@ function HrRequirements() {
                                                     <p className="text-xs text-gray-500">Requested {formatDate(req.requested_at)}</p>
                                                   </div>
                                                 )}
-                                                {req.file_path && (
+                                                {reqFilePath && (
                                                   <div className="flex items-center gap-1.5 mt-1">
                                                     <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                                     </svg>
-                                                    {getDocumentUrl(req.file_path) ? (
+                                                    {getDocumentUrl(reqFilePath) ? (
                                                       <a
-                                                        href={getDocumentUrl(req.file_path)}
+                                                        href={getDocumentUrl(reqFilePath)}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         onClick={(e) => e.stopPropagation()}
@@ -2769,7 +3234,35 @@ function HrRequirements() {
                                                 <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${statusStyle.bg} ${statusStyle.text}`}>
                                                   {statusStyle.label}
                                                 </span>
-                                                {(reqStatus === 'approved' || reqStatus === 'Validated') && (
+                                                {alreadyReviewedThisFile && reqStatus === 'resubmit' && (
+                                                  <span className="text-[10px] text-gray-500">Awaiting new upload</span>
+                                                )}
+                                                {canValidate && (needsAction || effectiveStatus === 'pending') && (
+                                                  <button 
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      openValidationModal(
+                                                        employee.employeeId,
+                                                        'hr_request',
+                                                        req.id,
+                                                        req.document || req.document_type || 'HR Requested Document',
+                                                        effectiveStatus === 'approved' || effectiveStatus === 'Validated' ? 'approved' :
+                                                        effectiveStatus === 'resubmit' || effectiveStatus === 'Re-submit' ? 'resubmit' :
+                                                        effectiveStatus === 'pending' ? 'pending' : 'missing',
+                                                        req.remarks || ''
+                                                      );
+                                                    }}
+                                                    disabled={!hasFile}
+                                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                                      !hasFile
+                                                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                                                        : 'bg-red-600 text-white hover:bg-red-700'
+                                                    }`}
+                                                  >
+                                                    Validate
+                                                  </button>
+                                                )}
+                                                {(effectiveStatus === 'approved' || effectiveStatus === 'Validated') && (
                                                   <div className="flex items-center gap-1 text-green-600">
                                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -2860,33 +3353,25 @@ function HrRequirements() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Document Type <span className="text-red-500">*</span></label>
                 <input
                   type="text"
+                  list="hr-doc-suggestions"
                   value={requestForm.documentType}
                   onChange={(e) => setRequestForm(prev => ({ ...prev, documentType: e.target.value }))}
                   placeholder="e.g., NBI Clearance, Medical Certificate, etc."
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Description (Optional)</label>
-                <textarea
-                  value={requestForm.description}
-                  onChange={(e) => setRequestForm(prev => ({ ...prev, description: e.target.value }))}
-                  rows={3}
-                  placeholder="Add any specific instructions or requirements..."
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
-                <select
-                  value={requestForm.priority}
-                  onChange={(e) => setRequestForm(prev => ({ ...prev, priority: e.target.value }))}
-                  className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
-                >
-                  <option value="normal">Normal</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
+                <datalist id="hr-doc-suggestions">
+                  {requestDocSuggestions.map((opt) => (
+                    <option key={opt} value={opt} />
+                  ))}
+                </datalist>
+                <p className="text-xs text-gray-500 mt-1">
+                  Suggestions only show documents not currently required for this employee.
+                </p>
+                {requestDocDuplicate && (
+                  <div className="mt-2 p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700">
+                    This document is already required for this employee. Please choose a different document.
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Deadline <span className="text-red-500">*</span></label>
@@ -2897,6 +3382,11 @@ function HrRequirements() {
                   min={new Date().toISOString().split('T')[0]}
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
                 />
+                {requestDeadlineSoon && (
+                  <div className="mt-2 p-2 rounded-lg bg-yellow-50 border border-yellow-200 text-xs text-yellow-800">
+                    Warning: deadline is within 7 days ({requestDeadlineDays} day{requestDeadlineDays === 1 ? '' : 's'}).
+                  </div>
+                )}
               </div>
             </div>
             <div className="p-6 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
@@ -2908,9 +3398,9 @@ function HrRequirements() {
               </button>
               <button
                 onClick={handleRequestSubmit}
-                disabled={requesting}
+                disabled={requesting || requestDocDuplicate}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  requesting
+                  requesting || requestDocDuplicate
                     ? 'bg-gray-400 text-white cursor-not-allowed'
                     : 'bg-blue-600 text-white hover:bg-blue-700'
                 }`}

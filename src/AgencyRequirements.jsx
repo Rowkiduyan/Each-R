@@ -253,19 +253,29 @@ function AgencyRequirements() {
             // Map HR requests from requirements
             let hrRequests = [];
             if (requirementsData?.hr_requests && Array.isArray(requirementsData.hr_requests)) {
-              hrRequests = requirementsData.hr_requests.map(req => ({
-                id: req.id || Date.now().toString(),
-                document: req.document_type || req.document || '',
-                description: req.description || req.remarks || '',
-                priority: req.priority || 'normal',
-                requested_at: req.requested_at || new Date().toISOString(),
-                requested_by: req.requested_by || 'HR',
-                status: req.status || 'pending',
-                deadline: req.deadline || null,
-                remarks: req.remarks || req.description || null,
-                file_path: req.file_path || null,
-                submitted_at: req.submitted_at || null,
-              }));
+              hrRequests = requirementsData.hr_requests.map(req => {
+                const rawStatus = String(req.status || '').trim().toLowerCase();
+                const filePath = req.file_path || req.filePath || null;
+
+                let status = 'pending';
+                if (rawStatus === 'validated' || rawStatus === 'approved') status = 'approved';
+                else if (rawStatus === 're-submit' || rawStatus === 'resubmit') status = 'resubmit';
+                else if (filePath) status = 'submitted';
+
+                return {
+                  id: req.id || Date.now().toString(),
+                  document: req.document_type || req.document || '',
+                  description: req.description || req.remarks || '',
+                  priority: req.priority || 'normal',
+                  requested_at: req.requested_at || new Date().toISOString(),
+                  requested_by: req.requested_by || 'HR',
+                  status,
+                  deadline: req.deadline || null,
+                  remarks: req.remarks || req.description || null,
+                  file_path: filePath,
+                  submitted_at: req.submitted_at || null,
+                };
+              });
             }
 
             // Build employee name
@@ -746,6 +756,7 @@ function AgencyRequirements() {
         currentRequirements = {
           id_numbers: {},
           documents: [],
+          hr_requests: [],
           submitted: false,
         };
       }
@@ -759,6 +770,11 @@ function AgencyRequirements() {
       if (!Array.isArray(currentRequirements.documents)) {
         currentRequirements.documents = [];
       }
+
+      // Initialize hr_requests if it doesn't exist
+      if (!Array.isArray(currentRequirements.hr_requests)) {
+        currentRequirements.hr_requests = [];
+      }
       
       // Update ID number if it's a default requirement
       if (uploadTarget.type === 'default') {
@@ -771,29 +787,53 @@ function AgencyRequirements() {
         currentRequirements.id_numbers[idKey].submitted_at = new Date().toISOString();
       }
       
-      // Add or update document in documents array
-      const docKey = uploadTarget.key;
-      const existingDocIndex = currentRequirements.documents.findIndex(
-        d => d.key === docKey || d.name?.toLowerCase().includes(docKey)
-      );
-      
-      const documentEntry = {
-        key: docKey,
-        name: uploadTarget.name,
-        file_path: uploadData.path,
-        uploaded_at: new Date().toISOString(),
-        status: uploadTarget.isResubmit ? 'Re-submit' : 'Submitted',
-      };
-      
-      if (existingDocIndex >= 0) {
-        // Update existing document
-        currentRequirements.documents[existingDocIndex] = {
-          ...currentRequirements.documents[existingDocIndex],
-          ...documentEntry,
+      if (uploadTarget.type === 'hr') {
+        const requestId = String(uploadTarget.key || '').trim();
+        if (!requestId) {
+          throw new Error('HR request ID not found');
+        }
+
+        const idx = currentRequirements.hr_requests.findIndex((r) => String(r?.id || '') === requestId);
+        const patch = {
+          id: requestId,
+          document_type: uploadTarget.name,
+          document: uploadTarget.name,
+          file_path: uploadData.path,
+          filePath: uploadData.path,
+          submitted_at: new Date().toISOString(),
+          status: 'pending',
         };
+
+        if (idx >= 0) {
+          currentRequirements.hr_requests[idx] = { ...currentRequirements.hr_requests[idx], ...patch };
+        } else {
+          currentRequirements.hr_requests.push(patch);
+        }
       } else {
-        // Add new document
-        currentRequirements.documents.push(documentEntry);
+        // Add or update document in documents array
+        const docKey = uploadTarget.key;
+        const existingDocIndex = currentRequirements.documents.findIndex(
+          d => d.key === docKey || d.name?.toLowerCase().includes(docKey)
+        );
+        
+        const documentEntry = {
+          key: docKey,
+          name: uploadTarget.name,
+          file_path: uploadData.path,
+          uploaded_at: new Date().toISOString(),
+          status: uploadTarget.isResubmit ? 'Re-submit' : 'Submitted',
+        };
+        
+        if (existingDocIndex >= 0) {
+          // Update existing document
+          currentRequirements.documents[existingDocIndex] = {
+            ...currentRequirements.documents[existingDocIndex],
+            ...documentEntry,
+          };
+        } else {
+          // Add new document
+          currentRequirements.documents.push(documentEntry);
+        }
       }
       
       // Update submitted flag

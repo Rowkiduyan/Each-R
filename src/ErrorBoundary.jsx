@@ -3,7 +3,7 @@ import React from "react";
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, error: null, errorInfo: null };
+    this.state = { hasError: false, error: null, errorInfo: null, showDetails: false };
   }
 
   static getDerivedStateFromError(error) {
@@ -19,13 +19,14 @@ export default class ErrorBoundary extends React.Component {
   }
 
   reset = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null });
+    this.setState({ hasError: false, error: null, errorInfo: null, showDetails: false });
   };
 
   render() {
     if (!this.state.hasError) return this.props.children;
 
-    const showDetails = Boolean(import.meta?.env?.DEV);
+    const canShowDebug = Boolean(import.meta?.env?.DEV);
+    const showDetails = canShowDebug || this.state.showDetails;
 
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
@@ -35,6 +36,13 @@ export default class ErrorBoundary extends React.Component {
             The page crashed while rendering. Refreshing usually fixes it; if it keeps happening,
             there’s a bug in the UI.
           </p>
+
+          {this.state.error && (
+            <div className="mt-4 text-sm text-gray-700">
+              <span className="font-semibold">Error:</span>{" "}
+              <span className="font-mono">{String(this.state.error?.message || this.state.error)}</span>
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-3 mt-5">
             <button
@@ -51,6 +59,16 @@ export default class ErrorBoundary extends React.Component {
             >
               Try again
             </button>
+
+            {!canShowDebug && this.state.error && (
+              <button
+                type="button"
+                className="px-4 py-2 rounded-lg bg-gray-100 text-gray-800 text-sm font-medium hover:bg-gray-200"
+                onClick={() => this.setState((s) => ({ ...s, showDetails: !s.showDetails }))}
+              >
+                {this.state.showDetails ? 'Hide details' : 'Show details'}
+              </button>
+            )}
           </div>
 
           {showDetails && (

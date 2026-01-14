@@ -462,19 +462,29 @@ function EmployeeRequirements() {
 
           // Map HR requests
           if (requirementsData.hr_requests && Array.isArray(requirementsData.hr_requests)) {
-            updated.hrRequests = requirementsData.hr_requests.map(req => ({
-              id: req.id || Date.now().toString(),
-              document: req.document_type || req.document || '',
-              description: req.description || req.remarks || '',
-              priority: req.priority || 'normal',
-              requested_at: req.requested_at || new Date().toISOString(),
-              requested_by: req.requested_by || 'HR',
-              status: req.status || 'pending',
-              deadline: req.deadline || null,
-              remarks: req.remarks || req.description || null,
-              file_path: req.file_path || null,
-              submitted_at: req.submitted_at || null,
-            }));
+            updated.hrRequests = requirementsData.hr_requests.map(req => {
+              const rawStatus = String(req.status || '').trim().toLowerCase();
+              const filePath = req.file_path || req.filePath || null;
+
+              let status = 'pending';
+              if (rawStatus === 'validated' || rawStatus === 'approved') status = 'approved';
+              else if (rawStatus === 're-submit' || rawStatus === 'resubmit') status = 'resubmit';
+              else if (filePath) status = 'submitted';
+
+              return {
+                id: req.id || Date.now().toString(),
+                document: req.document_type || req.document || '',
+                description: req.description || req.remarks || '',
+                priority: req.priority || 'normal',
+                requested_at: req.requested_at || new Date().toISOString(),
+                requested_by: req.requested_by || 'HR',
+                status,
+                deadline: req.deadline || null,
+                remarks: req.remarks || req.description || null,
+                file_path: filePath,
+                submitted_at: req.submitted_at || null,
+              };
+            });
           } else {
             updated.hrRequests = [];
           }
@@ -1201,6 +1211,7 @@ function EmployeeRequirements() {
         // Initialize structure if needed
         if (!currentRequirements.id_numbers) currentRequirements.id_numbers = {};
         if (!currentRequirements.documents) currentRequirements.documents = [];
+        if (!currentRequirements.hr_requests) currentRequirements.hr_requests = [];
         if (!currentRequirements.medicalExams) currentRequirements.medicalExams = {};
         if (!currentRequirements.personalDocuments) currentRequirements.personalDocuments = {};
         if (!currentRequirements.clearances) currentRequirements.clearances = {};
@@ -1212,6 +1223,7 @@ function EmployeeRequirements() {
           ...currentRequirements,
           id_numbers: { ...currentRequirements.id_numbers },
           documents: [...(currentRequirements.documents || [])],
+          hr_requests: [...(currentRequirements.hr_requests || [])],
           medicalExams: { ...currentRequirements.medicalExams },
           personalDocuments: { ...currentRequirements.personalDocuments },
           clearances: { ...currentRequirements.clearances },
@@ -1357,6 +1369,35 @@ function EmployeeRequirements() {
             submitted_at: new Date().toISOString(),
             submittedDate: new Date().toISOString(),
           };
+        } else if (uploadTarget.type === "hr") {
+          const requestId = String(uploadTarget.key || '').trim();
+          if (!requestId) {
+            throw new Error('HR request ID not found');
+          }
+
+          const filePath = await uploadFileToStorage(
+            uploadForm.file,
+            'employee-requirements',
+            `hr_${requestId}`
+          );
+
+          const idx = updated.hr_requests.findIndex((r) => String(r?.id || '') === requestId);
+          const patch = {
+            id: requestId,
+            document_type: uploadTarget.name,
+            document: uploadTarget.name,
+            file_path: filePath,
+            filePath: filePath,
+            submitted_at: new Date().toISOString(),
+            // Keep it pending for HR review; UI will show "Submitted" when file exists
+            status: 'pending',
+          };
+
+          if (idx >= 0) {
+            updated.hr_requests[idx] = { ...updated.hr_requests[idx], ...patch };
+          } else {
+            updated.hr_requests.push(patch);
+          }
         } else if (uploadTarget.type === "clearance") {
           const key = uploadTarget.key;
           const currentClearance = updated.clearances[key] || {
@@ -1569,6 +1610,31 @@ function EmployeeRequirements() {
               };
               return acc;
             }, {}) : prev.documents,
+            hrRequests: Array.isArray(updated.hr_requests)
+              ? updated.hr_requests.map((req) => {
+                  const filePath = req.file_path || req.filePath || null;
+                  const rawStatus = String(req.status || '').trim().toLowerCase();
+
+                  let status = 'pending';
+                  if (rawStatus === 'validated' || rawStatus === 'approved') status = 'approved';
+                  else if (rawStatus === 're-submit' || rawStatus === 'resubmit') status = 'resubmit';
+                  else if (filePath) status = 'submitted';
+
+                  return {
+                    id: req.id || Date.now().toString(),
+                    document: req.document_type || req.document || '',
+                    description: req.description || req.remarks || '',
+                    priority: req.priority || 'normal',
+                    requested_at: req.requested_at || new Date().toISOString(),
+                    requested_by: req.requested_by || 'HR',
+                    status,
+                    deadline: req.deadline || null,
+                    remarks: req.remarks || req.description || null,
+                    file_path: filePath,
+                    submitted_at: req.submitted_at || null,
+                  };
+                })
+              : prev.hrRequests,
           };
         });
 
@@ -2848,17 +2914,22 @@ function EmployeeRequirements() {
           <div className="p-6 space-y-3">
             {employee.hrRequests && employee.hrRequests.length > 0 ? (
               employee.hrRequests.map((req) => {
-                const style = getStatusStyle(req.status);
+                const hasFile = Boolean(req.file_path);
+                const effectiveStatus = req.status === 'pending' && hasFile ? 'submitted' : req.status;
+                const style = getStatusStyle(effectiveStatus);
+                const needsAction = effectiveStatus === 'pending' || effectiveStatus === 'resubmit';
                 return (
                   <div
                     key={req.id}
                     className={`p-4 rounded-xl border-2 transition-all ${
-                      req.status === "resubmit"
+                      effectiveStatus === "resubmit"
                         ? "bg-red-50 border-red-200 shadow-sm"
-                        : req.status === "pending"
+                        : effectiveStatus === "pending"
                           ? "bg-orange-50/50 border-orange-200 border-dashed"
-                          : req.status === "approved"
+                          : effectiveStatus === "approved"
                             ? "bg-green-50/50 border-green-200"
+                            : effectiveStatus === "submitted"
+                              ? "bg-blue-50/50 border-blue-200"
                             : "bg-white border-gray-200"
                     }`}
                   >
@@ -2895,6 +2966,25 @@ function EmployeeRequirements() {
                             </span>
                           </p>
                         </div>
+                        {hasFile && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            {getFileUrl(req.file_path) ? (
+                              <a
+                                href={getFileUrl(req.file_path)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-600 hover:text-blue-800 underline font-medium"
+                              >
+                                View File
+                              </a>
+                            ) : (
+                              <span className="text-xs text-gray-500">File uploaded</span>
+                            )}
+                          </div>
+                        )}
                         {req.remarks && (
                           <div className="mt-2 p-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-700 flex items-start gap-1.5">
                             <svg
@@ -2920,6 +3010,21 @@ function EmployeeRequirements() {
                         >
                           {style.label}
                         </span>
+                        {needsAction && (
+                          <button
+                            onClick={() => openUploadModal('hr', req.id, req.document, effectiveStatus === 'resubmit')}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                              effectiveStatus === 'resubmit'
+                                ? 'bg-red-600 text-white hover:bg-red-700'
+                                : 'bg-blue-600 text-white hover:bg-blue-700'
+                            }`}
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            {effectiveStatus === 'resubmit' ? 'Re-upload' : 'Upload'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -3850,6 +3955,7 @@ function EmployeeRequirements() {
                   (uploadTarget.type === 'clearance' && (!uploadForm.validUntil.trim() || !uploadForm.file)) ||
                   (uploadTarget.type === 'personal' && !uploadForm.file) ||
                   (uploadTarget.type === 'educational' && !uploadForm.file) ||
+                  (uploadTarget.type === 'hr' && !uploadForm.file) ||
                   (uploadTarget.type === 'document' && !uploadForm.file)}
                 className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
                   !uploading && 
@@ -3859,6 +3965,7 @@ function EmployeeRequirements() {
                   (uploadTarget.type === 'clearance' && uploadForm.validUntil.trim() && uploadForm.file) ||
                   (uploadTarget.type === 'personal' && uploadForm.file) ||
                   (uploadTarget.type === 'educational' && uploadForm.file) ||
+                  (uploadTarget.type === 'hr' && uploadForm.file) ||
                   (uploadTarget.type === 'license' && uploadForm.licenseNumber.trim() && uploadForm.licenseExpiry.trim() && uploadForm.frontFile && uploadForm.backFile)
                     ? uploadTarget.isRenewal
                       ? 'bg-amber-600 text-white hover:bg-amber-700'
