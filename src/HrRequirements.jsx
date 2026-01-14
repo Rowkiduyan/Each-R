@@ -610,8 +610,22 @@ function HrRequirements() {
 
   function isAfterDateTime(a, b) {
     if (!a || !b) return false;
-    const da = new Date(a);
-    const db = new Date(b);
+
+    // Treat date-only strings as local midnight (avoid UTC shifts like new Date('YYYY-MM-DD')).
+    const parseDateTime = (value) => {
+      const raw = String(value).trim();
+      const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (m) {
+        const y = Number(m[1]);
+        const mo = Number(m[2]);
+        const d = Number(m[3]);
+        return new Date(y, mo - 1, d);
+      }
+      return new Date(raw);
+    };
+
+    const da = parseDateTime(a);
+    const db = parseDateTime(b);
     if (!Number.isFinite(da.getTime()) || !Number.isFinite(db.getTime())) return false;
     return da.getTime() > db.getTime();
   }
