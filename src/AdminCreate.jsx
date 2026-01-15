@@ -105,7 +105,8 @@ function AdminCreate() {
           email: formData.email,
           role: 'Agency',
           first_name: formData.contactPerson.split(' ')[0] || '',
-          last_name: formData.contactPerson.split(' ').slice(1).join(' ') || ''
+          last_name: formData.contactPerson.split(' ').slice(1).join(' ') || '',
+          agency_name: formData.agencyName
         }]);
 
       if (profileError) {

@@ -994,9 +994,19 @@ function EmployeeSeparation() {
                 <h3 className="font-medium text-gray-800 mb-3">Final HR Documents</h3>
                 <div className="space-y-2">
                   {Array.isArray(separationRecord?.additional_files_urls) && separationRecord.additional_files_urls.map((fileData, index) => {
+                    // Parse if it's a JSON string
+                    let parsedData = fileData;
+                    if (typeof fileData === 'string' && fileData.startsWith('{')) {
+                      try {
+                        parsedData = JSON.parse(fileData);
+                      } catch (e) {
+                        parsedData = fileData;
+                      }
+                    }
+                    
                     // Handle both object format {url, name} and legacy string format
-                    const fileName = typeof fileData === 'object' ? fileData.name : `Document ${index + 1}`;
-                    const fileUrl = typeof fileData === 'object' ? fileData.url : fileData;
+                    const fileName = typeof parsedData === 'object' ? parsedData.name : `Document ${index + 1}`;
+                    const filePath = typeof parsedData === 'object' ? parsedData.url : parsedData;
                     
                     return (
                       <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
@@ -1006,7 +1016,7 @@ function EmployeeSeparation() {
                             try {
                               const { data, error } = await supabase.storage
                                 .from('separation-documents')
-                                .download(fileUrl);
+                                .download(filePath);
                               
                               if (error) throw error;
                               
