@@ -2288,10 +2288,18 @@ function HrTrainings() {
                       <div className="flex gap-3 mb-2">
                         <button
                           type="button"
-                          onClick={() => setUploadNewTemplate(false)}
+                          onClick={() => {
+                            setUploadNewTemplate(false);
+                            // Clear upload fields when switching to existing
+                            setNewTemplateName("");
+                            setNewTemplateFile(null);
+                          }}
+                          disabled={newTemplateName || newTemplateFile}
                           className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
                             !uploadNewTemplate
                               ? 'bg-blue-600 text-white shadow-sm'
+                              : (newTemplateName || newTemplateFile)
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
@@ -2299,10 +2307,17 @@ function HrTrainings() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setUploadNewTemplate(true)}
+                          onClick={() => {
+                            setUploadNewTemplate(true);
+                            // Clear selected template when switching to upload
+                            setSelectedTemplateId("");
+                          }}
+                          disabled={selectedTemplateId !== ""}
                           className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
                             uploadNewTemplate
                               ? 'bg-blue-600 text-white shadow-sm'
+                              : selectedTemplateId !== ""
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                           }`}
                         >
@@ -2327,6 +2342,9 @@ function HrTrainings() {
                           </select>
                           {certificateTemplates.length === 0 && (
                             <p className="text-xs text-gray-500 mt-1">No templates available. Upload a new one.</p>
+                          )}
+                          {selectedTemplateId && (
+                            <p className="text-xs text-green-700 mt-1 font-medium">✓ Template selected. Upload option is now disabled.</p>
                           )}
                         </div>
                       ) : (
@@ -2358,6 +2376,9 @@ function HrTrainings() {
                           />
                           {newTemplateFile && (
                             <p className="text-xs text-gray-500 truncate">{newTemplateFile.name}</p>
+                          )}
+                          {(newTemplateName || newTemplateFile) && (
+                            <p className="text-xs text-green-700 font-medium">✓ Uploading new template. Choose existing option is now disabled.</p>
                           )}
                           <div className="bg-blue-50 border border-blue-200 p-2 rounded text-xs">
                             <p className="font-semibold text-blue-900 mb-1">📝 Placeholders:</p>

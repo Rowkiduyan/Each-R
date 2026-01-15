@@ -13,18 +13,45 @@ import { saveAs } from 'file-saver';
 export async function generateTrainingCertificates(training, attendees) {
   try {
     console.log('Starting certificate generation for training:', training.title);
+    console.log('Training certificate_template_id:', training.certificate_template_id);
     
-    // 1. Get the active certificate template
-    const { data: template, error: templateError } = await supabase
-      .from('certificate_templates')
-      .select('*')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+    // 1. Get the certificate template (prioritize training's specific template)
+    let template = null;
+    let templateError = null;
+    
+    // First, try to get the template assigned to this training
+    if (training.certificate_template_id) {
+      const { data, error } = await supabase
+        .from('certificate_templates')
+        .select('*')
+        .eq('id', training.certificate_template_id)
+        .single();
+      
+      template = data;
+      templateError = error;
+      
+      if (template) {
+        console.log('Using training-specific template:', template.template_name);
+      }
+    }
+    
+    // If no specific template, fall back to any active template
+    if (!template) {
+      console.log('No specific template for training, using default active template');
+      const { data, error } = await supabase
+        .from('certificate_templates')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      template = data;
+      templateError = error;
+    }
 
     if (templateError || !template) {
-      throw new Error('No active certificate template found. Please upload a template first.');
+      throw new Error('No certificate template found. Please assign a template to this training or upload an active template.');
     }
 
     console.log('Using template:', template.template_name);
