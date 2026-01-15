@@ -3,8 +3,6 @@ import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
-import { generateCertificatePDF } from './utils/certificateGenerator';
-import EmployeeCertificatesView from './components/EmployeeCertificatesView';
 
 function AgencyTrainings() {
   const navigate = useNavigate();
@@ -34,6 +32,11 @@ function AgencyTrainings() {
   // Action menu state
   const [actionMenuOpen, setActionMenuOpen] = useState(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  
+  // Certificate modal state
+  const [showCertificateModal, setShowCertificateModal] = useState(false);
+  const [currentCertificateUrl, setCurrentCertificateUrl] = useState(null);
+  const [generatedCertificates, setGeneratedCertificates] = useState({});
 
   // Fetch agency user ID and trainings
   useEffect(() => {
@@ -92,6 +95,81 @@ function AgencyTrainings() {
           console.warn('No employees found for this agency. User ID:', user.id);
           setLoading(false);
           return;
+        }
+
+        // Fetch generated certificates for all agency employees
+        // Generate all possible name variations for each employee
+        const allNameVariations = [];
+        const nameToEmployeeMap = {}; // Map variations back to original employee names
+        
+        finalEmployees.forEach(emp => {
+          const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
+          const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
+          const fullTrimmed = full.trim();
+          
+          // Also try without middle name
+          const lastFirstOnly = lastFirst.trim();
+          
+          // Try First Last Middle format
+          const firstMiddleLast = [emp.fname, emp.mname, emp.lname].filter(Boolean).join(" ").trim();
+          
+          // Try First Last format (no middle)
+          const firstLast = [emp.fname, emp.lname].filter(Boolean).join(" ").trim();
+          
+          if (fullTrimmed) {
+            allNameVariations.push(fullTrimmed);
+            nameToEmployeeMap[fullTrimmed] = fullTrimmed;
+          }
+          if (lastFirstOnly && lastFirstOnly !== fullTrimmed) {
+            allNameVariations.push(lastFirstOnly);
+            nameToEmployeeMap[lastFirstOnly] = fullTrimmed;
+          }
+          if (firstMiddleLast && firstMiddleLast !== fullTrimmed) {
+            allNameVariations.push(firstMiddleLast);
+            nameToEmployeeMap[firstMiddleLast] = fullTrimmed;
+          }
+          if (firstLast && firstLast !== fullTrimmed) {
+            allNameVariations.push(firstLast);
+            nameToEmployeeMap[firstLast] = fullTrimmed;
+          }
+        });
+        
+        console.log('🔍 Searching for certificates with name variations:', allNameVariations);
+        
+        if (allNameVariations.length > 0) {
+          const { data: certificates, error: certError } = await supabase
+            .from('generated_certificates')
+            .select('training_id, certificate_url, certificate_path, employee_name')
+            .in('employee_name', allNameVariations);
+          
+          console.log('📄 Certificate query result:', { 
+            searchedNames: allNameVariations,
+            foundCertificates: certificates,
+            error: certError,
+            count: certificates?.length || 0
+          });
+          
+          if (!certError && certificates) {
+            // Map certificates by training_id and employee_name (using the standardized name format)
+            const certMap = {};
+            certificates.forEach(cert => {
+              if (!certMap[cert.training_id]) {
+                certMap[cert.training_id] = {};
+              }
+              // Store under both the certificate name and the mapped employee name
+              certMap[cert.training_id][cert.employee_name] = cert;
+              
+              // Also map to standardized name if different
+              const mappedName = nameToEmployeeMap[cert.employee_name];
+              if (mappedName && mappedName !== cert.employee_name) {
+                certMap[cert.training_id][mappedName] = cert;
+              }
+            });
+            setGeneratedCertificates(certMap);
+            console.log('✅ Fetched agency employee certificates:', certMap);
+          } else {
+            console.log('❌ No certificates found or error occurred');
+          }
         }
 
         // Generate name variations for matching (same format as HrTrainings uses)
@@ -308,7 +386,8 @@ function AgencyTrainings() {
                 history.push({
                   ...formattedTraining,
                   completedDate: start.toISOString().slice(0, 10),
-                  attendees: historyAttendees
+                  attendees: historyAttendees,
+                  isCompleted: true // Mark as completed for history
                 });
               } else {
                 // Past training without attendance → Pending Attendance
@@ -676,21 +755,6 @@ function AgencyTrainings() {
                   Training History
                 </div>
               </button>
-              <button
-                onClick={() => { setActiveTab('certificates'); setCurrentPage(1); }}
-                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                  activeTab === 'certificates'
-                    ? 'border-[#800000] text-[#800000] bg-[#800000]/10/50'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                  </svg>
-                  Employee Certificates
-                </div>
-              </button>
             </div>
           </div>
 
@@ -864,13 +928,6 @@ function AgencyTrainings() {
               </div>
             )}
           </div>
-          )}
-          
-          {/* Certificates Tab */}
-          {activeTab === 'certificates' && (
-            <div className="p-6">
-              <EmployeeCertificatesView userId={agencyUserId} isAgencyView={true} />
-            </div>
           )}
 
           {/* Pagination */}
@@ -1143,7 +1200,19 @@ function AgencyTrainings() {
                         const hasAttendance = selectedTraining.attendance && typeof selectedTraining.attendance === 'object';
                         const attendanceStatus = hasAttendance ? selectedTraining.attendance[name] : null;
                         const isPresent = attendanceStatus === true || (typeof attendanceStatus === 'object' && attendanceStatus?.status === true);
-                        const isCompleted = !selectedTraining.is_active;
+                        const isCompleted = selectedTraining.isCompleted || hasAttendance; // Training is completed if flagged or has attendance
+                        
+                        // Debug certificate lookup
+                        const hasCertificate = generatedCertificates[selectedTraining.id]?.[name];
+                        console.log('🎫 Certificate check for attendee:', {
+                          name,
+                          trainingId: selectedTraining.id,
+                          isCompleted,
+                          isPresent,
+                          hasCertificate,
+                          certificatesForTraining: generatedCertificates[selectedTraining.id],
+                          allCertificates: generatedCertificates
+                        });
                         
                         return (
                           <div 
@@ -1156,27 +1225,25 @@ function AgencyTrainings() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium text-gray-900">{name}</p>
-                                {/* Show attendance status for completed trainings */}
-                                {isCompleted && hasAttendance && (
+                                {/* Show attendance status for completed trainings - if they have a certificate, they were present */}
+                                {isCompleted && (hasAttendance || hasCertificate) && (
                                   <span className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-semibold mt-1 ${
-                                    isPresent 
+                                    (isPresent || hasCertificate)
                                       ? 'bg-green-100 text-green-700' 
                                       : 'bg-red-100 text-red-700'
                                   }`}>
-                                    {isPresent ? '✓ Present' : '✗ Absent'}
+                                    {(isPresent || hasCertificate) ? '✓ Present' : '✗ Absent'}
                                   </span>
                                 )}
                               </div>
-                              {/* View Certificate button for present employees in completed trainings */}
-                              {isCompleted && isPresent && (
+                              {/* View Certificate button - show if certificate exists (certificate proves attendance) */}
+                              {isCompleted && hasCertificate && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    generateCertificatePDF(
-                                      name,
-                                      selectedTraining.title,
-                                      selectedTraining.date || selectedTraining.end_at
-                                    );
+                                    const certificate = generatedCertificates[selectedTraining.id][name];
+                                    setCurrentCertificateUrl(certificate.certificate_url);
+                                    setShowCertificateModal(true);
                                   }}
                                   className="px-3 py-1.5 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition-all shadow-sm text-xs font-semibold flex items-center gap-1.5"
                                   title="View certificate"
@@ -1201,6 +1268,74 @@ function AgencyTrainings() {
             <div className="border-t border-gray-100 px-6 py-3 bg-gray-50 flex justify-end">
               <button
                 onClick={() => setShowDetails(false)}
+                className="px-5 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-semibold text-sm shadow-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Certificate Modal */}
+      {showCertificateModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowCertificateModal(false)}>
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Training Certificate</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">View your training certificate</p>
+                </div>
+                <button 
+                  onClick={() => setShowCertificateModal(false)} 
+                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <div className="text-center">
+                <div className="w-20 h-20 bg-gradient-to-br from-[#800000] to-[#990000] rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <p className="text-sm text-gray-600 mb-6">
+                  Click the button below to view your certificate as a PDF.
+                </p>
+                <button
+                  onClick={() => {
+                    try {
+                      const googleDocsUrl = `https://docs.google.com/gview?url=${encodeURIComponent(currentCertificateUrl)}&embedded=true`;
+                      window.open(googleDocsUrl, '_blank');
+                      setShowCertificateModal(false);
+                    } catch (error) {
+                      console.error('Error viewing certificate:', error);
+                      alert('Unable to view certificate.');
+                    }
+                  }}
+                  className="w-full px-6 py-3 bg-gradient-to-r from-[#800000] to-[#990000] text-white rounded-lg hover:from-[#990000] hover:to-[#a00000] transition-all shadow-md font-semibold flex items-center justify-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  View Certificate as PDF
+                </button>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-gray-100 px-6 py-3 bg-gray-50 flex justify-end">
+              <button
+                onClick={() => setShowCertificateModal(false)}
                 className="px-5 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-semibold text-sm shadow-sm"
               >
                 Close
