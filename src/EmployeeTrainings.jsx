@@ -3,7 +3,6 @@ import React, { useState, useEffect } from "react";
 import { useEmployeeUser } from "./layouts/EmployeeLayout";
 import { supabase } from './supabaseClient';
 import { generateCertificatePDF } from './utils/certificateGenerator';
-import EmployeeCertificatesView from './components/EmployeeCertificatesView';
 
 function EmployeeTrainings() {
     const { userId, userEmail, employeeUser } = useEmployeeUser();
@@ -32,6 +31,9 @@ function EmployeeTrainings() {
     const [showTrainingCertUpload, setShowTrainingCertUpload] = useState(false);
     const [trainingCertFile, setTrainingCertFile] = useState(null);
     const [trainingForCert, setTrainingForCert] = useState(null);
+    
+    // Generated certificates from HR
+    const [generatedCertificates, setGeneratedCertificates] = useState({});
 
     // Get employee's possible name formats for matching
     const getEmployeeNameVariations = () => {
@@ -153,6 +155,45 @@ function EmployeeTrainings() {
 
         fetchExternalTrainings();
     }, [userId]);
+
+    // Fetch HR-generated certificates for an employee
+    const fetchGeneratedCertificates = async (nameVars = null) => {
+        try {
+            // Use passed name variations or calculate them
+            const nameVariations = nameVars || getEmployeeNameVariations();
+            
+            if (nameVariations.length === 0) {
+                console.log('No name variations available, skipping certificate fetch');
+                return;
+            }
+            
+            console.log('Fetching certificates for:', { userId, nameVariations });
+            
+            // Query by employee_name since employee_id may be null for agency employees
+            const { data, error } = await supabase
+                .from('generated_certificates')
+                .select('training_id, certificate_url, certificate_path, employee_name')
+                .in('employee_name', nameVariations);
+            
+            if (error) {
+                console.error('Error fetching certificates:', error);
+                throw error;
+            }
+            
+            console.log('Fetched certificates:', data);
+            console.log('Searched for names:', nameVariations);
+            
+            // Map by training_id for easy lookup
+            const certMap = {};
+            data?.forEach(cert => {
+                certMap[cert.training_id] = cert;
+            });
+            
+            setGeneratedCertificates(certMap);
+        } catch (error) {
+            console.error('Error fetching generated certificates:', error);
+        }
+    };
 
     const fetchTrainings = async () => {
         // Get employee data - either from context or fetch it
@@ -334,6 +375,9 @@ function EmployeeTrainings() {
             setUpcoming(stillUpcoming);
             setPendingAttendance(pendingAttendanceTrainings);
             setCompleted(completedTrainings);
+            
+            // Fetch generated certificates with the name variations we calculated
+            await fetchGeneratedCertificates(normalizedVariations);
         } catch (error) {
             console.error('Error fetching trainings:', error);
         } finally {
@@ -919,21 +963,6 @@ function EmployeeTrainings() {
                                 </div>
                             </button>
                             <button
-                                onClick={() => setActiveTab('training-certificates')}
-                                className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
-                                    activeTab === 'training-certificates'
-                                        ? 'border-red-600 text-red-600 bg-red-50/50'
-                                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                                }`}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                                    </svg>
-                                    Training Certificates
-                                </div>
-                            </button>
-                            <button
                                 onClick={() => setActiveTab('certificates')}
                                 className={`px-6 py-4 text-sm font-medium border-b-2 transition-colors ${
                                     activeTab === 'certificates'
@@ -1083,10 +1112,6 @@ function EmployeeTrainings() {
                                 ))}
                             </div>
                         )
-                    ) : activeTab === 'training-certificates' ? (
-                        <div className="relative h-[500px] overflow-y-auto no-scrollbar p-6">
-                            <EmployeeCertificatesView userId={userId} isAgencyView={false} />
-                        </div>
                     ) : activeTab === 'certificates' ? (
                         externalTrainings.length === 0 ? (
                             <div className="px-6 py-12 text-center text-gray-500 h-[500px] flex flex-col items-center justify-center">
@@ -1219,61 +1244,33 @@ function EmployeeTrainings() {
                                         {training.attendance && (() => {
                                             const attendanceStatus = getEmployeeAttendanceStatus(training);
                                             if (attendanceStatus.isPresent === true) {
-                                                // Check if certificate URL is valid (not null, not empty, and is a string)
-                                                const hasCertificate = attendanceStatus.certificateUrl && 
-                                                                      typeof attendanceStatus.certificateUrl === 'string' && 
-                                                                      attendanceStatus.certificateUrl.trim().length > 0 &&
-                                                                      (attendanceStatus.certificateUrl.startsWith('http://') || 
-                                                                       attendanceStatus.certificateUrl.startsWith('https://'));
+                                                // Check if HR has sent a certificate for this training
+                                                const hrCertificate = generatedCertificates[training.id];
                                                 
-                                                return (
+                                                return hrCertificate ? (
                                                     <div className="flex items-center gap-2 flex-shrink-0">
-                                                        {hasCertificate && (
-                                                            <button
-                                                                onClick={async (e) => {
-                                                                    e.stopPropagation();
-                                                                    try {
-                                                                        // Try to open the certificate
-                                                                        const newWindow = window.open(attendanceStatus.certificateUrl, '_blank');
-                                                                        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-                                                                            // Popup was blocked
-                                                                            alert('Please allow popups for this website to view the certificate.');
-                                                                        }
-                                                                    } catch (error) {
-                                                                        console.error('Error opening certificate:', error);
-                                                                        alert('Unable to open certificate. The file may have been deleted.');
-                                                                    }
-                                                                }}
-                                                                className="px-4 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2"
-                                                                title="View uploaded certificate"
-                                                            >
-                                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                                </svg>
-                                                                View Uploaded
-                                                            </button>
-                                                        )}
                                                         <button
-                                                            onClick={(e) => {
+                                                            onClick={async (e) => {
                                                                 e.stopPropagation();
-                                                                setTrainingForCert(training);
-                                                                setTrainingCertFile(null);
-                                                                setShowTrainingCertUpload(true);
+                                                                try {
+                                                                    const newWindow = window.open(hrCertificate.certificate_url, '_blank');
+                                                                    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+                                                                        alert('Please allow popups for this website to view the certificate.');
+                                                                    }
+                                                                } catch (error) {
+                                                                    console.error('Error opening certificate:', error);
+                                                                    alert('Unable to open certificate.');
+                                                                }
                                                             }}
-                                                            className={`px-4 py-2 rounded-lg transition-all shadow-sm hover:shadow-md text-sm font-semibold flex items-center gap-2 ${
-                                                                hasCertificate
-                                                                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
-                                                                    : 'bg-gradient-to-r from-indigo-500 to-indigo-600 text-white hover:from-indigo-600 hover:to-indigo-700'
-                                                            }`}
+                                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-medium flex items-center gap-2"
                                                         >
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                                             </svg>
-                                                            {hasCertificate ? 'Update Certificate' : 'Upload Certificate'}
+                                                            View Certificate
                                                         </button>
                                                     </div>
-                                                );
+                                                ) : null;
                                             }
                                             return null;
                                         })()}
