@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { createNotification } from './notifications';
 import LogoCropped from './layouts/photos/logo(cropped).png';
 import SkillsInput from './components/SkillsInput';
 import AutocompleteInput from './components/AutocompleteInput';
@@ -1536,6 +1537,49 @@ function AgencyEndorse() {
           // If update fails, try insert instead
         } else {
           insertSuccess = true;
+          // Create notifications for HR users
+          if (existingApp && existingApp.id) {
+            try {
+              const { data: hrUsers, error: hrError } = await supabase
+                .from('profiles')
+                .select('id, role, depot')
+                .in('role', ['HR', 'HRC']);
+
+              if (!hrError && hrUsers && hrUsers.length > 0) {
+                const applicantName = `${fname} ${lname}`.trim() || 'Unknown Applicant';
+                const positionTitle = position || job?.title || 'Unknown Position';
+                
+                // Get job depot
+                const { data: jobData } = await supabase
+                  .from('job_posts')
+                  .select('depot')
+                  .eq('id', jobIdToSend)
+                  .maybeSingle();
+                
+                const jobDepot = jobData?.depot;
+
+                // Create notification for each HR user (filter by depot for HRC)
+                for (const hrUser of hrUsers) {
+                  // Skip if HRC and depot doesn't match
+                  if (hrUser.role === 'HRC' && hrUser.depot && hrUser.depot !== jobDepot) {
+                    continue;
+                  }
+
+                  await createNotification({
+                    userId: hrUser.id,
+                    applicationId: existingApp.id,
+                    type: 'application',
+                    title: 'New Agency Endorsement',
+                    message: `${applicantName} was endorsed by agency for ${positionTitle}`,
+                    userType: 'profile'
+                  });
+                }
+              }
+            } catch (notifError) {
+              console.error('Error creating HR notifications:', notifError);
+              // Don't fail the endorsement if notification fails
+            }
+          }
         }
       }
 
@@ -1624,6 +1668,49 @@ function AgencyEndorse() {
           }
         } else {
           insertSuccess = true;
+          // Create notifications for HR users
+          if (insertedData && insertedData[0]) {
+            try {
+              const { data: hrUsers, error: hrError } = await supabase
+                .from('profiles')
+                .select('id, role, depot')
+                .in('role', ['HR', 'HRC']);
+
+              if (!hrError && hrUsers && hrUsers.length > 0) {
+                const applicantName = `${fname} ${lname}`.trim() || 'Unknown Applicant';
+                const positionTitle = position || job?.title || 'Unknown Position';
+                
+                // Get job depot
+                const { data: jobData } = await supabase
+                  .from('job_posts')
+                  .select('depot')
+                  .eq('id', jobIdToSend)
+                  .maybeSingle();
+                
+                const jobDepot = jobData?.depot;
+
+                // Create notification for each HR user (filter by depot for HRC)
+                for (const hrUser of hrUsers) {
+                  // Skip if HRC and depot doesn't match
+                  if (hrUser.role === 'HRC' && hrUser.depot && hrUser.depot !== jobDepot) {
+                    continue;
+                  }
+
+                  await createNotification({
+                    userId: hrUser.id,
+                    applicationId: insertedData[0].id,
+                    type: 'application',
+                    title: 'New Agency Endorsement',
+                    message: `${applicantName} was endorsed by agency for ${positionTitle}`,
+                    userType: 'profile'
+                  });
+                }
+              }
+            } catch (notifError) {
+              console.error('Error creating HR notifications:', notifError);
+              // Don't fail the endorsement if notification fails
+            }
+          }
         }
       }
 

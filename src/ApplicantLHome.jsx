@@ -1,6 +1,7 @@
   import { Link, useNavigate, useLocation } from 'react-router-dom';
   import { useState, useEffect, useRef } from 'react';
   import { supabase } from './supabaseClient';
+import { createNotification } from './notifications';
   import AutocompleteInput from './components/AutocompleteInput';
 import SkillsInput from './components/SkillsInput';
 
@@ -1472,7 +1473,42 @@ const formatDateForInput = (dateString) => {
         }
       }
 
+      // Create notifications for HR users
       if (insertedData && insertedData.length > 0) {
+        try {
+          // Get all HR and HRC users
+          const { data: hrUsers, error: hrError } = await supabase
+            .from('profiles')
+            .select('id, role, depot')
+            .in('role', ['HR', 'HRC']);
+
+          if (!hrError && hrUsers && hrUsers.length > 0) {
+            const applicantName = `${form.firstName || ''} ${form.lastName || ''}`.trim() || 'Unknown Applicant';
+            const position = job?.title || 'Unknown Position';
+            const jobDepot = job?.depot;
+
+            // Create notification for each HR user (filter by depot for HRC)
+            for (const hrUser of hrUsers) {
+              // Skip if HRC and depot doesn't match
+              if (hrUser.role === 'HRC' && hrUser.depot && hrUser.depot !== jobDepot) {
+                continue;
+              }
+
+              await createNotification({
+                userId: hrUser.id,
+                applicationId: insertedData[0].id,
+                type: 'application',
+                title: 'New Application Received',
+                message: `${applicantName} applied for ${position}`,
+                userType: 'profile'
+              });
+            }
+          }
+        } catch (notifError) {
+          console.error('Error creating HR notifications:', notifError);
+          // Don't fail the application if notification fails
+        }
+
         setUserApplication(insertedData[0]);
         setUserApplications((prev) => {
           const next = [insertedData[0], ...(Array.isArray(prev) ? prev : [])];
