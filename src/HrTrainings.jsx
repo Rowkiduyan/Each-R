@@ -40,6 +40,11 @@ function HrTrainings() {
     successful: [],
     failed: []
   });
+  const [showEmployeeSelectionModal, setShowEmployeeSelectionModal] = useState(false);
+  const [selectedEmployeesForCerts, setSelectedEmployeesForCerts] = useState([]);
+  const [trainingForCertGeneration, setTrainingForCertGeneration] = useState(null);
+  const [showDuplicateWarningModal, setShowDuplicateWarningModal] = useState(false);
+  const [duplicateWarningData, setDuplicateWarningData] = useState(null);
   
   const [form, setForm] = useState({
     title: "",
@@ -1179,21 +1184,61 @@ function HrTrainings() {
     // Check if certificates already exist
     const certCheck = certificateStatus[training.id];
     if (certCheck && certCheck.hasCertificates && certCheck.count > 0) {
-      const confirmed = confirm(
-        `Certificates have already been generated for this training (${certCheck.count} certificates). Do you want to generate them again? This will create duplicate certificates.`
-      );
-      if (!confirmed) return;
+      // Show duplicate warning modal
+      setDuplicateWarningData({
+        training,
+        presentAttendees,
+        certCount: certCheck.count
+      });
+      setShowDuplicateWarningModal(true);
+      return;
     }
     
-    if (!confirm(`Generate certificates for ${presentAttendees.length} attendee(s)?`)) {
+    // Show employee selection modal
+    setTrainingForCertGeneration(training);
+    setSelectedEmployeesForCerts(presentAttendees.map(emp => emp.name));
+    setShowEmployeeSelectionModal(true);
+    setActionMenuOpen(null);
+  };
+  
+  // Proceed with certificate generation after duplicate confirmation
+  const proceedWithCertificateGeneration = () => {
+    setShowDuplicateWarningModal(false);
+    if (duplicateWarningData) {
+      setTrainingForCertGeneration(duplicateWarningData.training);
+      setSelectedEmployeesForCerts(duplicateWarningData.presentAttendees.map(emp => emp.name));
+      setShowEmployeeSelectionModal(true);
+      setDuplicateWarningData(null);
+    }
+  };
+  
+  // Generate certificates for selected employees
+  const generateSelectedCertificates = async () => {
+    if (!trainingForCertGeneration || selectedEmployeesForCerts.length === 0) {
+      setAlertMessage('Please select at least one employee');
+      setShowAlertModal(true);
       return;
+    }
+    
+    setShowEmployeeSelectionModal(false);
+    
+    // Get full attendee data for selected employees
+    const training = trainingForCertGeneration;
+    const selectedAttendees = [];
+    for (const name of selectedEmployeesForCerts) {
+      const matchingEmployee = employeeOptions.find(emp => emp.name === name);
+      selectedAttendees.push({
+        name: name,
+        userId: matchingEmployee?.id || null,
+        email: matchingEmployee?.email || null
+      });
     }
     
     try {
       // Show modal and initialize progress
       setShowCertificateModal(true);
       setCertificateProgress({
-        total: presentAttendees.length,
+        total: selectedAttendees.length,
         current: 0,
         status: 'preparing',
         message: 'Preparing certificate template...',
@@ -1202,23 +1247,22 @@ function HrTrainings() {
       });
       
       setGeneratingCertificates(training.id);
-      setActionMenuOpen(null);
       
       // Update progress as generating
       setCertificateProgress(prev => ({
         ...prev,
         status: 'generating',
-        message: `Generating certificate 1 of ${presentAttendees.length}...`
+        message: `Generating certificate 1 of ${selectedAttendees.length}...`
       }));
       
-      const result = await generateTrainingCertificates(training, presentAttendees);
+      const result = await generateTrainingCertificates(training, selectedAttendees);
       
       if (result.success) {
         const { successful, failed } = result.results;
         
         setCertificateProgress({
-          total: presentAttendees.length,
-          current: presentAttendees.length,
+          total: selectedAttendees.length,
+          current: selectedAttendees.length,
           status: 'complete',
           message: `Successfully generated ${successful.length} certificate(s)${failed.length > 0 ? ` (${failed.length} failed)` : ''}`,
           successful,
@@ -1247,6 +1291,8 @@ function HrTrainings() {
       }));
     } finally {
       setGeneratingCertificates(null);
+      setTrainingForCertGeneration(null);
+      setSelectedEmployeesForCerts([]);
     }
   };
 
@@ -3364,6 +3410,186 @@ function HrTrainings() {
                 className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 transition-colors font-medium text-sm shadow-md"
               >
                 Generate & Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Certificate Warning Modal */}
+      {showDuplicateWarningModal && duplicateWarningData && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowDuplicateWarningModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-red-50">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Duplicate Certificates</h2>
+                  <p className="text-sm text-gray-600 mt-0.5">Certificates already exist</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-5">
+              <div className="mb-4">
+                <p className="text-sm text-gray-700 leading-relaxed">
+                  Certificates have already been generated for this training session. 
+                  <span className="font-semibold text-orange-700"> {duplicateWarningData.certCount} certificate(s)</span> exist.
+                </p>
+                <p className="text-sm text-gray-700 mt-2">
+                  Proceeding will create duplicate certificates. Do you want to continue?
+                </p>
+              </div>
+              
+              <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <svg className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="flex-1">
+                    <p className="text-xs text-orange-900">
+                      <span className="font-semibold">Note:</span> This will generate new certificates for the employees you select in the next step. 
+                      Existing certificates will not be deleted.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDuplicateWarningModal(false);
+                  setDuplicateWarningData(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={proceedWithCertificateGeneration}
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-orange-600 to-red-600 text-white hover:from-orange-700 hover:to-red-700 transition-colors font-medium text-sm shadow-md"
+              >
+                Continue Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Employee Selection Modal for Certificate Generation */}
+      {showEmployeeSelectionModal && trainingForCertGeneration && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowEmployeeSelectionModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <h2 className="text-lg font-bold text-gray-900">Select Employees</h2>
+                  <p className="text-sm text-gray-600 mt-0.5">Choose who will receive certificates</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-5">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-700">
+                  Employees Present ({(() => {
+                    const presentCount = Object.values(trainingForCertGeneration.attendance || {}).filter(Boolean).length;
+                    return presentCount;
+                  })()})
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const presentEmployees = [];
+                    for (const [name, status] of Object.entries(trainingForCertGeneration.attendance || {})) {
+                      if (status === true) {
+                        presentEmployees.push(name);
+                      }
+                    }
+                    if (selectedEmployeesForCerts.length === presentEmployees.length) {
+                      setSelectedEmployeesForCerts([]);
+                    } else {
+                      setSelectedEmployeesForCerts(presentEmployees);
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm"
+                >
+                  {(() => {
+                    const presentEmployees = [];
+                    for (const [name, status] of Object.entries(trainingForCertGeneration.attendance || {})) {
+                      if (status === true) {
+                        presentEmployees.push(name);
+                      }
+                    }
+                    return selectedEmployeesForCerts.length === presentEmployees.length ? 'Deselect All' : 'Select All';
+                  })()}
+                </button>
+              </div>
+              
+              <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
+                {Object.entries(trainingForCertGeneration.attendance || {})
+                  .filter(([_, status]) => status === true)
+                  .map(([name, _], idx) => (
+                    <label
+                      key={idx}
+                      className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b last:border-b-0 ${
+                        selectedEmployeesForCerts.includes(name)
+                          ? 'bg-blue-50 hover:bg-blue-100'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedEmployeesForCerts.includes(name)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedEmployeesForCerts([...selectedEmployeesForCerts, name]);
+                          } else {
+                            setSelectedEmployeesForCerts(selectedEmployeesForCerts.filter(n => n !== name));
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <div className="flex-1 flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-xs font-semibold shadow-sm flex-shrink-0">
+                          {getInitials(name)}
+                        </div>
+                        <span className="text-sm font-medium text-gray-900">{name}</span>
+                      </div>
+                    </label>
+                  ))}
+              </div>
+              
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-900">
+                  <span className="font-semibold">{selectedEmployeesForCerts.length}</span> employee(s) selected to receive certificates
+                </p>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowEmployeeSelectionModal(false);
+                  setTrainingForCertGeneration(null);
+                  setSelectedEmployeesForCerts([]);
+                }}
+                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={generateSelectedCertificates}
+                disabled={selectedEmployeesForCerts.length === 0}
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-colors font-medium text-sm shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Generate Certificates ({selectedEmployeesForCerts.length})
               </button>
             </div>
           </div>
