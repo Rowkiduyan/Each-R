@@ -535,7 +535,7 @@ function Employees() {
 
   // Helpers
   const formatDate = (d) => {
-    if (!d) return "—";
+    if (!d) return "None";
     try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }); }
     catch { return String(d); }
   };
@@ -584,11 +584,11 @@ function Employees() {
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
-        return s.length ? s : "—";
+        return s.length ? s : "None";
       };
 
       const hiredDateText = (v) => {
-        if (!v) return "—";
+        if (!v) return "None";
         const d = new Date(v);
         return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
       };
@@ -689,11 +689,11 @@ function Employees() {
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
-        return s.length ? s : "—";
+        return s.length ? s : "None";
       };
 
       const hiredDateText = (v) => {
-        if (!v) return "—";
+        if (!v) return "None";
         const d = new Date(v);
         return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
       };
@@ -2376,15 +2376,15 @@ function Employees() {
                                 <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Position:</span>
-                                    <span className="ml-2 text-gray-800">{selectedEmployee.position || "—"}</span>
+                                    <span className="ml-2 text-gray-800">{selectedEmployee.position || "None"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Department:</span>
-                                    <span className="ml-2 text-gray-800">{selectedEmployee.department || getDepartmentForPosition(selectedEmployee.position) || "—"}</span>
+                                    <span className="ml-2 text-gray-800">{selectedEmployee.department || getDepartmentForPosition(selectedEmployee.position) || "None"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Depot:</span>
-                                    <span className="ml-2 text-gray-800">{selectedEmployee.depot || "—"}</span>
+                                    <span className="ml-2 text-gray-800">{selectedEmployee.depot || "None"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Hired Date:</span>
@@ -2410,7 +2410,7 @@ function Employees() {
                                         return (
                                           formatNameLastFirstMiddle({ last, first, middle }) ||
                                           [first, middle, last].filter(Boolean).join(" ") ||
-                                          "—"
+                                          "None"
                                         );
                                       })()}
                                     </span>
@@ -2423,7 +2423,7 @@ function Employees() {
                                           ? selectedEmployee.personal_email
                                           : null) ||
                                         selectedEmployee.email ||
-                                        "—"}
+                                        "None"}
                                     </span>
                                   </div>
                                   <div>
@@ -2437,7 +2437,7 @@ function Employees() {
                                         applicationData?.mobileNumber ||
                                         applicationData?.mobile_number ||
                                         selectedEmployee.contact ||
-                                        "—"}
+                                        "None"}
                                     </span>
                                   </div>
                                   <div>
@@ -2447,7 +2447,7 @@ function Employees() {
                                         const b = applicationData?.birthday || applicationData?.birth_date || applicationData?.dateOfBirth;
                                         return b
                                           ? new Date(b).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-                                          : "—";
+                                          : "None";
                                       })()}
                                     </span>
                                   </div>
@@ -2457,17 +2457,17 @@ function Employees() {
                                       {(() => {
                                         const b = applicationData?.birthday || applicationData?.birth_date || applicationData?.dateOfBirth;
                                         const age = calculateAge(b);
-                                        return age === null ? "—" : age;
+                                        return age === null ? "None" : age;
                                       })()}
                                     </span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Sex:</span>
-                                    <span className="ml-2 text-gray-800">{applicationData?.sex || "—"}</span>
+                                    <span className="ml-2 text-gray-800">{applicationData?.sex || "None"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Marital Status:</span>
-                                    <span className="ml-2 text-gray-800">{applicationData?.marital_status || applicationData?.maritalStatus || "—"}</span>
+                                    <span className="ml-2 text-gray-800">{applicationData?.marital_status || applicationData?.maritalStatus || "None"}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Source:</span>
@@ -2475,7 +2475,7 @@ function Employees() {
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Currently Employed:</span>
-                                    <span className="ml-2 text-gray-800">{applicationData?.employed || "—"}</span>
+                                    <span className="ml-2 text-gray-800">{applicationData?.employed || "None"}</span>
                                   </div>
                                 </div>
                               </div>
@@ -2498,7 +2498,7 @@ function Employees() {
                                   <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 gap-y-2">
                                     <div>
                                       <span className="text-gray-500">Full Address:</span>
-                                      <span className="ml-2 text-gray-800">{formatFullAddressOneLine(applicationData) || "—"}</span>
+                                      <span className="ml-2 text-gray-800">{formatFullAddressOneLine(applicationData) || "None"}</span>
                                     </div>
                                   </div>
                                 </div>

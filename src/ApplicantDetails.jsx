@@ -24,6 +24,15 @@ async function scheduleInterviewClient(applicationId, interview) {
 }
 
 function ApplicantDetails() {
+  const display = (v) => {
+    if (v === null || v === undefined) return "None";
+    if (typeof v === 'string') {
+      const s = v.trim();
+      if (!s || s === '—' || s === '--' || s.toLowerCase() === 'n/a') return "None";
+      return s;
+    }
+    return v;
+  };
   const { id } = useParams(); // application.id
   const navigate = useNavigate();
   const location = useLocation();
@@ -542,27 +551,27 @@ function ApplicantDetails() {
 
               <h3 className="text-xl font-semibold mb-3 text-gray-700">Job Details</h3>
               <div className="grid md:grid-cols-2 gap-4 text-gray-700 mb-6">
-                <p><strong>Department:</strong> {applicant.department}</p>
-                <p><strong>Position Applying For:</strong> {applicant.position}</p>
-                <p><strong>Depot:</strong> {applicant.depot}</p>
-                <p><strong>Current Employment Status:</strong> {applicant.employmentStatus}</p>
-                <p><strong>Available Start Date:</strong> {applicant.startDate}</p>
-                <p><strong>Resume:</strong> {applicant.resume}</p>
-                <p><strong>Date Applied:</strong> {applicant.dateApplied}</p>
+                <p><strong>Department:</strong> {display(applicant.department)}</p>
+                <p><strong>Position Applying For:</strong> {display(applicant.position)}</p>
+                <p><strong>Depot:</strong> {display(applicant.depot)}</p>
+                <p><strong>Current Employment Status:</strong> {display(applicant.employmentStatus)}</p>
+                <p><strong>Available Start Date:</strong> {display(applicant.startDate)}</p>
+                <p><strong>Resume:</strong> {display(applicant.resume)}</p>
+                <p><strong>Date Applied:</strong> {display(applicant.dateApplied)}</p>
               </div>
 
               <h3 className="text-xl font-semibold mb-3 text-gray-700">
                 Personal Information
               </h3>
               <div className="grid md:grid-cols-2 gap-4 text-gray-700">
-                <p><strong>Full Name:</strong> {applicant.name}</p>
-                <p><strong>Address:</strong> {applicant.address}</p>
-                <p><strong>Contact Number:</strong> {applicant.phone}</p>
-                <p><strong>Email:</strong> {applicant.email}</p>
-                <p><strong>Sex:</strong> {applicant.sex}</p>
-                <p><strong>Birthday:</strong> {applicant.birthday}</p>
-                <p><strong>Age:</strong> {applicant.age}</p>
-                <p><strong>Marital Status:</strong> {applicant.maritalStatus}</p>
+                <p><strong>Full Name:</strong> {display(applicant.name)}</p>
+                <p><strong>Address:</strong> {display(applicant.address)}</p>
+                <p><strong>Contact Number:</strong> {display(applicant.phone)}</p>
+                <p><strong>Email:</strong> {display(applicant.email)}</p>
+                <p><strong>Sex:</strong> {display(applicant.sex)}</p>
+                <p><strong>Birthday:</strong> {display(applicant.birthday)}</p>
+                <p><strong>Age:</strong> {display(applicant.age)}</p>
+                <p><strong>Marital Status:</strong> {display(applicant.maritalStatus)}</p>
               </div>
 
               <div className="mt-8">

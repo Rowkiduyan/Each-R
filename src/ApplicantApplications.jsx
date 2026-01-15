@@ -5,6 +5,44 @@ import { createInterviewScheduledNotification, createInterviewRescheduledNotific
 
 function ApplicantApplications() {
   const navigate = useNavigate();
+  const splitJobDetails = (value) => {
+    // job_posts.responsibilities is stored as an array, but handle string/null defensively
+    const lines = Array.isArray(value)
+      ? value
+      : typeof value === 'string'
+      ? value.split(/\r?\n/)
+      : [];
+
+    const cleaned = lines
+      .map((item) => (item == null ? '' : String(item)).trim())
+      .filter(Boolean);
+
+    const responsibilities = [];
+    const keyRequirements = [];
+    for (const item of cleaned) {
+      if (/^req\s*:/i.test(item)) {
+        keyRequirements.push(item.replace(/^req\s*:/i, '').trim());
+      } else {
+        responsibilities.push(item);
+      }
+    }
+
+    return { responsibilities, keyRequirements };
+  };
+
+  const formatPostedDate = (job) => {
+    const raw = job?.created_at || job?.posted_at || job?.date_posted || null;
+    if (!raw) return null;
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  };
+
+  const formatJobType = (jobType) => {
+    if (!jobType) return null;
+    return String(jobType).replace(/_/g, ' ');
+  };
+
   const steps = ["Application", "Assessment", "Agreements"];
   const [activeStep, setActiveStep] = useState("Application");
   const [loading, setLoading] = useState(true);
@@ -277,11 +315,14 @@ function ApplicantApplications() {
           if (application.job_id) {
             const { data: job, error: jobError } = await supabase
               .from('job_posts')
-              .select('title, depot')
+              // Use '*' to avoid select-list mismatches when the table schema changes
+              .select('*')
               .eq('id', application.job_id)
               .maybeSingle();
 
-            if (!jobError && job) {
+            if (jobError) {
+              console.error('Error fetching job post for application:', jobError);
+            } else if (job) {
               setJobData(job);
             }
           }
@@ -583,6 +624,19 @@ function ApplicantApplications() {
                       <div className="font-semibold text-gray-800">
                         {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
                       </div>
+                      <div className="text-xs text-gray-600">
+                        {(() => {
+                          const title = jobData?.title || applicationData?.payload?.job?.title || applicationData?.payload?.form?.position;
+                          const depot = jobData?.depot || applicationData?.payload?.job?.depot || applicationData?.payload?.form?.depot;
+                          if (!title && !depot) return null;
+                          return (
+                            <span>
+                              Applied for: <span className="font-semibold">{title || 'Job'}</span>
+                              {depot ? <span> — {depot}</span> : null}
+                            </span>
+                          );
+                        })()}
+                      </div>
                       <div className="text-xs text-gray-500">
                         Applied: {new Date(applicationData.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                       </div>
@@ -621,6 +675,96 @@ function ApplicantApplications() {
 
                 {/* Application Details */}
                 <div className="space-y-4">
+                  {/* Applied Job Card */}
+                  <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
+                    <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200 flex items-center justify-between gap-3">
+                      <span>Applied Job</span>
+                      {applicationData?.job_id ? (
+                        <Link
+                          to="/applicantl/home"
+                          state={{ jobId: applicationData.job_id }}
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+                        >
+                          View job posting
+                        </Link>
+                      ) : null}
+                    </div>
+                    <div className="p-4 text-sm text-gray-800">
+                      {(() => {
+                        const appliedJob = jobData || applicationData?.payload?.job || {};
+
+                        const title = appliedJob?.title || applicationData?.payload?.form?.position || '';
+                        const depot = appliedJob?.depot || applicationData?.payload?.form?.depot || '';
+                        const description = appliedJob?.description || '';
+                        const posted = formatPostedDate(appliedJob);
+                        const positionType = formatJobType(appliedJob?.job_type || appliedJob?.position_type);
+                        const { responsibilities, keyRequirements } = splitJobDetails(appliedJob?.responsibilities);
+
+                        const hasAny = !!title || !!depot || !!description || !!posted || !!positionType || responsibilities.length > 0 || keyRequirements.length > 0;
+                        if (!hasAny) {
+                          return <div className="text-gray-500">No job details saved for this application.</div>;
+                        }
+
+                        return (
+                          <div className="space-y-4">
+                            <div>
+                              <div className="font-semibold text-gray-600 mb-1">Job Title</div>
+                              <div className="text-gray-900 font-semibold">{title || <span className="text-gray-400 italic">None</span>}</div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                                <div className="text-[11px] text-gray-500">Depot</div>
+                                <div className="text-sm font-semibold text-gray-800">{depot || <span className="text-gray-400 italic">None</span>}</div>
+                              </div>
+                              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                                <div className="text-[11px] text-gray-500">Date Posted</div>
+                                <div className="text-sm font-semibold text-gray-800">{posted || <span className="text-gray-400 italic">Unknown</span>}</div>
+                              </div>
+                              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                                <div className="text-[11px] text-gray-500">Position Type</div>
+                                <div className="text-sm font-semibold text-gray-800">{positionType || <span className="text-gray-400 italic">Unknown</span>}</div>
+                              </div>
+                            </div>
+
+                            <div>
+                              <div className="font-semibold text-gray-600 mb-1">Description</div>
+                              {description ? (
+                                <p className="text-gray-800 whitespace-pre-line">{description}</p>
+                              ) : (
+                                <p className="text-gray-400 italic">None</p>
+                              )}
+                            </div>
+
+                            <div>
+                              <div className="font-semibold text-gray-600 mb-2">Key Responsibilities</div>
+                              {responsibilities.length > 0 ? (
+                                <ul className="list-disc list-inside text-gray-800 space-y-1">
+                                  {responsibilities.map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="text-gray-400 italic">None</p>
+                              )}
+                            </div>
+
+                            {keyRequirements.length > 0 ? (
+                              <div>
+                                <div className="font-semibold text-gray-600 mb-2">Basic Key Requirements</div>
+                                <ul className="list-disc list-inside text-gray-800 space-y-1">
+                                  {keyRequirements.map((item, idx) => (
+                                    <li key={idx}>{item}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
                   {/* Personal Details Card */}
                   <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                     <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">Personal Details</div>
@@ -1211,7 +1355,7 @@ function ApplicantApplications() {
                     <div>
                       <div className="text-xs text-gray-500 mb-1">Year Completed</div>
                       <div className={specializedYear ? "text-gray-900" : "text-gray-400 italic"}>
-                        {specializedYear || '—'}
+                        {specializedYear || 'None'}
                       </div>
                     </div>
                     <div>

@@ -422,12 +422,12 @@ function AdminEnableDisable() {
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-600">
-                      {account.position !== 'N/A' ? account.position : '—'}
+                      {account.position !== 'N/A' ? account.position : 'None'}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="text-sm text-gray-600">
-                      {account.depot !== 'N/A' ? account.depot : '—'}
+                      {account.depot !== 'N/A' ? account.depot : 'None'}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">

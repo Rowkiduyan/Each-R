@@ -1351,7 +1351,7 @@ function AgencyEndorsements() {
   }, []);
 
   const formatDate = (d) => {
-    if (!d) return "—";
+    if (!d) return "None";
     try { return new Date(d).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" }); }
     catch { return String(d); }
   };
@@ -1362,13 +1362,15 @@ function AgencyEndorsements() {
     if (val === null || val === undefined) return renderNone();
     if (typeof val === 'string') {
       const s = val.trim();
-      return s ? s : renderNone();
+      if (!s) return renderNone();
+      if (s === '—' || s === '--' || s.toLowerCase() === 'n/a') return renderNone();
+      return s;
     }
     return val;
   };
 
   const displayDate = (val) => {
-    if (!val) return renderNone();
+    if (!val || val === '—' || val === '--' || String(val).trim().toLowerCase() === 'n/a') return renderNone();
     return formatDate(val);
   };
 
