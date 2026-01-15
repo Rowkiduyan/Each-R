@@ -116,7 +116,7 @@ export async function generateTrainingCertificates(training, attendees) {
           throw new Error(`Upload failed: ${uploadError.message}`);
         }
 
-        // Get public URL
+        // Get public URL for DOCX
         const { data: urlData } = supabase.storage
           .from('training-certificates')
           .getPublicUrl(filePath);
@@ -132,7 +132,7 @@ export async function generateTrainingCertificates(training, attendees) {
               employee_name: attendee.name,
               certificate_url: urlData.publicUrl,
               certificate_path: filePath,
-              template_used_id: template.id || null, // Make it nullable if template.id is invalid
+              template_used_id: template.id || null,
               sent_by: user.id,
               sent_at: new Date().toISOString()
             }
