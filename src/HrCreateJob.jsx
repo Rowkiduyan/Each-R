@@ -15,8 +15,8 @@ const departments = [
 
 const departmentToPositions = {
   "Operations Department": [
-    "Driver",
-    "Helper",
+    "Delivery Driver",
+    "Delivery Helper",
     "Rider/Messenger",
     "Base Dispatcher",
     "Site Coordinator",

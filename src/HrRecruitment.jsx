@@ -9,12 +9,12 @@ import ExcelJS from "exceljs";
 
 /**
  * scheduleInterviewClient
- * Helper that invokes your Supabase Edge Function (name: "schedule-interview").
+ * Helper that invokes your Supabase Edge Function (name: "schedule-interview-with-notification").
  * It returns { ok: true, data } or { ok: false, error }.
  */
 async function scheduleInterviewClient(applicationId, interview) {
   try {
-    const functionName = "schedule-interview-with-notification"; // Updated to use notification-enabled function
+    const functionName = "schedule-interview-with-notification";
     const { data, error } = await supabase.functions.invoke(functionName, {
       body: { applicationId, interview },
     });
@@ -29,7 +29,7 @@ async function scheduleInterviewClient(applicationId, interview) {
 
 /**
  * scheduleAgreementSigningClient
- * Reuses the same Edge Function with kind="agreement_signing".
+ * Invokes the notification-enabled agreement signing scheduler.
  */
 async function scheduleAgreementSigningClient(applicationId, appointment) {
   try {
@@ -39,19 +39,17 @@ async function scheduleAgreementSigningClient(applicationId, appointment) {
     });
 
     if (error) {
-      // Try to surface server-provided details for easier debugging
       const anyErr = error;
-
       let details = anyErr?.message || String(anyErr);
       try {
         const ctx = anyErr?.context;
         const resp = ctx?.response;
 
-        if (resp && typeof resp.text === 'function') {
-          const respClone = typeof resp.clone === 'function' ? resp.clone() : resp;
+        if (resp && typeof resp.text === "function") {
+          const respClone = typeof resp.clone === "function" ? resp.clone() : resp;
           const bodyText = await respClone.text();
           if (bodyText) details = bodyText;
-        } else if (ctx?.body && typeof ctx.body === 'string') {
+        } else if (ctx?.body && typeof ctx.body === "string") {
           details = ctx.body;
         } else if (ctx?.body) {
           try {
@@ -91,12 +89,10 @@ async function scheduleAgreementSigningClient(applicationId, appointment) {
 /**
  * createEmployeeAuthAccount
  * Helper that invokes a Supabase Edge Function to create/update employee auth account using Admin API.
- * This handles both new users and existing users (by resetting their password).
- * It returns { ok: true, data } or { ok: false, error }.
  */
 async function createEmployeeAuthAccount(employeeData) {
   try {
-    const functionName = "create-employee-auth"; // Edge Function name
+    const functionName = "create-employee-auth";
     const res = await supabase.functions.invoke(functionName, {
       body: JSON.stringify({
         email: employeeData.employeeEmail,
@@ -106,7 +102,6 @@ async function createEmployeeAuthAccount(employeeData) {
       }),
     });
 
-    // SDK may return a Response (fetch) or a plain object with .error or .data
     if (res instanceof Response) {
       const json = await res.json().catch(() => null);
       if (!res.ok) {
@@ -127,16 +122,14 @@ async function createEmployeeAuthAccount(employeeData) {
 /**
  * sendEmployeeAccountEmail
  * Helper that invokes a Supabase Edge Function to send employee account credentials via email.
- * It returns { ok: true, data } or { ok: false, error }.
  */
 async function sendEmployeeAccountEmail(employeeData) {
   try {
-    const functionName = "send-employee-credentials"; // Edge Function name
+    const functionName = "send-employee-credentials";
     const res = await supabase.functions.invoke(functionName, {
       body: JSON.stringify(employeeData),
     });
 
-    // SDK may return a Response (fetch) or a plain object with .error or .data
     if (res instanceof Response) {
       const json = await res.json().catch(() => null);
       if (!res.ok) {
@@ -154,54 +147,40 @@ async function sendEmployeeAccountEmail(employeeData) {
   }
 }
 
-/**
- * Generate employee email from name
- * Format: first initial + last name + @roadwise.com
- * Example: "Lorenz Vincel A. Adalem" -> "ladalem@roadwise.com"
- */
 function generateEmployeeEmail(firstName, lastName) {
   if (!firstName || !lastName) {
     return null;
   }
   const firstInitial = firstName.charAt(0).toLowerCase();
-  const lastPart = lastName.toLowerCase().replace(/\s+/g, '');
+  const lastPart = lastName.toLowerCase().replace(/\s+/g, "");
   return `${firstInitial}${lastPart}@roadwise.com`;
 }
 
-/**
- * Generate employee password
- * Format: FirstInitial + LastName + Birthday (YYYYMMDD) + !
- * Example: "LAdalem19900101!"
- * If birthday is not available, use a default format
- */
 function generateEmployeePassword(firstName, lastName, birthday) {
-  const firstInitial = firstName ? firstName.charAt(0).toUpperCase() : 'E';
-  const lastPart = lastName ? lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase() : 'Employee';
-  
-  let birthdayPart = '';
+  const firstInitial = firstName ? firstName.charAt(0).toUpperCase() : "E";
+  const lastPart = lastName ? lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase() : "Employee";
+  let birthdayPart = "";
+
   if (birthday) {
-    // Try to parse birthday in various formats
     const date = new Date(birthday);
     if (!isNaN(date.getTime())) {
       const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
       birthdayPart = `${year}${month}${day}`;
     } else {
-      // Try to extract YYYYMMDD from string
-      const match = birthday.match(/(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
+      const match = String(birthday).match(/(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
       if (match) {
         birthdayPart = `${match[1]}${match[2]}${match[3]}`;
       }
     }
   }
-  
-  // If no valid birthday, use a default (current year + 0101)
+
   if (!birthdayPart) {
     const currentYear = new Date().getFullYear();
     birthdayPart = `${currentYear}0101`;
   }
-  
+
   return `${firstInitial}${lastPart}${birthdayPart}!`;
 }
 
@@ -211,19 +190,41 @@ function HrRecruitment() {
 
   const getTodayDate = () => {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    return today.toISOString().split("T")[0];
   };
 
   // Depot options for job posts
   const depotOptions = [
-    "Batangas", "Bulacan", "Cagayan", "Calamba", "Calbayog", "Cebu", 
-    "Davao", "Dipolog", "Iloilo", "Isabela", "Kalibo", "Kidapawan", 
-    "La Union", "Liip", "Manggahan", "Mindoro", "Naga", "Ozamis", 
-    "Palawan", "Pampanga", "Pasig", "Sucat", "Tacloban", "Tarlac", 
-    "Taytay", "Tuguegarao", "Vigan"
+    "Batangas",
+    "Bulacan",
+    "Cagayan",
+    "Calamba",
+    "Calbayog",
+    "Cebu",
+    "Davao",
+    "Dipolog",
+    "Iloilo",
+    "Isabela",
+    "Kalibo",
+    "Kidapawan",
+    "La Union",
+    "Liip",
+    "Manggahan",
+    "Mindoro",
+    "Naga",
+    "Ozamis",
+    "Palawan",
+    "Pampanga",
+    "Pasig",
+    "Sucat",
+    "Tacloban",
+    "Tarlac",
+    "Taytay",
+    "Tuguegarao",
+    "Vigan",
   ];
 
-  // Keep job titles/positions aligned with Employees.jsx (same as create job post)
+  // Keep job titles/positions aligned with Employees.jsx
   const departments = [
     "Operations Department",
     "Billing Department",
@@ -264,7 +265,6 @@ function HrRecruitment() {
       return Array.from(all);
     }
 
-    // Backward-compat alias (in case existing data uses "and" instead of "&")
     if (department === "Security & Safety Department") {
       return departmentToPositions["Security & Safety Department"] || [];
     }
@@ -333,6 +333,7 @@ function HrRecruitment() {
   const [sortOrder, setSortOrder] = useState("asc");
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef(null);
+  const lastInterviewNotesApplicantIdRef = useRef(null);
   
   // Selected applicant detail view state
   const [selectedApplicant, setSelectedApplicant] = useState(null);
@@ -355,30 +356,22 @@ function HrRecruitment() {
     positionsNoLimit: false,
   });
   const [updatingJobPost, setUpdatingJobPost] = useState(false);
-  const [interviewFile, setInterviewFile] = useState(null);
-  const [interviewFileName, setInterviewFileName] = useState("");
-  const [assessmentFile, setAssessmentFile] = useState(null);
-  const [assessmentFileName, setAssessmentFileName] = useState("");
-  const [agreementFile, setAgreementFile] = useState(null);
-  const [agreementFileName, setAgreementFileName] = useState("");
-  const [undertakingFile, setUndertakingFile] = useState(null);
-  const [undertakingFileName, setUndertakingFileName] = useState("");
-  const [applicationFormFile, setApplicationFormFile] = useState(null);
-  const [applicationFormFileName, setApplicationFormFileName] = useState("");
-  const [undertakingDutiesFile, setUndertakingDutiesFile] = useState(null);
-  const [undertakingDutiesFileName, setUndertakingDutiesFileName] = useState("");
-  const [preEmploymentRequirementsFile, setPreEmploymentRequirementsFile] = useState(null);
-  const [preEmploymentRequirementsFileName, setPreEmploymentRequirementsFileName] = useState("");
-  const [idFormFile, setIdFormFile] = useState(null);
-  const [idFormFileName, setIdFormFileName] = useState("");
-  const [uploadingInterviewFile, setUploadingInterviewFile] = useState(false);
-  const [uploadingAssessmentFile, setUploadingAssessmentFile] = useState(false);
-  const [uploadingAgreementFile, setUploadingAgreementFile] = useState(false);
-  const [uploadingUndertakingFile, setUploadingUndertakingFile] = useState(false);
-  const [uploadingApplicationFormFile, setUploadingApplicationFormFile] = useState(false);
-  const [uploadingUndertakingDutiesFile, setUploadingUndertakingDutiesFile] = useState(false);
-  const [uploadingPreEmploymentRequirementsFile, setUploadingPreEmploymentRequirementsFile] = useState(false);
-  const [uploadingIdFormFile, setUploadingIdFormFile] = useState(false);
+
+  // Interview notes (Assessment tab)
+  const [interviewNotesText, setInterviewNotesText] = useState('');
+  const [savingInterviewNotes, setSavingInterviewNotes] = useState(false);
+  const [showInterviewNotesUploadModal, setShowInterviewNotesUploadModal] = useState(false);
+  const [interviewNotesAttachmentFiles, setInterviewNotesAttachmentFiles] = useState([]);
+  const [interviewNotesAttachmentLabel, setInterviewNotesAttachmentLabel] = useState('');
+  const [uploadingInterviewNotesAttachment, setUploadingInterviewNotesAttachment] = useState(false);
+  const [removingInterviewNotesAttachment, setRemovingInterviewNotesAttachment] = useState(false);
+
+  // Agreement documents (Agreements tab)
+  const [showAgreementDocsUploadModal, setShowAgreementDocsUploadModal] = useState(false);
+  const [agreementDocsUploadFiles, setAgreementDocsUploadFiles] = useState([]);
+  const [agreementDocsUploadLabel, setAgreementDocsUploadLabel] = useState('');
+  const [uploadingAgreementDocs, setUploadingAgreementDocs] = useState(false);
+  const [removingAgreementDoc, setRemovingAgreementDoc] = useState(false);
   
   // Interview calendar state
   const [interviews, setInterviews] = useState([]);
@@ -636,6 +629,7 @@ function HrRecruitment() {
   // ---- Interview modal state + scheduling
   const [showInterviewModal, setShowInterviewModal] = useState(false);
   const [selectedApplicationForInterview, setSelectedApplicationForInterview] = useState(null);
+  const [interviewModalMode, setInterviewModalMode] = useState('initial'); // 'initial' | 'another'
   const [interviewForm, setInterviewForm] = useState({
     date: "",
     time: "",
@@ -644,6 +638,8 @@ function HrRecruitment() {
     interview_type: "onsite", // "online" or "onsite"
   });
   const [scheduling, setScheduling] = useState(false);
+
+  const [finalizingAssessment, setFinalizingAssessment] = useState(false);
 
   // ---- Agreement signing schedule modal state + scheduling
   const [showAgreementSigningModal, setShowAgreementSigningModal] = useState(false);
@@ -789,10 +785,18 @@ function HrRecruitment() {
     const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
                               selectedApplicant?.interview_confirmed === 'confirmed';
     const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterview;
+
+    let payloadObj = selectedApplicant?.raw?.payload ?? selectedApplicant?.payload ?? {};
+    if (typeof payloadObj === 'string') {
+      try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+    }
+    const assessmentFinalized = Boolean(payloadObj?.assessment_finalized || payloadObj?.assessmentFinalized);
+    const agreementsStatusUnlocked = ['agreement', 'agreements', 'final_agreement', 'hired'].includes(applicantStatus);
     
     // Check which steps are unlocked
     const step2Unlocked = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
-    const step3Unlocked = hasInterview && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
+    // Step 3 (Agreements) is locked until the assessment is finalized (or applicant is already in an agreements-related status)
+    const step3Unlocked = agreementsStatusUnlocked || assessmentFinalized;
     
     // If current tab is locked, switch to first unlocked step
     if (activeDetailTab === "Assessment" && !step2Unlocked) {
@@ -869,6 +873,302 @@ function HrRecruitment() {
     if (value === null || value === undefined) return "";
     return String(value).replace(/\s+/g, " ").trim();
   };
+
+  const safeParseJsonObject = (value) => {
+    if (!value) return {};
+    if (typeof value === 'object') return value;
+    if (typeof value !== 'string') return {};
+    try {
+      const parsed = JSON.parse(value);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const getApplicantPayloadObject = (applicant) => {
+    if (!applicant) return {};
+    return safeParseJsonObject(applicant?.raw?.payload ?? applicant?.payload ?? {});
+  };
+
+  const sanitizeFileBaseName = (name) => {
+    const raw = String(name || '').trim();
+    const cleaned = raw
+      .replace(/\.[^./\\]+$/, '')
+      .replace(/[^a-zA-Z0-9 _-]+/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^[-_]+|[-_]+$/g, '')
+      .slice(0, 80);
+    return cleaned || 'attachment';
+  };
+
+  const parseLocalDateTimeFromInputs = (dateStr, timeStr) => {
+    const dRaw = String(dateStr || '').trim();
+    const tRaw = String(timeStr || '').trim();
+    if (!dRaw && !tRaw) return null;
+
+    let year;
+    let month;
+    let day;
+
+    const isoMatch = dRaw.match(/^\s*(\d{4})-(\d{2})-(\d{2})\s*$/);
+    if (isoMatch) {
+      year = Number(isoMatch[1]);
+      month = Number(isoMatch[2]);
+      day = Number(isoMatch[3]);
+    } else {
+      const parsed = new Date(dRaw);
+      if (!Number.isFinite(parsed.getTime())) return null;
+      year = parsed.getFullYear();
+      month = parsed.getMonth() + 1;
+      day = parsed.getDate();
+    }
+
+    let hours = 23;
+    let minutes = 59;
+    let seconds = 59;
+    if (tRaw) {
+      const parts = tRaw.split(':').map((p) => Number(p));
+      if (Number.isFinite(parts[0])) hours = parts[0];
+      if (Number.isFinite(parts[1])) minutes = parts[1];
+      if (Number.isFinite(parts[2])) seconds = parts[2];
+    }
+
+    const dt = new Date(year, (month || 1) - 1, day || 1, hours, minutes, seconds, 0);
+    if (!Number.isFinite(dt.getTime())) return null;
+    return dt;
+  };
+
+  const hasInterviewSchedulePassed = (dateStr, timeStr) => {
+    const dt = parseLocalDateTimeFromInputs(dateStr, timeStr);
+    if (!dt) return false;
+    return dt.getTime() < Date.now();
+  };
+
+  const normalizeAgreementDocTitleKey = (value) => {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const agreementDocTitleToColumnKey = (title) => {
+    const key = normalizeAgreementDocTitleKey(title);
+    if (!key) return null;
+
+    if (key === 'employee appointment letter') return 'appointment_letter_file';
+    if (key === 'undertaking') return 'undertaking_file';
+    if (key === 'undertaking of duties and responsibilities') return 'undertaking_duties_file';
+
+    return null;
+  };
+
+  const getAgreementDocumentsFromApplicant = (applicant) => {
+    const payloadObj = getApplicantPayloadObject(applicant);
+
+    const rawList = payloadObj?.agreement_documents || payloadObj?.agreementDocuments || payloadObj?.agreements_documents || null;
+    const list = Array.isArray(rawList) ? rawList : [];
+
+    const candidates = [...list];
+
+    // Legacy column-based files (show even if not represented in payload)
+    const legacy = [
+      { key: 'appointment_letter_file', label: 'Employee Appointment Letter' },
+      { key: 'undertaking_file', label: 'Undertaking' },
+      { key: 'undertaking_duties_file', label: 'Undertaking of Duties and Responsibilities' },
+    ];
+
+    for (const it of legacy) {
+      const path = applicant?.[it.key];
+      if (path) {
+        candidates.push({
+          path,
+          label: it.label,
+          originalName: null,
+          uploadedAt: null,
+          sourceKey: it.key,
+          legacy: true,
+        });
+      }
+    }
+
+    const byPath = new Map();
+
+    for (const it of candidates) {
+      if (!it || typeof it !== 'object') continue;
+      const p = it.path || it.file_path || it.filePath || it.storagePath;
+      const path = p ? String(p) : '';
+      if (!path) continue;
+
+      const removedAt =
+        it.removedAt ??
+        it.removed_at ??
+        it.deletedAt ??
+        it.deleted_at ??
+        null;
+
+      const isRemoved = Boolean(
+        it.removed === true ||
+          it.deleted === true ||
+          it.isRemoved === true ||
+          removedAt
+      );
+
+      const next = {
+        path,
+        label: it.label ?? it.name ?? null,
+        originalName: it.originalName ?? it.original_name ?? null,
+        uploadedAt: it.uploadedAt ?? it.uploaded_at ?? null,
+        removedAt: removedAt ? String(removedAt) : null,
+        isRemoved,
+        sourceKey: it.sourceKey || it.source_key || null,
+        legacy: Boolean(it.legacy),
+      };
+
+      const existing = byPath.get(path);
+      if (!existing) {
+        byPath.set(path, next);
+        continue;
+      }
+
+      byPath.set(path, {
+        ...existing,
+        label: existing.label || next.label,
+        originalName: existing.originalName || next.originalName,
+        uploadedAt: existing.uploadedAt || next.uploadedAt,
+        removedAt: existing.removedAt || next.removedAt,
+        isRemoved: existing.isRemoved || next.isRemoved,
+        sourceKey: existing.sourceKey || next.sourceKey,
+        legacy: existing.legacy || next.legacy,
+      });
+    }
+
+    return Array.from(byPath.values()).sort((a, b) => {
+      const ta = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+      const tb = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+      return ta - tb;
+    });
+  };
+
+  const getInterviewNotesAttachmentsFromApplicant = (applicant) => {
+    const payloadObj = getApplicantPayloadObject(applicant);
+
+    const rawList = payloadObj?.interview_notes_attachments || payloadObj?.interviewNotesAttachments;
+    const list = Array.isArray(rawList) ? rawList : [];
+    const single = payloadObj?.interview_notes_attachment || payloadObj?.interviewNotesAttachment || null;
+
+    const candidates = [];
+    candidates.push(...list);
+    if (single) candidates.push(single);
+
+    // Column-based legacy fallback (may exist even when payload does not)
+    if (applicant?.interview_notes_file) {
+      candidates.push({
+        path: applicant.interview_notes_file,
+        label: applicant?.interview_notes_file_label || null,
+        originalName: null,
+      });
+    }
+
+    const byPath = new Map();
+
+    for (const it of candidates) {
+      if (!it || typeof it !== 'object') continue;
+      const p = it.path || it.file_path || it.filePath || it.storagePath;
+      const path = p ? String(p) : '';
+      if (!path) continue;
+
+      const removedAt =
+        it.removedAt ??
+        it.removed_at ??
+        it.deletedAt ??
+        it.deleted_at ??
+        null;
+
+      const isRemoved = Boolean(
+        it.removed === true ||
+          it.deleted === true ||
+          it.isRemoved === true ||
+          removedAt
+      );
+
+      const next = {
+        path,
+        label: it.label ?? it.name ?? null,
+        originalName: it.originalName ?? it.original_name ?? null,
+        uploadedAt: it.uploadedAt ?? it.uploaded_at ?? null,
+        removedAt: removedAt ? String(removedAt) : null,
+        isRemoved,
+      };
+
+      const existing = byPath.get(path);
+      if (!existing) {
+        byPath.set(path, next);
+        continue;
+      }
+
+      // Merge (prefer richer data)
+      byPath.set(path, {
+        ...existing,
+        label: existing.label || next.label,
+        originalName: existing.originalName || next.originalName,
+        uploadedAt: existing.uploadedAt || next.uploadedAt,
+        removedAt: existing.removedAt || next.removedAt,
+        isRemoved: existing.isRemoved || next.isRemoved,
+      });
+    }
+
+    return Array.from(byPath.values()).sort((a, b) => {
+      const ta = a.uploadedAt ? new Date(a.uploadedAt).getTime() : 0;
+      const tb = b.uploadedAt ? new Date(b.uploadedAt).getTime() : 0;
+      return ta - tb;
+    });
+  };
+
+  const getInterviewNotesFromApplicant = (applicant) => {
+    const payloadObj = getApplicantPayloadObject(applicant);
+    const notes =
+      applicant?.interview_notes ??
+      payloadObj?.interview_notes ??
+      payloadObj?.interviewNotes ??
+      '';
+
+    const attachments = getInterviewNotesAttachmentsFromApplicant(applicant);
+    const firstActive = attachments.find((a) => a && !a.isRemoved) || null;
+
+    const attachmentPath = firstActive?.path ?? null;
+    const attachmentLabel = firstActive?.label ?? null;
+    const attachmentOriginalName = firstActive?.originalName ?? null;
+
+    return {
+      notes: String(notes || ''),
+      attachments,
+      attachmentPath: attachmentPath ? String(attachmentPath) : null,
+      attachmentLabel: attachmentLabel ? String(attachmentLabel) : null,
+      attachmentOriginalName: attachmentOriginalName ? String(attachmentOriginalName) : null,
+    };
+  };
+
+  // Keep the Interview Notes textarea in sync when switching applicants.
+  // Intentionally does NOT overwrite text while staying on the same applicant (so drafts aren't lost).
+  useEffect(() => {
+    if (activeDetailTab !== 'Assessment') return;
+
+    if (!selectedApplicant?.id) {
+      lastInterviewNotesApplicantIdRef.current = null;
+      setInterviewNotesText('');
+      return;
+    }
+
+    const idKey = String(selectedApplicant.id);
+    if (lastInterviewNotesApplicantIdRef.current === idKey) return;
+
+    const { notes } = getInterviewNotesFromApplicant(selectedApplicant);
+    setInterviewNotesText(String(notes || ''));
+    lastInterviewNotesApplicantIdRef.current = idKey;
+  }, [activeDetailTab, selectedApplicant?.id]);
 
   const formatNameLastFirstMiddle = ({ last, first, middle }) => {
     const l = normalizeWs(last);
@@ -1066,6 +1366,12 @@ function HrRecruitment() {
           interview_location: row.interview_location || row.payload?.interview?.location || null,
           interviewer: row.interviewer || row.payload?.interview?.interviewer || null,
           interview_type: row.interview_type || payloadObj.interview_type || payloadObj.interview?.type || 'onsite',
+          interview_history: Array.isArray(payloadObj.interview_history || payloadObj.interviewHistory)
+            ? (payloadObj.interview_history || payloadObj.interviewHistory)
+            : [],
+          hr_scheduled_another_interview: payloadObj.hr_scheduled_another_interview ?? payloadObj.hrScheduledAnotherInterview ?? false,
+          assessment_finalized: payloadObj.assessment_finalized ?? payloadObj.assessmentFinalized ?? false,
+          assessment_finalized_at: payloadObj.assessment_finalized_at ?? payloadObj.assessmentFinalizedAt ?? null,
           // New fields - check both column and payload as fallback
           interview_confirmed: row.interview_confirmed ?? payloadObj.interview_confirmed ?? false,
           interview_confirmed_at: row.interview_confirmed_at ?? payloadObj.interview_confirmed_at ?? null,
@@ -1077,6 +1383,12 @@ function HrRecruitment() {
           agreement_signing_confirmed_at: payloadObj.agreement_signing_confirmed_at ?? payloadObj.agreementSigningConfirmedAt ?? null,
           interview_details_file: row.interview_details_file ?? payloadObj.interview_details_file ?? null,
           assessment_results_file: row.assessment_results_file ?? payloadObj.assessment_results_file ?? null,
+          interview_notes: row.interview_notes ?? payloadObj.interview_notes ?? payloadObj.interviewNotes ?? '',
+          interview_notes_attachments: Array.isArray(payloadObj.interview_notes_attachments || payloadObj.interviewNotesAttachments)
+            ? (payloadObj.interview_notes_attachments || payloadObj.interviewNotesAttachments)
+            : (payloadObj?.interview_notes_attachment ? [payloadObj.interview_notes_attachment] : []),
+          interview_notes_file: row.interview_notes_file ?? payloadObj.interview_notes_file ?? payloadObj.interviewNotesFile ?? payloadObj?.interview_notes_attachment?.path ?? null,
+          interview_notes_file_label: row.interview_notes_file_label ?? payloadObj.interview_notes_file_label ?? payloadObj.interviewNotesFileLabel ?? payloadObj?.interview_notes_attachment?.label ?? null,
           appointment_letter_file: row.appointment_letter_file ?? payloadObj.appointment_letter_file ?? null,
           undertaking_file: row.undertaking_file ?? payloadObj.undertaking_file ?? null,
           application_form_file: row.application_form_file ?? payloadObj.application_form_file ?? null,
@@ -2338,7 +2650,8 @@ function HrRecruitment() {
 
   // ---- OPEN interview modal
   const openInterviewModal = (application, options = {}) => {
-    const { reset = false } = options || {};
+    const { reset = false, mode = 'initial' } = options || {};
+    setInterviewModalMode(mode);
     setSelectedApplicationForInterview(application);
 
     // Extract interview type safely (payload may be string or invalid JSON)
@@ -2491,6 +2804,71 @@ function HrRecruitment() {
 
     setScheduling(true);
     try {
+      // If HR is scheduling an "another interview", store the previous interview details first
+      // so the Edge Function (which rewrites payload interview fields) retains this history.
+      if (interviewModalMode === 'another') {
+        const payloadObj = getApplicantPayloadObject(selectedApplicationForInterview);
+        const alreadyScheduledAnother = Boolean(
+          payloadObj?.hr_scheduled_another_interview ||
+          payloadObj?.hrScheduledAnotherInterview
+        );
+
+        if (alreadyScheduledAnother) {
+          setErrorMessage('You can only schedule another interview once.');
+          setShowErrorAlert(true);
+          setScheduling(false);
+          return;
+        }
+
+        const prev = {
+          date: selectedApplicationForInterview?.interview_date || payloadObj?.interview?.date || null,
+          time: selectedApplicationForInterview?.interview_time || payloadObj?.interview?.time || null,
+          location: selectedApplicationForInterview?.interview_location || payloadObj?.interview?.location || null,
+          interviewer: selectedApplicationForInterview?.interviewer || payloadObj?.interview?.interviewer || null,
+          interview_type:
+            selectedApplicationForInterview?.interview_type ||
+            payloadObj?.interview_type ||
+            payloadObj?.interview?.type ||
+            null,
+          interview_confirmed: selectedApplicationForInterview?.interview_confirmed || payloadObj?.interview_confirmed || null,
+          interview_confirmed_at: selectedApplicationForInterview?.interview_confirmed_at || payloadObj?.interview_confirmed_at || null,
+          recorded_at: new Date().toISOString(),
+        };
+
+        const hasAnyPrev = Boolean(prev.date || prev.time || prev.location || prev.interviewer);
+        const rawHistory = payloadObj?.interview_history || payloadObj?.interviewHistory;
+        const history = Array.isArray(rawHistory) ? rawHistory.slice() : [];
+
+        if (hasAnyPrev) {
+          const prevKey = [prev.date, prev.time, prev.location, prev.interviewer, prev.interview_type].map((v) => String(v || '')).join('|');
+          const exists = history.some((h) => {
+            if (!h || typeof h !== 'object') return false;
+            const k = [h.date, h.time, h.location, h.interviewer, h.interview_type].map((v) => String(v || '')).join('|');
+            return k === prevKey;
+          });
+          if (!exists) history.push(prev);
+        }
+
+        const prePayload = {
+          ...payloadObj,
+          interview_history: history,
+          hr_scheduled_another_interview: true,
+        };
+
+        const { error: preErr } = await supabase
+          .from('applications')
+          .update({ payload: prePayload })
+          .eq('id', selectedApplicationForInterview.id);
+
+        if (preErr) {
+          console.error('Failed to persist previous interview history:', preErr);
+          setErrorMessage('Failed to prepare another interview schedule. Please try again.');
+          setShowErrorAlert(true);
+          setScheduling(false);
+          return;
+        }
+      }
+
       // Use the deployed Edge Function for interview scheduling and notifications
       const interviewPayload = {
         ...interviewForm,
@@ -2551,6 +2929,597 @@ function HrRecruitment() {
     } finally {
       setScheduling(false);
     }
+  };
+
+  const saveInterviewNotes = async () => {
+    if (!selectedApplicant?.id) return;
+
+    setSavingInterviewNotes(true);
+    try {
+      const notes = String(interviewNotesText || '');
+
+      const currentPayload = getApplicantPayloadObject(selectedApplicant);
+      const updatedPayload = {
+        ...currentPayload,
+        interview_notes: notes,
+      };
+
+      const { error: updateError } = await supabase
+        .from('applications')
+        .update({ interview_notes: notes, payload: updatedPayload })
+        .eq('id', selectedApplicant.id);
+
+      if (updateError && updateError.code === 'PGRST204') {
+        const { error: payloadError } = await supabase
+          .from('applications')
+          .update({ payload: updatedPayload })
+          .eq('id', selectedApplicant.id);
+        if (payloadError) throw payloadError;
+      } else if (updateError) {
+        throw updateError;
+      }
+
+      setSelectedApplicant((prev) => {
+        if (!prev) return prev;
+        const prevPayload = getApplicantPayloadObject(prev);
+        const mergedPayload = { ...prevPayload, interview_notes: notes };
+        return {
+          ...prev,
+          interview_notes: notes,
+          raw: {
+            ...(prev.raw || {}),
+            payload: mergedPayload,
+          },
+        };
+      });
+
+      await loadApplications();
+      setSuccessMessage('Interview notes saved successfully.');
+      setShowSuccessAlert(true);
+    } catch (err) {
+      console.error('saveInterviewNotes error:', err);
+      setErrorMessage('Failed to save interview notes. Please try again.');
+      setShowErrorAlert(true);
+    } finally {
+      setSavingInterviewNotes(false);
+    }
+  };
+
+  const requestFinalizeAssessment = () => {
+    if (!selectedApplicant?.id) return;
+
+    // Prevent if already processing or opening dialog
+    if (isProcessingConfirm || isOpeningConfirmDialog || showConfirmDialog) return;
+
+    const applicantName = selectedApplicant?.name || 'this applicant';
+    setConfirmMessage(
+      `Finalizing assessment will proceed ${applicantName} to agreements signing. Confirm before proceeding.`
+    );
+
+    setConfirmCallback(() => async () => {
+      setFinalizingAssessment(true);
+      try {
+        const notes = String(interviewNotesText || '');
+        const nowIso = new Date().toISOString();
+
+        const currentPayload = getApplicantPayloadObject(selectedApplicant);
+        const updatedPayload = {
+          ...currentPayload,
+          interview_notes: notes,
+          assessment_finalized: true,
+          assessment_finalized_at: nowIso,
+        };
+
+        const { error: updateError } = await supabase
+          .from('applications')
+          .update({
+            status: 'agreement',
+            interview_notes: notes,
+            payload: updatedPayload,
+          })
+          .eq('id', selectedApplicant.id);
+
+        if (updateError && updateError.code === 'PGRST204') {
+          const { error: payloadError } = await supabase
+            .from('applications')
+            .update({ status: 'agreement', payload: updatedPayload })
+            .eq('id', selectedApplicant.id);
+          if (payloadError) throw payloadError;
+        } else if (updateError) {
+          throw updateError;
+        }
+
+        setSelectedApplicant((prev) => {
+          if (!prev) return prev;
+          const prevPayload = getApplicantPayloadObject(prev);
+          const mergedPayload = {
+            ...prevPayload,
+            interview_notes: notes,
+            assessment_finalized: true,
+            assessment_finalized_at: nowIso,
+          };
+          return {
+            ...prev,
+            status: 'agreement',
+            interview_notes: notes,
+            raw: {
+              ...(prev.raw || {}),
+              payload: mergedPayload,
+            },
+          };
+        });
+
+        await loadApplications();
+        setActiveDetailTab('Agreements');
+        setSuccessMessage(`Assessment finalized. ${applicantName} can proceed to agreements signing.`);
+        setShowSuccessAlert(true);
+      } catch (err) {
+        console.error('finalizeAssessment error:', err);
+        setErrorMessage('Failed to finalize assessment. Please try again.');
+        setShowErrorAlert(true);
+      } finally {
+        setFinalizingAssessment(false);
+      }
+    });
+
+    setShowConfirmDialog(true);
+  };
+
+  const uploadInterviewNotesAttachment = async () => {
+    if (!selectedApplicant?.id) return;
+    if (!Array.isArray(interviewNotesAttachmentFiles) || interviewNotesAttachmentFiles.length === 0) {
+      setErrorMessage('Please choose at least one file to upload.');
+      setShowErrorAlert(true);
+      return;
+    }
+
+    const labelRaw = String(interviewNotesAttachmentLabel || '').trim();
+
+    setUploadingInterviewNotesAttachment(true);
+    try {
+      const currentPayload = getApplicantPayloadObject(selectedApplicant);
+      const rawExisting = currentPayload?.interview_notes_attachments || currentPayload?.interviewNotesAttachments;
+      const existingAttachments = Array.isArray(rawExisting) ? rawExisting.slice() : [];
+
+      const uploadedAttachments = [];
+      for (let i = 0; i < interviewNotesAttachmentFiles.length; i++) {
+        const file = interviewNotesAttachmentFiles[i];
+        if (!file) continue;
+
+        const originalName = String(file.name || 'attachment');
+        const extMatch = originalName.match(/\.([^.]+)$/);
+        const ext = extMatch ? extMatch[1] : '';
+
+        const label = labelRaw || originalName.replace(/\.[^./\\]+$/, '') || 'Interview Attachment';
+        const base = sanitizeFileBaseName(label);
+        const fileName = `${base}-${selectedApplicant.id}-${Date.now()}-${i}${ext ? `.${ext}` : ''}`;
+        const filePath = `interview-notes/${selectedApplicant.id}/${fileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('application-files')
+          .upload(filePath, file, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        uploadedAttachments.push({
+          path: uploadData.path,
+          label,
+          originalName,
+          uploadedAt: new Date().toISOString(),
+        });
+      }
+
+      if (uploadedAttachments.length === 0) {
+        setErrorMessage('No files were uploaded. Please try again.');
+        setShowErrorAlert(true);
+        return;
+      }
+
+      const combinedAttachments = existingAttachments.concat(uploadedAttachments);
+      const lastAttachment = uploadedAttachments[uploadedAttachments.length - 1];
+
+      const updatedPayload = {
+        ...currentPayload,
+        interview_notes_attachments: combinedAttachments,
+        interview_notes_attachment: lastAttachment,
+        // keep these convenience keys for legacy reads
+        interview_notes_file: lastAttachment.path,
+        interview_notes_file_label: lastAttachment.label,
+      };
+
+      const { error: updateError } = await supabase
+        .from('applications')
+        .update({
+          interview_notes_file: lastAttachment.path,
+          interview_notes_file_label: lastAttachment.label,
+          payload: updatedPayload,
+        })
+        .eq('id', selectedApplicant.id);
+
+      if (updateError && updateError.code === 'PGRST204') {
+        const { error: payloadError } = await supabase
+          .from('applications')
+          .update({ payload: updatedPayload })
+          .eq('id', selectedApplicant.id);
+        if (payloadError) throw payloadError;
+      } else if (updateError) {
+        throw updateError;
+      }
+
+      setSelectedApplicant((prev) => {
+        if (!prev) return prev;
+        const prevPayload = getApplicantPayloadObject(prev);
+        const mergedPayload = {
+          ...prevPayload,
+          interview_notes_attachments: Array.isArray(updatedPayload.interview_notes_attachments) ? updatedPayload.interview_notes_attachments : [],
+          interview_notes_attachment: updatedPayload.interview_notes_attachment,
+          interview_notes_file: updatedPayload.interview_notes_file,
+          interview_notes_file_label: updatedPayload.interview_notes_file_label,
+        };
+        return {
+          ...prev,
+          interview_notes_file: updatedPayload.interview_notes_file,
+          interview_notes_file_label: updatedPayload.interview_notes_file_label,
+          raw: {
+            ...(prev.raw || {}),
+            payload: mergedPayload,
+          },
+        };
+      });
+
+      setShowInterviewNotesUploadModal(false);
+      setInterviewNotesAttachmentFiles([]);
+      setInterviewNotesAttachmentLabel('');
+
+      await loadApplications();
+      setSuccessMessage(uploadedAttachments.length > 1
+        ? 'Interview attachments uploaded successfully.'
+        : 'Interview attachment uploaded successfully.');
+      setShowSuccessAlert(true);
+    } catch (err) {
+      console.error('uploadInterviewNotesAttachment error:', err);
+      setErrorMessage('Failed to upload attachment. Please try again.');
+      setShowErrorAlert(true);
+    } finally {
+      setUploadingInterviewNotesAttachment(false);
+    }
+  };
+
+  const requestRemoveInterviewNotesAttachment = (attachmentPath) => {
+    if (!selectedApplicant?.id) return;
+    const path = String(attachmentPath || '').trim();
+    if (!path) return;
+
+    // Prevent if already processing or opening dialog
+    if (isProcessingConfirm || isOpeningConfirmDialog || showConfirmDialog) return;
+
+    setConfirmMessage('Remove this uploaded attachment from interview notes?');
+
+    setConfirmCallback(() => async () => {
+      setRemovingInterviewNotesAttachment(true);
+      try {
+        const currentPayload = getApplicantPayloadObject(selectedApplicant);
+        const rawExisting = currentPayload?.interview_notes_attachments || currentPayload?.interviewNotesAttachments;
+        const existingAttachments = Array.isArray(rawExisting) ? rawExisting.slice() : [];
+
+        // Ensure the legacy single attachment isn't lost if it exists
+        const legacySingle = currentPayload?.interview_notes_attachment || currentPayload?.interviewNotesAttachment || null;
+        if (legacySingle && (legacySingle.path || legacySingle.file_path) && !existingAttachments.some((a) => (a?.path || a?.file_path) === (legacySingle.path || legacySingle.file_path))) {
+          existingAttachments.push(legacySingle);
+        }
+
+        // If columns exist but payload doesn't include it, include it
+        if (selectedApplicant?.interview_notes_file && !existingAttachments.some((a) => (a?.path || a?.file_path) === selectedApplicant.interview_notes_file)) {
+          existingAttachments.push({
+            path: selectedApplicant.interview_notes_file,
+            label: selectedApplicant?.interview_notes_file_label || null,
+            uploadedAt: null,
+          });
+        }
+
+        const nowIso = new Date().toISOString();
+        const updatedList = existingAttachments.map((a) => {
+          if (!a || typeof a !== 'object') return a;
+          const p = a.path || a.file_path || a.filePath || a.storagePath;
+          if (String(p || '') !== path) return a;
+          return {
+            ...a,
+            removedAt: a.removedAt || a.removed_at || a.deletedAt || a.deleted_at || nowIso,
+            removed: true,
+          };
+        });
+
+        const nextActive = [...updatedList]
+          .reverse()
+          .find((a) => a && typeof a === 'object' && !(a.removed || a.deleted || a.removedAt || a.removed_at || a.deletedAt || a.deleted_at) && (a.path || a.file_path));
+
+        const nextPath = nextActive ? String(nextActive.path || nextActive.file_path || '') : null;
+        const nextLabel = nextActive ? String(nextActive.label || nextActive.name || '') : null;
+
+        const updatedPayload = {
+          ...currentPayload,
+          interview_notes_attachments: updatedList,
+          interview_notes_attachment: nextActive || null,
+          interview_notes_file: nextPath,
+          interview_notes_file_label: nextLabel,
+        };
+
+        const { error: updateError } = await supabase
+          .from('applications')
+          .update({
+            interview_notes_file: nextPath,
+            interview_notes_file_label: nextLabel,
+            payload: updatedPayload,
+          })
+          .eq('id', selectedApplicant.id);
+
+        if (updateError && updateError.code === 'PGRST204') {
+          const { error: payloadError } = await supabase
+            .from('applications')
+            .update({ payload: updatedPayload })
+            .eq('id', selectedApplicant.id);
+          if (payloadError) throw payloadError;
+        } else if (updateError) {
+          throw updateError;
+        }
+
+        setSelectedApplicant((prev) => {
+          if (!prev) return prev;
+          const prevPayload = getApplicantPayloadObject(prev);
+          const mergedPayload = {
+            ...prevPayload,
+            interview_notes_attachments: updatedPayload.interview_notes_attachments,
+            interview_notes_attachment: updatedPayload.interview_notes_attachment,
+            interview_notes_file: updatedPayload.interview_notes_file,
+            interview_notes_file_label: updatedPayload.interview_notes_file_label,
+          };
+          return {
+            ...prev,
+            interview_notes_file: updatedPayload.interview_notes_file,
+            interview_notes_file_label: updatedPayload.interview_notes_file_label,
+            raw: {
+              ...(prev.raw || {}),
+              payload: mergedPayload,
+            },
+          };
+        });
+
+        await loadApplications();
+        setSuccessMessage('Attachment removed successfully.');
+        setShowSuccessAlert(true);
+      } catch (err) {
+        console.error('removeInterviewNotesAttachment error:', err);
+        setErrorMessage('Failed to remove attachment. Please try again.');
+        setShowErrorAlert(true);
+      } finally {
+        setRemovingInterviewNotesAttachment(false);
+      }
+    });
+
+    setShowConfirmDialog(true);
+  };
+
+  const uploadAgreementDocuments = async () => {
+    if (!selectedApplicant?.id) return;
+    if (!Array.isArray(agreementDocsUploadFiles) || agreementDocsUploadFiles.length === 0) {
+      setErrorMessage('Please choose at least one file to upload.');
+      setShowErrorAlert(true);
+      return;
+    }
+
+    const labelRaw = String(agreementDocsUploadLabel || '').trim();
+
+    setUploadingAgreementDocs(true);
+    try {
+      const currentPayload = getApplicantPayloadObject(selectedApplicant);
+      const rawExisting = currentPayload?.agreement_documents || currentPayload?.agreementDocuments || currentPayload?.agreements_documents;
+      const existingDocs = Array.isArray(rawExisting) ? rawExisting.slice() : [];
+
+      const uploadedDocs = [];
+      for (let i = 0; i < agreementDocsUploadFiles.length; i++) {
+        const file = agreementDocsUploadFiles[i];
+        if (!file) continue;
+
+        const originalName = String(file.name || 'document');
+        const extMatch = originalName.match(/\.([^.]+)$/);
+        const ext = extMatch ? extMatch[1] : '';
+        const label = labelRaw || originalName.replace(/\.[^./\\]+$/, '') || 'Agreement Document';
+        const base = sanitizeFileBaseName(label);
+        const fileName = `${base}-${selectedApplicant.id}-${Date.now()}-${i}${ext ? `.${ext}` : ''}`;
+        const filePath = `agreements/${selectedApplicant.id}/${fileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('application-files')
+          .upload(filePath, file, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        uploadedDocs.push({
+          path: uploadData.path,
+          label,
+          originalName,
+          uploadedAt: new Date().toISOString(),
+        });
+      }
+
+      if (uploadedDocs.length === 0) {
+        setErrorMessage('No files were uploaded. Please try again.');
+        setShowErrorAlert(true);
+        return;
+      }
+
+      const combined = existingDocs.concat(uploadedDocs);
+      const updatedPayload = {
+        ...currentPayload,
+        agreement_documents: combined,
+      };
+
+      // If label matches known titles, also update the corresponding column for compatibility
+      const colKey = agreementDocTitleToColumnKey(labelRaw);
+      const maybeColumnPatch = colKey ? { [colKey]: uploadedDocs[uploadedDocs.length - 1].path } : {};
+
+      const { error: updateError } = await supabase
+        .from('applications')
+        .update({
+          payload: updatedPayload,
+          ...maybeColumnPatch,
+        })
+        .eq('id', selectedApplicant.id);
+
+      if (updateError && updateError.code === 'PGRST204') {
+        const { error: payloadError } = await supabase
+          .from('applications')
+          .update({ payload: updatedPayload })
+          .eq('id', selectedApplicant.id);
+        if (payloadError) throw payloadError;
+      } else if (updateError) {
+        throw updateError;
+      }
+
+      setSelectedApplicant((prev) => {
+        if (!prev) return prev;
+        const prevPayload = getApplicantPayloadObject(prev);
+        const mergedPayload = {
+          ...prevPayload,
+          agreement_documents: combined,
+        };
+        return {
+          ...prev,
+          ...(colKey ? { [colKey]: uploadedDocs[uploadedDocs.length - 1].path } : null),
+          raw: {
+            ...(prev.raw || {}),
+            payload: mergedPayload,
+          },
+        };
+      });
+
+      setShowAgreementDocsUploadModal(false);
+      setAgreementDocsUploadFiles([]);
+      setAgreementDocsUploadLabel('');
+
+      await loadApplications();
+      setSuccessMessage(uploadedDocs.length > 1 ? 'Agreement documents uploaded successfully.' : 'Agreement document uploaded successfully.');
+      setShowSuccessAlert(true);
+    } catch (err) {
+      console.error('uploadAgreementDocuments error:', err);
+      setErrorMessage('Failed to upload agreement documents. Please try again.');
+      setShowErrorAlert(true);
+    } finally {
+      setUploadingAgreementDocs(false);
+    }
+  };
+
+  const requestRemoveAgreementDocument = (doc) => {
+    if (!selectedApplicant?.id) return;
+    const path = String(doc?.path || '').trim();
+    if (!path) return;
+
+    if (isProcessingConfirm || isOpeningConfirmDialog || showConfirmDialog) return;
+
+    setConfirmMessage('Remove this agreement document?');
+
+    setConfirmCallback(() => async () => {
+      setRemovingAgreementDoc(true);
+      try {
+        const currentPayload = getApplicantPayloadObject(selectedApplicant);
+        const rawExisting = currentPayload?.agreement_documents || currentPayload?.agreementDocuments || currentPayload?.agreements_documents;
+        const existingDocs = Array.isArray(rawExisting) ? rawExisting.slice() : [];
+
+        const nowIso = new Date().toISOString();
+        const updatedList = existingDocs.map((a) => {
+          if (!a || typeof a !== 'object') return a;
+          const p = a.path || a.file_path || a.filePath || a.storagePath;
+          if (String(p || '') !== path) return a;
+          return {
+            ...a,
+            removedAt: a.removedAt || a.removed_at || a.deletedAt || a.deleted_at || nowIso,
+            removed: true,
+          };
+        });
+
+        // If it was only in legacy columns, ensure it exists in payload before we can mark it removed
+        const inList = updatedList.some((a) => {
+          const p = a?.path || a?.file_path;
+          return String(p || '') === path;
+        });
+        if (!inList) {
+          updatedList.push({
+            path,
+            label: doc?.label || null,
+            originalName: doc?.originalName || null,
+            uploadedAt: doc?.uploadedAt || null,
+            removedAt: nowIso,
+            removed: true,
+            sourceKey: doc?.sourceKey || null,
+            legacy: Boolean(doc?.legacy),
+          });
+        }
+
+        const updatedPayload = {
+          ...currentPayload,
+          agreement_documents: updatedList,
+        };
+
+        // Clear matching legacy column if applicable
+        const columnsToMaybeClear = ['appointment_letter_file', 'undertaking_file', 'undertaking_duties_file'];
+        const columnPatch = {};
+        for (const k of columnsToMaybeClear) {
+          if (selectedApplicant?.[k] && String(selectedApplicant[k]) === path) {
+            columnPatch[k] = null;
+          }
+        }
+        if (doc?.sourceKey && selectedApplicant?.[doc.sourceKey] && String(selectedApplicant[doc.sourceKey]) === path) {
+          columnPatch[doc.sourceKey] = null;
+        }
+
+        const { error: updateError } = await supabase
+          .from('applications')
+          .update({
+            payload: updatedPayload,
+            ...columnPatch,
+          })
+          .eq('id', selectedApplicant.id);
+
+        if (updateError && updateError.code === 'PGRST204') {
+          const { error: payloadError } = await supabase
+            .from('applications')
+            .update({ payload: updatedPayload })
+            .eq('id', selectedApplicant.id);
+          if (payloadError) throw payloadError;
+        } else if (updateError) {
+          throw updateError;
+        }
+
+        setSelectedApplicant((prev) => {
+          if (!prev) return prev;
+          const prevPayload = getApplicantPayloadObject(prev);
+          const mergedPayload = {
+            ...prevPayload,
+            agreement_documents: updatedList,
+          };
+          return {
+            ...prev,
+            ...columnPatch,
+            raw: {
+              ...(prev.raw || {}),
+              payload: mergedPayload,
+            },
+          };
+        });
+
+        await loadApplications();
+        setSuccessMessage('Agreement document removed successfully.');
+        setShowSuccessAlert(true);
+      } catch (err) {
+        console.error('removeAgreementDocument error:', err);
+        setErrorMessage('Failed to remove agreement document. Please try again.');
+        setShowErrorAlert(true);
+      } finally {
+        setRemovingAgreementDoc(false);
+      }
+    });
+
+    setShowConfirmDialog(true);
   };
 
   // ---- Save ID number validation
@@ -3268,166 +4237,6 @@ function HrRecruitment() {
     ];
     const index = (name || '').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
     return colors[index];
-  };
-
-  // Helper function to handle agreement file uploads
-  const handleAgreementFileUpload = async (file, fileName, fileKey, filePathPrefix, setFile, setFileName, setUploading, setSuccessMessage, setShowSuccessAlert, setErrorMessage, setShowErrorAlert) => {
-    if (!file || !selectedApplicant?.id) return;
-    
-    setUploading(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const finalFileName = fileName || `${filePathPrefix}-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
-      const filePath = `${filePathPrefix}/${selectedApplicant.id}/${finalFileName}`;
-
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('application-files')
-        .upload(filePath, file, {
-          upsert: true,
-        });
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      // Update application record with file path
-      const { error: updateError } = await supabase
-        .from('applications')
-        .update({ [fileKey]: uploadData.path })
-        .eq('id', selectedApplicant.id);
-
-      if (updateError && updateError.code === 'PGRST204') {
-        // Column doesn't exist, store in payload instead
-        console.warn(`${fileKey} column not found, storing in payload`);
-        const currentPayload = selectedApplicant.raw?.payload || {};
-        let payloadObj = currentPayload;
-        if (typeof payloadObj === 'string') {
-          try {
-            payloadObj = JSON.parse(payloadObj);
-          } catch {
-            payloadObj = {};
-          }
-        }
-        
-        const updatedPayload = {
-          ...payloadObj,
-          [fileKey]: uploadData.path
-        };
-        
-        const { error: payloadError } = await supabase
-          .from('applications')
-          .update({ payload: updatedPayload })
-          .eq('id', selectedApplicant.id);
-        
-        if (payloadError) {
-          throw payloadError;
-        }
-      } else if (updateError) {
-        throw updateError;
-      }
-
-      // Update local state immediately
-      setFileName(finalFileName);
-      setFile(null);
-      
-      // Update selectedApplicant state with the new file path
-      setSelectedApplicant(prev => ({
-        ...prev,
-        [fileKey]: uploadData.path
-      }));
-      
-      // Reload applications to sync with database
-      await loadApplications();
-      
-      // After reload, update selectedApplicant again to ensure it's current
-      const { data: updatedApp } = await supabase
-        .from('applications')
-        .select('*')
-        .eq('id', selectedApplicant.id)
-        .single();
-      
-      if (updatedApp) {
-        let payloadObj = updatedApp.payload;
-        if (typeof payloadObj === 'string') {
-          try {
-            payloadObj = JSON.parse(payloadObj);
-          } catch {
-            payloadObj = {};
-          }
-        }
-        
-        setSelectedApplicant(prev => ({
-          ...prev,
-          [fileKey]: updatedApp[fileKey] || payloadObj?.[fileKey] || uploadData.path,
-          raw: updatedApp
-        }));
-      }
-      
-      setSuccessMessage(`${fileName || filePathPrefix} uploaded successfully`);
-      setShowSuccessAlert(true);
-    } catch (err) {
-      console.error(`Error uploading ${fileKey}:`, err);
-      setErrorMessage("Failed to upload file. Please try again.");
-      setShowErrorAlert(true);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  // Helper function to handle agreement file removal
-  const handleAgreementFileRemove = async (fileKey, setFileName, setSuccessMessage, setShowSuccessAlert, setErrorMessage, setShowErrorAlert) => {
-    if (!selectedApplicant?.id) return;
-    
-    try {
-      // Remove file path from database
-      const { error: updateError } = await supabase
-        .from('applications')
-        .update({ [fileKey]: null })
-        .eq('id', selectedApplicant.id);
-
-      if (updateError && updateError.code === 'PGRST204') {
-        // Column doesn't exist, remove from payload
-        const currentPayload = selectedApplicant.raw?.payload || {};
-        let payloadObj = currentPayload;
-        if (typeof payloadObj === 'string') {
-          try {
-            payloadObj = JSON.parse(payloadObj);
-          } catch {
-            payloadObj = {};
-          }
-        }
-        
-        const updatedPayload = {
-          ...payloadObj,
-          [fileKey]: null
-        };
-        
-        const { error: payloadError } = await supabase
-          .from('applications')
-          .update({ payload: updatedPayload })
-          .eq('id', selectedApplicant.id);
-        
-        if (payloadError) {
-          throw payloadError;
-        }
-      } else if (updateError) {
-        throw updateError;
-      }
-
-      // Reload applications
-      await loadApplications();
-      setFileName("");
-      setSelectedApplicant(prev => ({
-        ...prev,
-        [fileKey]: null
-      }));
-      setSuccessMessage("File removed successfully");
-      setShowSuccessAlert(true);
-    } catch (err) {
-      console.error(`Error removing ${fileKey}:`, err);
-      setErrorMessage("Failed to remove file. Please try again.");
-      setShowErrorAlert(true);
-    }
   };
 
   // Helper: Get application status display info
@@ -4335,23 +5144,6 @@ function HrRecruitment() {
                               onClick={() => {
                                 setSelectedApplicant(a);
                                 setActiveDetailTab("Application");
-                                setInterviewFile(null);
-                                setInterviewFileName(a.interview_details_file ? a.interview_details_file.split('/').pop() : "");
-                                setAssessmentFile(null);
-                                setAssessmentFileName(a.assessment_results_file ? a.assessment_results_file.split('/').pop() : "");
-                                setAgreementFile(null);
-                                setAgreementFileName(a.appointment_letter_file ? a.appointment_letter_file.split('/').pop() : "");
-                                // Reset new agreement file states
-                                setUndertakingFile(null);
-                                setUndertakingFileName(a.undertaking_file ? a.undertaking_file.split('/').pop() : "");
-                                setApplicationFormFile(null);
-                                setApplicationFormFileName(a.application_form_file ? a.application_form_file.split('/').pop() : "");
-                                setUndertakingDutiesFile(null);
-                                setUndertakingDutiesFileName(a.undertaking_duties_file ? a.undertaking_duties_file.split('/').pop() : "");
-                                setPreEmploymentRequirementsFile(null);
-                                setPreEmploymentRequirementsFileName(a.pre_employment_requirements_file ? a.pre_employment_requirements_file.split('/').pop() : "");
-                                setIdFormFile(null);
-                                setIdFormFileName(a.id_form_file ? a.id_form_file.split('/').pop() : "");
                               }}
                             >
                               <td className="px-6 py-4">
@@ -4423,30 +5215,6 @@ function HrRecruitment() {
                           }`}
                           onClick={() => {
                             setSelectedApplicant(a);
-                            // Reset file states when switching applicants
-                            setInterviewFile(null);
-                            setInterviewFileName(
-                              a.interview_details_file ? a.interview_details_file.split("/").pop() : ""
-                            );
-                            setAssessmentFile(null);
-                            setAssessmentFileName(
-                              a.assessment_results_file ? a.assessment_results_file.split("/").pop() : ""
-                            );
-                            setAgreementFile(null);
-                            setAgreementFileName(
-                              a.appointment_letter_file ? a.appointment_letter_file.split("/").pop() : ""
-                            );
-                            // Reset new agreement file states
-                            setUndertakingFile(null);
-                            setUndertakingFileName(a.undertaking_file ? a.undertaking_file.split("/").pop() : "");
-                            setApplicationFormFile(null);
-                            setApplicationFormFileName(a.application_form_file ? a.application_form_file.split("/").pop() : "");
-                            setUndertakingDutiesFile(null);
-                            setUndertakingDutiesFileName(a.undertaking_duties_file ? a.undertaking_duties_file.split("/").pop() : "");
-                            setPreEmploymentRequirementsFile(null);
-                            setPreEmploymentRequirementsFileName(a.pre_employment_requirements_file ? a.pre_employment_requirements_file.split("/").pop() : "");
-                            setIdFormFile(null);
-                            setIdFormFileName(a.id_form_file ? a.id_form_file.split("/").pop() : "");
                           }}
                         >
                           <td className="px-4 py-3">
@@ -4549,7 +5317,7 @@ function HrRecruitment() {
                               }`}
                               title={canReject ? 'Reject applicant' : 'Cannot reject (already hired/rejected)'}
                             >
-                              Reject
+                              Reject Application
                             </button>
                           );
                         })()}
@@ -4573,6 +5341,9 @@ function HrRecruitment() {
                       const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
                                                 selectedApplicant?.interview_confirmed === 'confirmed';
                       const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterview;
+                      const payloadObj = getApplicantPayloadObject(selectedApplicant);
+                      const assessmentFinalized = Boolean(payloadObj?.assessment_finalized || payloadObj?.assessmentFinalized);
+                      const agreementsStatusUnlocked = ['agreement', 'agreements', 'final_agreement', 'hired'].includes(applicantStatus);
                       
                       // Determine step completion and unlock status
                       let isCompleted = false;
@@ -4590,8 +5361,8 @@ function HrRecruitment() {
                         // For agency endorsements: no schedule confirmation; complete once scheduled (unless reschedule requested)
                         isCompleted = hasInterview && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
                       } else if (step.key === "Agreements") {
-                        // For agency endorsements: unlock once scheduled (unless reschedule requested)
-                        isUnlocked = hasInterview && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
+                        // Locked until assessment is finalized (or applicant is already in an agreements-related status)
+                        isUnlocked = agreementsStatusUnlocked || assessmentFinalized;
                         // Step 3 is completed when status is agreement or hired
                         isCompleted = ["agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
                       }
@@ -5415,881 +6186,700 @@ function HrRecruitment() {
 
                 {/* Assessment Tab */}
                 {activeDetailTab === "Assessment" && (
-                  <section className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <h2 className="text-lg font-semibold text-gray-800">Assessment</h2>
-                      {/* Set Interview Schedule button - show if no interview scheduled */}
-                      {!selectedApplicant.interview_date && (
-                        <button
-                          type="button"
-                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
-                          onClick={() => {
-                            openInterviewModal(selectedApplicant, { reset: true });
-                          }}
-                        >
-                          Set Interview Schedule
-                        </button>
-                      )}
+                  <section className="p-4 space-y-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h2 className="text-lg font-semibold text-gray-800">Assessment</h2>
+                        <div className="text-xs text-gray-500">Assessment schedule, notes, and attachments</div>
+                      </div>
                     </div>
 
-                    {/* Interview Schedule */}
-                    {selectedApplicant.interview_date && (() => {
-                      // Extract interview_type from various sources
-                      let interviewType = 'onsite'; // default
-                      if (selectedApplicant.interview_type) {
-                        interviewType = selectedApplicant.interview_type;
-                      } else if (selectedApplicant.raw?.payload) {
-                        const payload = typeof selectedApplicant.raw.payload === 'string' 
-                          ? JSON.parse(selectedApplicant.raw.payload) 
-                          : selectedApplicant.raw.payload;
-                        interviewType = payload.interview_type || payload.interview?.type || 'onsite';
-                      } else if (selectedApplicant.payload) {
-                        const payload = typeof selectedApplicant.payload === 'string' 
-                          ? JSON.parse(selectedApplicant.payload) 
-                          : selectedApplicant.payload;
-                        interviewType = payload.interview_type || payload.interview?.type || 'onsite';
-                      }
+                    {(() => {
+                      const hasSchedule = Boolean(
+                        selectedApplicant?.interview_date ||
+                        selectedApplicant?.interview_time ||
+                        selectedApplicant?.interview_location
+                      );
+
+                      const payloadObj = getApplicantPayloadObject(selectedApplicant);
+                      const interviewType =
+                        selectedApplicant?.interview_type ||
+                        payloadObj?.interview_type ||
+                        payloadObj?.interview?.type ||
+                        'onsite';
+
+                      const interviewStatus =
+                        selectedApplicant?.interview_confirmed ||
+                        payloadObj?.interview_confirmed ||
+                        'Idle';
+
+                      const rawHistory = payloadObj?.interview_history || payloadObj?.interviewHistory;
+                      const interviewHistory = Array.isArray(rawHistory) ? rawHistory : [];
+                      const lastInterview = interviewHistory.length ? interviewHistory[interviewHistory.length - 1] : null;
+                      const hrScheduledAnother = Boolean(
+                        payloadObj?.hr_scheduled_another_interview ||
+                        payloadObj?.hrScheduledAnotherInterview
+                      );
+                      const schedulePassed = hasInterviewSchedulePassed(
+                        selectedApplicant?.interview_date,
+                        selectedApplicant?.interview_time
+                      );
+                      const canScheduleAnother = Boolean(hasSchedule && schedulePassed && !hrScheduledAnother);
+
+                      const agencyApplicant = isAgency(selectedApplicant);
+                      const statusPill = (() => {
+                        if (!hasSchedule) return null;
+                        if (agencyApplicant) {
+                          if (interviewStatus === 'Rejected' || interviewStatus === 'rejected') {
+                            return (
+                              <span className="text-xs px-3 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-300 font-semibold">
+                                Reschedule Requested
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="text-xs px-3 py-1 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-300 font-semibold">
+                              Schedule Set
+                            </span>
+                          );
+                        }
+
+                        if (interviewStatus === 'Confirmed' || interviewStatus === 'confirmed') {
+                          return (
+                            <span className="text-xs px-3 py-1 rounded-full bg-green-100 text-green-800 border border-green-300 font-semibold">
+                              Interview Confirmed
+                            </span>
+                          );
+                        }
+                        if (interviewStatus === 'Rejected' || interviewStatus === 'rejected') {
+                          return (
+                            <span className="text-xs px-3 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-300 font-semibold">
+                              Reschedule Requested
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-xs px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-300 font-semibold">
+                            Awaiting Response
+                          </span>
+                        );
+                      })();
 
                       return (
-                        <div className="bg-gray-50 border rounded-md p-4 mb-4 relative">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="text-sm text-gray-800 font-semibold">Interview Schedule</div>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                                interviewType === 'online'
-                                  ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
-                                  : 'bg-amber-100 text-amber-700 border border-amber-300'
-                              }`}>
+                        <div className="bg-white border rounded-lg shadow-sm p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-9 h-9 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-red-600">
+                                  <path fillRule="evenodd" d="M6.75 2.25A.75.75 0 0 1 7.5 3v1.5h9V3a.75.75 0 0 1 1.5 0v1.5h.75A2.25 2.25 0 0 1 21 6.75v12A2.25 2.25 0 0 1 18.75 21H5.25A2.25 2.25 0 0 1 3 18.75v-12A2.25 2.25 0 0 1 5.25 4.5H6V3a.75.75 0 0 1 .75-.75ZM4.5 9v9.75c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75V9h-15Z" clipRule="evenodd" />
+                                </svg>
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-gray-800">Assessment Schedule</div>
+                                <div className="text-xs text-gray-500">Manage interview schedule</div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 justify-end">
+                              <span
+                                className={`text-xs px-2 py-1 rounded-full font-semibold border ${
+                                  interviewType === 'online'
+                                    ? 'bg-emerald-100 text-emerald-700 border-emerald-300'
+                                    : 'bg-amber-100 text-amber-700 border-amber-300'
+                                }`}
+                              >
                                 {interviewType === 'online' ? 'ONLINE' : 'ONSITE'}
                               </span>
-                              {(() => {
-                                // Check interview status using the new text-based system
-                                const interviewStatus = selectedApplicant.interview_confirmed || selectedApplicant.payload?.interview_confirmed || 'Idle';
-                                const agencyApplicant = isAgency(selectedApplicant);
-
-                                if (agencyApplicant) {
-                                  if (interviewStatus === 'Rejected') {
-                                    return (
-                                      <span className="text-sm px-3 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300 font-medium">
-                                        Reschedule Requested
-                                      </span>
-                                    );
-                                  }
-                                  if (selectedApplicant.interview_date) {
-                                    return (
-                                      <span className="text-sm px-3 py-1 rounded bg-cyan-100 text-cyan-800 border border-cyan-300 font-medium">
-                                        Schedule Set
-                                      </span>
-                                    );
-                                  }
-                                  return null;
-                                }
-                                
-                                if (interviewStatus === 'Confirmed') {
-                                  return (
-                                    <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
-                                      Interview Confirmed
-                                    </span>
-                                  );
-                                } else if (interviewStatus === 'Rejected') {
-                                  return (
-                                    <span className="text-sm px-3 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300 font-medium">
-                                      Reschedule Requested
-                                    </span>
-                                  );
-                                } else if (interviewStatus === 'Idle' && selectedApplicant.interview_date) {
-                                  return (
-                                    <span className="text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-medium">
-                                      Awaiting Response
-                                    </span>
-                                  );
-                                }
-                                return null;
-                              })()}
+                              {statusPill}
                             </div>
                           </div>
-                          <div className="text-sm text-gray-700 space-y-1">
-                            <div><span className="font-medium">Date:</span> {selectedApplicant.interview_date}</div>
-                            <div><span className="font-medium">Time:</span> {selectedApplicant.interview_time || <span className="text-gray-500 italic">None</span>}</div>
-                            <div><span className="font-medium">{interviewType === 'online' ? 'Meeting Link' : 'Location'}:</span> {selectedApplicant.interview_location || <span className="text-gray-500 italic">None</span>}</div>
-                            <div><span className="font-medium">Interviewer:</span> {selectedApplicant.interviewer || <span className="text-gray-500 italic">None</span>}</div>
-                          </div>
-                          <div className="mt-3 flex items-center justify-end">
-                            <button
-                              type="button"
-                              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-                              onClick={() => {
-                                openInterviewModal(selectedApplicant, { reset: true });
-                              }}
-                            >
-                              Schedule Another Interview
-                            </button>
-                          </div>
+
+                          {!hasSchedule ? (
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                              <div className="text-sm text-gray-600 italic">No interview schedule set yet.</div>
+                              <button
+                                type="button"
+                                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                                onClick={() => {
+                                  if (!selectedApplicant) return;
+                                  openInterviewModal(selectedApplicant, { reset: false, mode: 'initial' });
+                                }}
+                              >
+                                Set Interview Schedule
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
+                                <div><span className="font-medium text-gray-800">Date:</span> {selectedApplicant?.interview_date || <span className="text-gray-500 italic">None</span>}</div>
+                                <div><span className="font-medium text-gray-800">Time:</span> {selectedApplicant?.interview_time || <span className="text-gray-500 italic">None</span>}</div>
+                                <div className="sm:col-span-2"><span className="font-medium text-gray-800">{interviewType === 'online' ? 'Meeting Link' : 'Location'}:</span> {selectedApplicant?.interview_location || <span className="text-gray-500 italic">None</span>}</div>
+                                <div className="sm:col-span-2"><span className="font-medium text-gray-800">Interviewer:</span> {selectedApplicant?.interviewer || <span className="text-gray-500 italic">None</span>}</div>
+                              </div>
+
+                              {lastInterview && (
+                                <div className="mt-4 border-t pt-4">
+                                  <div className="text-xs font-semibold text-gray-600 mb-2">Previous Interview Schedule</div>
+                                  <div className="bg-gray-50 border border-gray-200 rounded-md p-3 text-sm text-gray-700 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    <div><span className="font-medium text-gray-800">Date:</span> {lastInterview?.date || <span className="text-gray-500 italic">None</span>}</div>
+                                    <div><span className="font-medium text-gray-800">Time:</span> {lastInterview?.time || <span className="text-gray-500 italic">None</span>}</div>
+                                    <div className="sm:col-span-2"><span className="font-medium text-gray-800">Location:</span> {lastInterview?.location || <span className="text-gray-500 italic">None</span>}</div>
+                                    <div className="sm:col-span-2"><span className="font-medium text-gray-800">Interviewer:</span> {lastInterview?.interviewer || <span className="text-gray-500 italic">None</span>}</div>
+                                  </div>
+                                </div>
+                              )}
+
+                              <div className="mt-4 border-t pt-4 flex items-center justify-end gap-3">
+                                {!canScheduleAnother ? (
+                                  <div className="text-xs text-gray-500">
+                                    {hrScheduledAnother
+                                      ? 'HR can only schedule another interview once.'
+                                      : !schedulePassed
+                                        ? 'You can schedule another interview once the current interview schedule has passed.'
+                                        : null}
+                                  </div>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium disabled:opacity-60"
+                                  onClick={() => {
+                                    if (!selectedApplicant) return;
+                                    openInterviewModal(selectedApplicant, { reset: true, mode: 'another' });
+                                  }}
+                                  disabled={!canScheduleAnother}
+                                >
+                                  Schedule Another Interview
+                                </button>
+                              </div>
+                            </>
+                          )}
                         </div>
                       );
                     })()}
 
-                    {/* Assessment Files Upload Section */}
-                    <div className="mt-6">
-                      <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
-                      <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
-                        <div className="col-span-6">Document</div>
-                        <div className="col-span-6">File</div>
+                    <div className="bg-white border rounded-lg shadow-sm p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Interview Notes</div>
+                          <div className="text-xs text-gray-500">Notes and attachments will be saved when you finalize the assessment.</div>
+                        </div>
                       </div>
 
-                      {/* Interview Details File Row */}
-                      {(() => {
-                        // Check if interview is scheduled and confirmed
-                        const hasInterviewScheduled = !!selectedApplicant?.interview_date;
-                        const agencyApplicant = isAgency(selectedApplicant);
-                        const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
-                                                   selectedApplicant?.interview_confirmed === 'confirmed';
-                        const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterviewScheduled;
-                        const canUpload = hasInterviewScheduled && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
-                        
-                        const fileValue = selectedApplicant?.interview_details_file || (selectedApplicant?.raw?.payload ? (() => {
-                          const payload = typeof selectedApplicant.raw.payload === 'string' 
-                            ? JSON.parse(selectedApplicant.raw.payload) 
-                            : selectedApplicant.raw.payload;
-                          return payload?.interview_details_file || null;
-                        })() : null);
-                        const hasFile = !!(fileValue || interviewFile);
-                        const displayFileName = interviewFileName || (fileValue ? fileValue.split('/').pop() : "");
+                      <div className="mt-3">
+                        <textarea
+                          rows={6}
+                          value={interviewNotesText}
+                          onChange={(e) => setInterviewNotesText(e.target.value)}
+                          placeholder="Type interview notes here..."
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-red-200"
+                        />
+                      </div>
 
-                        return (
-                          <div className="border-b">
-                            <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                              <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
-                                  <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
-                                </svg>
-                                Interview Details
-                              </div>
-                              <div className="col-span-12 md:col-span-6 text-sm">
-                                <div className="flex items-center gap-2">
-                                  {!canUpload && !hasFile ? (
-                                    <div className="flex items-center gap-2 text-gray-500 text-sm italic">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                                      </svg>
-                                      {!hasInterviewScheduled 
-                                        ? "Interview must be scheduled first" 
-                                        : agencyApplicant
-                                        ? (rescheduleRequested ? "Reschedule requested" : "Upload unavailable") 
-                                        : !interviewConfirmed 
-                                        ? "Applicant must confirm interview first" 
-                                        : "Upload unavailable"}
-                                    </div>
-                                  ) : hasFile ? (
-                                    <div className="flex items-center gap-2 w-full">
-                                      <div className="flex items-center gap-2 flex-1">
-                                        {fileValue && !interviewFile ? (
-                                          <a
-                                            href={supabase.storage.from('application-files').getPublicUrl(fileValue)?.data?.publicUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm text-blue-600 hover:underline cursor-pointer"
-                                          >
-                                            {displayFileName}
-                                          </a>
-                                        ) : (
-                                          <input
-                                            type="text"
-                                            placeholder="File name"
-                                            value={displayFileName}
-                                            onChange={(e) => setInterviewFileName(e.target.value)}
-                                            className={`flex-1 px-3 py-2 border border-gray-300 rounded text-sm ${
-                                              interviewFile || fileValue 
-                                                ? "text-blue-600" 
-                                                : ""
-                                            }`}
-                                            readOnly={!!(fileValue && !interviewFile)}
-                                          />
-                                        )}
-                                        {fileValue && !interviewFile && canUpload && (
-                                          <label className="px-2 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 cursor-pointer whitespace-nowrap flex items-center gap-1 transition-colors">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                              <path d="M9.25 3.5a2.25 2.25 0 0 0-2.15 1.6l-1.15.345a2.25 2.25 0 0 0-1.6 2.15v6.2a2.251 2.251 0 0 0 2.15 2.15h.115a6.5 6.5 0 0 1 1.194-3.567l.298-.7a.75.75 0 0 1 .695-.433h1.18a.75.75 0 0 1 .695.433l.298.7a6.5 6.5 0 0 1 1.194 3.567h.115a2.25 2.25 0 0 0 2.15-2.15V7.595a2.25 2.25 0 0 0-1.6-2.15l-1.15-.345a2.25 2.25 0 0 0-2.15-1.6H9.25ZM6.115 12a5.5 5.5 0 0 1 1.194-3.567l.298-.7A2.25 2.25 0 0 1 9.683 7.5h.634a2.25 2.25 0 0 1 2.076 1.233l.298.7A5.5 5.5 0 0 1 13.885 12H6.115Z" />
-                                            </svg>
-                                            Resubmit
-                                            <input
-                                              type="file"
-                                              onChange={(e) => {
-                                                const file = e.target.files?.[0];
-                                                if (file) {
-                                                  setInterviewFile(file);
-                                                  setInterviewFileName(file.name);
-                                                }
-                                              }}
-                                              className="hidden"
-                                            />
-                                          </label>
-                                        )}
-                                        {interviewFile && (
-                                          <button
-                                            type="button"
-                                            className="w-6 h-6 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center flex-shrink-0 transition-colors"
-                                            onClick={() => {
-                                              setInterviewFile(null);
-                                              setInterviewFileName(fileValue ? fileValue.split('/').pop() : "");
-                                            }}
-                                            title="Cancel resubmit"
-                                          >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                            </svg>
-                                          </button>
-                                        )}
-                                      </div>
-                                      {uploadingInterviewFile ? (
-                                        <span className="text-gray-600 text-sm whitespace-nowrap flex items-center gap-1">
-                                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                          </svg>
-                                          Uploading...
-                                        </span>
-                                      ) : interviewFile ? (
-                                        <button
-                                          type="button"
-                                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 whitespace-nowrap flex items-center gap-1"
-                                          onClick={async () => {
-                                            if (!interviewFile || !selectedApplicant?.id) return;
-                                            
-                                            setUploadingInterviewFile(true);
-                                            try {
-                                              const fileExt = interviewFile.name.split('.').pop();
-                                              const fileName = interviewFileName || `interview-details-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
-                                              const filePath = `interview-details/${selectedApplicant.id}/${fileName}`;
-
-                                              const { data: uploadData, error: uploadError } = await supabase.storage
-                                                .from('application-files')
-                                                .upload(filePath, interviewFile, { upsert: true });
-
-                                              if (uploadError) throw uploadError;
-
-                                              const { error: updateError } = await supabase
-                                                .from('applications')
-                                                .update({ interview_details_file: uploadData.path })
-                                                .eq('id', selectedApplicant.id);
-
-                                              if (updateError && updateError.code === 'PGRST204') {
-                                                const currentPayload = selectedApplicant.raw?.payload || {};
-                                                let payloadObj = typeof currentPayload === 'string' ? JSON.parse(currentPayload) : currentPayload;
-                                                const updatedPayload = { ...payloadObj, interview_details_file: uploadData.path };
-                                                const { error: payloadError } = await supabase
-                                                  .from('applications')
-                                                  .update({ payload: updatedPayload })
-                                                  .eq('id', selectedApplicant.id);
-                                                if (payloadError) throw payloadError;
-                                              } else if (updateError) {
-                                                throw updateError;
-                                              }
-
-                                              // Update selectedApplicant immediately with the new file path
-                                              setSelectedApplicant(prev => ({
-                                                ...prev,
-                                                interview_details_file: uploadData.path,
-                                                raw: {
-                                                  ...prev.raw,
-                                                  interview_details_file: uploadData.path,
-                                                  payload: updateError && updateError.code === 'PGRST204' 
-                                                    ? { ...(typeof selectedApplicant.raw?.payload === 'string' ? JSON.parse(selectedApplicant.raw.payload) : selectedApplicant.raw?.payload || {}), interview_details_file: uploadData.path }
-                                                    : prev.raw?.payload
-                                                }
-                                              }));
-                                              
-                                              await loadApplications();
-                                              
-                                              // After loadApplications, ensure selectedApplicant is updated from the fresh data
-                                              const { data: updatedApp } = await supabase
-                                                .from('applications')
-                                                .select('*, interview_details_file, payload')
-                                                .eq('id', selectedApplicant.id)
-                                                .single();
-                                              
-                                              if (updatedApp) {
-                                                let payloadObj = updatedApp.payload;
-                                                if (typeof payloadObj === 'string') {
-                                                  try {
-                                                    payloadObj = JSON.parse(payloadObj);
-                                                  } catch {
-                                                    payloadObj = {};
-                                                  }
-                                                }
-                                                
-                                                setSelectedApplicant(prev => ({
-                                                  ...prev,
-                                                  interview_details_file: updatedApp.interview_details_file || payloadObj?.interview_details_file || uploadData.path,
-                                                  raw: updatedApp
-                                                }));
-                                              }
-                                              
-                                              setInterviewFileName(fileName);
-                                              setInterviewFile(null);
-                                              setSuccessMessage("Interview details file uploaded successfully");
-                                              setShowSuccessAlert(true);
-                                            } catch (err) {
-                                              console.error('Error uploading interview file:', err);
-                                              setErrorMessage("Failed to upload file. Please try again.");
-                                              setShowErrorAlert(true);
-                                            } finally {
-                                              setUploadingInterviewFile(false);
-                                            }
-                                          }}
-                                        >
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                            <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-                                            <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
-                                          </svg>
-                                          Save
-                                        </button>
-                                      ) : null}
-                                    </div>
-                                  ) : canUpload ? (
-                                    <label className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 text-sm font-medium transition-colors">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                        <path d="M9.25 3.5a2.25 2.25 0 0 0-2.15 1.6l-1.15.345a2.25 2.25 0 0 0-1.6 2.15v6.2a2.251 2.251 0 0 0 2.15 2.15h.115a6.5 6.5 0 0 1 1.194-3.567l.298-.7a.75.75 0 0 1 .695-.433h1.18a.75.75 0 0 1 .695.433l.298.7a6.5 6.5 0 0 1 1.194 3.567h.115a2.25 2.25 0 0 0 2.15-2.15V7.595a2.25 2.25 0 0 0-1.6-2.15l-1.15-.345a2.25 2.25 0 0 0-2.15-1.6H9.25ZM6.115 12a5.5 5.5 0 0 1 1.194-3.567l.298-.7A2.25 2.25 0 0 1 9.683 7.5h.634a2.25 2.25 0 0 1 2.076 1.233l.298.7A5.5 5.5 0 0 1 13.885 12H6.115Z" />
-                                      </svg>
-                                      Upload
-                                      <input
-                                        type="file"
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            setInterviewFile(file);
-                                            if (!interviewFileName) {
-                                              setInterviewFileName(file.name);
-                                            }
-                                          }
-                                        }}
-                                        className="hidden"
-                                      />
-                                    </label>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Assessment Results File Row */}
-                      {(() => {
-                        // Check if interview is scheduled and confirmed
-                        const hasInterviewScheduled = !!selectedApplicant?.interview_date;
-                        const agencyApplicant = isAgency(selectedApplicant);
-                        const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
-                                                   selectedApplicant?.interview_confirmed === 'confirmed';
-                        const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterviewScheduled;
-                        const canUpload = hasInterviewScheduled && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
-                        
-                        const fileValue = selectedApplicant?.assessment_results_file || (selectedApplicant?.raw?.payload ? (() => {
-                          const payload = typeof selectedApplicant.raw.payload === 'string' 
-                            ? JSON.parse(selectedApplicant.raw.payload) 
-                            : selectedApplicant.raw.payload;
-                          return payload?.assessment_results_file || null;
-                        })() : null);
-                        const hasFile = !!(fileValue || assessmentFile);
-                        const displayFileName = assessmentFileName || (fileValue ? fileValue.split('/').pop() : "");
-
-                        return (
-                          <div className="border-b">
-                            <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                              <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
-                                  <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
-                                </svg>
-                                In-Person Assessment Results
-                              </div>
-                              <div className="col-span-12 md:col-span-6 text-sm">
-                                <div className="flex items-center gap-2">
-                                  {!canUpload && !hasFile ? (
-                                    <div className="flex items-center gap-2 text-gray-500 text-sm italic">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                                      </svg>
-                                      {!hasInterviewScheduled 
-                                        ? "Interview must be scheduled first" 
-                                        : agencyApplicant
-                                        ? (rescheduleRequested ? "Reschedule requested" : "Upload unavailable")
-                                        : !interviewConfirmed 
-                                        ? "Applicant must confirm interview first" 
-                                        : "Upload unavailable"}
-                                    </div>
-                                  ) : hasFile ? (
-                                    <div className="flex items-center gap-2 w-full">
-                                      <div className="flex items-center gap-2 flex-1">
-                                        {fileValue && !assessmentFile ? (
-                                          <a
-                                            href={supabase.storage.from('application-files').getPublicUrl(fileValue)?.data?.publicUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm text-blue-600 hover:underline cursor-pointer"
-                                          >
-                                            {displayFileName}
-                                          </a>
-                                        ) : (
-                                          <input
-                                            type="text"
-                                            placeholder="File name"
-                                            value={displayFileName}
-                                            onChange={(e) => setAssessmentFileName(e.target.value)}
-                                            className={`flex-1 px-3 py-2 border border-gray-300 rounded text-sm ${
-                                              assessmentFile || fileValue 
-                                                ? "text-blue-600" 
-                                                : ""
-                                            }`}
-                                            readOnly={!!(fileValue && !assessmentFile)}
-                                          />
-                                        )}
-                                        {fileValue && !assessmentFile && canUpload && (
-                                          <label className="px-2 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600 cursor-pointer whitespace-nowrap flex items-center gap-1 transition-colors">
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                              <path d="M9.25 3.5a2.25 2.25 0 0 0-2.15 1.6l-1.15.345a2.25 2.25 0 0 0-1.6 2.15v6.2a2.251 2.251 0 0 0 2.15 2.15h.115a6.5 6.5 0 0 1 1.194-3.567l.298-.7a.75.75 0 0 1 .695-.433h1.18a.75.75 0 0 1 .695.433l.298.7a6.5 6.5 0 0 1 1.194 3.567h.115a2.25 2.25 0 0 0 2.15-2.15V7.595a2.25 2.25 0 0 0-1.6-2.15l-1.15-.345a2.25 2.25 0 0 0-2.15-1.6H9.25ZM6.115 12a5.5 5.5 0 0 1 1.194-3.567l.298-.7A2.25 2.25 0 0 1 9.683 7.5h.634a2.25 2.25 0 0 1 2.076 1.233l.298.7A5.5 5.5 0 0 1 13.885 12H6.115Z" />
-                                            </svg>
-                                            Resubmit
-                                            <input
-                                              type="file"
-                                              onChange={(e) => {
-                                                const file = e.target.files?.[0];
-                                                if (file) {
-                                                  setAssessmentFile(file);
-                                                  setAssessmentFileName(file.name);
-                                                }
-                                              }}
-                                              className="hidden"
-                                            />
-                                          </label>
-                                        )}
-                                        {assessmentFile && (
-                                          <button
-                                            type="button"
-                                            className="w-6 h-6 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center flex-shrink-0 transition-colors"
-                                            onClick={() => {
-                                              setAssessmentFile(null);
-                                              setAssessmentFileName(fileValue ? fileValue.split('/').pop() : "");
-                                            }}
-                                            title="Cancel resubmit"
-                                          >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                            </svg>
-                                          </button>
-                                        )}
-                                      </div>
-                                      {uploadingAssessmentFile ? (
-                                        <span className="text-gray-600 text-sm whitespace-nowrap flex items-center gap-1">
-                                          <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                          </svg>
-                                          Uploading...
-                                        </span>
-                                      ) : assessmentFile ? (
-                                        <button
-                                          type="button"
-                                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 whitespace-nowrap flex items-center gap-1"
-                                          onClick={async () => {
-                                            if (!assessmentFile || !selectedApplicant?.id) return;
-                                            
-                                            setUploadingAssessmentFile(true);
-                                            try {
-                                              const fileExt = assessmentFile.name.split('.').pop();
-                                              const fileName = assessmentFileName || `assessment-results-${selectedApplicant.id}-${Date.now()}.${fileExt}`;
-                                              const filePath = `assessment-results/${selectedApplicant.id}/${fileName}`;
-
-                                              const { data: uploadData, error: uploadError } = await supabase.storage
-                                                .from('application-files')
-                                                .upload(filePath, assessmentFile, { upsert: true });
-
-                                              if (uploadError) throw uploadError;
-
-                                              const { error: updateError } = await supabase
-                                                .from('applications')
-                                                .update({ assessment_results_file: uploadData.path })
-                                                .eq('id', selectedApplicant.id);
-
-                                              if (updateError && updateError.code === 'PGRST204') {
-                                                const currentPayload = selectedApplicant.raw?.payload || {};
-                                                let payloadObj = typeof currentPayload === 'string' ? JSON.parse(currentPayload) : currentPayload;
-                                                const updatedPayload = { ...payloadObj, assessment_results_file: uploadData.path };
-                                                const { error: payloadError } = await supabase
-                                                  .from('applications')
-                                                  .update({ payload: updatedPayload })
-                                                  .eq('id', selectedApplicant.id);
-                                                if (payloadError) throw payloadError;
-                                              } else if (updateError) {
-                                                throw updateError;
-                                              }
-
-                                              // Update selectedApplicant immediately with the new file path
-                                              setSelectedApplicant(prev => ({
-                                                ...prev,
-                                                assessment_results_file: uploadData.path,
-                                                raw: {
-                                                  ...prev.raw,
-                                                  assessment_results_file: uploadData.path,
-                                                  payload: updateError && updateError.code === 'PGRST204' 
-                                                    ? { ...(typeof selectedApplicant.raw?.payload === 'string' ? JSON.parse(selectedApplicant.raw.payload) : selectedApplicant.raw?.payload || {}), assessment_results_file: uploadData.path }
-                                                    : prev.raw?.payload
-                                                }
-                                              }));
-                                              
-                                              await loadApplications();
-                                              
-                                              // After loadApplications, ensure selectedApplicant is updated from the fresh data
-                                              const { data: updatedApp } = await supabase
-                                                .from('applications')
-                                                .select('*, assessment_results_file, payload')
-                                                .eq('id', selectedApplicant.id)
-                                                .single();
-                                              
-                                              if (updatedApp) {
-                                                let payloadObj = updatedApp.payload;
-                                                if (typeof payloadObj === 'string') {
-                                                  try {
-                                                    payloadObj = JSON.parse(payloadObj);
-                                                  } catch {
-                                                    payloadObj = {};
-                                                  }
-                                                }
-                                                
-                                                setSelectedApplicant(prev => ({
-                                                  ...prev,
-                                                  assessment_results_file: updatedApp.assessment_results_file || payloadObj?.assessment_results_file || uploadData.path,
-                                                  raw: updatedApp
-                                                }));
-                                              }
-                                              
-                                              setAssessmentFileName(fileName);
-                                              setAssessmentFile(null);
-                                              setSuccessMessage("Assessment results file uploaded successfully");
-                                              setShowSuccessAlert(true);
-                                            } catch (err) {
-                                              console.error('Error uploading assessment file:', err);
-                                              setErrorMessage("Failed to upload file. Please try again.");
-                                              setShowErrorAlert(true);
-                                            } finally {
-                                              setUploadingAssessmentFile(false);
-                                            }
-                                          }}
-                                        >
-                                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                            <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-                                            <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
-                                          </svg>
-                                          Save
-                                        </button>
-                                      ) : null}
-                                    </div>
-                                  ) : canUpload ? (
-                                    <label className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 text-sm font-medium transition-colors">
-                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                        <path d="M9.25 3.5a2.25 2.25 0 0 0-2.15 1.6l-1.15.345a2.25 2.25 0 0 0-1.6 2.15v6.2a2.251 2.251 0 0 0 2.15 2.15h.115a6.5 6.5 0 0 1 1.194-3.567l.298-.7a.75.75 0 0 1 .695-.433h1.18a.75.75 0 0 1 .695.433l.298.7a6.5 6.5 0 0 1 1.194 3.567h.115a2.25 2.25 0 0 0 2.15-2.15V7.595a2.25 2.25 0 0 0-1.6-2.15l-1.15-.345a2.25 2.25 0 0 0-2.15-1.6H9.25ZM6.115 12a5.5 5.5 0 0 1 1.194-3.567l.298-.7A2.25 2.25 0 0 1 9.683 7.5h.634a2.25 2.25 0 0 1 2.076 1.233l.298.7A5.5 5.5 0 0 1 13.885 12H6.115Z" />
-                                      </svg>
-                                      Upload
-                                      <input
-                                        type="file"
-                                        onChange={(e) => {
-                                          const file = e.target.files?.[0];
-                                          if (file) {
-                                            setAssessmentFile(file);
-                                            if (!assessmentFileName) {
-                                              setAssessmentFileName(file.name);
-                                            }
-                                          }
-                                        }}
-                                        className="hidden"
-                                      />
-                                    </label>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </section>
-                )}
-
-                {/* Agreements Tab - simplified to agreement-related upload table only */}
-                {activeDetailTab === "Agreements" && (
-                  <section className="px-4 pb-4">
-                    {/* Agreement Signing Appointment (separate from interview) */}
-                    <div className="pt-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <h2 className="text-lg font-semibold text-gray-800">Agreement Signing Appointment</h2>
+                      <div className="mt-3 space-y-2">
                         {(() => {
-                          const hasSigning = !!selectedApplicant?.agreement_signing_date;
-                          const signingStatus = selectedApplicant?.agreement_signing_confirmed || 'Idle';
-                          const canSchedule = !hasSigning;
-                          const canReschedule = hasSigning && signingStatus === 'Rejected';
+                          const { attachments } = getInterviewNotesFromApplicant(selectedApplicant);
+                          const activeAttachments = Array.isArray(attachments)
+                            ? attachments.filter((a) => a && !a.isRemoved)
+                            : [];
 
-                          if (!canSchedule && !canReschedule) return null;
+                          if (activeAttachments.length === 0) {
+                            return (
+                              <div className="text-sm text-gray-500 italic">No attachments uploaded yet.</div>
+                            );
+                          }
 
                           return (
-                            <button
-                              type="button"
-                              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
-                              onClick={() => {
-                                if (!selectedApplicant) return;
-                                openAgreementSigningModal(selectedApplicant);
-                              }}
-                            >
-                              {canReschedule ? 'Reschedule Agreement Signing' : 'Schedule Agreement Signing'}
-                            </button>
-                          );
-                        })()}
-                      </div>
-
-                      {selectedApplicant?.agreement_signing_date ? (
-                        <div className="bg-gray-50 border rounded-md p-4 mb-4">
-                          <div className="flex items-start justify-between mb-2">
-                            <div className="text-sm text-gray-800 font-semibold">Schedule</div>
-                            {(() => {
-                              const signingStatus = selectedApplicant?.agreement_signing_confirmed || 'Idle';
-                              if (signingStatus === 'Confirmed') {
+                            <>
+                              {activeAttachments.map((a) => {
+                                const url = supabase.storage.from('application-files').getPublicUrl(a.path)?.data?.publicUrl;
                                 return (
-                                  <span className="text-sm px-3 py-1 rounded bg-green-100 text-green-800 border border-green-300 font-medium">
-                                    Confirmed
-                                  </span>
-                                );
-                              }
-                              if (signingStatus === 'Rejected') {
-                                return (
-                                  <span className="text-sm px-3 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300 font-medium">
-                                    Reschedule Requested
-                                  </span>
-                                );
-                              }
-                              return (
-                                <span className="text-sm px-3 py-1 rounded bg-yellow-100 text-yellow-800 border border-yellow-300 font-medium">
-                                  Awaiting Response
-                                </span>
-                              );
-                            })()}
-                          </div>
-                          <div className="text-sm text-gray-700 space-y-1">
-                            <div><span className="font-medium">Date:</span> {selectedApplicant.agreement_signing_date}</div>
-                            <div><span className="font-medium">Time:</span> {selectedApplicant.agreement_signing_time || <span className="text-gray-500 italic">None</span>}</div>
-                            <div><span className="font-medium">Location / Link:</span> {selectedApplicant.agreement_signing_location || <span className="text-gray-500 italic">None</span>}</div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-gray-50 border rounded-md p-4 mb-4">
-                          <div className="text-sm text-gray-700">
-                            <span className="font-medium">No agreement signing appointment yet.</span>
-                            <span className="text-gray-500"> Schedule it here to notify the applicant.</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
-                    <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
-                      <div className="col-span-6">&nbsp;</div>
-                      <div className="col-span-6">File</div>
-                    </div>
-
-                    {/* Helper function to render document row */}
-                    {(() => {
-                      const renderDocumentRow = (documentName, fileKey, file, setFile, fileName, setFileName, uploading, setUploading, filePathPrefix) => {
-                        // Get file value from direct field or payload
-                        let fileValue = selectedApplicant?.[fileKey] || null;
-                        if (!fileValue && selectedApplicant?.raw?.payload) {
-                          const payload = typeof selectedApplicant.raw.payload === 'string' 
-                            ? JSON.parse(selectedApplicant.raw.payload) 
-                            : selectedApplicant.raw.payload;
-                          fileValue = payload?.[fileKey] || null;
-                        }
-                        const displayFileName = fileName || (fileValue ? fileValue.split('/').pop() : "");
-                        
-                        return (
-                          <div key={fileKey} className="border-b">
-                            <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                              <div className="col-span-12 md:col-span-6 text-sm text-gray-800">{documentName}</div>
-                              <div className="col-span-12 md:col-span-6 text-sm">
-                                <div className="flex items-center gap-2">
-                                  {file || fileValue ? (
-                                    <div className="flex items-center gap-2 w-full">
-                                      <div className="flex items-center gap-2 flex-1">
-                                        <input
-                                          type="text"
-                                          placeholder="File name"
-                                          value={displayFileName}
-                                          onChange={(e) => setFileName(e.target.value)}
-                                          className={`flex-1 px-3 py-2 border border-gray-300 rounded text-sm ${
-                                            file || fileValue 
-                                              ? "text-blue-600 underline" 
-                                              : ""
-                                          }`}
-                                          readOnly={!!(file || fileValue)}
-                                        />
-                                        {(file || fileValue) && (
-                                          <button
-                                            type="button"
-                                            className="w-6 h-6 rounded-full bg-red-500 text-white hover:bg-red-600 flex items-center justify-center flex-shrink-0 transition-colors"
-                                            onClick={async () => {
-                                              if (file) {
-                                                // Just remove from selection if not saved yet
-                                                setFile(null);
-                                                setFileName("");
-                                              } else if (fileValue) {
-                                                // Remove from database if already saved
-                                                await handleAgreementFileRemove(
-                                                  fileKey,
-                                                  setFileName,
-                                                  setSuccessMessage,
-                                                  setShowSuccessAlert,
-                                                  setErrorMessage,
-                                                  setShowErrorAlert
-                                                );
-                                              }
-                                            }}
-                                            title="Remove file"
-                                          >
-                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                              <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
-                                            </svg>
-                                          </button>
-                                        )}
+                                  <div
+                                    key={a.path}
+                                    className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-200 rounded-md p-3"
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="text-sm font-medium text-gray-800 truncate">
+                                        {a.label || 'Attachment'}
                                       </div>
-                                      {uploading ? (
-                                        <span className="text-gray-600 text-sm whitespace-nowrap">Uploading...</span>
-                                      ) : file ? (
-                                        <button
-                                          type="button"
-                                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 whitespace-nowrap"
-                                          onClick={async () => {
-                                            await handleAgreementFileUpload(
-                                              file,
-                                              fileName,
-                                              fileKey,
-                                              filePathPrefix,
-                                              setFile,
-                                              setFileName,
-                                              setUploading,
-                                              setSuccessMessage,
-                                              setShowSuccessAlert,
-                                              setErrorMessage,
-                                              setShowErrorAlert
-                                            );
-                                          }}
-                                        >
-                                          Save
-                                        </button>
-                                      ) : fileValue ? (
+                                      <div className="text-xs text-gray-500 truncate">
+                                        {a.originalName || a.path.split('/').pop()}
+                                      </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      {url ? (
                                         <a
-                                          href={supabase.storage.from('application-files').getPublicUrl(fileValue)?.data?.publicUrl}
+                                          href={url}
                                           target="_blank"
                                           rel="noopener noreferrer"
-                                          className="px-3 py-1 bg-blue-100 text-blue-700 rounded text-sm hover:bg-blue-200 whitespace-nowrap border border-blue-300"
+                                          className="px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium text-blue-600"
+                                        >
+                                          View
+                                        </a>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        className="px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium text-gray-800 disabled:opacity-60"
+                                        onClick={() => requestRemoveInterviewNotesAttachment(a.path)}
+                                        disabled={!selectedApplicant?.id || uploadingInterviewNotesAttachment || removingInterviewNotesAttachment || finalizingAssessment}
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </>
+                          );
+                        })()}
+
+                        {(() => {
+                          const legacyItems = [];
+                          if (selectedApplicant?.interview_details_file) {
+                            legacyItems.push({
+                              label: 'Legacy: Interview Details',
+                              path: selectedApplicant.interview_details_file,
+                            });
+                          }
+                          if (selectedApplicant?.assessment_results_file) {
+                            legacyItems.push({
+                              label: 'Legacy: Assessment Result',
+                              path: selectedApplicant.assessment_results_file,
+                            });
+                          }
+                          if (!legacyItems.length) return null;
+
+                          return (
+                            <div className="border border-gray-200 rounded-md p-3">
+                              <div className="text-xs font-semibold text-gray-600 mb-2">Existing Uploaded Files</div>
+                              <div className="space-y-2">
+                                {legacyItems.map((it) => {
+                                  const url = supabase.storage.from('application-files').getPublicUrl(it.path)?.data?.publicUrl;
+                                  return (
+                                    <div key={it.label} className="flex items-center justify-between gap-3">
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-medium text-gray-800 truncate">{it.label}</div>
+                                        <div className="text-xs text-gray-500 truncate">{it.path.split('/').pop()}</div>
+                                      </div>
+                                      {url ? (
+                                        <a
+                                          href={url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium text-blue-600"
                                         >
                                           View
                                         </a>
                                       ) : null}
                                     </div>
-                                  ) : (
-                                    <label className="inline-block px-3 py-2 bg-blue-600 text-white rounded cursor-pointer hover:bg-blue-700 border text-sm">
-                                      Upload
-                                      <input
-                                        type="file"
-                                        accept=".pdf,.docx"
-                                        onChange={(e) => {
-                                          const selectedFile = e.target.files?.[0];
-                                          if (selectedFile) {
-                                            setFile(selectedFile);
-                                            if (!fileName) {
-                                              setFileName(selectedFile.name);
-                                            }
-                                          }
-                                        }}
-                                        className="hidden"
-                                      />
-                                    </label>
-                                  )}
-                                </div>
+                                  );
+                                })}
                               </div>
                             </div>
-                          </div>
-                        );
-                      };
+                          );
+                        })()}
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-end">
+                        <button
+                          type="button"
+                          className="px-3 py-2 bg-white border border-gray-300 text-gray-800 rounded-md hover:bg-gray-50 text-sm font-medium"
+                          onClick={() => {
+                            setInterviewNotesAttachmentFiles([]);
+                            setInterviewNotesAttachmentLabel('');
+                            setShowInterviewNotesUploadModal(true);
+                          }}
+                          disabled={!selectedApplicant?.id}
+                        >
+                          Upload Attachment
+                        </button>
+                      </div>
+                    </div>
+
+                    {(() => {
+                      const payloadObj = getApplicantPayloadObject(selectedApplicant);
+                      const isFinalized = Boolean(payloadObj?.assessment_finalized || payloadObj?.assessmentFinalized);
 
                       return (
-                        <>
-                          {renderDocumentRow(
-                            "Employee Appointment Letter",
-                            "appointment_letter_file",
-                            agreementFile,
-                            setAgreementFile,
-                            agreementFileName,
-                            setAgreementFileName,
-                            uploadingAgreementFile,
-                            setUploadingAgreementFile,
-                            "appointment-letter"
-                          )}
-                          {renderDocumentRow(
-                            "Undertaking",
-                            "undertaking_file",
-                            undertakingFile,
-                            setUndertakingFile,
-                            undertakingFileName,
-                            setUndertakingFileName,
-                            uploadingUndertakingFile,
-                            setUploadingUndertakingFile,
-                            "undertaking"
-                          )}
-                          {renderDocumentRow(
-                            "Application Form",
-                            "application_form_file",
-                            applicationFormFile,
-                            setApplicationFormFile,
-                            applicationFormFileName,
-                            setApplicationFormFileName,
-                            uploadingApplicationFormFile,
-                            setUploadingApplicationFormFile,
-                            "application-form"
-                          )}
-                          {renderDocumentRow(
-                            "Undertaking of Duties and Responsibilities",
-                            "undertaking_duties_file",
-                            undertakingDutiesFile,
-                            setUndertakingDutiesFile,
-                            undertakingDutiesFileName,
-                            setUndertakingDutiesFileName,
-                            uploadingUndertakingDutiesFile,
-                            setUploadingUndertakingDutiesFile,
-                            "undertaking-duties"
-                          )}
-                          {renderDocumentRow(
-                            "Roadwise Pre Employment Requirements",
-                            "pre_employment_requirements_file",
-                            preEmploymentRequirementsFile,
-                            setPreEmploymentRequirementsFile,
-                            preEmploymentRequirementsFileName,
-                            setPreEmploymentRequirementsFileName,
-                            uploadingPreEmploymentRequirementsFile,
-                            setUploadingPreEmploymentRequirementsFile,
-                            "pre-employment-requirements"
-                          )}
-                          {renderDocumentRow(
-                            "ID Form",
-                            "id_form_file",
-                            idFormFile,
-                            setIdFormFile,
-                            idFormFileName,
-                            setIdFormFileName,
-                            uploadingIdFormFile,
-                            setUploadingIdFormFile,
-                            "id-form"
-                          )}
-                        </>
+                        <div className="flex items-center justify-end gap-3">
+                          {isFinalized ? (
+                            <div className="text-xs text-gray-500">Assessment already finalized.</div>
+                          ) : null}
+                          <button
+                            type="button"
+                            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-semibold disabled:opacity-60"
+                            onClick={() => requestFinalizeAssessment()}
+                            disabled={!selectedApplicant?.id || finalizingAssessment || isFinalized || uploadingInterviewNotesAttachment || savingInterviewNotes}
+                          >
+                            {finalizingAssessment ? 'Finalizing...' : 'Finalize Assessment'}
+                          </button>
+                        </div>
                       );
                     })()}
 
-                    <div className="flex justify-end mt-6">
+                    {showInterviewNotesUploadModal && (
+                      <div
+                        className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+                        onClick={() => setShowInterviewNotesUploadModal(false)}
+                      >
+                        <div
+                          className="bg-white rounded-lg shadow-lg w-full max-w-lg"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="p-4 border-b flex items-center justify-between">
+                            <div>
+                              <div className="text-base font-semibold text-gray-800">Upload Attachment</div>
+                              <div className="text-xs text-gray-500">Upload additional assessment file</div>
+                            </div>
+                            <button
+                              type="button"
+                              className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
+                              onClick={() => setShowInterviewNotesUploadModal(false)}
+                              aria-label="Close"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-gray-600">
+                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                              </svg>
+                            </button>
+                          </div>
+
+                          <div className="p-4 space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Label</label>
+                              <input
+                                list="interview-notes-label-suggestions"
+                                value={interviewNotesAttachmentLabel}
+                                onChange={(e) => setInterviewNotesAttachmentLabel(e.target.value)}
+                                placeholder="e.g., Interview Details"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                              />
+                              <datalist id="interview-notes-label-suggestions">
+                                <option value="Interview Details" />
+                                <option value="Assessment Result" />
+                              </datalist>
+                              <div className="mt-1 text-xs text-gray-500">You can pick a suggestion or type a custom label.</div>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">File</label>
+                              <input
+                                type="file"
+                                multiple
+                                onChange={(e) => {
+                                  const files = Array.from(e.target.files || []);
+                                  setInterviewNotesAttachmentFiles(files);
+                                  if (files.length === 1 && files[0] && !String(interviewNotesAttachmentLabel || '').trim()) {
+                                    const base = String(files[0].name || '').replace(/\.[^./\\]+$/, '');
+                                    setInterviewNotesAttachmentLabel(base);
+                                  }
+                                }}
+                                className="w-full text-sm"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="p-4 border-t flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium"
+                              onClick={() => setShowInterviewNotesUploadModal(false)}
+                              disabled={uploadingInterviewNotesAttachment}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium disabled:opacity-60"
+                              onClick={() => uploadInterviewNotesAttachment()}
+                              disabled={uploadingInterviewNotesAttachment || !Array.isArray(interviewNotesAttachmentFiles) || interviewNotesAttachmentFiles.length === 0}
+                            >
+                              {uploadingInterviewNotesAttachment ? 'Uploading...' : 'Upload'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {/* Agreements Tab */}
+                {activeDetailTab === "Agreements" && (
+                  <section className="p-4 space-y-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-800">Agreements</h2>
+                      <div className="text-xs text-gray-500">Agreement signing schedule and documents</div>
+                    </div>
+
+                    {/* Agreement Signing Schedule */}
+                    {(() => {
+                      const hasSigning = Boolean(
+                        selectedApplicant?.agreement_signing_date ||
+                          selectedApplicant?.agreement_signing_time ||
+                          selectedApplicant?.agreement_signing_location
+                      );
+
+                      const signingStatusRaw = selectedApplicant?.agreement_signing_confirmed || "Idle";
+                      const signingStatus = String(signingStatusRaw || "").toLowerCase();
+                      const canSchedule = !hasSigning;
+                      const canReschedule = hasSigning && signingStatus === "rejected";
+
+                      const statusPill = (() => {
+                        if (!hasSigning) return null;
+                        if (signingStatus === "confirmed") {
+                          return (
+                            <span className="text-xs px-3 py-1 rounded-full bg-green-100 text-green-800 border border-green-300 font-semibold">
+                              Confirmed
+                            </span>
+                          );
+                        }
+                        if (signingStatus === "rejected") {
+                          return (
+                            <span className="text-xs px-3 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-300 font-semibold">
+                              Reschedule Requested
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="text-xs px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-300 font-semibold">
+                            Awaiting Response
+                          </span>
+                        );
+                      })();
+
+                      return (
+                        <div className="bg-white border rounded-lg shadow-sm p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-9 h-9 rounded-lg bg-red-50 border border-red-100 flex items-center justify-center flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 text-red-600">
+                                  <path
+                                    fillRule="evenodd"
+                                    d="M6.75 2.25A.75.75 0 0 1 7.5 3v1.5h9V3a.75.75 0 0 1 1.5 0v1.5h.75A2.25 2.25 0 0 1 21 6.75v12A2.25 2.25 0 0 1 18.75 21H5.25A2.25 2.25 0 0 1 3 18.75v-12A2.25 2.25 0 0 1 5.25 4.5H6V3a.75.75 0 0 1 .75-.75ZM4.5 9v9.75c0 .414.336.75.75.75h13.5a.75.75 0 0 0 .75-.75V9h-15Z"
+                                    clipRule="evenodd"
+                                  />
+                                </svg>
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-gray-800">Agreement Signing Schedule</div>
+                                <div className="text-xs text-gray-500">Schedule signing and track response status.</div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 justify-end">{statusPill}</div>
+                          </div>
+
+                          {!hasSigning ? (
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                              <div className="text-sm text-gray-600 italic">No agreement signing appointment yet.</div>
+                              <button
+                                type="button"
+                                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                                onClick={() => {
+                                  if (!selectedApplicant) return;
+                                  openAgreementSigningModal(selectedApplicant);
+                                }}
+                              >
+                                Schedule Agreement Signing
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
+                                <div>
+                                  <span className="font-medium text-gray-800">Date:</span>{" "}
+                                  {selectedApplicant?.agreement_signing_date || <span className="text-gray-500 italic">None</span>}
+                                </div>
+                                <div>
+                                  <span className="font-medium text-gray-800">Time:</span>{" "}
+                                  {selectedApplicant?.agreement_signing_time || <span className="text-gray-500 italic">None</span>}
+                                </div>
+                                <div className="sm:col-span-2">
+                                  <span className="font-medium text-gray-800">Location / Link:</span>{" "}
+                                  {selectedApplicant?.agreement_signing_location || <span className="text-gray-500 italic">None</span>}
+                                </div>
+                              </div>
+
+                              {canSchedule || canReschedule ? (
+                                <div className="mt-4 border-t pt-4 flex items-center justify-end">
+                                  <button
+                                    type="button"
+                                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                                    onClick={() => {
+                                      if (!selectedApplicant) return;
+                                      openAgreementSigningModal(selectedApplicant);
+                                    }}
+                                  >
+                                    {canReschedule ? "Reschedule Agreement Signing" : "Schedule Agreement Signing"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* Agreement Documents */}
+                    <div className="bg-white border rounded-lg shadow-sm p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Agreement Documents</div>
+                          <div className="text-xs text-gray-500">Upload agreement documents and manage attachments.</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        {(() => {
+                          const docs = getAgreementDocumentsFromApplicant(selectedApplicant);
+                          const activeDocs = Array.isArray(docs) ? docs.filter((d) => d && !d.isRemoved) : [];
+
+                          if (activeDocs.length === 0) {
+                            return <div className="text-sm text-gray-500 italic">No agreement documents uploaded yet.</div>;
+                          }
+
+                          return (
+                            <>
+                              {activeDocs.map((d) => {
+                                const url = supabase.storage
+                                  .from("application-files")
+                                  .getPublicUrl(d.path)?.data?.publicUrl;
+
+                                return (
+                                  <div
+                                    key={d.path}
+                                    className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-200 rounded-md p-3"
+                                  >
+                                    <div className="min-w-0">
+                                      <div className="text-sm font-medium text-gray-800 truncate">{d.label || "Agreement Document"}</div>
+                                      <div className="text-xs text-gray-500 truncate">{d.originalName || d.path.split("/").pop()}</div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                      {url ? (
+                                        <a
+                                          href={url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium text-blue-600"
+                                        >
+                                          View
+                                        </a>
+                                      ) : null}
+                                      <button
+                                        type="button"
+                                        className="px-3 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium text-gray-800 disabled:opacity-60"
+                                        onClick={() => requestRemoveAgreementDocument(d)}
+                                        disabled={!selectedApplicant?.id || uploadingAgreementDocs || removingAgreementDoc || schedulingAgreementSigning}
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-end">
+                        <button
+                          type="button"
+                          className="px-3 py-2 bg-white border border-gray-300 text-gray-800 rounded-md hover:bg-gray-50 text-sm font-medium"
+                          onClick={() => {
+                            setAgreementDocsUploadFiles([]);
+                            setAgreementDocsUploadLabel("");
+                            setShowAgreementDocsUploadModal(true);
+                          }}
+                          disabled={!selectedApplicant?.id}
+                        >
+                          Upload Agreements
+                        </button>
+                      </div>
+                    </div>
+
+                    {showAgreementDocsUploadModal && (
+                      <div
+                        className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+                        onClick={() => setShowAgreementDocsUploadModal(false)}
+                      >
+                        <div className="bg-white rounded-lg shadow-lg w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+                          <div className="p-4 border-b flex items-center justify-between">
+                            <div>
+                              <div className="text-base font-semibold text-gray-800">Upload Agreements</div>
+                              <div className="text-xs text-gray-500">Upload one or more agreement documents</div>
+                            </div>
+                            <button
+                              type="button"
+                              className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center"
+                              onClick={() => setShowAgreementDocsUploadModal(false)}
+                              aria-label="Close"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-gray-600">
+                                <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                              </svg>
+                            </button>
+                          </div>
+
+                          <div className="p-4 space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Document Title</label>
+                              <input
+                                list="agreement-doc-title-suggestions"
+                                value={agreementDocsUploadLabel}
+                                onChange={(e) => setAgreementDocsUploadLabel(e.target.value)}
+                                placeholder="e.g., Employee Appointment Letter"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                              />
+                              <datalist id="agreement-doc-title-suggestions">
+                                <option value="Employee Appointment Letter" />
+                                <option value="Undertaking" />
+                                <option value="Undertaking of Duties and Responsibilities" />
+                              </datalist>
+                              <div className="mt-1 text-xs text-gray-500">Pick a suggestion or type a custom title.</div>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">Files</label>
+                              <input
+                                type="file"
+                                multiple
+                                onChange={(e) => {
+                                  const files = Array.from(e.target.files || []);
+                                  setAgreementDocsUploadFiles(files);
+                                  if (files.length === 1 && files[0] && !String(agreementDocsUploadLabel || "").trim()) {
+                                    const base = String(files[0].name || "").replace(/\.[^./\\]+$/, "");
+                                    setAgreementDocsUploadLabel(base);
+                                  }
+                                }}
+                                className="w-full text-sm"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="p-4 border-t flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              className="px-4 py-2 bg-white border border-gray-300 rounded-md hover:bg-gray-50 text-sm font-medium"
+                              onClick={() => setShowAgreementDocsUploadModal(false)}
+                              disabled={uploadingAgreementDocs}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium disabled:opacity-60"
+                              onClick={() => uploadAgreementDocuments()}
+                              disabled={uploadingAgreementDocs || !Array.isArray(agreementDocsUploadFiles) || agreementDocsUploadFiles.length === 0}
+                            >
+                              {uploadingAgreementDocs ? "Uploading..." : "Upload"}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex justify-end mt-2">
                       <button
                         type="button"
                         className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
@@ -6299,7 +6889,6 @@ function HrRecruitment() {
                           await handleMarkAsEmployee(selectedApplicant.id, selectedApplicant.name);
                         }}
                         onMouseDown={(e) => {
-                          // Prevent accidental triggers
                           e.preventDefault();
                         }}
                       >
@@ -6472,7 +7061,7 @@ function HrRecruitment() {
                     onClick={() => setActionType("reject")}
                     className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
                   >
-                    Reject
+                    Reject Application
                   </button>
                 </div>
                 <div className="flex justify-end mt-4">
@@ -6725,7 +7314,6 @@ function HrRecruitment() {
                       const selectedDate = new Date(interviewForm.date);
                       const today = new Date();
                       const selectedTime = e.target.value;
-                      
                       // If selected date is today, prevent selecting past times
                       if (selectedDate.toDateString() === today.toDateString()) {
                         const currentTime = today.toTimeString().slice(0, 5);
@@ -6735,7 +7323,7 @@ function HrRecruitment() {
                           return;
                         }
                       }
-                      
+
                       setInterviewForm((f) => ({ ...f, time: selectedTime }));
                     }}
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
@@ -6936,7 +7524,6 @@ function HrRecruitment() {
                   />
                 </div>
               </div>
-
             </div>
 
             {/* Footer */}
