@@ -34,6 +34,8 @@ function EmployeeTrainings() {
     
     // Generated certificates from HR
     const [generatedCertificates, setGeneratedCertificates] = useState({});
+    const [showCertificateModal, setShowCertificateModal] = useState(false);
+    const [currentCertificateUrl, setCurrentCertificateUrl] = useState(null);
 
     // Get employee's possible name formats for matching
     const getEmployeeNameVariations = () => {
@@ -753,10 +755,23 @@ function EmployeeTrainings() {
         }
     };
 
-    // View certificate
-    const handleViewCertificate = (certificate, e) => {
-        e.stopPropagation();
-        window.open(certificate.certificate_url, '_blank');
+    // View certificate - open modal to view as PDF
+    const handleViewCertificate = (certificateUrl, e) => {
+        if (e) e.stopPropagation();
+        setCurrentCertificateUrl(certificateUrl);
+        setShowCertificateModal(true);
+    };
+    
+    // View as PDF using Google Docs Viewer
+    const viewCertificateAsPdf = () => {
+        try {
+            const googleDocsUrl = `https://docs.google.com/gview?url=${encodeURIComponent(currentCertificateUrl)}&embedded=true`;
+            window.open(googleDocsUrl, '_blank');
+            setShowCertificateModal(false);
+        } catch (error) {
+            console.error('Error viewing certificate:', error);
+            alert('Unable to view certificate.');
+        }
     };
 
     // Handle training certificate upload
@@ -1190,90 +1205,99 @@ function EmployeeTrainings() {
                             <p className="text-sm mt-1">Completed schedules will appear here.</p>
                         </div>
                     ) : (
-                        <div className="relative h-[500px] overflow-y-auto no-scrollbar p-4 space-y-3">
+                        <div className="relative h-[500px] overflow-y-auto no-scrollbar p-4 space-y-4">
                             {filteredCompleted.map((training) => (
                                 <div
                                     key={training.id}
-                                    className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md hover:border-green-300 transition-all group"
+                                    className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-xl p-6 hover:shadow-lg hover:border-green-400 transition-all group cursor-pointer"
+                                    onClick={() => viewDetails(training)}
                                 >
-                                    <div className="flex items-start justify-between gap-4">
-                                        <div className="flex items-start gap-4 flex-1 cursor-pointer" onClick={() => viewDetails(training)}>
-                                            <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center text-white shadow-md flex-shrink-0">
-                                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                                </svg>
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-start justify-between gap-3 mb-2">
-                                                    <h3 className="text-base font-bold text-gray-900 group-hover:text-green-600 transition-colors">{training.title}</h3>
-                                                    {training.attendance && (() => {
-                                                        const attendanceStatus = getEmployeeAttendanceStatus(training);
-                                                        if (attendanceStatus.isPresent === null) return null;
-                                                        
-                                                        return (
-                                                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-sm flex-shrink-0 ${
-                                                                attendanceStatus.isPresent 
-                                                                    ? 'bg-green-50 border border-green-200 text-green-700' 
-                                                                    : 'bg-red-50 border border-red-200 text-red-700'
-                                                            }`}>
-                                                                {attendanceStatus.isPresent ? (
-                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                                                    </svg>
-                                                                ) : (
-                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                                    </svg>
-                                                                )}
-                                                                <span>{attendanceStatus.isPresent ? 'Present' : 'Absent'}</span>
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </div>
-                                                <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                                                    <span className="font-medium">{formatDate(training.date)}</span>
-                                                    <span className="text-gray-300">•</span>
-                                                    <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
-                                                    <span className="text-gray-300">•</span>
-                                                    <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-700">
-                                                        {training.schedule_type === 'online' ? 'Online' : 'Onsite'}
-                                                    </span>
-                                                </div>
-                                            </div>
+                                    <div className="flex gap-5">
+                                        <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg flex-shrink-0 group-hover:scale-105 transition-transform">
+                                            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
                                         </div>
-                                        {training.attendance && (() => {
-                                            const attendanceStatus = getEmployeeAttendanceStatus(training);
-                                            if (attendanceStatus.isPresent === true) {
-                                                // Check if HR has sent a certificate for this training
-                                                const hrCertificate = generatedCertificates[training.id];
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-start justify-between gap-3 mb-3">
+                                                <div className="flex-1">
+                                                    <h3 className="text-lg font-bold text-gray-900 group-hover:text-green-600 transition-colors mb-1">{training.title}</h3>
+                                                    {training.venue && (
+                                                        <p className="text-sm text-gray-600 flex items-center gap-1.5">
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                            </svg>
+                                                            {training.venue}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                {training.attendance && (() => {
+                                                    const attendanceStatus = getEmployeeAttendanceStatus(training);
+                                                    if (attendanceStatus.isPresent === null) return null;
+                                                    
+                                                    return (
+                                                        <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold text-xs flex-shrink-0 ${
+                                                            attendanceStatus.isPresent 
+                                                                ? 'bg-green-100 border border-green-300 text-green-700' 
+                                                                : 'bg-red-100 border border-red-300 text-red-700'
+                                                        }`}>
+                                                            {attendanceStatus.isPresent ? (
+                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                                </svg>
+                                                            ) : (
+                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                </svg>
+                                                            )}
+                                                            <span>{attendanceStatus.isPresent ? 'Present' : 'Absent'}</span>
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                            
+                                            <div className="flex flex-wrap items-center gap-2.5 text-sm mt-3">
+                                                <div className="flex items-center gap-1.5 text-gray-700">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                    </svg>
+                                                    <span className="font-medium">{formatDate(training.date)}</span>
+                                                </div>
+                                                <span className="text-gray-300">•</span>
+                                                <div className="flex items-center gap-1.5 text-gray-700">
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                    <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
+                                                </div>
+                                                <span className="text-gray-300">•</span>
+                                                <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-200 text-gray-700">
+                                                    {training.schedule_type === 'online' ? '🌐 Online' : '📍 Onsite'}
+                                                </span>
+                                            </div>
+                                            
+                                            {training.attendance && (() => {
+                                                const attendanceStatus = getEmployeeAttendanceStatus(training);
                                                 
-                                                return hrCertificate ? (
-                                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                                if (attendanceStatus.isPresent === true) {
+                                                    const hrCertificate = generatedCertificates[training.id];
+                                                    
+                                                    return hrCertificate ? (
                                                         <button
-                                                            onClick={async (e) => {
-                                                                e.stopPropagation();
-                                                                try {
-                                                                    const newWindow = window.open(hrCertificate.certificate_url, '_blank');
-                                                                    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-                                                                        alert('Please allow popups for this website to view the certificate.');
-                                                                    }
-                                                                } catch (error) {
-                                                                    console.error('Error opening certificate:', error);
-                                                                    alert('Unable to open certificate.');
-                                                                }
-                                                            }}
-                                                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-medium flex items-center gap-2"
+                                                            onClick={(e) => handleViewCertificate(hrCertificate.certificate_url, e)}
+                                                            className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all text-sm font-medium shadow-sm hover:shadow-md"
                                                         >
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                                             </svg>
                                                             View Certificate
                                                         </button>
-                                                    </div>
-                                                ) : null;
-                                            }
-                                            return null;
-                                        })()}
+                                                    ) : null;
+                                                }
+                                                return null;
+                                            })()}
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -1304,10 +1328,9 @@ function EmployeeTrainings() {
                             </div>
                         </div>
 
-                        {/* Content - Two Column Layout */}
-                        <div className="flex-1 overflow-hidden flex">
-                            {/* Left Side - Training Information */}
-                            <div className="w-[40%] overflow-y-auto p-6 border-r border-gray-200">
+                        {/* Content - Single Column Layout */}
+                        <div className="flex-1 overflow-y-auto">
+                            <div className="max-w-3xl mx-auto p-6">
                                 {/* Title Section */}
                                 <div className="mb-4">
                                     <h3 className="text-xl font-bold text-gray-900">{selectedTraining.title}</h3>
@@ -1378,53 +1401,73 @@ function EmployeeTrainings() {
                                             {selectedTraining.schedule_type === 'online' ? 'Online' : 'Onsite'}
                                         </p>
                                     </div>
-                                </div>
-                            </div>
-
-                            {/* Right Side - Attendees List */}
-                            <div className="w-[60%] flex flex-col bg-gray-50">
-                                <div className="p-4 border-b border-gray-200 bg-white">
-                                    <h3 className="text-sm font-bold text-gray-900">
-                                        Attendees ({selectedTraining.attendees?.length || 0})
-                                    </h3>
+                                    
+                                    {/* Venue */}
+                                    {selectedTraining.venue && (
+                                        <div>
+                                            <p className="text-xs text-gray-500 mb-1">Venue</p>
+                                            <p className="text-sm font-semibold text-gray-900">{selectedTraining.venue}</p>
+                                        </div>
+                                    )}
                                 </div>
                                 
-                                <div className="flex-1 overflow-y-auto p-3">
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {selectedTraining.attendees?.map((attendee, idx) => {
-                                            const name = typeof attendee === "string" ? attendee : attendee.name || "";
-                                            const attendedFlag = !!selectedTraining.attendance?.[name];
-                                            // Only show attendance status for completed trainings (not active and has attendance data with at least one marked attendee)
-                                            const hasMarkedAttendance = selectedTraining.attendance && Object.keys(selectedTraining.attendance).length > 0 && Object.values(selectedTraining.attendance).some(val => val === true || val === false);
-                                            return (
-                                                <div 
-                                                    key={idx} 
-                                                    className="bg-white rounded-lg p-3 border border-gray-200 hover:shadow-sm transition-all"
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-300 to-gray-400 flex items-center justify-center text-white text-xs font-semibold shadow-sm flex-shrink-0">
-                                                            {name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <p className="text-xs font-medium text-gray-900 truncate">{name}</p>
-                                                            {!selectedTraining.is_active && hasMarkedAttendance && (
-                                                                <span
-                                                                    className={`inline-flex items-center text-[10px] px-1.5 py-0.5 rounded-full font-semibold mt-0.5 ${
-                                                                        attendedFlag
-                                                                            ? "bg-green-100 text-green-700"
-                                                                            : "bg-red-100 text-red-700"
-                                                                    }`}
-                                                                >
-                                                                    {attendedFlag ? "✓" : "✗"}
-                                                                </span>
+                                {/* My Attendance Status */}
+                                {selectedTraining.attendance && (() => {
+                                    const attendanceStatus = getEmployeeAttendanceStatus(selectedTraining);
+                                    if (attendanceStatus.isPresent === null) return null;
+                                    
+                                    return (
+                                        <>
+                                            <div className="my-6 border-t border-gray-200"></div>
+                                            
+                                            <div>
+                                                <h3 className="text-sm font-bold text-gray-900 mb-3">My Attendance Status</h3>
+                                                <div className={`p-4 rounded-lg border-2 ${
+                                                    attendanceStatus.isPresent
+                                                        ? 'bg-green-50 border-green-300'
+                                                        : 'bg-red-50 border-red-300'
+                                                }`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                                                            attendanceStatus.isPresent
+                                                                ? 'bg-green-500'
+                                                                : 'bg-red-500'
+                                                        }`}>
+                                                            {attendanceStatus.isPresent ? (
+                                                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                                </svg>
+                                                            ) : (
+                                                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                                                </svg>
                                                             )}
+                                                        </div>
+                                                        <div>
+                                                            <p className={`text-lg font-bold ${
+                                                                attendanceStatus.isPresent
+                                                                    ? 'text-green-700'
+                                                                    : 'text-red-700'
+                                                            }`}>
+                                                                {attendanceStatus.isPresent ? 'Present' : 'Absent'}
+                                                            </p>
+                                                            <p className={`text-sm ${
+                                                                attendanceStatus.isPresent
+                                                                    ? 'text-green-600'
+                                                                    : 'text-red-600'
+                                                            }`}>
+                                                                {attendanceStatus.isPresent
+                                                                    ? 'You attended this training'
+                                                                    : 'You did not attend this training'
+                                                                }
+                                                            </p>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
+                                            </div>
+                                        </>
+                                    );
+                                })()}
                             </div>
                         </div>
 
@@ -1786,6 +1829,64 @@ function EmployeeTrainings() {
                                 className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors font-medium text-sm disabled:bg-gray-300 disabled:cursor-not-allowed"
                             >
                                 {isUploading ? 'Uploading...' : 'Upload Certificate'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* Certificate View Modal */}
+            {showCertificateModal && currentCertificateUrl && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowCertificateModal(false)}>
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="px-6 py-5 border-b border-gray-200">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center">
+                                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl font-bold text-gray-900">Your Certificate</h3>
+                                        <p className="text-sm text-gray-500">View as PDF</p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setShowCertificateModal(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Body */}
+                        <div className="p-6 space-y-4">
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                <div className="flex items-start gap-3">
+                                    <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <div>
+                                        <p className="text-sm font-medium text-blue-900 mb-1">View as PDF</p>
+                                        <p className="text-xs text-blue-700">Opens in Google Docs viewer for easy viewing and printing</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={viewCertificateAsPdf}
+                                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all font-medium shadow-md hover:shadow-lg"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                                View Certificate as PDF
                             </button>
                         </div>
                     </div>
