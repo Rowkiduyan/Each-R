@@ -2,7 +2,6 @@ import { Link } from 'react-router-dom';
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './supabaseClient';
 import emailjs from '@emailjs/browser';
-import CertificateTemplateManager from './components/CertificateTemplateManager';
 import { generateTrainingCertificates, checkTrainingCertificates } from './utils/trainingCertificateGenerator';
 
 function HrTrainings() {
@@ -26,9 +25,10 @@ function HrTrainings() {
   const [showConfirmAddModal, setShowConfirmAddModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [showCertificateConfirmModal, setShowCertificateConfirmModal] = useState(false);
+  const [pendingAttendanceSave, setPendingAttendanceSave] = useState(null);
   
   // Certificate management state
-  const [showCertificateManager, setShowCertificateManager] = useState(false);
   const [generatingCertificates, setGeneratingCertificates] = useState(null);
   const [certificateStatus, setCertificateStatus] = useState({});
   const [showCertificateModal, setShowCertificateModal] = useState(false);
@@ -53,6 +53,13 @@ function HrTrainings() {
   });
   
   const [imageFile, setImageFile] = useState(null);
+  
+  // Certificate template state
+  const [certificateTemplates, setCertificateTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [uploadNewTemplate, setUploadNewTemplate] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateFile, setNewTemplateFile] = useState(null);
   
   const [editForm, setEditForm] = useState({
     title: "",
@@ -96,6 +103,7 @@ function HrTrainings() {
   // Fetch trainings from Supabase
   useEffect(() => {
     fetchTrainings();
+    fetchCertificateTemplates();
   }, []);
   
   // Check certificate status for completed trainings
@@ -383,6 +391,22 @@ function HrTrainings() {
     }
   };
 
+  // Fetch certificate templates
+  const fetchCertificateTemplates = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('certificate_templates')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setCertificateTemplates(data || []);
+    } catch (err) {
+      console.error('Error fetching certificate templates:', err);
+    }
+  };
+
   // Filter employees based on search query (from employees table)
   const filteredEmployees = employeeSearchQuery
     ? employeeOptions.filter(emp =>
@@ -640,6 +664,64 @@ function HrTrainings() {
         uploadedImageUrl = publicUrl;
       }
 
+      // Handle certificate template upload if needed
+      let certificateTemplateId = selectedTemplateId || null;
+      
+      if (uploadNewTemplate && newTemplateFile && newTemplateName) {
+        try {
+          // Get current user
+          const { data: { user }, error: authError } = await supabase.auth.getUser();
+          if (authError || !user) throw new Error('Not authenticated');
+
+          // Generate unique file path
+          const timestamp = Date.now();
+          const fileName = `${timestamp}_${newTemplateFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+          const filePath = `templates/${fileName}`;
+
+          // Upload template file to storage
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('certificate-templates')
+            .upload(filePath, newTemplateFile, {
+              cacheControl: '3600',
+              upsert: false
+            });
+
+          if (uploadError) throw uploadError;
+
+          // Get public URL
+          const { data: urlData } = supabase.storage
+            .from('certificate-templates')
+            .getPublicUrl(filePath);
+
+          // Save template info to database
+          const { data: templateData, error: dbError } = await supabase
+            .from('certificate_templates')
+            .insert([
+              {
+                template_name: newTemplateName,
+                file_url: urlData.publicUrl,
+                file_path: filePath,
+                uploaded_by: user.id,
+                is_active: true
+              }
+            ])
+            .select()
+            .single();
+
+          if (dbError) throw dbError;
+          
+          certificateTemplateId = templateData.id;
+          
+          // Refresh templates list
+          await fetchCertificateTemplates();
+        } catch (err) {
+          console.error('Error uploading certificate template:', err);
+          setAlertMessage(`Warning: Training will be created but certificate template upload failed: ${err.message}`);
+          setShowAlertModal(true);
+          // Continue with training creation even if template upload fails
+        }
+      }
+
       const { data, error } = await supabase
         .from('trainings')
         .insert([
@@ -655,7 +737,8 @@ function HrTrainings() {
             is_active: isActiveFlag,
             created_by: currentUserId || null,
             schedule_type: form.schedule_type || 'onsite',
-            image_url: uploadedImageUrl
+            image_url: uploadedImageUrl,
+            certificate_template_id: certificateTemplateId
           }
         ])
         .select()
@@ -676,6 +759,10 @@ function HrTrainings() {
       // Reset form
       setForm({ title: "", venue: "", date: "", time: "", end_time: "", description: "", schedule_type: "onsite", image_url: "" });
       setImageFile(null);
+      setSelectedTemplateId("");
+      setUploadNewTemplate(false);
+      setNewTemplateName("");
+      setNewTemplateFile(null);
       setAttendees([]);
       setEmployeeSearchQuery("");
       setSelectedPositions([]);
@@ -996,15 +1083,29 @@ function HrTrainings() {
   // Save attendance and mark as completed
   const saveAttendance = async () => {
     if (!selectedTraining) return;
+    
+    // Store the attendance data and show confirmation modal
+    setPendingAttendanceSave({ training: selectedTraining, attendance: attendance });
+    setShowCertificateConfirmModal(true);
+  };
+  
+  // Confirm attendance save with optional certificate generation
+  const confirmAttendanceSave = async (generateCertificates) => {
+    setShowCertificateConfirmModal(false);
+    
+    if (!pendingAttendanceSave) return;
+    
+    const { training, attendance: attendanceData } = pendingAttendanceSave;
 
     try {
+      // Save attendance
       const { error } = await supabase
         .from('trainings')
         .update({
-          attendance: attendance,
+          attendance: attendanceData,
           is_active: false
         })
-        .eq('id', selectedTraining.id);
+        .eq('id', training.id);
 
       if (error) {
         console.error('Error saving attendance:', error);
@@ -1015,13 +1116,35 @@ function HrTrainings() {
 
       setShowAttendance(false);
       setSelectedTraining(null);
-      fetchTrainings();
-      setSuccessMessage('Attendance saved and training marked as completed!');
-      setShowSuccessModal(true);
+      setPendingAttendanceSave(null);
+      
+      // Generate and send certificates if confirmed
+      if (generateCertificates) {
+        // Refresh the training data first
+        await fetchTrainings();
+        
+        // Get updated training data
+        const { data: updatedTraining, error: fetchError } = await supabase
+          .from('trainings')
+          .select('*')
+          .eq('id', training.id)
+          .single();
+        
+        if (!fetchError && updatedTraining) {
+          // Trigger certificate generation
+          await handleSendCertificates(updatedTraining);
+        }
+      } else {
+        // Just refresh without generating certificates
+        fetchTrainings();
+        setSuccessMessage('Attendance saved and training marked as completed!');
+        setShowSuccessModal(true);
+      }
     } catch (error) {
       console.error('Error saving attendance:', error);
       setAlertMessage('Failed to save attendance');
       setShowAlertModal(true);
+      setPendingAttendanceSave(null);
     }
   };
   
@@ -1287,40 +1410,6 @@ function HrTrainings() {
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
           <p className="text-gray-500 mt-1">Manage schedules and track employee participation</p>
-        </div>
-
-        {/* Certificate Template Manager - Collapsible Section */}
-        <div className="mb-6">
-          <button
-            onClick={() => setShowCertificateManager(!showCertificateManager)}
-            className="w-full bg-gradient-to-r from-purple-50 to-blue-50 hover:from-purple-100 hover:to-blue-100 border border-purple-200 rounded-lg px-4 py-3 flex items-center justify-between transition-all"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-purple-600 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <div className="text-left">
-                <h3 className="font-semibold text-gray-900">Certificate Templates</h3>
-                <p className="text-xs text-gray-600">Manage Word document templates for training certificates</p>
-              </div>
-            </div>
-            <svg
-              className={`w-5 h-5 text-gray-500 transition-transform ${showCertificateManager ? 'rotate-180' : ''}`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-            </svg>
-          </button>
-          
-          {showCertificateManager && (
-            <div className="mt-4 bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <CertificateTemplateManager />
-            </div>
-          )}
         </div>
 
         {/* Main Content Card with Tabs (Upcoming / History) */}
@@ -2189,6 +2278,100 @@ function HrTrainings() {
                       />
                     </div>
                     
+                    {/* Certificate Template Section */}
+                    <div className="border-t border-gray-200 pt-3">
+                      <label className="block text-xs font-medium text-gray-700 mb-2">
+                        Certificate Template <span className="text-gray-500 font-normal">(Optional)</span>
+                      </label>
+                      
+                      {/* Toggle between existing and new template */}
+                      <div className="flex gap-3 mb-2">
+                        <button
+                          type="button"
+                          onClick={() => setUploadNewTemplate(false)}
+                          className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
+                            !uploadNewTemplate
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          Choose Existing
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setUploadNewTemplate(true)}
+                          className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
+                            uploadNewTemplate
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          Upload New
+                        </button>
+                      </div>
+                      
+                      {!uploadNewTemplate ? (
+                        /* Select from existing templates */
+                        <div>
+                          <select
+                            value={selectedTemplateId}
+                            onChange={(e) => setSelectedTemplateId(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-colors"
+                          >
+                            <option value="">No template</option>
+                            {certificateTemplates.map(template => (
+                              <option key={template.id} value={template.id}>
+                                {template.template_name}
+                              </option>
+                            ))}
+                          </select>
+                          {certificateTemplates.length === 0 && (
+                            <p className="text-xs text-gray-500 mt-1">No templates available. Upload a new one.</p>
+                          )}
+                        </div>
+                      ) : (
+                        /* Upload new template */
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={newTemplateName}
+                            onChange={(e) => setNewTemplateName(e.target.value)}
+                            placeholder="Template name (e.g., Training Certificate 2024)"
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <input
+                            type="file"
+                            accept=".docx"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (!file.name.endsWith('.docx')) {
+                                  setAlertMessage('Please select a Word document (.docx) file');
+                                  setShowAlertModal(true);
+                                  e.target.value = '';
+                                  return;
+                                }
+                                setNewTemplateFile(file);
+                              }
+                            }}
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {newTemplateFile && (
+                            <p className="text-xs text-gray-500 truncate">{newTemplateFile.name}</p>
+                          )}
+                          <div className="bg-blue-50 border border-blue-200 p-2 rounded text-xs">
+                            <p className="font-semibold text-blue-900 mb-1">📝 Placeholders:</p>
+                            <p className="text-blue-800">
+                              <code className="bg-white px-1 rounded">{'{employee_name}'}</code>,{' '}
+                              <code className="bg-white px-1 rounded">{'{training_title}'}</code>,{' '}
+                              <code className="bg-white px-1 rounded">{'{training_date}'}</code>,{' '}
+                              <code className="bg-white px-1 rounded">{'{completion_date}'}</code>
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
                     {/* Attendees Section Header */}
                     <div className="pt-1">
                       <div className="flex items-center justify-between mb-2">
@@ -2388,6 +2571,10 @@ function HrTrainings() {
                 type="button"
                 onClick={() => {
                   setShowAdd(false);
+                  setSelectedTemplateId("");
+                  setUploadNewTemplate(false);
+                  setNewTemplateName("");
+                  setNewTemplateFile(null);
                   setEmployeeSearchQuery("");
                   setSelectedPositions([]);
                   setEmployeesByPositionMap({});
@@ -3056,6 +3243,106 @@ function HrTrainings() {
                 className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] transition-colors font-medium text-sm"
               >
                 Confirm & Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Certificate Generation Confirmation Modal */}
+      {showCertificateConfirmModal && pendingAttendanceSave && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowCertificateConfirmModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-blue-50">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900">Generate Certificates?</h2>
+                  <p className="text-sm text-gray-600 mt-0.5">Attendance will be saved</p>
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-5">
+              <div className="mb-4">
+                <p className="text-sm text-gray-700 leading-relaxed">
+                  Would you like to automatically generate and send certificates to employees who attended this training?
+                </p>
+              </div>
+              
+              <div className="space-y-3">
+                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-green-900 mb-1">Generate Now</h4>
+                      <p className="text-xs text-green-800">
+                        Certificates will be generated and sent immediately to employees who were marked as present. 
+                        {pendingAttendanceSave.training.certificate_template_id ? (
+                          <span className="font-medium"> Template is configured for this training.</span>
+                        ) : (
+                          <span className="font-medium text-orange-700"> Note: No template assigned to this training.</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-sm font-semibold text-gray-900 mb-1">Skip for Now</h4>
+                      <p className="text-xs text-gray-700">
+                        Just save the attendance. You can generate certificates later from the History tab.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              
+              {Object.values(pendingAttendanceSave.attendance || {}).filter(Boolean).length > 0 && (
+                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-xs text-blue-900">
+                    <span className="font-semibold">
+                      {Object.values(pendingAttendanceSave.attendance || {}).filter(Boolean).length}
+                    </span> employee(s) marked as present will receive certificates if you choose to generate now.
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowCertificateConfirmModal(false);
+                  setPendingAttendanceSave(null);
+                }}
+                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => confirmAttendanceSave(false)}
+                className="px-4 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700 transition-colors font-medium text-sm"
+              >
+                Skip Certificates
+              </button>
+              <button
+                onClick={() => confirmAttendanceSave(true)}
+                className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 transition-colors font-medium text-sm shadow-md"
+              >
+                Generate & Send
               </button>
             </div>
           </div>
