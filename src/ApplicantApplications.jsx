@@ -2154,6 +2154,28 @@ function ApplicantApplications() {
                       interview_confirmed_at: rejectedAt
                     }));
 
+                    // Notify HR about reschedule request
+                    try {
+                      const applicantName = applicationData.payload?.form?.firstName && applicationData.payload?.form?.lastName
+                        ? `${applicationData.payload.form.firstName} ${applicationData.payload.form.lastName}`
+                        : 'Applicant';
+                      const position = applicationData.payload?.job?.title || 'Unknown Position';
+                      const interviewDate = applicationData.interview_date || null;
+                      const interviewTime = applicationData.interview_time || null;
+                      
+                      await notifyHRAboutInterviewResponse({
+                        applicationId: applicationData.id,
+                        applicantName,
+                        position,
+                        responseType: 'reschedule_requested',
+                        interviewDate,
+                        interviewTime
+                      });
+                    } catch (notifyError) {
+                      console.error('Error notifying HR about reschedule:', notifyError);
+                      // Don't fail the reschedule request if notification fails
+                    }
+
                     // Update UI state
                     setShowRejectDialog(false);
                     setStepStatus((s) => ({ ...s, Assessment: "waiting" }));

@@ -169,7 +169,21 @@ serve(async (req) => {
       day: "numeric",
     });
 
-    const safeTime = appointment.time || "To be confirmed";
+    // Format time to 12-hour format
+    let safeTime = 'To be confirmed'
+    if (appointment.time) {
+      try {
+        const [hours, minutes] = appointment.time.split(':')
+        const hour = parseInt(hours, 10)
+        const minute = (minutes || '00').padStart(2, '0')
+        const period = hour >= 12 ? 'PM' : 'AM'
+        const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+        safeTime = `${displayHour}:${minute} ${period}`
+      } catch (e) {
+        safeTime = appointment.time
+      }
+    }
+    
     const safeLocation = appointment.location || "To be confirmed";
 
     const notificationType = isReschedule ? "agreement_signing_rescheduled" : "agreement_signing_scheduled";

@@ -1,6 +1,7 @@
-// AgencyNotificationBell.jsx - Notification bell component for Agency to see hired employees
+// AgencyNotificationBell.jsx - Notification bell component for Agency to see hired employees and interview schedules
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { markNotificationAsRead } from './notifications';
 import { useNavigate } from 'react-router-dom';
 
 function AgencyNotificationBell() {
@@ -54,6 +55,23 @@ function AgencyNotificationBell() {
               }
             }
           )
+          .on(
+            'postgres_changes',
+            {
+              event: 'INSERT',
+              schema: 'public',
+              table: 'notifications',
+              filter: `user_id=eq.${profile.id}`
+            },
+            (payload) => {
+              console.log('New notification received:', payload);
+              if (payload.new) {
+                const newNotification = createNotificationFromData(payload.new);
+                setNotifications(prev => [newNotification, ...prev.slice(0, 19)]);
+                setUnreadCount(prev => prev + 1);
+              }
+            }
+          )
           .subscribe();
 
       } catch (error) {
@@ -64,27 +82,49 @@ function AgencyNotificationBell() {
     const fetchNotifications = async (profileId) => {
       setLoading(true);
       try {
-        // Fetch recently hired employees endorsed by this agency
-        const { data: hiredEmployees, error } = await supabase
-          .from('employees')
-          .select('id, fname, lname, position, depot, hired_at')
-          .eq('endorsed_by_agency_id', profileId)
-          .order('hired_at', { ascending: false })
-          .limit(20);
+        // Fetch from both sources: hired employees and notifications table
+        const [hiredResult, notificationsResult] = await Promise.all([
+          // Fetch recently hired employees endorsed by this agency
+          supabase
+            .from('employees')
+            .select('id, fname, lname, position, depot, hired_at')
+            .eq('endorsed_by_agency_id', profileId)
+            .order('hired_at', { ascending: false })
+            .limit(10),
+          
+          // Fetch notifications from notifications table
+          supabase
+            .from('notifications')
+            .select('*')
+            .eq('user_id', profileId)
+            .order('created_at', { ascending: false })
+            .limit(20)
+        ]);
 
-        if (error) {
-          console.error('Error fetching hired employees:', error);
-          return;
+        const hiredEmployees = hiredResult.data || [];
+        const directNotifications = notificationsResult.data || [];
+
+        if (hiredResult.error) {
+          console.error('Error fetching hired employees:', hiredResult.error);
+        }
+        
+        if (notificationsResult.error) {
+          console.error('Error fetching notifications:', notificationsResult.error);
         }
 
-        const hiredNotifications = (hiredEmployees || []).map(emp => createHiredNotification(emp));
-        setNotifications(hiredNotifications);
+        // Combine and sort all notifications
+        const hiredNotifications = hiredEmployees.map(emp => createHiredNotification(emp));
+        const otherNotifications = directNotifications.map(notif => createNotificationFromData(notif));
         
-        // Mark notifications older than 7 days as read
-        const sevenDaysAgo = new Date();
-        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-        const unread = hiredNotifications.filter(n => new Date(n.created_at) > sevenDaysAgo);
-        setUnreadCount(unread.length);
+        const allNotifications = [...hiredNotifications, ...otherNotifications]
+          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+          .slice(0, 20);
+        
+        setNotifications(allNotifications);
+        
+        // Count unread notifications
+        const unreadCount = allNotifications.filter(n => !n.read).length;
+        setUnreadCount(unreadCount);
 
       } catch (error) {
         console.error('Error fetching notifications:', error);
@@ -106,18 +146,48 @@ function AgencyNotificationBell() {
     const employeeName = `${employee.fname || ''} ${employee.lname || ''}`.trim() || 'Unknown Employee';
     const position = employee.position || 'Unknown Position';
     
+    // Check if this hired notification has been read (stored in localStorage)
+    const readHiredNotifications = JSON.parse(localStorage.getItem('readHiredNotifications') || '[]');
+    const isRead = readHiredNotifications.includes(employee.id);
+    
     return {
       id: employee.id,
       title: 'Employee Hired',
       message: `${employeeName} was hired for ${position}`,
       type: 'hired',
-      read: false,
+      read: isRead,
       created_at: employee.hired_at,
       employee: employee
     };
   };
 
-  const handleNotificationClick = (notification) => {
+  const createNotificationFromData = (notification) => {
+    return {
+      id: notification.id,
+      title: notification.title,
+      message: notification.message,
+      type: notification.type,
+      read: notification.read,
+      created_at: notification.created_at,
+      application_id: notification.application_id
+    };
+  };
+
+  const handleNotificationClick = async (notification) => {
+    // Mark as read in database if it's from notifications table
+    if (notification.type !== 'hired' && !notification.read) {
+      await markNotificationAsRead(notification.id);
+    }
+    
+    // Mark hired notification as read in localStorage
+    if (notification.type === 'hired' && !notification.read) {
+      const readHiredNotifications = JSON.parse(localStorage.getItem('readHiredNotifications') || '[]');
+      if (!readHiredNotifications.includes(notification.id)) {
+        readHiredNotifications.push(notification.id);
+        localStorage.setItem('readHiredNotifications', JSON.stringify(readHiredNotifications));
+      }
+    }
+    
     setNotifications(prev =>
       prev.map(notif =>
         notif.id === notification.id ? { ...notif, read: true } : notif
@@ -130,7 +200,39 @@ function AgencyNotificationBell() {
     navigate('/agency/endorsements');
   };
 
-  const handleMarkAllAsRead = () => {
+  const handleMarkAllAsRead = async () => {
+    // Mark all notifications from notifications table as read (not hired notifications)
+    const notificationIds = notifications
+      .filter(n => n.type !== 'hired' && !n.read)
+      .map(n => n.id);
+    
+    if (notificationIds.length > 0) {
+      try {
+        const { error } = await supabase
+          .from('notifications')
+          .update({ read: true })
+          .in('id', notificationIds);
+        
+        if (error) {
+          console.error('Error marking notifications as read:', error);
+        }
+      } catch (err) {
+        console.error('Error updating notifications:', err);
+      }
+    }
+    
+    // Mark all hired notifications as read in localStorage
+    const hiredNotificationIds = notifications
+      .filter(n => n.type === 'hired')
+      .map(n => n.id);
+    
+    if (hiredNotificationIds.length > 0) {
+      const readHiredNotifications = JSON.parse(localStorage.getItem('readHiredNotifications') || '[]');
+      const updatedReadHired = [...new Set([...readHiredNotifications, ...hiredNotificationIds])];
+      localStorage.setItem('readHiredNotifications', JSON.stringify(updatedReadHired));
+    }
+    
+    // Update local state
     setUnreadCount(0);
     setNotifications(prev => 
       prev.map(notif => ({ ...notif, read: true }))
@@ -228,9 +330,6 @@ function AgencyNotificationBell() {
                         <span className="text-xs text-gray-400">
                           {formatTimeAgo(notification.created_at)}
                         </span>
-                        <span className="text-xs px-2 py-1 rounded bg-green-100 text-green-800">
-                          Hired
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -244,12 +343,9 @@ function AgencyNotificationBell() {
               <button
                 type="button"
                 className="text-sm text-[#800000] hover:underline"
-                onClick={() => {
-                  setIsOpen(false);
-                  navigate('/agency/endorsements');
-                }}
+                onClick={() => setIsOpen(false)}
               >
-                View All Endorsements
+                Close
               </button>
             </div>
           )}

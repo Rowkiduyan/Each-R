@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { createNotification } from './notifications';
 import { getStoredJson } from "./authStorage";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -2902,11 +2903,17 @@ function HrRecruitment() {
       // success -> reload applications so updated interview fields show
       await loadApplications();
       await fetchInterviews(); // Refresh interview calendar
+      
+      // Check if this is a reschedule or initial schedule
+      const isReschedule = Boolean(r.data?.isReschedule);
+      
+      // Note: The Edge Function already handles creating notifications for both the applicant and agency,
+      // so we don't need to manually create notifications here to avoid duplicates.
+      
       setShowInterviewModal(false);
       
       // Format interview summary
       const interviewSummary = `${selectedApplicationForInterview.name} - ${interviewForm.date} at ${interviewForm.time}, ${interviewForm.location}`;
-      const isReschedule = Boolean(r.data?.isReschedule);
       const hasEmailStatus = typeof r.data?.emailSent === 'boolean' || r.data?.emailError;
       const emailSent = Boolean(r.data?.emailSent);
       const emailNote = !hasEmailStatus
@@ -3001,7 +3008,8 @@ function HrRecruitment() {
       try {
         const notes = String(interviewNotesText || '');
         const nowIso = new Date().toISOString();
-
+        
+        // Update application status - try with interview_notes column first, fall back if column doesn't exist
         const currentPayload = getApplicantPayloadObject(selectedApplicant);
         const updatedPayload = {
           ...currentPayload,
@@ -3010,6 +3018,7 @@ function HrRecruitment() {
           assessment_finalized_at: nowIso,
         };
 
+        // First attempt: try updating with interview_notes column
         const { error: updateError } = await supabase
           .from('applications')
           .update({
@@ -3019,14 +3028,26 @@ function HrRecruitment() {
           })
           .eq('id', selectedApplicant.id);
 
-        if (updateError && updateError.code === 'PGRST204') {
-          const { error: payloadError } = await supabase
-            .from('applications')
-            .update({ status: 'agreement', payload: updatedPayload })
-            .eq('id', selectedApplicant.id);
-          if (payloadError) throw payloadError;
-        } else if (updateError) {
-          throw updateError;
+        // If column doesn't exist (error code 42703 or PGRST204), retry without interview_notes
+        if (updateError) {
+          // PostgreSQL error code 42703 = undefined_column
+          // PostgREST error code PGRST204 = column not found
+          if (updateError.code === 'PGRST204' || updateError.code === '42703' || 
+              (updateError.message && updateError.message.includes('column')) ||
+              (updateError.details && updateError.details.includes('interview_notes'))) {
+            
+            const { error: retryError } = await supabase
+              .from('applications')
+              .update({ 
+                status: 'agreement', 
+                payload: updatedPayload 
+              })
+              .eq('id', selectedApplicant.id);
+            
+            if (retryError) throw retryError;
+          } else {
+            throw updateError;
+          }
         }
 
         setSelectedApplicant((prev) => {

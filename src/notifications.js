@@ -187,12 +187,27 @@ export async function createInterviewScheduledNotification({
     day: 'numeric'
   });
 
+  // Format time to 12-hour format
+  let formattedTime = interviewTime;
+  if (interviewTime) {
+    try {
+      const [hours, minutes] = interviewTime.split(':');
+      const hour = parseInt(hours, 10);
+      const minute = (minutes || '00').padStart(2, '0');
+      const period = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      formattedTime = `${displayHour}:${minute} ${period}`;
+    } catch (e) {
+      formattedTime = interviewTime;
+    }
+  }
+
   return await createNotification({
     userId,
     applicationId,
     type: 'interview_scheduled',
     title: 'Interview Scheduled',
-    message: `Your interview has been scheduled for ${formattedDate} at ${interviewTime} in ${interviewLocation}. Please confirm your availability.`,
+    message: `Your interview has been scheduled for ${formattedDate} at ${formattedTime} in ${interviewLocation}. Please confirm your availability.`,
     userType: 'applicant'
   });
 }
@@ -212,12 +227,27 @@ export async function createInterviewRescheduledNotification({
     day: 'numeric'
   });
 
+  // Format time to 12-hour format
+  let formattedTime = interviewTime;
+  if (interviewTime) {
+    try {
+      const [hours, minutes] = interviewTime.split(':');
+      const hour = parseInt(hours, 10);
+      const minute = (minutes || '00').padStart(2, '0');
+      const period = hour >= 12 ? 'PM' : 'AM';
+      const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      formattedTime = `${displayHour}:${minute} ${period}`;
+    } catch (e) {
+      formattedTime = interviewTime;
+    }
+  }
+
   return await createNotification({
     userId,
     applicationId,
     type: 'interview_rescheduled',
     title: 'Interview Rescheduled',
-    message: `Your interview has been rescheduled to ${formattedDate} at ${interviewTime} in ${interviewLocation}. Please check your application and confirm your availability.`,
+    message: `Your interview has been rescheduled to ${formattedDate} at ${formattedTime} in ${interviewLocation}. Please check your application and confirm your availability.`,
     userType: 'applicant'
   });
 }
@@ -289,8 +319,29 @@ export async function notifyHRAboutInterviewResponse({
       day: 'numeric'
     }) : 'scheduled date';
 
-    const title = `Interview ${responseType === 'confirmed' ? 'Confirmed' : 'Rejected'}`;
-    const message = `${applicantName} has ${responseType} the interview for ${position} position${interviewDate ? ` scheduled on ${formattedDate}${interviewTime ? ` at ${interviewTime}` : ''}` : ''}.`;
+    // Format time to 12-hour format
+    let formattedTime = interviewTime;
+    if (interviewTime) {
+      try {
+        const [hours, minutes] = interviewTime.split(':');
+        const hour = parseInt(hours, 10);
+        const minute = (minutes || '00').padStart(2, '0');
+        const period = hour >= 12 ? 'PM' : 'AM';
+        const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+        formattedTime = `${displayHour}:${minute} ${period}`;
+      } catch (e) {
+        formattedTime = interviewTime;
+      }
+    }
+
+    let title, message;
+    if (responseType === 'reschedule_requested') {
+      title = 'Interview Reschedule Requested';
+      message = `${applicantName} has requested to reschedule the interview for ${position} position${interviewDate ? ` scheduled on ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ''}` : ''}.`;
+    } else {
+      title = `Interview ${responseType === 'confirmed' ? 'Confirmed' : 'Rejected'}`;
+      message = `${applicantName} has ${responseType} the interview for ${position} position${interviewDate ? ` scheduled on ${formattedDate}${formattedTime ? ` at ${formattedTime}` : ''}` : ''}.`;
+    }
 
     // Create notifications for all HR users
     const notifications = await Promise.all(

@@ -25,27 +25,10 @@ function HrNotificationBell() {
         
         await fetchNotifications(currentUserId, hrUser);
 
-        // Set up real-time subscription for new applications
+        // Set up real-time subscription for notifications table only
+        // (We don't subscribe to applications table to avoid duplicates since we manually create notifications)
         channel = supabase
           .channel('hr-notifications')
-          .on(
-            'postgres_changes',
-            {
-              event: 'INSERT',
-              schema: 'public',
-              table: 'applications'
-            },
-            (payload) => {
-              console.log('New application received:', payload);
-              if (payload.new) {
-                const newNotification = createApplicationNotification(payload.new, hrUser);
-                if (newNotification) {
-                  setNotifications(prev => [newNotification, ...prev.slice(0, 19)]);
-                  setUnreadCount(prev => prev + 1);
-                }
-              }
-            }
-          )
           .on(
             'postgres_changes',
             {
@@ -72,60 +55,17 @@ function HrNotificationBell() {
     const fetchNotifications = async (userId, hrUser) => {
       setLoading(true);
       try {
-        // Fetch both application notifications and direct notifications
-        const [applicationNotifications, directNotifications] = await Promise.all([
-          fetchApplicationNotifications(hrUser),
-          getNotifications(userId, 10)
-        ]);
+        // Fetch notifications from notifications table only
+        // (We no longer fetch from applications table since we create proper notifications now)
+        const directNotifications = await getNotifications(userId, 20);
 
-        // Combine and sort notifications
-        const allNotifications = [...applicationNotifications, ...directNotifications]
-          .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-          .slice(0, 20);
-
-        setNotifications(allNotifications);
-        setUnreadCount(allNotifications.filter(n => !n.read).length);
+        setNotifications(directNotifications);
+        setUnreadCount(directNotifications.filter(n => !n.read).length);
 
       } catch (error) {
         console.error('Error fetching notifications:', error);
       } finally {
         setLoading(false);
-      }
-    };
-
-    const fetchApplicationNotifications = async (hrUser) => {
-      try {
-        // Fetch recent applications with job_posts to filter by depot
-        const { data: applications, error } = await supabase
-          .from('applications')
-          .select(`
-            id,
-            created_at,
-            payload,
-            user_id,
-            job_posts:job_posts(depot)
-          `)
-          .order('created_at', { ascending: false })
-          .limit(20);
-
-        if (error) {
-          console.error('Error fetching applications:', error);
-          return [];
-        }
-
-        // Filter by depot if HRC user
-        let filtered = applications;
-        if (hrUser?.role?.toUpperCase() === 'HRC' && hrUser?.depot) {
-          filtered = applications.filter(app => {
-            const depot = app.job_posts?.depot;
-            return depot === hrUser.depot;
-          });
-        }
-
-        return filtered.map(app => createApplicationNotification(app, hrUser)).filter(Boolean);
-      } catch (error) {
-        console.error('Error fetching application notifications:', error);
-        return [];
       }
     };
 
@@ -137,44 +77,6 @@ function HrNotificationBell() {
       }
     };
   }, []);
-
-  const createApplicationNotification = (application, hrUser) => {
-    let applicantName = 'Unknown Applicant';
-    let position = 'Unknown Position';
-    let depot = null;
-    
-    try {
-      if (application.payload) {
-        const payload = typeof application.payload === 'string' 
-          ? JSON.parse(application.payload) 
-          : application.payload;
-        
-        const form = payload.form || {};
-        applicantName = `${form.firstName || ''} ${form.lastName || ''}`.trim() || 'Unknown Applicant';
-        
-        const job = payload.job || {};
-        position = job.title || 'Unknown Position';
-        depot = job.depot || application.job_posts?.depot;
-      }
-    } catch (error) {
-      console.error('Error parsing application payload:', error);
-    }
-
-    // Filter by depot for HRC users
-    if (hrUser?.role?.toUpperCase() === 'HRC' && hrUser?.depot && depot !== hrUser.depot) {
-      return null;
-    }
-
-    return {
-      id: application.id,
-      title: 'New Application Received',
-      message: `${applicantName} applied for ${position}`,
-      type: 'application',
-      read: false,
-      created_at: application.created_at,
-      source: 'application'
-    };
-  };
 
   const createNotificationFromData = (notification) => {
     return {
@@ -190,7 +92,7 @@ function HrNotificationBell() {
 
   const handleNotificationClick = async (notification) => {
     // Mark as read when clicked
-    if (notification.source === 'notification' && !notification.read) {
+    if (!notification.read) {
       await markNotificationAsRead(notification.id);
     }
     
@@ -208,8 +110,29 @@ function HrNotificationBell() {
   const handleMarkAllAsRead = async () => {
     // Get current HR user ID
     const hrUser = getStoredJson("loggedInHR");
-    if (hrUser) await markAllNotificationsAsRead(hrUser.id);
+    if (!hrUser) return;
+
+    // Mark all unread notifications in the database
+    const notificationIds = notifications
+      .filter(n => !n.read)
+      .map(n => n.id);
     
+    if (notificationIds.length > 0) {
+      try {
+        const { error } = await supabase
+          .from('notifications')
+          .update({ read: true })
+          .in('id', notificationIds);
+        
+        if (error) {
+          console.error('Error marking notifications as read:', error);
+        }
+      } catch (err) {
+        console.error('Error updating notifications:', err);
+      }
+    }
+    
+    // Update local state
     setUnreadCount(0);
     setNotifications(prev => 
       prev.map(notif => ({ ...notif, read: true }))

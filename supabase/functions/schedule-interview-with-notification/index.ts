@@ -190,7 +190,22 @@ serve(async (req) => {
 
     const scheduleLabel = scheduleKind === 'agreement_signing' ? 'Agreement Signing' : 'Interview'
     const scheduleVerb = scheduleKind === 'agreement_signing' ? 'appointment' : 'interview'
-    const safeTime = interview.time || 'To be confirmed'
+    
+    // Format time to 12-hour format
+    let safeTime = 'To be confirmed'
+    if (interview.time) {
+      try {
+        const [hours, minutes] = interview.time.split(':')
+        const hour = parseInt(hours, 10)
+        const minute = (minutes || '00').padStart(2, '0')
+        const period = hour >= 12 ? 'PM' : 'AM'
+        const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour
+        safeTime = `${displayHour}:${minute} ${period}`
+      } catch (e) {
+        safeTime = interview.time
+      }
+    }
+    
     const safeLocation = interview.location || 'To be confirmed'
 
     const notificationType = scheduleKind === 'agreement_signing'

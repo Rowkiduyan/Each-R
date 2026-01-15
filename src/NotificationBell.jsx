@@ -139,7 +139,27 @@ function NotificationBell() {
   const handleMarkAllAsRead = async () => {
     if (!userId) return;
     
-    await markAllNotificationsAsRead(userId);
+    // Mark all unread notifications in the database
+    const notificationIds = notifications
+      .filter(n => !n.read)
+      .map(n => n.id);
+    
+    if (notificationIds.length > 0) {
+      try {
+        const { error } = await supabase
+          .from('notifications')
+          .update({ read: true })
+          .in('id', notificationIds);
+        
+        if (error) {
+          console.error('Error marking notifications as read:', error);
+        }
+      } catch (err) {
+        console.error('Error updating notifications:', err);
+      }
+    }
+    
+    // Update local state
     setUnreadCount(0);
     setNotifications(prev => 
       prev.map(notif => ({ ...notif, read: true }))
