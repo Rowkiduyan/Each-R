@@ -1,11 +1,12 @@
 // src/AgencyRequirements.jsx
 import React, { useState, useRef, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
 
 function AgencyRequirements() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const profileDropdownRef = useRef(null);
@@ -69,6 +70,25 @@ function AgencyRequirements() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [reloadTrigger, setReloadTrigger] = useState(0);
+
+  // Auto-expand employee row if navigated from notification
+  useEffect(() => {
+    if (location.state?.employeeId && employees.length > 0) {
+      const employee = employees.find(e => e.id === location.state.employeeId);
+      if (employee) {
+        setExpandedRow(employee.id);
+        // Clear the state to avoid re-expanding on subsequent renders
+        window.history.replaceState({}, document.title);
+        // Scroll to employee row after a brief delay to ensure rendering
+        setTimeout(() => {
+          const element = document.getElementById(`employee-row-${employee.id}`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100);
+      }
+    }
+  }, [location.state, employees]);
 
   // Load endorsed employees and their requirements
   useEffect(() => {
@@ -1212,6 +1232,7 @@ function AgencyRequirements() {
                   return (
                     <React.Fragment key={employee.id}>
                       <tr 
+                        id={`employee-row-${employee.id}`}
                         className={`transition-colors cursor-pointer ${
                           expandedRow === employee.id 
                             ? 'bg-[#800000]/10/30' 

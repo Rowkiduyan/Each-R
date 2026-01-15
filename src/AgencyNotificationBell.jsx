@@ -10,6 +10,7 @@ function AgencyNotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [agencyProfileId, setAgencyProfileId] = useState(null);
+  const [requirementsNotifications, setRequirementsNotifications] = useState([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -32,6 +33,7 @@ function AgencyNotificationBell() {
 
         setAgencyProfileId(profile.id);
         await fetchNotifications(profile.id);
+        await checkEndorsedEmployeesRequirements(profile.id);
 
         // Set up real-time subscription for hired employees
         channel = supabase
@@ -122,7 +124,7 @@ function AgencyNotificationBell() {
         
         setNotifications(allNotifications);
         
-        // Count unread notifications
+        // Count unread notifications (requirements notifications are always shown separately)
         const unreadCount = allNotifications.filter(n => !n.read).length;
         setUnreadCount(unreadCount);
 
@@ -130,6 +132,117 @@ function AgencyNotificationBell() {
         console.error('Error fetching notifications:', error);
       } finally {
         setLoading(false);
+      }
+    };
+
+    const checkEndorsedEmployeesRequirements = async (profileId) => {
+      try {
+        // Get all employees endorsed by this agency
+        const { data: endorsedEmployees, error: empError } = await supabase
+          .from('employees')
+          .select('id, email, fname, lname, requirements')
+          .eq('endorsed_by_agency_id', profileId);
+
+        if (empError) {
+          console.error('Error fetching endorsed employees:', empError);
+          return;
+        }
+
+        if (!endorsedEmployees || endorsedEmployees.length === 0) {
+          setRequirementsNotifications([]);
+          return;
+        }
+
+        const requirementsNotifs = [];
+
+        // Check requirements for each endorsed employee
+        for (const employee of endorsedEmployees) {
+          const requirements = employee.requirements || {};
+          const missingCategories = [];
+          const employeeName = `${employee.fname || ''} ${employee.lname || ''}`.trim() || 'Unknown Employee';
+
+          // Government IDs - all must be validated
+          const govIds = ['sss', 'tin', 'pagibig', 'philhealth'];
+          const idNumbers = requirements.id_numbers || {};
+          const allGovIdsValidated = govIds.every(id => 
+            idNumbers[id]?.status === 'Validated'
+          );
+          if (!allGovIdsValidated) {
+            missingCategories.push('Government IDs');
+          }
+
+          // Driver's License - check if required and validated
+          const license = requirements.license || {};
+          if (Object.keys(license).length > 0 && license.status !== 'Validated') {
+            missingCategories.push("Driver's License");
+          }
+
+          // Medical Examination - all must be validated
+          const medicalExams = requirements.medicalExams || {};
+          const medicalTests = ['xray', 'stool', 'urine', 'hepa', 'cbc', 'drug_test'];
+          const allMedicalValidated = medicalTests.every(test =>
+            medicalExams[test]?.status === 'Validated' || medicalExams[test]?.status === 'approved'
+          );
+          if (!allMedicalValidated) {
+            missingCategories.push('Medical Examination');
+          }
+
+          // Personal Documents - all must be validated
+          const personalDocs = requirements.personalDocuments || {};
+          const personalDocTypes = ['photo_2x2', 'psa_birth_certificate', 'residence_sketch'];
+          const allPersonalDocsValidated = personalDocTypes.every(doc =>
+            personalDocs[doc]?.status === 'Validated' || personalDocs[doc]?.status === 'approved'
+          );
+          if (!allPersonalDocsValidated) {
+            missingCategories.push('Personal Documents');
+          }
+
+          // Clearances - all must be validated
+          const clearances = requirements.clearances || {};
+          const clearanceTypes = ['nbi', 'police', 'barangay'];
+          const allClearancesValidated = clearanceTypes.every(clearance =>
+            clearances[clearance]?.status === 'Validated' || clearances[clearance]?.status === 'approved'
+          );
+          if (!allClearancesValidated) {
+            missingCategories.push('Clearances');
+          }
+
+          // Educational Documents - all must be validated
+          const eduDocs = requirements.educationalDocuments || {};
+          const eduDocTypes = ['diploma', 'transcript_of_records'];
+          const allEduDocsValidated = eduDocTypes.every(doc =>
+            eduDocs[doc]?.status === 'Validated' || eduDocs[doc]?.status === 'approved'
+          );
+          if (!allEduDocsValidated) {
+            missingCategories.push('Educational Documents');
+          }
+
+          // HR Additional Documents - check hr_requests array for pending items
+          const hrRequests = requirements.hr_requests || [];
+          const hasPendingHRRequests = hrRequests.some(req => req.status === 'pending');
+          if (hasPendingHRRequests) {
+            missingCategories.push('HR Additional Documents');
+          }
+
+          // Create notification if there are missing categories
+          if (missingCategories.length > 0) {
+            requirementsNotifs.push({
+              id: `requirements-${employee.id}`,
+              title: `${employeeName} - Incomplete Requirements`,
+              message: `${employeeName} is missing: ${missingCategories.join(', ')}`,
+              type: 'requirements_reminder',
+              read: false,
+              created_at: new Date().toISOString(),
+              isPersistent: true,
+              employeeId: employee.id,
+              employeeName: employeeName
+            });
+          }
+        }
+
+        setRequirementsNotifications(requirementsNotifs);
+      } catch (error) {
+        console.error('Error checking endorsed employees requirements:', error);
       }
     };
 
@@ -174,6 +287,13 @@ function AgencyNotificationBell() {
   };
 
   const handleNotificationClick = async (notification) => {
+    // Navigate to requirements page with employee ID for requirements notifications
+    if (notification.type === 'requirements_reminder') {
+      setIsOpen(false);
+      navigate('/agency/requirements', { state: { employeeId: notification.employeeId } });
+      return;
+    }
+    
     // Mark as read in database if it's from notifications table
     if (notification.type !== 'hired' && !notification.read) {
       await markNotificationAsRead(notification.id);
@@ -276,9 +396,9 @@ function AgencyNotificationBell() {
         </svg>
         
         {/* Unread count badge */}
-        {unreadCount > 0 && (
+        {(unreadCount + requirementsNotifications.length) > 0 && (
           <span className="absolute -top-1 -right-1 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-[#800000] rounded-full min-w-[20px] h-5">
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {(unreadCount + requirementsNotifications.length) > 99 ? '99+' : (unreadCount + requirementsNotifications.length)}
           </span>
         )}
       </button>
@@ -304,37 +424,66 @@ function AgencyNotificationBell() {
           <div className="max-h-96 overflow-y-auto">
             {loading ? (
               <div className="p-4 text-center text-gray-500">Loading...</div>
-            ) : notifications.length === 0 ? (
+            ) : (notifications.length === 0 && requirementsNotifications.length === 0) ? (
               <div className="p-4 text-center text-gray-500">No recent hires</div>
             ) : (
-              notifications.map((notification) => (
-                <div
-                  key={notification.id}
-                  className={`p-4 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer transition-colors ${
-                    !notification.read ? 'bg-red-50' : ''
-                  }`}
-                  onClick={() => handleNotificationClick(notification)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h4 className={`text-sm font-medium ${!notification.read ? 'text-gray-900' : 'text-gray-700'}`}>
-                          {notification.title}
-                        </h4>
-                        {!notification.read && (
-                          <span className="w-2 h-2 bg-[#800000] rounded-full flex-shrink-0"></span>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-xs text-gray-400">
-                          {formatTimeAgo(notification.created_at)}
-                        </span>
+              <>
+                {/* Requirements notifications - always show at top */}
+                {requirementsNotifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    className="p-4 border-b bg-orange-50 hover:bg-orange-100 cursor-pointer transition-colors border-l-4 border-l-orange-500"
+                    onClick={() => handleNotificationClick(notification)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-medium text-gray-900">
+                            {notification.title}
+                          </h4>
+                          <span className="w-2 h-2 bg-orange-500 rounded-full flex-shrink-0"></span>
+                        </div>
+                        <p className="text-sm text-gray-700 mt-1">{notification.message}</p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-orange-600 font-medium">
+                            Incomplete Requirements
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))
+                ))}
+                
+                {/* Regular notifications */}
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    className={`p-4 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer transition-colors ${
+                      !notification.read ? 'bg-red-50' : ''
+                    }`}
+                    onClick={() => handleNotificationClick(notification)}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className={`text-sm font-medium ${!notification.read ? 'text-gray-900' : 'text-gray-700'}`}>
+                            {notification.title}
+                          </h4>
+                          {!notification.read && (
+                            <span className="w-2 h-2 bg-[#800000] rounded-full flex-shrink-0"></span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-xs text-gray-400">
+                            {formatTimeAgo(notification.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </>
             )}
           </div>
 
