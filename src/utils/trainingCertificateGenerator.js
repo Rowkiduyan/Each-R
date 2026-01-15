@@ -45,8 +45,7 @@ export async function generateTrainingCertificates(training, attendees) {
       name: template.file_path
     });
 
-    // 3. Use the Blob directly instead of converting to ArrayBuffer
-    console.log('Using template as Blob');
+    console.log('Using template file as Blob');
     
     // 4. Get current user (HR who is generating certificates)
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -84,7 +83,7 @@ export async function generateTrainingCertificates(training, attendees) {
 
         // Generate the certificate document using the template
         const reportBuffer = await createReport({
-          template: templateFile, // Use Blob directly
+          template: templateFile,
           data: certificateData,
           cmdDelimiter: ['{', '}'], // Use {placeholder} format
           noSandbox: true, // Disable VM sandbox for browser compatibility
