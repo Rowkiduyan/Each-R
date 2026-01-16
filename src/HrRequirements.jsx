@@ -30,10 +30,6 @@ function HrRequirements() {
   const [employmentStatusFilter, setEmploymentStatusFilter] = useState('All');
   const [recruitmentTypeFilter, setRecruitmentTypeFilter] = useState('All');
 
-  // Export menu state
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const exportMenuRef = useRef(null);
-
   // master department list (shared with Employees.jsx)
   const departments = [
     "Operations Department",
@@ -493,16 +489,6 @@ function HrRequirements() {
 
     loadEmployees();
   }, [reloadTrigger]);
-
-  useEffect(() => {
-    const handler = (e) => {
-      if (!showExportMenu) return;
-      const el = exportMenuRef.current;
-      if (el && !el.contains(e.target)) setShowExportMenu(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showExportMenu]);
 
   // Calculate requirement status for an employee
   const getEmployeeStatus = (employee) => {
@@ -1127,6 +1113,256 @@ function HrRequirements() {
     }
   }, [activeTab, searchQuery, depotFilter, departmentFilter, positionFilter, employmentStatusFilter, recruitmentTypeFilter, sortOption]);
 
+  const exportEmployeeRequirementsPdf = useCallback((employee) => {
+    if (!employee) return;
+
+    const safeText = (v) => {
+      const s = String(v ?? '').trim();
+      return s.length ? s : '—';
+    };
+
+    const statusLabel = (raw) => {
+      const s = normalizeStatus(raw);
+      if (s === 'approved') return 'Approved';
+      if (s === 'pending') return 'Pending';
+      if (s === 'resubmit') return 'Re-submit';
+      if (s === 'expired') return 'Expired';
+      if (s === 'missing') return 'Missing';
+      return safeText(raw);
+    };
+
+    const getUrlSafe = (filePath) => {
+      const key = normalizeStoragePath(filePath);
+      if (!key) return null;
+      return getDocumentUrl(key);
+    };
+
+    const drawSectionTitle = (doc, text, y) => {
+      doc.setFontSize(12);
+      doc.setTextColor(20);
+      doc.text(text, 28, y);
+      doc.setTextColor(0);
+      return y + 8;
+    };
+
+    const addTable = (doc, startY, head, body, linkUrlsByRowIndex, linkColIndex) => {
+      autoTable(doc, {
+        startY,
+        head: [head],
+        body,
+        theme: 'grid',
+        styles: { fontSize: 8, cellPadding: 4, overflow: 'linebreak' },
+        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
+        margin: { left: 28, right: 28 },
+        didParseCell: (data) => {
+          if (data.section !== 'body') return;
+          if (data.column.index !== linkColIndex) return;
+          const url = linkUrlsByRowIndex?.[data.row.index];
+          if (!url) {
+            data.cell.text = ['—'];
+            return;
+          }
+          data.cell.text = ['Open'];
+          data.cell.styles.textColor = [29, 78, 216];
+          data.cell.styles.fontStyle = 'bold';
+        },
+        didDrawCell: (data) => {
+          if (data.section !== 'body') return;
+          if (data.column.index !== linkColIndex) return;
+          const url = linkUrlsByRowIndex?.[data.row.index];
+          if (!url) return;
+
+          const text = 'Open';
+          const x = data.cell.x + 4;
+          const y = data.cell.y + data.cell.height / 2 + 3;
+          doc.textWithLink(text, x, y, { url });
+        },
+      });
+
+      return doc.lastAutoTable?.finalY || startY;
+    };
+
+    try {
+      const exportedAt = new Date();
+      const exportedAtLabel = exportedAt.toLocaleString('en-US');
+
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4',
+      });
+
+      doc.setFontSize(16);
+      doc.text(`${safeText(employee.name)} — Requirements`, 28, 40);
+
+      doc.setFontSize(10);
+      doc.setTextColor(80);
+      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
+      doc.text(
+        [
+          employee?.email ? `Email: ${employee.email}` : null,
+          employee?.position ? `Position: ${employee.position}` : null,
+          employee?.depot ? `Depot: ${employee.depot}` : null,
+          employee?.isAgency ? 'Type: Agency' : 'Type: Direct',
+        ]
+          .filter(Boolean)
+          .join(' | '),
+        28,
+        74
+      );
+      doc.setTextColor(0);
+
+      let y = 94;
+
+      // 1) IDs (SSS first)
+      y = drawSectionTitle(doc, employee?.isAgency ? 'Government IDs' : 'ID Numbers', y);
+
+      const idDefs = [
+        { key: 'sss', label: employee?.isAgency ? 'SSS (Social Security System)' : 'SSS No.' },
+        { key: 'tin', label: employee?.isAgency ? 'TIN (Tax Identification Number)' : 'TIN No.' },
+        { key: 'pagibig', label: employee?.isAgency ? 'PAG-IBIG (HDMF)' : 'Pag-IBIG No.' },
+        { key: 'philhealth', label: employee?.isAgency ? 'PhilHealth' : 'PhilHealth No.' },
+      ];
+
+      const idRows = [];
+      const idLinks = [];
+
+      for (const def of idDefs) {
+        if (employee?.isAgency) {
+          const r = employee?.requirements?.[def.key] || {};
+          const filePath = r?.filePath || r?.file_path || null;
+          const url = getUrlSafe(filePath);
+          idLinks.push(url);
+          idRows.push([
+            def.label,
+            safeText(r?.idNumber),
+            statusLabel(r?.status),
+            safeText(formatDate(r?.submittedDate || r?.submitted_at || r?.validated_at)),
+            url ? 'Open' : '—',
+          ]);
+        } else {
+          const r = employee?.requirements?.id_numbers?.[def.key] || {};
+          const filePath = r?.file_path || r?.filePath || null;
+          const url = getUrlSafe(filePath);
+          idLinks.push(url);
+          idRows.push([
+            def.label,
+            safeText(r?.value),
+            statusLabel(r?.status),
+            safeText(formatDate(r?.submitted_at || r?.validated_at)),
+            url ? 'Open' : '—',
+          ]);
+        }
+      }
+
+      y = addTable(doc, y, ['Requirement', 'Number', 'Status', 'Submitted', 'File'], idRows, idLinks, 4) + 18;
+
+      // 2) License (conditional)
+      if (!employee?.isAgency && isDeliveryCrew(employee)) {
+        y = drawSectionTitle(doc, "Driver's License", y);
+        const license = employee?.requirements?.license || {};
+
+        const front = license?.frontFilePath || license?.front_file_path || null;
+        const back = license?.backFilePath || license?.back_file_path || null;
+        const expiry = license?.licenseExpiry || license?.license_expiry || null;
+        const status = isExpiredDate(expiry) ? 'expired' : license?.status;
+        const submittedAt = license?.submittedDate || license?.submitted_at || null;
+
+        const licRows = [
+          [
+            'License Number',
+            safeText(license?.licenseNumber || license?.license_number),
+            statusLabel(status),
+            safeText(formatDate(submittedAt)),
+            '—',
+          ],
+          [
+            'Expiry',
+            safeText(expiry ? formatDate(expiry) : '—'),
+            statusLabel(status),
+            safeText(formatDate(submittedAt)),
+            '—',
+          ],
+          [
+            'Front',
+            '—',
+            statusLabel(status),
+            safeText(formatDate(submittedAt)),
+            getUrlSafe(front) ? 'Open' : '—',
+          ],
+          [
+            'Back',
+            '—',
+            statusLabel(status),
+            safeText(formatDate(submittedAt)),
+            getUrlSafe(back) ? 'Open' : '—',
+          ],
+        ];
+
+        const licLinks = [null, null, getUrlSafe(front), getUrlSafe(back)];
+        y = addTable(doc, y, ['Item', 'Value', 'Status', 'Submitted', 'File'], licRows, licLinks, 4) + 18;
+      }
+
+      // 3) Medical exams
+      if (!employee?.isAgency) {
+        y = drawSectionTitle(doc, 'Medical Examination', y);
+        const medical = employee?.requirements?.medicalExams || {};
+        const medRows = [];
+        const medLinks = [];
+
+        for (const exam of medicalExams) {
+          const r = medical?.[exam.key] || {};
+          const filePath = r?.filePath || r?.file_path || null;
+          const validUntil = r?.validUntil || r?.valid_until || null;
+          const status = filePath && isExpiredDate(validUntil) ? 'expired' : r?.status;
+          const url = getUrlSafe(filePath);
+          medLinks.push(url);
+          medRows.push([
+            exam.name,
+            statusLabel(status),
+            safeText(formatDate(r?.submittedDate || r?.submitted_at)),
+            safeText(validUntil ? formatDate(validUntil) : '—'),
+            url ? 'Open' : '—',
+          ]);
+        }
+
+        y = addTable(doc, y, ['Exam', 'Status', 'Submitted', 'Valid Until', 'File'], medRows, medLinks, 4) + 18;
+      }
+
+      // 4) HR Requests
+      const hrReqs = Array.isArray(employee?.hrRequests) ? employee.hrRequests : [];
+      if (hrReqs.length > 0) {
+        y = drawSectionTitle(doc, 'HR Requests', y);
+        const reqRows = [];
+        const reqLinks = [];
+
+        for (const r of hrReqs) {
+          const filePath = r?.file_path || r?.filePath || null;
+          const url = getUrlSafe(filePath);
+          reqLinks.push(url);
+          reqRows.push([
+            safeText(r?.document || r?.document_type || r?.name),
+            statusLabel(r?.status),
+            safeText(formatDate(r?.requested_at)),
+            safeText(r?.deadline || '—'),
+            url ? 'Open' : '—',
+          ]);
+        }
+
+        y = addTable(doc, y, ['Document', 'Status', 'Requested', 'Deadline', 'File'], reqRows, reqLinks, 4) + 18;
+      }
+
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const namePart = safeText(employee.name).replace(/[^a-zA-Z0-9_-]+/g, '_').slice(0, 40);
+      const fileName = `requirements_${namePart}_${yyyyMmDd}.pdf`;
+      doc.save(fileName);
+    } catch (err) {
+      console.error('exportEmployeeRequirementsPdf error:', err);
+      setAlertMessage('Failed to export employee requirements PDF. Please try again.');
+      setShowErrorAlert(true);
+    }
+  }, [formatDate, getDocumentUrl, isExpiredDate, isDeliveryCrew, medicalExams, normalizeStatus, normalizeStoragePath]);
+
   const exportRequirementsExcel = useCallback(async (rows, title = "Employee Requirements") => {
     const list = Array.isArray(rows) ? rows : [];
     if (list.length === 0) {
@@ -1290,12 +1526,12 @@ function HrRequirements() {
     return colors[index];
   };
 
-  const formatDate = (dateStr) => {
+  function formatDate(dateStr) {
     if (!dateStr) return '—';
     const date = new Date(dateStr);
     if (!Number.isFinite(date.getTime())) return '—';
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
+  }
 
   const getStatusStyle = (status) => {
     const styles = {
@@ -1786,13 +2022,13 @@ function HrRequirements() {
     }
   };
 
-  const getDocumentUrl = (filePath) => {
+  function getDocumentUrl(filePath) {
     if (!filePath) return null;
     const { data } = supabase.storage
       .from('application-files')
       .getPublicUrl(filePath);
     return data?.publicUrl || null;
-  };
+  }
 
   const requestTargetEmployee = requestTarget
     ? employees.find((e) => e?.employeeId === requestTarget.employeeId)
@@ -2055,45 +2291,6 @@ function HrRequirements() {
                   <option value="hired-desc">Date Hired (Newest → Oldest)</option>
                 </select>
 
-                {/* Export Button */}
-                <div className="relative" ref={exportMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setShowExportMenu((prev) => !prev)}
-                    className="w-full sm:w-auto px-4 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white"
-                    title="Export the currently filtered list"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    Export
-                  </button>
-
-                  {showExportMenu && (
-                    <div className="absolute right-0 mt-2 w-48 bg-white border rounded-lg shadow-lg z-50 overflow-hidden">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowExportMenu(false);
-                          exportRequirementsPdf(getFilteredData(), "Employee Requirements");
-                        }}
-                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
-                      >
-                        Export list as PDF
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowExportMenu(false);
-                          exportRequirementsExcel(getFilteredData(), "Employee Requirements");
-                        }}
-                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
-                      >
-                        Export list as Excel
-                      </button>
-                    </div>
-                  )}
-                </div>
               </div>
             </div>
 
@@ -2183,6 +2380,7 @@ function HrRequirements() {
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Progress</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Export</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -2268,10 +2466,32 @@ function HrRequirements() {
                               </svg>
                             </div>
                           </td>
+                          <td className="px-6 py-4 text-right">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                exportEmployeeRequirementsPdf(employee);
+                              }}
+                              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
+                              title={`Export ${employee?.name || 'employee'} requirements`}
+                              aria-label={`Export ${employee?.name || 'employee'} requirements`}
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              Export PDF
+                            </button>
+                          </td>
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td colSpan={4} className="px-6 py-5 bg-gradient-to-b from-gray-50 to-white border-b border-gray-200">
+                            <td colSpan={5} className="px-6 py-5 bg-gradient-to-b from-gray-50 to-white border-b border-gray-200">
                               <div className="space-y-5">
                                 {employee.isAgency ? (
                                   // Agency employees: show ID number requirements
