@@ -2408,7 +2408,7 @@ function AgencyEndorse() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Course/Program <span className="text-[#800000]">*</span></label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Strand/Program <span className="text-[#800000]">*</span></label>
                       <input 
                         className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${
                           fv.education === "N/A" ? "bg-gray-100 cursor-not-allowed" : ""

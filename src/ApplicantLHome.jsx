@@ -5,6 +5,17 @@ import { createNotification } from './notifications';
   import AutocompleteInput from './components/AutocompleteInput';
 import SkillsInput from './components/SkillsInput';
 
+  const EDUCATION_LEVEL_OPTIONS = [
+    { value: '', label: 'Select highest education' },
+    { value: 'N/A', label: 'N/A' },
+    { value: 'Elementary', label: 'Elementary' },
+    { value: 'Junior High School', label: 'Junior High School' },
+    { value: 'Senior High School', label: 'Senior High School' },
+    { value: 'Vocational', label: 'Vocational/Technical Course' },
+    { value: 'College', label: 'College' },
+    { value: 'Post Graduate', label: 'Post Graduate (Masters/Doctorate)' },
+  ];
+
   function ApplicantLHome() {
     const navigate = useNavigate();
     const location = useLocation();
@@ -66,6 +77,7 @@ import SkillsInput from './components/SkillsInput';
     const [yearErrors, setYearErrors] = useState({ edu1Year: '', edu2Year: '' });
     const [profileYearGraduatedError, setProfileYearGraduatedError] = useState('');
     const [employmentPeriodErrors, setEmploymentPeriodErrors] = useState([]);
+    const [profileEmploymentPeriodErrors, setProfileEmploymentPeriodErrors] = useState([]);
     const [referenceContactErrors, setReferenceContactErrors] = useState([]);
     const [referenceNameErrors, setReferenceNameErrors] = useState([]);
     const [referenceEmailErrors, setReferenceEmailErrors] = useState([]);
@@ -87,6 +99,7 @@ import SkillsInput from './components/SkillsInput';
         educational_attainment: '',
         institution_name: '',
         year_graduated: '',
+        education_program: '',
         skills: [],
         work_experiences: [],
         character_references: [],
@@ -130,12 +143,14 @@ import SkillsInput from './components/SkillsInput';
       hasSSS: false,
       hasPhilHealth: false,
       hasTIN: false,
+      hasPAGIBIG: false,
 
       // education (two rows just like your Summary)
-      edu1Level: 'College Graduate',
+      edu1Level: '',
       edu1Institution: '',
       edu1Year: '',
-      edu2Level: 'High School Graduate',
+      edu1Program: '',
+      edu2Level: '',
       edu2Institution: '',
       edu2Year: '',
 
@@ -229,9 +244,10 @@ import SkillsInput from './components/SkillsInput';
               birthday: mergedProfile.birthday || '',
               age: calculatedAge || mergedProfile.age || '',
               marital_status: mergedProfile.marital_status || '',
-              educational_attainment: mergedProfile.educational_attainment || '',
+              educational_attainment: normalizeEducationAttainment(mergedProfile.educational_attainment) || '',
               institution_name: mergedProfile.institution_name || '',
               year_graduated: mergedProfile.year_graduated || '',
+              education_program: merged.education_program || '',
               skills: normalizeSkills(mergedProfile.skills),
               work_experiences: mergedProfile.work_experiences || [],
               character_references: normalizeCharacterReferences(mergedProfile.character_references),
@@ -633,6 +649,55 @@ const handleSave = async () => {
       return;
     }
 
+    // Validate profile work experiences (match Submit Application layout)
+    const profileWork = Array.isArray(profileForm.work_experiences) ? profileForm.work_experiences : [];
+    for (let i = 0; i < profileWork.length; i++) {
+      const exp = profileWork[i] || {};
+      if (!exp.start) continue;
+      const startDate = new Date(String(exp.start) + '-01');
+      if (Number.isNaN(startDate.getTime())) continue;
+      const today = new Date();
+      if (startDate > today) {
+        setErrorMessage(`Work Experience #${i + 1}: Start date cannot be in the future`);
+        setSaving(false);
+        return;
+      }
+      if (exp.end) {
+        const endDate = new Date(String(exp.end) + '-01');
+        if (!Number.isNaN(endDate.getTime()) && endDate < startDate) {
+          setErrorMessage(`Work Experience #${i + 1}: End date cannot be before start date`);
+          setSaving(false);
+          return;
+        }
+        if (!Number.isNaN(endDate.getTime()) && endDate > today) {
+          setErrorMessage(`Work Experience #${i + 1}: End date cannot be in the future`);
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
+    // Compute a human-friendly period string (backward compatible)
+    const workExperiencesToSave = profileWork.map((exp) => {
+      const e = exp && typeof exp === 'object' ? { ...exp } : {};
+      if (e.start) {
+        const startLabel = (() => {
+          const d = new Date(String(e.start) + '-01');
+          if (Number.isNaN(d.getTime())) return String(e.start);
+          return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        })();
+        const endLabel = e.end
+          ? (() => {
+              const d = new Date(String(e.end) + '-01');
+              if (Number.isNaN(d.getTime())) return String(e.end);
+              return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+            })()
+          : 'Present';
+        e.period = `${startLabel} - ${endLabel}`;
+      }
+      return e;
+    });
+
     // Combine unit_house_number and street for the address field
     const streetPart = [
       profileForm.unit_house_number,
@@ -676,9 +741,7 @@ const handleSave = async () => {
       setProfileResumeFile(null);
     }
 
-    const { error } = await supabase
-      .from('applicants')
-      .update({
+    const baseUpdatePayload = {
         address: combinedAddress,
         unit_house_number: profileForm.unit_house_number,
         street: profileForm.street,
@@ -690,19 +753,43 @@ const handleSave = async () => {
         birthday: profileForm.birthday,
         age: profileForm.age,
         marital_status: profileForm.marital_status,
-        educational_attainment: profileForm.educational_attainment || null,
+        educational_attainment: normalizeEducationAttainment(profileForm.educational_attainment) || null,
         institution_name: profileForm.institution_name || null,
         year_graduated: profileForm.year_graduated || null,
+        education_program: profileForm.education_program || null,
         skills: Array.isArray(profileForm.skills) ? profileForm.skills : normalizeSkills(profileForm.skills),
-        work_experiences: profileForm.work_experiences || [],
+        work_experiences: workExperiencesToSave,
         character_references: profileForm.character_references || [],
         preferred_depot: profileForm.preferred_depot || null,
         resume_path: resumePathToSave
-      })
-      .ilike('email', user.email);
+      };
 
-    if (error) {
-      console.error('Error updating profile:', error);
+    // Some deployments may not yet have the education_program column.
+    // Try update with it; if PostgREST rejects the column, retry without it.
+    let updateError = null;
+    {
+      const res = await supabase
+        .from('applicants')
+        .update(baseUpdatePayload)
+        .ilike('email', user.email);
+      updateError = res?.error || null;
+    }
+
+    let didWarnProgramNotSaved = false;
+    if (updateError && String(updateError.message || '').toLowerCase().includes('education_program')) {
+      const { education_program: _drop, ...fallbackPayload } = baseUpdatePayload;
+      const res2 = await supabase
+        .from('applicants')
+        .update(fallbackPayload)
+        .ilike('email', user.email);
+      updateError = res2?.error || null;
+      if (!updateError) {
+        didWarnProgramNotSaved = true;
+      }
+    }
+
+    if (updateError) {
+      console.error('Error updating profile:', updateError);
       setErrorMessage('Error saving profile. Please try again.');
       setSaving(false);
       return;
@@ -731,9 +818,10 @@ const handleSave = async () => {
         birthday: merged.birthday || '',
         age: merged.age || '',
         marital_status: merged.marital_status || '',
-        educational_attainment: merged.educational_attainment || '',
+        educational_attainment: normalizeEducationAttainment(merged.educational_attainment) || '',
         institution_name: merged.institution_name || '',
         year_graduated: merged.year_graduated || '',
+        education_program: merged.education_program || '',
         skills: normalizeSkills(merged.skills),
         work_experiences: merged.work_experiences || [],
         character_references: normalizeCharacterReferences(merged.character_references),
@@ -744,7 +832,11 @@ const handleSave = async () => {
     }
 
     setIsEditMode(false);
-    setSuccessMessage('Profile updated successfully!');
+    setSuccessMessage(
+      didWarnProgramNotSaved
+        ? 'Profile updated successfully! (Note: Strand/Program is not saved yet — database column missing)'
+        : 'Profile updated successfully!'
+    );
     setTimeout(() => setSuccessMessage(''), 3000);
   } catch (err) {
     console.error('Error:', err);
@@ -772,9 +864,10 @@ const handleCancel = () => {
         birthday: profileData.birthday || '',
         age: profileData.age || '',
         marital_status: profileData.marital_status || '',
-        educational_attainment: profileData.educational_attainment || '',
+        educational_attainment: normalizeEducationAttainment(profileData.educational_attainment) || '',
         institution_name: profileData.institution_name || '',
         year_graduated: profileData.year_graduated || '',
+        education_program: profileData.education_program || '',
         skills: normalizeSkills(profileData.skills),
         work_experiences: profileData.work_experiences || [],
         character_references: normalizeCharacterReferences(profileData.character_references),
@@ -785,6 +878,7 @@ const handleCancel = () => {
   setProfileResumeFile(null);
   setBirthdayError('');
   setProfileYearGraduatedError('');
+  setProfileEmploymentPeriodErrors([]);
   setIsEditMode(false);
 };
 
@@ -867,6 +961,25 @@ const formatDateForInput = (dateString) => {
       };
     };
 
+    const normalizeEducationAttainment = (val) => {
+      const raw = String(val ?? '').trim();
+      if (!raw) return '';
+
+      const canonical = new Set(EDUCATION_LEVEL_OPTIONS.map((o) => o.value).filter(Boolean));
+      if (canonical.has(raw) || raw === 'N/A') return raw;
+
+      const mapped = {
+        'Elementary School': 'Elementary',
+        'High School Graduate': 'Senior High School',
+        'Secondary School Graduate': 'Senior High School',
+        'College Graduate': 'College',
+        'Vocational/Technical Course': 'Vocational',
+        'Post Graduate (Masters/Doctorate)': 'Post Graduate',
+      };
+
+      return mapped[raw] || raw;
+    };
+
     const prefillApplicationForm = (profile) => {
       if (!profile) return;
       // Normalize skills to array format
@@ -896,9 +1009,10 @@ const formatDateForInput = (dateString) => {
         maritalStatus: profile.marital_status ? profile.marital_status.toLowerCase() : '',
         sex: profile.sex || '',
         skills: skillsValue,
-        edu1Level: profile.educational_attainment || prev.edu1Level,
+        edu1Level: normalizeEducationAttainment(profile.educational_attainment || prev.edu1Level),
         edu1Institution: profile.institution_name || '',
         edu1Year: profile.year_graduated || '',
+        edu1Program: profile.education_program || prev.edu1Program || '',
         resumePath: profile.resume_path || prev.resumePath || '',
         resumeName: resumeName || prev.resumeName || '',
       }));
@@ -3159,7 +3273,7 @@ const formatDateForInput = (dateString) => {
                           </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-2">Highest Educational Attainment <span className="text-red-600">*</span></label>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">Educational Level <span className="text-red-600">*</span></label>
                               {isEditMode ? (
                                 <select
                                   value={profileForm.educational_attainment || ''}
@@ -3178,12 +3292,11 @@ const formatDateForInput = (dateString) => {
                                   }}
                                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
                                 >
-                                  <option value="">Select</option>
-                                  <option value="N/A">N/A</option>
-                                  <option value="Elementary School">Elementary School</option>
-                                  <option value="High School Graduate">High School Graduate</option>
-                                  <option value="Secondary School Graduate">Secondary School Graduate</option>
-                                  <option value="College Graduate">College Graduate</option>
+                                  {EDUCATION_LEVEL_OPTIONS.map((opt) => (
+                                    <option key={opt.value || 'empty'} value={opt.value}>
+                                      {opt.label}
+                                    </option>
+                                  ))}
                                 </select>
                               ) : (
                                 <div className="text-gray-900">{profileForm.educational_attainment || 'Not provided'}</div>
@@ -3212,6 +3325,27 @@ const formatDateForInput = (dateString) => {
                                 />
                               ) : (
                                 <div className="text-gray-900">{profileForm.institution_name || 'Not provided'}</div>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-2">
+                                Strand/Program (If applicable)
+                              </label>
+                              {isEditMode ? (
+                                <input
+                                  type="text"
+                                  value={profileForm.education_program || ''}
+                                  onChange={(e) => handleFormChange('education_program', e.target.value)}
+                                  placeholder="Enter strand/program"
+                                  disabled={!profileForm.educational_attainment || profileForm.educational_attainment === 'N/A' || profileForm.educational_attainment === ''}
+                                  className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 ${
+                                    (!profileForm.educational_attainment || profileForm.educational_attainment === 'N/A' || profileForm.educational_attainment === '')
+                                      ? 'bg-gray-100 cursor-not-allowed'
+                                      : ''
+                                  }`}
+                                />
+                              ) : (
+                                <div className="text-gray-900">{profileForm.education_program || 'Not provided'}</div>
                               )}
                             </div>
                             <div>
@@ -3353,17 +3487,56 @@ const formatDateForInput = (dateString) => {
                                         />
                                       </div>
                                     </div>
-                                    <div>
-                                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Employment Period
-                                      </label>
-                                      <input
-                                        type="text"
-                                        placeholder="January 2020 - June 2021 or 2020 - Present"
-                                        value={exp.period || ''}
-                                        onChange={(e) => updateProfileWork(index, 'period', e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
-                                      />
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Start (Month &amp; Year)</label>
+                                        <input
+                                          type="month"
+                                          value={exp.start || ''}
+                                          max={new Date().toISOString().slice(0, 7)}
+                                          onChange={(e) => {
+                                            const nextStart = e.target.value;
+                                            updateProfileWork(index, 'start', nextStart);
+                                            setProfileEmploymentPeriodErrors((prev) => {
+                                              const copy = Array.isArray(prev) ? [...prev] : [];
+                                              const maxMonth = new Date().toISOString().slice(0, 7);
+                                              let msg = '';
+                                              if (nextStart && nextStart > maxMonth) msg = 'Start date cannot be in the future';
+                                              if (nextStart && exp.end && nextStart > exp.end) msg = 'Start date cannot be after end date';
+                                              copy[index] = msg;
+                                              return copy;
+                                            });
+                                          }}
+                                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                        />
+                                      </div>
+                                      <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">End (Month &amp; Year)</label>
+                                        <input
+                                          type="month"
+                                          value={exp.end || ''}
+                                          max={new Date().toISOString().slice(0, 7)}
+                                          onChange={(e) => {
+                                            const nextEnd = e.target.value;
+                                            updateProfileWork(index, 'end', nextEnd);
+                                            setProfileEmploymentPeriodErrors((prev) => {
+                                              const copy = Array.isArray(prev) ? [...prev] : [];
+                                              const maxMonth = new Date().toISOString().slice(0, 7);
+                                              let msg = '';
+                                              if (nextEnd && nextEnd > maxMonth) msg = 'End date cannot be in the future';
+                                              if (nextEnd && exp.start && nextEnd < exp.start) msg = 'End date cannot be before start date';
+                                              copy[index] = msg;
+                                              return copy;
+                                            });
+                                          }}
+                                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                        />
+                                      </div>
+                                      {profileEmploymentPeriodErrors[index] && (
+                                        <div className="md:col-span-2">
+                                          <p className="text-xs text-red-600 mt-1">{profileEmploymentPeriodErrors[index]}</p>
+                                        </div>
+                                      )}
                                     </div>
                                     <div>
                                       <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -3381,10 +3554,11 @@ const formatDateForInput = (dateString) => {
                               </div>
                             ) : (
                               <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                <div className="grid grid-cols-4 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-700">
+                                <div className="grid grid-cols-5 bg-gray-50 px-4 py-2 text-sm font-medium text-gray-700">
                                   <div>Company</div>
                                   <div>Role</div>
-                                  <div>Period</div>
+                                  <div>Start</div>
+                                  <div>End</div>
                                   <div>Reason</div>
                                 </div>
                                 {(Array.isArray(profileForm.work_experiences) ? profileForm.work_experiences : []).length === 0 ? (
@@ -3393,11 +3567,16 @@ const formatDateForInput = (dateString) => {
                                   (Array.isArray(profileForm.work_experiences) ? profileForm.work_experiences : []).map((w, i) => (
                                     <div
                                       key={i}
-                                      className={`grid grid-cols-4 px-4 py-2 text-sm ${i % 2 === 1 ? 'bg-gray-50' : 'bg-white'}`}
+                                      className={`grid grid-cols-5 px-4 py-2 text-sm ${i % 2 === 1 ? 'bg-gray-50' : 'bg-white'}`}
                                     >
                                       <div className="text-gray-900">{w.company || <span className="text-gray-500 italic">None</span>}</div>
                                       <div className="text-gray-900">{w.role || <span className="text-gray-500 italic">None</span>}</div>
-                                      <div className="text-gray-900">{w.period || <span className="text-gray-500 italic">None</span>}</div>
+                                      <div className="text-gray-900">
+                                        {w.start || w.period || <span className="text-gray-500 italic">None</span>}
+                                      </div>
+                                      <div className="text-gray-900">
+                                        {w.end || <span className="text-gray-500 italic">—</span>}
+                                      </div>
                                       <div className="text-gray-900">{w.reason || <span className="text-gray-500 italic">None</span>}</div>
                                     </div>
                                   ))
@@ -3904,6 +4083,7 @@ const formatDateForInput = (dateString) => {
                               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
                             >
                               <option value="">Select an answer</option>
+                              <option value="N/A">N/A</option>
                               <option value="Job Portal">Job Portal</option>
                               <option value="Referral">Referral</option>
                               <option value="Social Media">Social Media</option>
@@ -3993,6 +4173,16 @@ const formatDateForInput = (dateString) => {
                           <label className="flex items-center">
                             <input
                               type="checkbox"
+                              name="hasPAGIBIG"
+                              checked={form.hasPAGIBIG}
+                              onChange={handleCheckbox}
+                              className="mr-2"
+                            />
+                            <span className="text-sm">PAGIBIG</span>
+                          </label>
+                          <label className="flex items-center">
+                            <input
+                              type="checkbox"
                               name="hasPhilHealth"
                               checked={form.hasPhilHealth}
                               onChange={handleCheckbox}
@@ -4014,76 +4204,91 @@ const formatDateForInput = (dateString) => {
                       </div>
 
                       <div className={`space-y-4 ${applicationTab === 'education' ? 'block' : 'hidden'}`}>
-                        {/* Education */}
-                        <div className="space-y-2">
-                          <label className="block text-sm font-medium text-gray-700">
-                            Educational Attainment:
-                          </label>
-
-                          <select
-                            name="edu1Level"
-                            value={form.edu1Level}
-                            onChange={handleInput}
-                            className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                                        <div className="bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-md p-3">
+                                          Education & skills are pulled from your profile and can’t be edited here.
+                                          You may optionally add your strand/program for this application.
+                          <button
+                            type="button"
+                            className="ml-2 underline font-medium"
+                            onClick={() => {
+                              setShowModal(false);
+                              setActiveTab('Profile');
+                            }}
                           >
-                            <option>Elementary School</option>
-                            <option>High School Graduate</option>
-                            <option>Secondary School Graduate</option>
-                            <option>College Graduate</option>
-                          </select>
-                          <div className="flex gap-2 items-start">
-                            <input
-                              type="text"
-                              placeholder="Institution"
-                              name="edu1Institution"
-                              value={form.edu1Institution}
-                              onChange={handleInput}
-                              className="flex-1 border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
-                            />
-                            <div className="w-70 flex-shrink-0">
+                            Edit in My Profile
+                          </button>
+                        </div>
+
+                        {/* Education (read-only; managed in Profile) */}
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Educational Level
+                            </label>
+                            <select
+                              value={normalizeEducationAttainment(form.edu1Level)}
+                              disabled
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+                            >
+                              {EDUCATION_LEVEL_OPTIONS.map((opt) => (
+                                <option key={opt.value || 'empty'} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                School/Institution Name
+                              </label>
                               <input
                                 type="text"
-                                placeholder="Year Finished (yyyy)"
-                                name="edu1Year"
-                                value={form.edu1Year}
-                                onChange={(e) => {
-                                  let numericValue = e.target.value.replace(/\D/g, '').slice(0, 4);
-                                  if (numericValue.length === 4) {
-                                    const currentYear = new Date().getFullYear();
-                                    const yearNum = parseInt(numericValue, 10);
-                                    if (!Number.isNaN(yearNum) && yearNum > currentYear) {
-                                      numericValue = String(currentYear);
-                                    }
-                                  }
-                                  setForm((prev) => ({ ...prev, edu1Year: numericValue }));
-                                  const error = validateYear(numericValue, form.birthday);
-                                  setYearErrors((prev) => ({ ...prev, edu1Year: error }));
-                                }}
-                                inputMode="numeric"
-                                pattern="\d*"
-                                maxLength="4"
-                                className="w-full border border-gray-300 rounded-md px-3 py-2 focus:ring-1 focus:ring-red-500 focus:outline-none"
+                                value={form.edu1Institution || ''}
+                                readOnly
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
                               />
-                              {yearErrors.edu1Year && (
-                                <p className="text-xs text-red-600 mt-1">{yearErrors.edu1Year}</p>
-                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Year Graduated
+                              </label>
+                              <input
+                                type="text"
+                                value={form.edu1Year || ''}
+                                readOnly
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+                              />
                             </div>
                           </div>
                         </div>
 
-                        {/* Skills */}
+                        {/* Strand/Program (optional; stored in application payload) */}
                         <div>
-                          <label className="flex items-center">
-                            <span className="text-sm mt-4 font-medium">
-                              Please list your skills
-                            </span>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Strand/Program (If applicable)
                           </label>
-                          <div className="mt-2">
-                            <SkillsInput
-                              skills={normalizeSkills(form.skills)}
-                              onChange={(skillsArray) => setForm(prev => ({ ...prev, skills: skillsArray }))}
-                            />
-                          </div>
+                          <input
+                            type="text"
+                            name="edu1Program"
+                            value={form.edu1Program || ''}
+                            onChange={handleInput}
+                            placeholder="e.g. STEM, ABM, BS Computer Science"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                          />
+                          <p className="text-xs text-gray-500 mt-1">Optional; saved with this application only.</p>
+                        </div>
+
+                        {/* Skills (read-only; managed in Profile) */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Skills</label>
+                          <textarea
+                            value={normalizeSkills(form.skills).join(', ')}
+                            readOnly
+                            rows={3}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 cursor-not-allowed"
+                          />
                         </div>
 
                         {/* License */}
@@ -4556,6 +4761,7 @@ const formatDateForInput = (dateString) => {
                           <div>
                             {[
                               form.hasSSS ? 'SSS' : null,
+                              form.hasPAGIBIG ? 'PAGIBIG' : null,
                               form.hasPhilHealth ? 'PhilHealth' : null,
                               form.hasTIN ? 'TIN' : null,
                             ]
@@ -4570,14 +4776,16 @@ const formatDateForInput = (dateString) => {
                     <div>
                       <h3 className="text-lg font-semibold text-gray-800 mb-2">Education</h3>
                       <div className="border border-gray-300">
-                        <div className="grid grid-cols-3 bg-gray-100 p-2 font-medium">
+                        <div className="grid grid-cols-4 bg-gray-100 p-2 font-medium">
                           <div>Level</div>
                           <div>Institution</div>
+                          <div>Strand/Program</div>
                           <div>Year Finished</div>
                         </div>
-                        <div className="grid grid-cols-3 p-2">
+                        <div className="grid grid-cols-4 p-2">
                           <div>{form.edu1Level || <span className="text-gray-500 italic">None</span>}</div>
                           <div>{form.edu1Institution || <span className="text-gray-500 italic">None</span>}</div>
+                          <div>{form.edu1Program || <span className="text-gray-500 italic">None</span>}</div>
                           <div>{form.edu1Year || <span className="text-gray-500 italic">None</span>}</div>
                         </div>
                       </div>

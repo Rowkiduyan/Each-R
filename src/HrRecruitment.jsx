@@ -5231,7 +5231,7 @@ function HrRecruitment() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {allApplicants.map((a) => {
+                    {filteredAllApplicants.map((a) => {
                       const isSelected = selectedApplicant.id === a.id;
                       return (
                         <tr
