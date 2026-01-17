@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabaseClient";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import ExcelJS from "exceljs";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
 function HrEval() {
   // Tab and filter state
@@ -12,13 +12,11 @@ function HrEval() {
   const [currentPage, setCurrentPage] = useState(1);
   const [expandedRow, setExpandedRow] = useState(null);
 
-  // Export menu
-  const [showExportMenu, setShowExportMenu] = useState(false);
-  const exportMenuRef = useRef(null);
   const [evalSearchQuery, setEvalSearchQuery] = useState("");
   const [evalDateSort, setEvalDateSort] = useState("newest");
   const [evalRemarksFilter, setEvalRemarksFilter] = useState("all");
   const [evalReasonFilter, setEvalReasonFilter] = useState("all");
+  const [exportingEmployeeId, setExportingEmployeeId] = useState(null);
   const itemsPerPage = 8;
 
   // Data state
@@ -650,15 +648,33 @@ function HrEval() {
     currentPage * itemsPerPage
   );
 
-  useEffect(() => {
-    const handler = (e) => {
-      if (!showExportMenu) return;
-      const el = exportMenuRef.current;
-      if (el && !el.contains(e.target)) setShowExportMenu(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showExportMenu]);
+  const sanitizeFileName = (value) => String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[^a-zA-Z0-9 _-]+/g, "")
+    .replace(/\s+/g, "_")
+    .slice(0, 120) || "export";
+
+  const getFilteredEmployeeEvaluations = useCallback((employee) => {
+    const list = Array.isArray(employee?.evaluations) ? [...employee.evaluations] : [];
+    if (list.length === 0) return [];
+
+    const filtered = list.filter((evaluation) => {
+      const evaluatorName = String(evaluation?.evaluator_name ?? "");
+      const matchesSearch = evalSearchQuery === "" || evaluatorName.toLowerCase().includes(evalSearchQuery.toLowerCase());
+      const matchesRemarks = evalRemarksFilter === "all" || evaluation?.remarks === evalRemarksFilter;
+      const matchesReason = evalReasonFilter === "all" || evaluation?.reason === evalReasonFilter;
+      return matchesSearch && matchesRemarks && matchesReason;
+    });
+
+    filtered.sort((a, b) => {
+      const dateA = new Date(a?.date_evaluated);
+      const dateB = new Date(b?.date_evaluated);
+      return evalDateSort === "newest" ? dateB - dateA : dateA - dateB;
+    });
+
+    return filtered;
+  }, [evalDateSort, evalReasonFilter, evalRemarksFilter, evalSearchQuery]);
 
   // Helpers for UI
   const getInitials = (name) => {
@@ -706,150 +722,208 @@ function HrEval() {
     return styles[status] || styles.uptodate;
   };
 
-  const exportEvaluationsPdf = useCallback((rows, title = "Employee Evaluations") => {
-    const list = Array.isArray(rows) ? rows : [];
-    if (list.length === 0) {
-      showAlert("No employees to export for the current filters.", "error");
+  const exportEmployeeEvaluationPdf = useCallback(async (employee) => {
+    if (!employee) return;
+    const evaluations = getFilteredEmployeeEvaluations(employee);
+    if (evaluations.length === 0) {
+      showAlert("No evaluation records to export for this employee (based on current filters).", "warning");
       return;
     }
+
+    const exportId = employee.id;
+    setExportingEmployeeId(exportId);
 
     try {
       const exportedAt = new Date();
       const exportedAtLabel = exportedAt.toLocaleString("en-US");
-      const filterSummary = [
-        searchQuery ? `Search: ${searchQuery}` : null,
-        employmentFilter !== 'all' ? `Employment: ${employmentFilter}` : null,
-        statusFilter !== 'all' ? `Status: ${getStatusBadge(statusFilter).label}` : null,
-        'Sort: status priority',
-      ]
-        .filter(Boolean)
-        .join(" | ");
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
         return s.length ? s : "—";
       };
 
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "pt",
-        format: "a4",
+      const filterSummary = [
+        evalSearchQuery ? `Search: ${evalSearchQuery}` : null,
+        evalDateSort ? `Sort: ${evalDateSort}` : null,
+        evalRemarksFilter !== 'all' ? `Remarks: ${evalRemarksFilter}` : null,
+        evalReasonFilter !== 'all' ? `Reason: ${evalReasonFilter}` : null,
+      ].filter(Boolean).join(" | ");
+
+      const recordUrlsByRowIndex = evaluations.map((ev) => {
+        if (!ev?.file_path) return null;
+        return supabase.storage
+          .from("evaluations")
+          .getPublicUrl(ev.file_path).data.publicUrl || null;
       });
 
-      doc.setFontSize(16);
-      doc.text(`${title} (${list.length})`, 28, 40);
+      // 1) Build a summary PDF page(s) via jsPDF (table-friendly)
+      const summaryDoc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      summaryDoc.setFontSize(16);
+      summaryDoc.text("Employee Evaluation Report", 28, 40);
 
-      doc.setFontSize(10);
-      doc.setTextColor(80);
-      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
-      if (filterSummary) doc.text(filterSummary, 28, 74);
-      doc.setTextColor(0);
+      summaryDoc.setFontSize(10);
+      summaryDoc.setTextColor(80);
+      summaryDoc.text(`Employee: ${safeText(employee.name)} (${safeText(employee.id)})`, 28, 60);
+      summaryDoc.text(`Position: ${safeText(employee.position)} | Depot: ${safeText(employee.depot)}`, 28, 74);
+      summaryDoc.text(`Employment: ${safeText(employee.employmentType)} | Exported: ${exportedAtLabel}`, 28, 88);
+      if (filterSummary) summaryDoc.text(`Filters: ${filterSummary}`, 28, 102);
+      summaryDoc.setTextColor(0);
 
-      const body = list.map((e) => {
-        const statusLabel = getStatusBadge(e.status).label;
+      const body = evaluations.map((ev) => {
+        const fileName = ev?.file_path ? String(ev.file_path).split("/").pop() : "—";
         return [
-          safeText(e.name),
-          safeText(e.position),
-          safeText(e.depot),
-          safeText(e.employmentType),
-          safeText(formatDate(e.lastEvaluation)),
-          safeText(formatDate(e.nextEvaluation)),
-          safeText(statusLabel),
+          safeText(formatDate(ev?.date_evaluated)),
+          safeText(ev?.evaluator_name),
+          safeText(ev?.total_score ? `${ev.total_score}%` : "N/A"),
+          safeText(ev?.remarks),
+          safeText(ev?.reason),
+          ev?.file_path ? "Open" : safeText(fileName),
         ];
       });
 
-      autoTable(doc, {
-        startY: filterSummary ? 90 : 78,
-        head: [["Employee", "Position", "Depot", "Type", "Last Eval", "Next Due", "Status"]],
+      autoTable(summaryDoc, {
+        startY: filterSummary ? 120 : 108,
+        head: [["Date", "Evaluator", "Score", "Remarks", "Reason", "Record File"]],
         body,
         theme: "grid",
         styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
         headStyles: { fillColor: [245, 245, 245], textColor: 20 },
         margin: { left: 28, right: 28 },
         columnStyles: {
-          0: { cellWidth: 110 },
-          1: { cellWidth: 95 },
+          0: { cellWidth: 60 },
+          1: { cellWidth: 90 },
           2: { cellWidth: 55 },
-          3: { cellWidth: 55 },
-          4: { cellWidth: 60 },
-          5: { cellWidth: 60 },
-          6: { cellWidth: 55 },
+          3: { cellWidth: 70 },
+          4: { cellWidth: 70 },
+          5: { cellWidth: 150 },
+        },
+        didParseCell: (data) => {
+          if (data.section !== "body") return;
+          if (data.column.index !== 5) return;
+          const url = recordUrlsByRowIndex?.[data.row.index];
+          if (!url) {
+            data.cell.text = ["—"];
+            return;
+          }
+          data.cell.text = ["Open"];
+          data.cell.styles.textColor = [29, 78, 216];
+          data.cell.styles.fontStyle = "bold";
+        },
+        didDrawCell: (data) => {
+          if (data.section !== "body") return;
+          if (data.column.index !== 5) return;
+          const url = recordUrlsByRowIndex?.[data.row.index];
+          if (!url) return;
+          const x = data.cell.x + 4;
+          const y = data.cell.y + data.cell.height / 2 + 3;
+          summaryDoc.textWithLink("Open", x, y, { url });
         },
       });
 
-      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
-      const rawParts = [
-        'evaluations',
-        employmentFilter !== 'all' ? employmentFilter : null,
-        statusFilter !== 'all' ? statusFilter : null,
-        yyyyMmDd,
-      ]
-        .filter(Boolean)
-        .join('_');
-      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".pdf";
+      const summaryBuffer = summaryDoc.output("arraybuffer");
 
-      doc.save(fileName);
-    } catch (err) {
-      console.error("exportEvaluationsPdf error:", err);
-      showAlert("Failed to export PDF. Please try again.", "error");
-    }
-  }, [employmentFilter, searchQuery, statusFilter]);
+      // 2) Merge the summary with each evaluation's uploaded record file
+      const mergedPdf = await PDFDocument.load(summaryBuffer);
+      const font = await mergedPdf.embedFont(StandardFonts.Helvetica);
 
-  const exportEvaluationsExcel = useCallback(async (rows, title = "Employee Evaluations") => {
-    const list = Array.isArray(rows) ? rows : [];
-    if (list.length === 0) {
-      showAlert("No employees to export for the current filters.", "error");
-      return;
-    }
+      for (const ev of evaluations) {
+        if (!ev?.file_path) continue;
 
-    try {
-      const exportedAt = new Date();
-      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
-      const rawParts = [
-        'evaluations',
-        employmentFilter !== 'all' ? employmentFilter : null,
-        statusFilter !== 'all' ? statusFilter : null,
-        yyyyMmDd,
-      ]
-        .filter(Boolean)
-        .join('_');
-      const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".xlsx";
+        const ext = String(ev.file_path).split(".").pop()?.toLowerCase();
 
-      const safeText = (v) => {
-        const s = String(v ?? "").trim();
-        return s.length ? s : "—";
-      };
+        try {
+          const { data, error } = await supabase.storage
+            .from("evaluations")
+            .download(ev.file_path);
 
-      const header = ["Employee", "Position", "Depot", "Type", "Last Evaluation", "Next Due", "Status"];
-      const rowsAoa = [];
+          if (error) throw error;
+          const bytes = await data.arrayBuffer();
 
-      for (const e of list) {
-        const statusLabel = getStatusBadge(e.status).label;
-        rowsAoa.push([
-          safeText(e.name),
-          safeText(e.position),
-          safeText(e.depot),
-          safeText(e.employmentType),
-          safeText(formatDate(e.lastEvaluation)),
-          safeText(formatDate(e.nextEvaluation)),
-          safeText(statusLabel),
-        ]);
+          if (ext === "pdf") {
+            const srcPdf = await PDFDocument.load(bytes);
+            const pages = await mergedPdf.copyPages(srcPdf, srcPdf.getPageIndices());
+            pages.forEach((p) => mergedPdf.addPage(p));
+            continue;
+          }
+
+          if (["png", "jpg", "jpeg"].includes(ext)) {
+            const image = ext === "png" ? await mergedPdf.embedPng(bytes) : await mergedPdf.embedJpg(bytes);
+            const page = mergedPdf.addPage();
+            const { width, height } = page.getSize();
+            const margin = 36;
+            const scale = Math.min((width - margin * 2) / image.width, (height - margin * 2) / image.height);
+            const drawW = image.width * scale;
+            const drawH = image.height * scale;
+            page.drawImage(image, {
+              x: (width - drawW) / 2,
+              y: (height - drawH) / 2,
+              width: drawW,
+              height: drawH,
+            });
+            continue;
+          }
+
+          // Fallback: add a page with a link if the file isn't mergeable
+          const publicUrl = supabase.storage
+            .from("evaluations")
+            .getPublicUrl(ev.file_path).data.publicUrl;
+          const page = mergedPdf.addPage();
+          page.drawText("Evaluation record file (open in browser):", {
+            x: 36,
+            y: page.getHeight() - 60,
+            size: 12,
+            font,
+            color: rgb(0, 0, 0),
+          });
+          page.drawText(publicUrl || "(no public URL)", {
+            x: 36,
+            y: page.getHeight() - 84,
+            size: 10,
+            font,
+            color: rgb(0, 0, 0.8),
+            maxWidth: page.getWidth() - 72,
+          });
+        } catch (fileErr) {
+          console.error("Failed to merge evaluation file:", ev?.file_path, fileErr);
+          const publicUrl = supabase.storage
+            .from("evaluations")
+            .getPublicUrl(ev.file_path).data.publicUrl;
+          const page = mergedPdf.addPage();
+          page.drawText("Failed to load evaluation record file:", {
+            x: 36,
+            y: page.getHeight() - 60,
+            size: 12,
+            font,
+            color: rgb(0.8, 0, 0),
+          });
+          page.drawText(String(ev?.file_path), {
+            x: 36,
+            y: page.getHeight() - 84,
+            size: 10,
+            font,
+            color: rgb(0, 0, 0),
+            maxWidth: page.getWidth() - 72,
+          });
+          if (publicUrl) {
+            page.drawText(publicUrl, {
+              x: 36,
+              y: page.getHeight() - 102,
+              size: 9,
+              font,
+              color: rgb(0, 0, 0.8),
+              maxWidth: page.getWidth() - 72,
+            });
+          }
+        }
       }
 
-      const sheetName = String(title || "Evaluations").slice(0, 31) || "Evaluations";
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet(sheetName);
-      worksheet.addRow(header);
-      worksheet.addRows(rowsAoa);
-      worksheet.getRow(1).font = { bold: true };
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
+      const mergedBytes = await mergedPdf.save();
+      const blob = new Blob([mergedBytes], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
 
-      const link = document.createElement('a');
+      const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
+      const fileName = `${sanitizeFileName(employee.name)}_evaluations_${yyyyMmDd}.pdf`;
+      const link = document.createElement("a");
       link.href = url;
       link.download = fileName;
       document.body.appendChild(link);
@@ -857,10 +931,12 @@ function HrEval() {
       link.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("exportEvaluationsExcel error:", err);
-      showAlert("Failed to export Excel file. Please try again.", "error");
+      console.error("exportEmployeeEvaluationPdf error:", err);
+      showAlert("Failed to export employee evaluation PDF. Please try again.", "error");
+    } finally {
+      setExportingEmployeeId(null);
     }
-  }, [employmentFilter, statusFilter]);
+  }, [evalDateSort, evalReasonFilter, evalRemarksFilter, evalSearchQuery, getFilteredEmployeeEvaluations]);
 
   const getRatingColor = (rating) => {
     if (!rating) return "text-gray-600";
@@ -1082,44 +1158,7 @@ function HrEval() {
                 <option value="uptodate">Up to Date</option>
               </select>
 
-              <div className="relative" ref={exportMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setShowExportMenu((prev) => !prev)}
-                  className="w-full sm:w-auto px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white"
-                  title="Export the currently filtered list"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  Export
-                </button>
-
-                {showExportMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white border rounded-lg shadow-lg z-50 overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowExportMenu(false);
-                        exportEvaluationsPdf(filteredData, "Employee Evaluations");
-                      }}
-                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
-                    >
-                      Export list as PDF
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowExportMenu(false);
-                        exportEvaluationsExcel(filteredData, "Employee Evaluations");
-                      }}
-                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-50"
-                    >
-                      Export list as Excel
-                    </button>
-                  </div>
-                )}
-              </div>
+              {/* List export removed: exporting is now per-employee inside Evaluation History */}
             </div>
           </div>
 
@@ -1317,7 +1356,7 @@ function HrEval() {
                                         className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
                                       />
                                     </div>
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-2 items-center">
                                       <select
                                         value={evalDateSort}
                                         onChange={(e) => setEvalDateSort(e.target.value)}
@@ -1346,6 +1385,26 @@ function HrEval() {
                                         <option value="Annual">Annual</option>
                                         <option value="Semi-Annual">Semi-Annual</option>
                                       </select>
+
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          exportEmployeeEvaluationPdf(employee);
+                                        }}
+                                        disabled={exportingEmployeeId === employee.id}
+                                        title="Export this employee's evaluation records (includes uploaded files)"
+                                        className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 whitespace-nowrap transition-colors border ${
+                                          exportingEmployeeId === employee.id
+                                            ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                            : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
+                                        }`}
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        {exportingEmployeeId === employee.id ? "Exporting..." : "Export"}
+                                      </button>
                                     </div>
                                   </div>
 
