@@ -42,8 +42,9 @@ function AgencyEndorse() {
     };
   };
   
-  // Check if job title is "Delivery Drivers" to show license and driving fields
-  const isDeliveryDriverJob = job?.title === 'Delivery Drivers';
+  // Treat "Drivers" and "Delivery Drivers" as the same job type
+  const jobTitleNormalized = String(job?.title || '').trim().toLowerCase();
+  const isDeliveryDriverJob = ['delivery drivers', 'drivers', 'delivery driver', 'driver'].includes(jobTitleNormalized);
   const totalSteps = isDeliveryDriverJob ? 4 : 2; // 4 steps if driver, 2 steps if not
 
   // Header state
@@ -2075,6 +2076,32 @@ function AgencyEndorse() {
             </div>
           </div>
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-[#800000]">*</span></label>
+                      <input
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                        placeholder="e.g. 09XXXXXXXXX"
+                        value={fv.contactNumber}
+                        onChange={(e) => handleChange(activeApplicant, "contactNumber", sanitizeContact(e.target.value))}
+                        inputMode="numeric"
+                        pattern="\d*"
+                        maxLength={11}
+                      />
+                      <p className="text-xs text-gray-500 mt-2">Must be 11 digits and start with <span className="font-mono">09</span>.</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-[#800000]">*</span></label>
+                      <input
+                        type="email"
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                        placeholder="e.g. employee@email.com"
+                        value={fv.email}
+                        onChange={(e) => handleChange(activeApplicant, "email", e.target.value)}
+                      />
+                    </div>
+                  </div>
+
               {/* Address */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible">
                 <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
@@ -2189,34 +2216,6 @@ function AgencyEndorse() {
                   </div>
             </div>
           </div>
-
-              {/* Contact Information */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
-                  <h2 className="text-base font-semibold text-gray-800">Contact Information</h2>
-            </div>
-                <div className="p-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-[#800000]">*</span></label>
-                      <input
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                        placeholder="e.g. 09XXXXXXXXX"
-                        value={fv.contactNumber}
-                        onChange={(e) => handleChange(activeApplicant, "contactNumber", sanitizeContact(e.target.value))}
-                        inputMode="numeric"
-                        pattern="\d*"
-                        maxLength={11}
-                      />
-          </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-[#800000]">*</span></label>
-                      <input type="email" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="e.g. employee@email.com" value={fv.email} onChange={(e) => handleChange(activeApplicant, "email", e.target.value)} />
-                    </div>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">Must be 11 digits and start with <span className="font-mono">09</span>.</p>
-                </div>
-              </div>
 
               {/* Resume & Government IDs (Optional) */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
@@ -2824,7 +2823,6 @@ function AgencyEndorse() {
                   {fv.takingMedications && (
                     <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Please specify the medication and reason..." value={fv.medicationReason || ""} onChange={(e) => handleChange(activeApplicant, "medicationReason", e.target.value)} />
                   )}
-
                   <label className={`flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-all ${fv.tookMedicalTest ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:bg-gray-50'}`}>
                     <input type="checkbox" className="w-4 h-4 accent-green-600 rounded" checked={!!fv.tookMedicalTest} onChange={() => toggleFlag(activeApplicant, "tookMedicalTest")} />
                     <span className="text-sm text-gray-700">Has taken medical and drug test?</span>

@@ -2554,6 +2554,14 @@ function AgencyEndorsements() {
                                     <span className="text-gray-500">Marital Status:</span>
                                     <span className="ml-2">{displayValue(formData.maritalStatus || formData.marital_status)}</span>
                                   </div>
+                                  <div>
+                                    <span className="text-gray-500">Contact Number:</span>
+                                    <span className="ml-2">{displayValue(formData.contactNumber || formData.contact || selectedEmployee.contact)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Email Address:</span>
+                                    <span className="ml-2">{displayValue(formData.email || selectedEmployee.email)}</span>
+                                  </div>
                                 </div>
                               </div>
 
@@ -2586,21 +2594,6 @@ function AgencyEndorsements() {
                                         zip: formData.zipAlt,
                                       }))}
                                     </span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Contact Information */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Contact Information</h5>
-                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                  <div>
-                                    <span className="text-gray-500">Contact Number:</span>
-                                    <span className="ml-2">{displayValue(formData.contactNumber || formData.contact || selectedEmployee.contact)}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Email Address:</span>
-                                    <span className="ml-2">{displayValue(formData.email || selectedEmployee.email)}</span>
                                   </div>
                                 </div>
                               </div>
@@ -3582,6 +3575,14 @@ function AgencyEndorsements() {
                                     <span className="text-gray-500">Marital Status:</span>
                                     <span className="ml-2">{displayValue(formData.maritalStatus || formData.marital_status)}</span>
                                   </div>
+                                  <div>
+                                    <span className="text-gray-500">Contact Number:</span>
+                                    <span className="ml-2">{displayValue(formData.contactNumber || formData.contact || selectedEmployee.contact)}</span>
+                                  </div>
+                                  <div>
+                                    <span className="text-gray-500">Email Address:</span>
+                                    <span className="ml-2">{displayValue(formData.email || selectedEmployee.email)}</span>
+                                  </div>
                                 </div>
                               </div>
 
@@ -3614,21 +3615,6 @@ function AgencyEndorsements() {
                                         zip: formData.zipAlt,
                                       }))}
                                     </span>
-                                  </div>
-                                </div>
-                              </div>
-
-                              {/* Contact Information */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Contact Information</h5>
-                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                  <div>
-                                    <span className="text-gray-500">Contact Number:</span>
-                                    <span className="ml-2">{displayValue(formData.contactNumber || formData.contact || selectedEmployee.contact)}</span>
-                                  </div>
-                                  <div>
-                                    <span className="text-gray-500">Email Address:</span>
-                                    <span className="ml-2">{displayValue(formData.email || selectedEmployee.email)}</span>
                                   </div>
                                 </div>
                               </div>

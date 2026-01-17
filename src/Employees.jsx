@@ -130,8 +130,8 @@ function Employees() {
   const [loadingApplication, setLoadingApplication] = useState(false);
   const [applicantExtras, setApplicantExtras] = useState({ work_experiences: [], character_references: [] });
 
-  // Driver-only profiling extras (agency + driver roles)
-  const [driverLicense, setDriverLicense] = useState({ frontUrl: null, backUrl: null });
+  // Driver-only profiling extras (drivers = Driver + Delivery Driver)
+  const [driverLicense, setDriverLicense] = useState({ frontUrl: null, backUrl: null, photocopyUrl: null });
   const [driverExtraInfo, setDriverExtraInfo] = useState({ drivingHistory: null, medicalInfo: null });
   const [loadingDriverInfo, setLoadingDriverInfo] = useState(false);
 
@@ -1210,10 +1210,9 @@ function Employees() {
     fetchEmployeeDocuments();
   }, [selectedEmployee, activeTab]);
 
-    // Fetch agency profiling info (license front/back + driving/medical info)
+    // Fetch driver profiling info (license photocopy/front/back + driving/medical info)
     useEffect(() => {
       const fetchDriverInfo = async () => {
-        const isAgencyEmployee = !!selectedEmployee && !!selectedEmployee.agency;
         const positionText =
           selectedEmployee?.position ||
           selectedEmployee?.job_title ||
@@ -1225,10 +1224,10 @@ function Employees() {
           applicationData?.jobTitle ||
           applicationData?.job_title ||
           '';
-        const isAgencyDriver = isAgencyEmployee && isDriverRole(positionText);
+        const isDriver = !!selectedEmployee?.id && isDriverRole(positionText);
 
-        if (!isAgencyEmployee) {
-          setDriverLicense({ frontUrl: null, backUrl: null });
+        if (!isDriver) {
+          setDriverLicense({ frontUrl: null, backUrl: null, photocopyUrl: null });
           setDriverExtraInfo({ drivingHistory: null, medicalInfo: null });
           setLoadingDriverInfo(false);
           return;
@@ -1266,6 +1265,14 @@ function Employees() {
             license.back_path ||
             license.back ||
             null;
+          const photocopyPath =
+            license.filePath ||
+            license.file_path ||
+            license.licenseFilePath ||
+            license.license_file_path ||
+            license.photocopyPath ||
+            license.photocopy_path ||
+            null;
 
           const getPublicUrl = (filePath) => {
             if (!filePath) return null;
@@ -1273,8 +1280,9 @@ function Employees() {
           };
 
           setDriverLicense({
-            frontUrl: isAgencyDriver ? getPublicUrl(frontPath) : null,
-            backUrl: isAgencyDriver ? getPublicUrl(backPath) : null,
+            frontUrl: getPublicUrl(frontPath),
+            backUrl: getPublicUrl(backPath),
+            photocopyUrl: getPublicUrl(photocopyPath),
           });
 
           const drivingHistory =
@@ -1296,7 +1304,7 @@ function Employees() {
           setDriverExtraInfo({ drivingHistory, medicalInfo });
         } catch (err) {
           console.error('Error fetching driver info:', err);
-          setDriverLicense({ frontUrl: null, backUrl: null });
+          setDriverLicense({ frontUrl: null, backUrl: null, photocopyUrl: null });
           setDriverExtraInfo({ drivingHistory: null, medicalInfo: null });
         } finally {
           setLoadingDriverInfo(false);
@@ -1304,7 +1312,7 @@ function Employees() {
       };
 
       fetchDriverInfo();
-    }, [selectedEmployee?.id, selectedEmployee?.agency, selectedEmployee?.position, selectedEmployee?.job_title, selectedEmployee?.jobTitle, selectedEmployee?.role, applicationData?.position, applicationData?.positionApplied, applicationData?.position_applied, applicationData?.jobTitle, applicationData?.job_title]);
+    }, [selectedEmployee?.id, selectedEmployee?.position, selectedEmployee?.job_title, selectedEmployee?.jobTitle, selectedEmployee?.role, applicationData?.position, applicationData?.positionApplied, applicationData?.position_applied, applicationData?.jobTitle, applicationData?.job_title]);
 
   // Load assessment and agreement records when employee is selected and documents tab is active
   useEffect(() => {
@@ -2256,7 +2264,8 @@ function Employees() {
                             <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
                             {!selectedEmployee && (
                               <>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Dept / Depot</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Dept</th>
+                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Depot</th>
                                 <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                               </>
                             )}
@@ -2275,7 +2284,7 @@ function Employees() {
                                   setActiveTab((prev) => (selectedEmployee ? prev : 'profiling'));
                                 }}
                               >
-                                <td className="px-6 py-4">
+                                <td className={`px-6 py-4 ${isSelected ? 'border-l-4 border-red-600' : ''}`}>
                                   <div className="flex items-center gap-3">
                                     <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(emp.name)} flex items-center justify-center text-white text-sm font-medium shadow-sm`}>
                                       {getInitials(emp.name)}
@@ -2296,7 +2305,9 @@ function Employees() {
                                     <td className="px-6 py-4">
                                       <p className="text-sm text-gray-800">{emp.position || "—"}</p>
                                       <p className="text-xs text-gray-500">{emp.department || "—"}</p>
-                                      <p className="text-xs text-gray-500">{emp.depot || "—"}</p>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      <p className="text-sm text-gray-800">{emp.depot || "—"}</p>
                                     </td>
                                     <td className="px-6 py-4">
                                       <span className={`text-sm font-semibold ${
@@ -2821,11 +2832,11 @@ function Employees() {
                                   applicationData?.jobTitle ||
                                   applicationData?.job_title ||
                                   '';
-                                const isAgencyDriver = !!selectedEmployee?.agency && isDriverRole(positionText);
+                                const isDriver = isDriverRole(positionText);
                                 const hasLicenseFields =
                                   !!(applicationData && (applicationData.licenseType || applicationData.licenseExpiry));
 
-                                if (!hasLicenseFields && !isAgencyDriver) return null;
+                                if (!isDriver && !hasLicenseFields) return null;
 
                                 const renderNone = () => <span className="text-gray-400 italic">None</span>;
                                 const displayYesNo = (v) => {
@@ -2957,59 +2968,96 @@ function Employees() {
                                   <>
                                     <div>
                                       <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
-                                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                        <div>
-                                          <span className="text-gray-500">License Classification:</span>
-                                          <span className="ml-2">{licenseClassification ? displayValue(licenseClassification) : renderNone()}</span>
+                                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                          <div>
+                                            <span className="text-gray-500">License Classification:</span>
+                                            <span className="ml-2">{licenseClassification ? displayValue(licenseClassification) : renderNone()}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-gray-500">License Expiry Date:</span>
+                                            <span className="ml-2">{displayDate(licenseExpiry)}</span>
+                                          </div>
+                                          {Array.isArray(restrictionCodes) && restrictionCodes.filter(Boolean).length > 0 && (
+                                            <div className="md:col-span-2">
+                                              <span className="text-gray-500">Restriction Codes:</span>
+                                              {displayValue(restrictionCodes)}
+                                            </div>
+                                          )}
                                         </div>
-                                        <div>
-                                          <span className="text-gray-500">License Expiry Date:</span>
-                                          <span className="ml-2">{displayDate(licenseExpiry)}</span>
-                                        </div>
-                                        {Array.isArray(restrictionCodes) && restrictionCodes.filter(Boolean).length > 0 && (
-                                          <div className="md:col-span-2">
-                                            <span className="text-gray-500">Restriction Codes:</span>
-                                            {displayValue(restrictionCodes)}
+
+                                        {isDriver && (
+                                          <div className="mt-4 pt-4 border-t border-gray-200">
+                                            <div className="text-xs font-semibold text-gray-600 mb-2">Photocopy of License</div>
+                                            {(() => {
+                                              const isPdfUrl = (url) => /\.pdf($|\?|#)/i.test(String(url || ''));
+                                              const isImageUrl = (url) => /\.(png|jpe?g|webp|gif)($|\?|#)/i.test(String(url || ''));
+
+                                              if (loadingDriverInfo) {
+                                                return <div className="text-xs text-gray-400">Loading…</div>;
+                                              }
+
+                                              if (driverLicense.photocopyUrl) {
+                                                const url = driverLicense.photocopyUrl;
+                                                return (
+                                                  <div className="space-y-3">
+                                                    <div>
+                                                      <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                                        Open
+                                                      </a>
+                                                    </div>
+                                                    {isImageUrl(url) ? (
+                                                      <a href={url} target="_blank" rel="noopener noreferrer">
+                                                        <img src={url} alt="License Photocopy" className="w-full max-h-[420px] object-contain bg-gray-50 rounded" />
+                                                      </a>
+                                                    ) : isPdfUrl(url) ? (
+                                                      <iframe title="License Photocopy" src={url} className="w-full h-[420px] rounded bg-gray-50 border" />
+                                                    ) : (
+                                                      <div className="text-xs text-gray-400">Preview unavailable. Use Open.</div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              }
+
+                                              const hasAny = !!(driverLicense.frontUrl || driverLicense.backUrl);
+                                              if (!hasAny) return <div className="text-xs text-gray-400 italic">None</div>;
+
+                                              return (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                  <div className="border border-gray-200 rounded-lg p-3">
+                                                    <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
+                                                    {driverLicense.frontUrl ? (
+                                                      <a href={driverLicense.frontUrl} target="_blank" rel="noopener noreferrer">
+                                                        <img
+                                                          src={driverLicense.frontUrl}
+                                                          alt="Driver's License Front"
+                                                          className="w-full h-40 object-contain bg-gray-50 rounded"
+                                                        />
+                                                      </a>
+                                                    ) : (
+                                                      <div className="text-xs text-gray-400 italic">None</div>
+                                                    )}
+                                                  </div>
+                                                  <div className="border border-gray-200 rounded-lg p-3">
+                                                    <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
+                                                    {driverLicense.backUrl ? (
+                                                      <a href={driverLicense.backUrl} target="_blank" rel="noopener noreferrer">
+                                                        <img
+                                                          src={driverLicense.backUrl}
+                                                          alt="Driver's License Back"
+                                                          className="w-full h-40 object-contain bg-gray-50 rounded"
+                                                        />
+                                                      </a>
+                                                    ) : (
+                                                      <div className="text-xs text-gray-400 italic">None</div>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })()}
                                           </div>
                                         )}
                                       </div>
-
-                                      {isAgencyDriver && (
-                                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                          <div className="border border-gray-200 rounded-lg p-3">
-                                            <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
-                                            {loadingDriverInfo ? (
-                                              <div className="text-xs text-gray-400">Loading…</div>
-                                            ) : driverLicense.frontUrl ? (
-                                              <a href={driverLicense.frontUrl} target="_blank" rel="noopener noreferrer">
-                                                <img
-                                                  src={driverLicense.frontUrl}
-                                                  alt="Driver's License Front"
-                                                  className="w-full h-40 object-contain bg-gray-50 rounded"
-                                                />
-                                              </a>
-                                            ) : (
-                                              <div className="text-xs text-gray-400 italic">None</div>
-                                            )}
-                                          </div>
-                                          <div className="border border-gray-200 rounded-lg p-3">
-                                            <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
-                                            {loadingDriverInfo ? (
-                                              <div className="text-xs text-gray-400">Loading…</div>
-                                            ) : driverLicense.backUrl ? (
-                                              <a href={driverLicense.backUrl} target="_blank" rel="noopener noreferrer">
-                                                <img
-                                                  src={driverLicense.backUrl}
-                                                  alt="Driver's License Back"
-                                                  className="w-full h-40 object-contain bg-gray-50 rounded"
-                                                />
-                                              </a>
-                                            ) : (
-                                              <div className="text-xs text-gray-400 italic">None</div>
-                                            )}
-                                          </div>
-                                        </div>
-                                      )}
                                     </div>
 
                                     {shouldShowDrivingHistory && (

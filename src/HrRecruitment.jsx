@@ -10,93 +10,91 @@ import ExcelJS from "exceljs";
 
 /**
  * scheduleInterviewClient
- * Helper that invokes your Supabase Edge Function (name: "schedule-interview-with-notification").
- * It returns { ok: true, data } or { ok: false, error }.
- */
-async function scheduleInterviewClient(applicationId, interview) {
-  try {
-    const functionName = "schedule-interview-with-notification";
-    const { data, error } = await supabase.functions.invoke(functionName, {
-      body: { applicationId, interview },
-    });
+                          <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                              <div>
+                                <span className="text-gray-500">License Classification:</span>
+                                <span className="ml-2">{displayValue(licenseClassification) || renderNone()}</span>
+                              </div>
+                              <div>
+                                <span className="text-gray-500">License Expiry Date:</span>
+                                <span className="ml-2">{displayDate(licenseExpiry)}</span>
+                              </div>
+                              {Array.isArray(restrictionCodes) && restrictionCodes.filter(Boolean).length > 0 && (
+                                <div className="md:col-span-2">
+                                  <span className="text-gray-500">Restriction Codes:</span>
+                                  {displayValue(restrictionCodes)}
+                                </div>
+                              )}
+                            </div>
 
-    if (error) throw error;
-    return { ok: true, data };
-  } catch (err) {
-    console.error("scheduleInterviewClient error:", err);
-    return { ok: false, error: err };
-  }
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                              <div className="text-xs font-semibold text-gray-600 mb-2">Photocopy of License</div>
+                              {(() => {
+                                const isPdfUrl = (url) => /\.pdf($|\?|#)/i.test(String(url || ''));
+                                const isImageUrl = (url) => /\.(png|jpe?g|webp|gif)($|\?|#)/i.test(String(url || ''));
+
+                                if (selectedApplicantLicensePhotocopyUrl) {
+                                  const url = selectedApplicantLicensePhotocopyUrl;
+                                  return (
+                                    <div className="space-y-3">
+                                      <div>
+                                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                          Open
+                                        </a>
+                                      </div>
+                                      {isImageUrl(url) ? (
+                                        <a href={url} target="_blank" rel="noopener noreferrer">
+                                          <img src={url} alt="License Photocopy" className="w-full max-h-[420px] object-contain bg-gray-50 rounded" />
+                                        </a>
+                                      ) : isPdfUrl(url) ? (
+                                        <iframe title="License Photocopy" src={url} className="w-full h-[420px] rounded bg-gray-50 border" />
+                                      ) : (
+                                        <div className="text-xs text-gray-400">Preview unavailable. Use Open.</div>
+                                      )}
+                                    </div>
+                                  );
+                                }
+
+                                const hasAny = !!(selectedApplicantLicenseFrontUrl || selectedApplicantLicenseBackUrl);
+                                if (!hasAny) return <div className="text-xs text-gray-400 italic">None</div>;
+
+                                return (
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="border border-gray-200 rounded-lg p-3">
+                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
+                                      {selectedApplicantLicenseFrontUrl ? (
+                                        <a href={selectedApplicantLicenseFrontUrl} target="_blank" rel="noopener noreferrer">
+                                          <img
+                                            src={selectedApplicantLicenseFrontUrl}
+                                            alt="Driver's License Front"
+                                            className="w-full h-40 object-contain bg-gray-50 rounded"
+                                          />
+                                        </a>
+                                      ) : (
+                                        <div className="text-xs text-gray-400 italic">None</div>
+                                      )}
+                                    </div>
+                                    <div className="border border-gray-200 rounded-lg p-3">
+                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
+                                      {selectedApplicantLicenseBackUrl ? (
+                                        <a href={selectedApplicantLicenseBackUrl} target="_blank" rel="noopener noreferrer">
+                                          <img
+                                            src={selectedApplicantLicenseBackUrl}
+                                            alt="Driver's License Back"
+                                            className="w-full h-40 object-contain bg-gray-50 rounded"
+                                          />
+                                        </a>
+                                      ) : (
+                                        <div className="text-xs text-gray-400 italic">None</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+                            </div>
+                          </div>
 }
-
-/**
- * scheduleAgreementSigningClient
- * Invokes the notification-enabled agreement signing scheduler.
- */
-async function scheduleAgreementSigningClient(applicationId, appointment) {
-  try {
-    const functionName = "schedule-agreement-signing-with-notification";
-    const { data, error } = await supabase.functions.invoke(functionName, {
-      body: { applicationId, appointment },
-    });
-
-    if (error) {
-      const anyErr = error;
-      let details = anyErr?.message || String(anyErr);
-      try {
-        const ctx = anyErr?.context;
-        const resp = ctx?.response;
-
-        if (resp && typeof resp.text === "function") {
-          const respClone = typeof resp.clone === "function" ? resp.clone() : resp;
-          const bodyText = await respClone.text();
-          if (bodyText) details = bodyText;
-        } else if (ctx?.body && typeof ctx.body === "string") {
-          details = ctx.body;
-        } else if (ctx?.body) {
-          try {
-            const bodyText = await new Response(ctx.body).text();
-            if (bodyText) details = bodyText;
-          } catch {
-            // ignore
-          }
-        }
-      } catch {
-        // ignore
-      }
-
-      try {
-        const parsed = JSON.parse(details);
-        if (parsed?.error && parsed?.details) {
-          details = `${parsed.error}: ${parsed.details}`;
-        } else if (parsed?.error) {
-          details = String(parsed.error);
-        } else {
-          details = JSON.stringify(parsed);
-        }
-      } catch {
-        // keep details as-is
-      }
-
-      throw new Error(details);
-    }
-
-    return { ok: true, data };
-  } catch (err) {
-    console.error("scheduleAgreementSigningClient error:", err);
-    return { ok: false, error: err };
-  }
-}
-
-/**
- * createEmployeeAuthAccount
- * Helper that invokes a Supabase Edge Function to create/update employee auth account using Admin API.
- */
-async function createEmployeeAuthAccount(employeeData) {
-  try {
-    const functionName = "create-employee-auth";
-    const res = await supabase.functions.invoke(functionName, {
-      body: JSON.stringify({
-        email: employeeData.employeeEmail,
         password: employeeData.employeePassword,
         firstName: employeeData.firstName,
         lastName: employeeData.lastName,
@@ -4514,6 +4512,7 @@ function HrRecruitment() {
         return [
           safeText(a.name),
           safeText(a.position),
+          safeText(a.department || getDepartmentForPosition(a.position)),
           safeText(a.depot),
           safeText(statusLabel),
           safeText(a.dateApplied),
@@ -4524,7 +4523,7 @@ function HrRecruitment() {
 
       autoTable(doc, {
         startY: filterSummary ? 90 : 78,
-        head: [["Applicant", "Position", "Depot", "Status", "Date Applied", "Interview Date", "Interview Time"]],
+        head: [["Applicant", "Position", "Department", "Depot", "Status", "Date Applied", "Interview Date", "Interview Time"]],
         body,
         theme: "grid",
         styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
@@ -4532,12 +4531,13 @@ function HrRecruitment() {
         margin: { left: 28, right: 28 },
         columnStyles: {
           0: { cellWidth: 110 },
-          1: { cellWidth: 100 },
-          2: { cellWidth: 50 },
-          3: { cellWidth: 60 },
-          4: { cellWidth: 60 },
-          5: { cellWidth: 65 },
-          6: { cellWidth: 50 },
+          1: { cellWidth: 85 },
+          2: { cellWidth: 85 },
+          3: { cellWidth: 45 },
+          4: { cellWidth: 55 },
+          5: { cellWidth: 55 },
+          6: { cellWidth: 55 },
+          7: { cellWidth: 45 },
         },
       });
 
@@ -4591,6 +4591,7 @@ function HrRecruitment() {
       const header = [
         "Applicant",
         "Position",
+        "Department",
         "Depot",
         "Status",
         "Date Applied",
@@ -4604,6 +4605,7 @@ function HrRecruitment() {
         rowsAoa.push([
           safeText(a.name),
           safeText(a.position),
+          safeText(a.department || getDepartmentForPosition(a.position)),
           safeText(a.depot),
           safeText(statusLabel),
           safeText(a.dateApplied),
@@ -5150,7 +5152,8 @@ function HrRecruitment() {
                       <thead className="bg-gray-50 border-b border-gray-100">
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Applicant</th>
-                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Dept / Depot</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Dept</th>
+                          <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Depot</th>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                           <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date Applied</th>
                         </tr>
@@ -5186,7 +5189,9 @@ function HrRecruitment() {
                               <td className="px-6 py-4">
                                 <p className="text-sm text-gray-800">{a.position || "—"}</p>
                                 <p className="text-xs text-gray-500">{a.department || "—"}</p>
-                                <p className="text-xs text-gray-500">{a.depot || "—"}</p>
+                              </td>
+                              <td className="px-6 py-4">
+                                <p className="text-sm text-gray-800">{a.depot || "—"}</p>
                               </td>
                               <td className="px-6 py-4">
                                 <span className={`text-xs font-semibold ${statusInfo.color}`}>
@@ -5238,7 +5243,7 @@ function HrRecruitment() {
                             setSelectedApplicant(a);
                           }}
                         >
-                          <td className="px-4 py-3">
+                          <td className={`px-4 py-3 ${isSelected ? 'border-l-4 border-red-600' : ''}`}>
                             <div className="flex items-center gap-3">
                               <div
                                 className={`w-9 h-9 rounded-full bg-gradient-to-br ${getAvatarColor(
@@ -5881,6 +5886,14 @@ function HrRecruitment() {
                               licenseReq.back_path ||
                               licenseReq.back ||
                               null;
+                            const photocopyPath =
+                              licenseReq.filePath ||
+                              licenseReq.file_path ||
+                              licenseReq.licenseFilePath ||
+                              licenseReq.license_file_path ||
+                              licenseReq.photocopyPath ||
+                              licenseReq.photocopy_path ||
+                              null;
                             const frontUrl = frontPath
                               ? String(frontPath).startsWith('http')
                                 ? String(frontPath)
@@ -5890,6 +5903,11 @@ function HrRecruitment() {
                               ? String(backPath).startsWith('http')
                                 ? String(backPath)
                                 : supabase.storage.from('application-files').getPublicUrl(backPath)?.data?.publicUrl
+                              : null;
+                            const photocopyUrl = photocopyPath
+                              ? String(photocopyPath).startsWith('http')
+                                ? String(photocopyPath)
+                                : supabase.storage.from('application-files').getPublicUrl(photocopyPath)?.data?.publicUrl
                               : null;
 
                             const licenseClassification =
@@ -5960,36 +5978,73 @@ function HrRecruitment() {
                                       </div>
                                     )}
                                   </div>
+                                </div>
 
-                                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="border border-gray-200 rounded-lg p-3">
-                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
-                                      {frontUrl ? (
-                                        <a href={frontUrl} target="_blank" rel="noopener noreferrer">
-                                          <img
-                                            src={frontUrl}
-                                            alt="Driver's License Front"
-                                            className="w-full h-40 object-contain bg-gray-50 rounded"
-                                          />
-                                        </a>
-                                      ) : (
-                                        <div className="text-xs text-gray-400 italic">None</div>
-                                      )}
-                                    </div>
-                                    <div className="border border-gray-200 rounded-lg p-3">
-                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
-                                      {backUrl ? (
-                                        <a href={backUrl} target="_blank" rel="noopener noreferrer">
-                                          <img
-                                            src={backUrl}
-                                            alt="Driver's License Back"
-                                            className="w-full h-40 object-contain bg-gray-50 rounded"
-                                          />
-                                        </a>
-                                      ) : (
-                                        <div className="text-xs text-gray-400 italic">None</div>
-                                      )}
-                                    </div>
+                                <div>
+                                  <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Photocopy of License</h5>
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                    {(() => {
+                                      const isPdfUrl = (url) => /\.pdf($|\?|#)/i.test(String(url || ''));
+                                      const isImageUrl = (url) => /\.(png|jpe?g|webp|gif)($|\?|#)/i.test(String(url || ''));
+
+                                      if (photocopyUrl) {
+                                        const url = photocopyUrl;
+                                        return (
+                                          <div className="space-y-3">
+                                            <div>
+                                              <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                                Open
+                                              </a>
+                                            </div>
+                                            {isImageUrl(url) ? (
+                                              <a href={url} target="_blank" rel="noopener noreferrer">
+                                                <img src={url} alt="License Photocopy" className="w-full max-h-[420px] object-contain bg-gray-50 rounded" />
+                                              </a>
+                                            ) : isPdfUrl(url) ? (
+                                              <iframe title="License Photocopy" src={url} className="w-full h-[420px] rounded bg-gray-50 border" />
+                                            ) : (
+                                              <div className="text-xs text-gray-400">Preview unavailable. Use Open.</div>
+                                            )}
+                                          </div>
+                                        );
+                                      }
+
+                                      const hasAny = !!(frontUrl || backUrl);
+                                      if (!hasAny) return <div className="text-xs text-gray-400 italic">None</div>;
+
+                                      return (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          <div className="border border-gray-200 rounded-lg p-3">
+                                            <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
+                                            {frontUrl ? (
+                                              <a href={frontUrl} target="_blank" rel="noopener noreferrer">
+                                                <img
+                                                  src={frontUrl}
+                                                  alt="Driver's License Front"
+                                                  className="w-full h-40 object-contain bg-gray-50 rounded"
+                                                />
+                                              </a>
+                                            ) : (
+                                              <div className="text-xs text-gray-400 italic">None</div>
+                                            )}
+                                          </div>
+                                          <div className="border border-gray-200 rounded-lg p-3">
+                                            <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
+                                            {backUrl ? (
+                                              <a href={backUrl} target="_blank" rel="noopener noreferrer">
+                                                <img
+                                                  src={backUrl}
+                                                  alt="Driver's License Back"
+                                                  className="w-full h-40 object-contain bg-gray-50 rounded"
+                                                />
+                                              </a>
+                                            ) : (
+                                              <div className="text-xs text-gray-400 italic">None</div>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })()}
                                   </div>
                                 </div>
 

@@ -883,7 +883,8 @@ function ApplicantApplications() {
                   {/* License Information Card (only for Delivery Crew) */}
                   {(() => {
                     const jobTitle = (applicationData.payload?.job?.title || '').toLowerCase();
-                    if (jobTitle.includes('delivery crew')) {
+                    const isDriverJob = jobTitle.includes('driver') || jobTitle.includes('delivery drivers') || jobTitle.includes('drivers');
+                    if (jobTitle.includes('delivery crew') || isDriverJob) {
                       return (
                         <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                           <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">License Information</div>

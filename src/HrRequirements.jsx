@@ -16,6 +16,28 @@ function HrRequirements() {
   const [expandedRow, setExpandedRow] = useState(null);
   const itemsPerPage = 8;
 
+  // List export (numbers only)
+  const REQUIREMENT_NUMBER_FIELDS = useMemo(
+    () => [
+      { key: 'sss', label: 'SSS' },
+      { key: 'tin', label: 'TIN' },
+      { key: 'pagibig', label: 'Pag-IBIG' },
+      { key: 'philhealth', label: 'PhilHealth' },
+    ],
+    []
+  );
+
+  const [showNumbersExportModal, setShowNumbersExportModal] = useState(false);
+  const [numbersExportSelection, setNumbersExportSelection] = useState({
+    sss: true,
+    tin: false,
+    pagibig: false,
+    philhealth: false,
+  });
+
+  const [numbersExportScope, setNumbersExportScope] = useState('all'); // 'all' | 'employee'
+  const [numbersExportEmployeeId, setNumbersExportEmployeeId] = useState('');
+
   // Get current user info from localStorage
   const [currentUser, setCurrentUser] = useState(null);
   useEffect(() => {
@@ -1010,10 +1032,17 @@ function HrRequirements() {
     return data;
   };
 
-  const exportRequirementsPdf = useCallback((rows, title = "Employee Requirements") => {
+  const exportRequirementsNumbersPdf = useCallback((rows, selectedKeys) => {
     const list = Array.isArray(rows) ? rows : [];
     if (list.length === 0) {
       setAlertMessage("No employees to export for the current filters.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    const keys = Array.isArray(selectedKeys) ? selectedKeys.filter(Boolean) : [];
+    if (keys.length === 0) {
+      setAlertMessage("Please select at least one requirement number to export.");
       setShowErrorAlert(true);
       return;
     }
@@ -1047,7 +1076,7 @@ function HrRequirements() {
       });
 
       doc.setFontSize(16);
-      doc.text(`${title} (${list.length})`, 28, 40);
+      doc.text(`Requirement Numbers (${list.length})`, 28, 40);
 
       doc.setFontSize(10);
       doc.setTextColor(80);
@@ -1055,45 +1084,50 @@ function HrRequirements() {
       if (filterSummary) doc.text(filterSummary, 28, 74);
       doc.setTextColor(0);
 
-      const body = list.map((emp) => {
-        const status = getEmployeeStatus(emp);
-        const statusBadge = getEmployeeStatusBadge(status);
-        const progress = getRequirementsProgress(emp);
-        return [
-          safeText(emp.name),
-          safeText(emp.email),
-          safeText(emp.position),
-          safeText(emp.depot),
-          emp.isAgency ? "Agency" : "Direct",
-          safeText(statusBadge.label),
-          `${progress.approved}/${progress.total}`,
-          safeText(formatDate(emp.deployedDate)),
-        ];
-      });
+      const labelByKey = keys.reduce((acc, k) => {
+        const def = REQUIREMENT_NUMBER_FIELDS.find((d) => d.key === k);
+        acc[k] = def?.label || String(k).toUpperCase();
+        return acc;
+      }, {});
+
+      const getNumber = (emp, key) => {
+        const direct = emp?.requirements?.id_numbers?.[key]?.value;
+        const mapped = emp?.requirements?.[key]?.idNumber;
+        return safeText(mapped || direct || '');
+      };
+
+      const head = [
+        'Name',
+        'Email',
+        'Position',
+        'Depot',
+        'Type',
+        ...keys.map((k) => labelByKey[k]),
+      ];
+
+      const body = list.map((emp) => [
+        safeText(emp.name),
+        safeText(emp.email),
+        safeText(emp.position),
+        safeText(emp.depot),
+        emp.isAgency ? 'Agency' : 'Direct',
+        ...keys.map((k) => getNumber(emp, k)),
+      ]);
 
       autoTable(doc, {
         startY: filterSummary ? 90 : 78,
-        head: [["Name", "Email", "Position", "Depot", "Type", "Status", "Progress", "Deployed"]],
+        head: [head],
         body,
         theme: "grid",
         styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
         headStyles: { fillColor: [245, 245, 245], textColor: 20 },
         margin: { left: 28, right: 28 },
-        columnStyles: {
-          0: { cellWidth: 85 },
-          1: { cellWidth: 115 },
-          2: { cellWidth: 85 },
-          3: { cellWidth: 50 },
-          4: { cellWidth: 40 },
-          5: { cellWidth: 60 },
-          6: { cellWidth: 55 },
-          7: { cellWidth: 50 },
-        },
       });
 
       const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
       const rawParts = [
-        "requirements",
+        "requirements_numbers",
+        keys.join('-'),
         activeTab && activeTab !== 'all' ? activeTab : null,
         depotFilter !== 'All' ? depotFilter : null,
         departmentFilter !== 'All' ? departmentFilter : null,
@@ -1107,11 +1141,11 @@ function HrRequirements() {
       const fileName = `${rawParts}`.replace(/[^a-zA-Z0-9_-]+/g, "_") + ".pdf";
       doc.save(fileName);
     } catch (err) {
-      console.error("exportRequirementsPdf error:", err);
+      console.error("exportRequirementsNumbersPdf error:", err);
       setAlertMessage("Failed to export PDF. Please try again.");
       setShowErrorAlert(true);
     }
-  }, [activeTab, searchQuery, depotFilter, departmentFilter, positionFilter, employmentStatusFilter, recruitmentTypeFilter, sortOption]);
+  }, [REQUIREMENT_NUMBER_FIELDS, activeTab, searchQuery, depotFilter, departmentFilter, positionFilter, employmentStatusFilter, recruitmentTypeFilter, sortOption]);
 
   const exportEmployeeRequirementsPdf = useCallback((employee) => {
     if (!employee) return;
@@ -1363,10 +1397,17 @@ function HrRequirements() {
     }
   }, [formatDate, getDocumentUrl, isExpiredDate, isDeliveryCrew, medicalExams, normalizeStatus, normalizeStoragePath]);
 
-  const exportRequirementsExcel = useCallback(async (rows, title = "Employee Requirements") => {
+  const exportRequirementsNumbersExcel = useCallback(async (rows, selectedKeys) => {
     const list = Array.isArray(rows) ? rows : [];
     if (list.length === 0) {
       setAlertMessage("No employees to export for the current filters.");
+      setShowErrorAlert(true);
+      return;
+    }
+
+    const keys = Array.isArray(selectedKeys) ? selectedKeys.filter(Boolean) : [];
+    if (keys.length === 0) {
+      setAlertMessage("Please select at least one requirement number to export.");
       setShowErrorAlert(true);
       return;
     }
@@ -1375,7 +1416,8 @@ function HrRequirements() {
       const exportedAt = new Date();
       const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
       const rawParts = [
-        "requirements",
+        "requirements_numbers",
+        keys.join('-'),
         activeTab && activeTab !== 'all' ? activeTab : null,
         depotFilter !== 'All' ? depotFilter : null,
         departmentFilter !== 'All' ? departmentFilter : null,
@@ -1393,26 +1435,37 @@ function HrRequirements() {
         return s.length ? s : "—";
       };
 
-      const header = ["Name", "Email", "Position", "Depot", "Type", "Status", "Progress", "Deployed Date"];
-      const rowsAoa = [];
+      const labelByKey = keys.reduce((acc, k) => {
+        const def = REQUIREMENT_NUMBER_FIELDS.find((d) => d.key === k);
+        acc[k] = def?.label || String(k).toUpperCase();
+        return acc;
+      }, {});
 
-      for (const emp of list) {
-        const status = getEmployeeStatus(emp);
-        const statusBadge = getEmployeeStatusBadge(status);
-        const progress = getRequirementsProgress(emp);
-        rowsAoa.push([
-          safeText(emp.name),
-          safeText(emp.email),
-          safeText(emp.position),
-          safeText(emp.depot),
-          emp.isAgency ? "Agency" : "Direct",
-          safeText(statusBadge.label),
-          `${progress.approved}/${progress.total}`,
-          safeText(formatDate(emp.deployedDate)),
-        ]);
-      }
+      const getNumber = (emp, key) => {
+        const direct = emp?.requirements?.id_numbers?.[key]?.value;
+        const mapped = emp?.requirements?.[key]?.idNumber;
+        return safeText(mapped || direct || '');
+      };
 
-      const sheetName = String(title || "Requirements").slice(0, 31) || "Requirements";
+      const header = [
+        'Name',
+        'Email',
+        'Position',
+        'Depot',
+        'Type',
+        ...keys.map((k) => labelByKey[k]),
+      ];
+
+      const rowsAoa = list.map((emp) => [
+        safeText(emp.name),
+        safeText(emp.email),
+        safeText(emp.position),
+        safeText(emp.depot),
+        emp.isAgency ? 'Agency' : 'Direct',
+        ...keys.map((k) => getNumber(emp, k)),
+      ]);
+
+      const sheetName = String("Requirement Numbers").slice(0, 31) || "Requirement Numbers";
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet(sheetName);
       worksheet.addRow(header);
@@ -1433,11 +1486,11 @@ function HrRequirements() {
       link.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("exportRequirementsExcel error:", err);
+      console.error("exportRequirementsNumbersExcel error:", err);
       setAlertMessage("Failed to export Excel file. Please try again.");
       setShowErrorAlert(true);
     }
-  }, [activeTab, depotFilter, departmentFilter, positionFilter, employmentStatusFilter, recruitmentTypeFilter]);
+  }, [REQUIREMENT_NUMBER_FIELDS, activeTab, depotFilter, departmentFilter, positionFilter, employmentStatusFilter, recruitmentTypeFilter]);
 
   const filteredData = useMemo(() => getFilteredData(), [
     employees,
@@ -2291,6 +2344,18 @@ function HrRequirements() {
                   <option value="hired-desc">Date Hired (Newest → Oldest)</option>
                 </select>
 
+                <button
+                  type="button"
+                  onClick={() => setShowNumbersExportModal(true)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-700 hover:bg-gray-50 bg-white flex items-center justify-center gap-2"
+                  title="Export requirement numbers (based on current filters)"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export Numbers
+                </button>
+
               </div>
             </div>
 
@@ -2380,7 +2445,6 @@ function HrRequirements() {
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Progress</th>
                     <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Export</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -2466,32 +2530,10 @@ function HrRequirements() {
                               </svg>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-right">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                exportEmployeeRequirementsPdf(employee);
-                              }}
-                              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors"
-                              title={`Export ${employee?.name || 'employee'} requirements`}
-                              aria-label={`Export ${employee?.name || 'employee'} requirements`}
-                            >
-                              <svg
-                                className="w-4 h-4"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                              </svg>
-                              Export PDF
-                            </button>
-                          </td>
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td colSpan={5} className="px-6 py-5 bg-gradient-to-b from-gray-50 to-white border-b border-gray-200">
+                            <td colSpan={4} className="px-6 py-5 bg-gradient-to-b from-gray-50 to-white border-b border-gray-200">
                               <div className="space-y-5">
                                 {employee.isAgency ? (
                                   // Agency employees: show ID number requirements
@@ -3757,6 +3799,200 @@ function HrRequirements() {
           </div>
         )}
       </div>
+
+      {/* Export Numbers Modal */}
+      {showNumbersExportModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg border border-gray-200 shadow-xl">
+            <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-gray-800">Export Requirement Numbers</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Exports a list based on your current filters</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNumbersExportModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+                aria-label="Close export modal"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-gray-700">Export scope</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="numbers-export-scope"
+                      value="all"
+                      checked={numbersExportScope === 'all'}
+                      onChange={() => setNumbersExportScope('all')}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm text-gray-700">All employees (filtered list)</span>
+                  </label>
+                  <label className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="numbers-export-scope"
+                      value="employee"
+                      checked={numbersExportScope === 'employee'}
+                      onChange={() => setNumbersExportScope('employee')}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm text-gray-700">Specific employee</span>
+                  </label>
+                </div>
+
+                {numbersExportScope === 'employee' && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Choose employee</label>
+                    <select
+                      value={numbersExportEmployeeId}
+                      onChange={(e) => setNumbersExportEmployeeId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                    >
+                      <option value="">Select employee…</option>
+                      {filteredData.map((emp) => (
+                        <option key={emp.id} value={String(emp.id)}>
+                          {String(emp?.name || 'Unknown')}{emp?.email ? ` — ${emp.email}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-gray-500 mt-1">Employee list respects your current filters.</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium text-gray-700">Select numbers to include</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allSelected = REQUIREMENT_NUMBER_FIELDS.every((f) => numbersExportSelection[f.key]);
+                    const next = {};
+                    REQUIREMENT_NUMBER_FIELDS.forEach((f) => {
+                      next[f.key] = !allSelected;
+                    });
+                    setNumbersExportSelection((prev) => ({ ...prev, ...next }));
+                  }}
+                  className="text-xs font-semibold text-blue-700 hover:text-blue-800"
+                >
+                  Toggle All
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {REQUIREMENT_NUMBER_FIELDS.map((f) => (
+                  <label key={f.key} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={!!numbersExportSelection[f.key]}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setNumbersExportSelection((prev) => ({ ...prev, [f.key]: checked }));
+                      }}
+                      className="h-4 w-4"
+                    />
+                    <span className="text-sm text-gray-700">{f.label}</span>
+                  </label>
+                ))}
+              </div>
+
+              <p className="text-xs text-gray-500">Only exports the numbers (no files).</p>
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowNumbersExportModal(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const selectedKeys = Object.entries(numbersExportSelection)
+                    .filter(([, v]) => v)
+                    .map(([k]) => k);
+                  if (selectedKeys.length === 0) {
+                    setAlertMessage('Select at least one number field to export.');
+                    setShowErrorAlert(true);
+                    return;
+                  }
+                  let rowsToExport = filteredData;
+                  if (numbersExportScope === 'employee') {
+                    const chosen = filteredData.find((e) => String(e?.id) === String(numbersExportEmployeeId));
+                    if (!chosen) {
+                      setAlertMessage('Please select an employee to export.');
+                      setShowErrorAlert(true);
+                      return;
+                    }
+                    rowsToExport = [chosen];
+                  }
+                  exportRequirementsNumbersPdf(rowsToExport, selectedKeys);
+                  setShowNumbersExportModal(false);
+                }}
+                disabled={
+                  Object.values(numbersExportSelection).every((v) => !v) ||
+                  (numbersExportScope === 'employee' && !numbersExportEmployeeId)
+                }
+                className={`px-4 py-2 rounded-lg text-sm font-semibold text-white ${
+                  Object.values(numbersExportSelection).every((v) => !v) ||
+                  (numbersExportScope === 'employee' && !numbersExportEmployeeId)
+                    ? 'bg-red-300 cursor-not-allowed'
+                    : 'bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                Export PDF
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const selectedKeys = Object.entries(numbersExportSelection)
+                    .filter(([, v]) => v)
+                    .map(([k]) => k);
+                  if (selectedKeys.length === 0) {
+                    setAlertMessage('Select at least one number field to export.');
+                    setShowErrorAlert(true);
+                    return;
+                  }
+                  let rowsToExport = filteredData;
+                  if (numbersExportScope === 'employee') {
+                    const chosen = filteredData.find((e) => String(e?.id) === String(numbersExportEmployeeId));
+                    if (!chosen) {
+                      setAlertMessage('Please select an employee to export.');
+                      setShowErrorAlert(true);
+                      return;
+                    }
+                    rowsToExport = [chosen];
+                  }
+                  exportRequirementsNumbersExcel(rowsToExport, selectedKeys);
+                  setShowNumbersExportModal(false);
+                }}
+                disabled={
+                  Object.values(numbersExportSelection).every((v) => !v) ||
+                  (numbersExportScope === 'employee' && !numbersExportEmployeeId)
+                }
+                className={`px-4 py-2 rounded-lg text-sm font-semibold text-white ${
+                  Object.values(numbersExportSelection).every((v) => !v) ||
+                  (numbersExportScope === 'employee' && !numbersExportEmployeeId)
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-gray-900 hover:bg-gray-800'
+                }`}
+              >
+                Export Excel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Request Document Modal */}
       {showRequestModal && requestTarget && (
