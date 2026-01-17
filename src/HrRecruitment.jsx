@@ -8,6 +8,22 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
 
+// Invokes the Supabase Edge Function that schedules interviews + sends notifications.
+async function scheduleInterviewClient(applicationId, interview) {
+  try {
+    const functionName = "schedule-interview-with-notification";
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: { applicationId, interview },
+    });
+
+    if (error) throw error;
+    return { ok: true, data };
+  } catch (err) {
+    console.error("scheduleInterviewClient error:", err);
+    return { ok: false, error: err };
+  }
+}
+
 /**
  * scheduleInterviewClient
                           <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
