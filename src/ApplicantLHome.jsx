@@ -247,7 +247,7 @@ import SkillsInput from './components/SkillsInput';
               educational_attainment: normalizeEducationAttainment(mergedProfile.educational_attainment) || '',
               institution_name: mergedProfile.institution_name || '',
               year_graduated: mergedProfile.year_graduated || '',
-              education_program: merged.education_program || '',
+              education_program: mergedProfile.education_program || '',
               skills: normalizeSkills(mergedProfile.skills),
               work_experiences: mergedProfile.work_experiences || [],
               character_references: normalizeCharacterReferences(mergedProfile.character_references),
@@ -832,11 +832,11 @@ const handleSave = async () => {
     }
 
     setIsEditMode(false);
-    setSuccessMessage(
-      didWarnProgramNotSaved
-        ? 'Profile updated successfully! (Note: Strand/Program is not saved yet — database column missing)'
-        : 'Profile updated successfully!'
-    );
+    setSuccessMessage('Profile updated successfully!');
+    if (didWarnProgramNotSaved && (profileForm.education_program || '').trim()) {
+      setErrorMessage('Strand/Program could not be saved because the database is missing the "education_program" column. Ask an admin to add the column, then try again.');
+      setTimeout(() => setErrorMessage(''), 8000);
+    }
     setTimeout(() => setSuccessMessage(''), 3000);
   } catch (err) {
     console.error('Error:', err);

@@ -7,6 +7,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.26.0";
 // Reuse the same SendGrid configuration used for employee credentials
 const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY");
 const SENDGRID_FROM_EMAIL = Deno.env.get("SENDGRID_FROM_EMAIL") || "noreply@roadwise.com";
+const HR_FROM_NAME = Deno.env.get("HR_FROM_NAME") || "Roadwise HR (Each-R)";
+const HR_REPLY_TO_EMAIL = Deno.env.get("HR_REPLY_TO_EMAIL") || "";
+const HR_REPLY_TO_NAME = Deno.env.get("HR_REPLY_TO_NAME") || "Roadwise HR";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,6 +33,21 @@ function extractApplicantContact(payload: any): { email: string | null; firstNam
   const firstName = src?.firstName || src?.fname || src?.first_name || null;
   const lastName = src?.lastName || src?.lname || src?.last_name || null;
   return { email: email ? String(email).trim() : null, firstName: firstName ? String(firstName).trim() : null, lastName: lastName ? String(lastName).trim() : null };
+}
+
+function escapeHtml(input: unknown): string {
+  return String(input ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function extractFirstUrl(text: unknown): string | null {
+  const raw = String(text ?? '');
+  const match = raw.match(/https?:\/\/[^\s<>"]+/i);
+  return match ? match[0] : null;
 }
 
 serve(async (req) => {
@@ -306,233 +324,271 @@ serve(async (req) => {
         emailTo = toEmail;
 
         const interviewDateDisplay = formattedDate;
-        const interviewTimeDisplay = interview.time || 'To be confirmed';
+        const interviewTimeDisplay = safeTime || 'To be confirmed';
+
+        const tz = (interview.timezone || interview.time_zone || interview.tz || '').toString().trim();
+        const interviewLocationDisplay = (interview.location || 'To be confirmed').toString().trim();
+        const meetingUrl = extractFirstUrl(interviewLocationDisplay);
+
+        const scheduleTitle = scheduleKind === 'agreement_signing' ? 'Agreement Signing' : 'Interview';
+        const positionLabel = scheduleKind === 'agreement_signing' ? 'Appointment' : 'Position';
 
         const emailSubject = isReschedule
-          ? `Updated ${scheduleLabel}: ${jobTitle} (${interviewDateDisplay} ${interviewTimeDisplay})`
-          : `${scheduleLabel}: ${jobTitle} (${interviewDateDisplay} ${interviewTimeDisplay})`;
-        const interviewLocationDisplay = interview.location || 'To be confirmed';
+          ? `Updated ${scheduleTitle} — ${jobTitle} — ${interviewDateDisplay} at ${interviewTimeDisplay}${tz ? ` (${tz})` : ''}`
+          : `${scheduleTitle} Scheduled — ${jobTitle} — ${interviewDateDisplay} at ${interviewTimeDisplay}${tz ? ` (${tz})` : ''}`;
 
-        const pillText = isReschedule ? `${scheduleLabel} Rescheduled` : `${scheduleLabel} Scheduled`;
+        const pillText = isReschedule ? `${scheduleTitle} Updated` : `${scheduleTitle} Confirmed`;
         const detailsTitle = scheduleKind === 'agreement_signing' ? 'Appointment Details' : 'Interview Details';
-        const locationLabel = scheduleKind === 'agreement_signing' ? 'Location:' : 'Location / Platform:';
-        const introHtml = scheduleKind === 'agreement_signing'
+
+        const likelyOnline = Boolean(meetingUrl) || /zoom|google\s*meet|microsoft\s*teams|teams|meet/i.test(interviewLocationDisplay);
+        const introText = scheduleKind === 'agreement_signing'
           ? (isReschedule
-            ? 'Your agreement signing schedule has been <span class="highlight">updated</span>. Please review the updated details below:'
-            : 'Please review the details for your agreement signing appointment below:')
+            ? 'This email confirms an update to your agreement signing appointment. Please review the updated details below.'
+            : 'This email confirms your agreement signing appointment. Please review the details below.')
           : (isReschedule
-            ? 'Your interview schedule has been <span class="highlight">updated</span>. Please review the updated details below:'
-            : 'Thank you for your interest in joining Roadwise. We are pleased to invite you for an interview. Please review the details below:');
+            ? 'This email confirms an update to your interview schedule. Please review the updated details below.'
+            : 'This email confirms your interview schedule. Please review the details below.');
 
         const generatedAtIso = new Date().toISOString();
         const scheduleRef = `${applicationId}:${generatedAtIso}`;
 
+        const safeFullName = escapeHtml(fullName || firstName);
+        const safeJobTitle = escapeHtml(jobTitle);
+        const safeDate = escapeHtml(interviewDateDisplay);
+        const safeTimeDisplay = escapeHtml(interviewTimeDisplay);
+        const safeTz = escapeHtml(tz);
+        const safeLocation = escapeHtml(interviewLocationDisplay);
+        const safeInterviewer = escapeHtml(interview.interviewer || '');
+        const safeScheduleRef = escapeHtml(scheduleRef);
+        const safeGeneratedAt = escapeHtml(generatedAtIso);
+        const safeAppId = escapeHtml(applicationId);
+        const safeMeetingUrl = meetingUrl ? escapeHtml(meetingUrl) : '';
+        const safeSupportEmail = escapeHtml(HR_REPLY_TO_EMAIL || SENDGRID_FROM_EMAIL);
+
+        const statusText = pillText;
+        // Brand theme (red/white) for email UI
+        const brandRed = '#dc2626';
+        const brandRedDark = '#b91c1c';
+        const brandRose50 = '#fff1f2';
+        const brandRose100 = '#ffe4e6';
+        const brandRose200 = '#fecdd3';
+
+        const statusBorder = brandRose200;
+        const statusBg = '#ffffff';
+        const statusFg = brandRedDark;
+        const primaryCtaUrl = meetingUrl || '';
+        const primaryCtaLabel = meetingUrl
+          ? (scheduleKind === 'agreement_signing' ? 'Open appointment link' : 'Open meeting link')
+          : '';
+
         // HTML email template for schedule details
         const htmlContent = `
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${emailSubject}</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      line-height: 1.6;
-      color: #111827;
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 20px;
-      background-color: #f3f4f6;
-    }
-    .container {
-      background-color: #ffffff;
-      border-radius: 12px;
-      padding: 32px 24px;
-      box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
-      border: 1px solid #e5e7eb;
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 28px;
-    }
-    .logo {
-      margin-bottom: 16px;
-      text-align: center;
-    }
-    .logo-brand {
-      font-size: 28px;
-      font-weight: 700;
-      color: #dc2626;
-      letter-spacing: -0.5px;
-      margin: 0;
-      font-style: italic;
-      font-family: Georgia, 'Times New Roman', serif;
-    }
-    .logo-tagline {
-      font-size: 11px;
-      color: #4b5563;
-      margin-top: 4px;
-      font-weight: 400;
-      letter-spacing: 0.5px;
-      text-transform: uppercase;
-    }
-    h1 {
-      font-size: 22px;
-      margin: 16px 0 8px;
-      color: #111827;
-    }
-    .pill {
-      display: inline-block;
-      padding: 4px 10px;
-      border-radius: 999px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: #ffffff;
-      background: ${isReschedule ? '#f97316' : '#16a34a'};
-      margin-bottom: 12px;
-    }
-    .section {
-      background-color: #f9fafb;
-      border-radius: 10px;
-      padding: 16px 18px;
-      border: 1px solid #e5e7eb;
-      margin: 18px 0;
-    }
-    .section-title {
-      font-size: 14px;
-      font-weight: 600;
-      color: #374151;
-      margin-bottom: 8px;
-    }
-    .row {
-      display: flex;
-      justify-content: space-between;
-      margin: 4px 0;
-      font-size: 14px;
-    }
-    .label {
-      font-weight: 600;
-      color: #4b5563;
-    }
-    .value {
-      color: #111827;
-    }
-    .highlight {
-      color: #dc2626;
-      font-weight: 600;
-    }
-    .footer {
-      margin-top: 28px;
-      font-size: 12px;
-      color: #9ca3af;
-      border-top: 1px solid #e5e7eb;
-      padding-top: 16px;
-      text-align: center;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">
-        <div class="logo-brand">Each-R</div>
-        <div class="logo-tagline">Each Record for Roadwise</div>
-      </div>
-      <div class="pill">${pillText}</div>
-      <h1>${jobTitle}</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <title>${escapeHtml(emailSubject)}</title>
+  </head>
+  <body style="margin:0; padding:0; background:#ffffff;">
+    <!-- Preheader (hidden) -->
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+      ${escapeHtml(scheduleTitle)} on ${safeDate} at ${safeTimeDisplay}${tz ? ` (${safeTz})` : ''}.
     </div>
 
-    <p>Dear ${fullName || firstName},</p>
-    <p>
-      ${introHtml}
-    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#ffffff; padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px; max-width:600px;">
+            <!-- Brand header -->
+            <tr>
+              <td style="padding:0 12px 12px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${brandRed}; border-radius:14px;">
+                  <tr>
+                    <td style="padding:16px 18px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td align="left" style="font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                            <div style="font-size:14px; font-weight:800; color:#ffffff; letter-spacing:0.2px;">Roadwise HR</div>
+                            <div style="font-size:12px; color:${brandRose100}; margin-top:2px;">Each-R • Recruitment Updates</div>
+                          </td>
+                          <td align="right" style="font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                            <span style="display:inline-block; border:1px solid ${statusBorder}; background:${statusBg}; color:${statusFg}; font-size:12px; font-weight:800; padding:6px 10px; border-radius:999px;">
+                              ${escapeHtml(statusText)}
+                            </span>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
 
-    <div class="section">
-      <div class="section-title">${detailsTitle}</div>
-      <div class="row">
-        <span class="label">Date:</span>
-        <span class="value">${interviewDateDisplay}</span>
-      </div>
-      <div class="row">
-        <span class="label">Time:</span>
-        <span class="value">${interviewTimeDisplay}</span>
-      </div>
-      <div class="row">
-        <span class="label">${locationLabel}</span>
-        <span class="value">${interviewLocationDisplay}</span>
-      </div>
-      ${
-        interview.interviewer
-          ? `<div class="row">
-        <span class="label">Interviewer:</span>
-        <span class="value">${interview.interviewer}</span>
-      </div>`
-          : ''
-      }
-    </div>
+            <!-- Main card -->
+            <tr>
+              <td style="padding:0 12px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#ffffff; border:1px solid ${brandRose200}; border-radius:14px;">
+                  <tr>
+                    <td style="padding:22px 22px 10px; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                      <div style="font-size:18px; font-weight:800; color:#0f172a; line-height:1.25;">${safeJobTitle}</div>
+                      <div style="font-size:13px; color:#475569; margin-top:6px;">${escapeHtml(introText)}</div>
+                    </td>
+                  </tr>
 
-    <div class="section">
-      <div class="section-title">Next Steps</div>
-      <ul style="margin: 4px 0 0 18px; padding: 0; font-size: 14px; color: #4b5563;">
-        <li>Please confirm your availability through the applicant portal.</li>
-        <li>Arrive at least 10–15 minutes before your scheduled time.</li>
-        <li>Prepare a valid ID and any required documents.</li>
-      </ul>
-    </div>
+                  <tr>
+                    <td style="padding:0 22px 14px; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                      <div style="font-size:14px; color:#0f172a;">Hello ${safeFullName},</div>
+                    </td>
+                  </tr>
 
-    <p style="font-size: 13px; color: #6b7280; margin-top: 12px;">
-      If you are unable to attend at this schedule, please contact us as soon as possible through the portal or reach out to HR to arrange a different time.
-    </p>
+                  <!-- Details box -->
+                  <tr>
+                    <td style="padding:0 22px 18px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${brandRose50}; border:1px solid ${brandRose200}; border-radius:12px;">
+                        <tr>
+                          <td style="padding:14px 14px 10px; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                            <div style="font-size:13px; font-weight:800; color:#0f172a;">${escapeHtml(detailsTitle)}</div>
+                          </td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 14px 14px;">
+                            <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:14px; color:#0f172a;">
+                              <tr>
+                                <td style="padding:6px 0; color:#64748b; width:160px;">Date</td>
+                                <td style="padding:6px 0; font-weight:700;">${safeDate}</td>
+                              </tr>
+                              <tr>
+                                <td style="padding:6px 0; color:#64748b;">Time</td>
+                                <td style="padding:6px 0; font-weight:700;">${safeTimeDisplay}${tz ? ` <span style=\"font-weight:600; color:#64748b;\">(${safeTz})</span>` : ''}</td>
+                              </tr>
+                              <tr>
+                                <td style="padding:6px 0; color:#64748b;">${likelyOnline ? 'Platform / Location' : 'Location'}</td>
+                                <td style="padding:6px 0;">${safeLocation}</td>
+                              </tr>
+                              ${interview.interviewer ? `
+                              <tr>
+                                <td style="padding:6px 0; color:#64748b;">Interviewer</td>
+                                <td style="padding:6px 0;">${safeInterviewer}</td>
+                              </tr>` : ''}
+                              <tr>
+                                <td style="padding:6px 0; color:#64748b;">Application ID</td>
+                                <td style="padding:6px 0;">${safeAppId}</td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
 
-    <p style="font-size: 12px; color: #9ca3af; margin-top: 12px;">
-      Reference: ${scheduleRef}<br/>
-      Generated: ${generatedAtIso}<br/>
-      Note: Email delivery may be delayed by spam filtering. Your latest schedule in the portal is the source of truth.
-    </p>
+                        ${primaryCtaUrl ? `
+                        <tr>
+                          <td style="padding:0 14px 14px;">
+                            <table role="presentation" cellpadding="0" cellspacing="0">
+                              <tr>
+                                <td bgcolor="${brandRed}" style="border-radius:12px;">
+                                  <a href="${safeMeetingUrl}" style="display:inline-block; padding:12px 16px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:14px; font-weight:800; color:#ffffff; text-decoration:none; border-radius:12px;">
+                                    ${escapeHtml(primaryCtaLabel)}
+                                  </a>
+                                </td>
+                              </tr>
+                            </table>
+                            <div style="font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:12px; color:#64748b; margin-top:8px;">
+                              Tip: only click links you recognize. If unsure, open Each-R and verify the schedule.
+                            </div>
+                          </td>
+                        </tr>` : ''}
+                      </table>
+                    </td>
+                  </tr>
 
-    <div class="footer">
-      <p>This is an automated message from <span class="highlight">Roadwise</span>. Please do not reply directly to this email.</p>
-      <p>&copy; ${new Date().getFullYear()} Roadwise. All rights reserved.</p>
-    </div>
-  </div>
-</body>
+                  <!-- Next steps -->
+                  <tr>
+                    <td style="padding:0 22px 18px; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                      <div style="font-size:13px; font-weight:800; color:#0f172a; margin-bottom:8px;">What to do next</div>
+                      <ul style="margin:0; padding-left:18px; color:#334155; font-size:14px; line-height:1.6;">
+                        <li>Confirm your availability in the Each-R applicant portal.</li>
+                        ${likelyOnline
+                          ? '<li>If online, join 5 minutes early and test your audio/video connection.</li>'
+                          : '<li>If onsite, arrive 10–15 minutes early and bring a valid ID.</li>'}
+                        <li>Keep this email for your reference.</li>
+                      </ul>
+                      <div style="font-size:13px; color:#475569; margin-top:10px;">
+                        If you need to reschedule, please request a change through the portal as soon as possible.
+                      </div>
+                    </td>
+                  </tr>
+
+                  <!-- Security + support -->
+                  <tr>
+                    <td style="padding:0 22px 22px; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${brandRose50}; border:1px solid ${brandRose200}; border-radius:12px;">
+                        <tr>
+                          <td style="padding:12px 14px;">
+                            <div style="font-size:13px; font-weight:800; color:${brandRedDark};">Security reminder</div>
+                            <div style="font-size:13px; color:#7f1d1d; margin-top:6px; line-height:1.5;">
+                              Roadwise HR will never ask for your password by email. If you did not apply for this role, you can ignore this message.
+                            </div>
+                          </td>
+                        </tr>
+                      </table>
+                      <div style="font-size:12px; color:#64748b; margin-top:12px; line-height:1.5;">
+                        Questions? Contact HR at <a href="mailto:${safeSupportEmail}" style="color:${brandRedDark}; text-decoration:none; font-weight:700;">${safeSupportEmail}</a>.
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:14px 12px 0; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                <div style="font-size:11px; color:#94a3b8; line-height:1.5; text-align:center;">
+                  Reference: ${safeScheduleRef} • Generated: ${safeGeneratedAt}<br/>
+                  This is an automated notification from Roadwise HR via Each-R. Please do not reply directly to this email.
+                </div>
+                <div style="font-size:11px; color:#94a3b8; line-height:1.5; text-align:center; margin-top:6px;">
+                  © ${new Date().getFullYear()} Roadwise. All rights reserved.
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
 </html>
         `;
 
-        const textContent = `
-      Roadwise - ${scheduleLabel} ${isReschedule ? 'Rescheduled' : 'Scheduled'}
+        const textContent = `Roadwise HR (Each-R) — ${scheduleTitle}${isReschedule ? ' (Updated)' : ''}
 
 Dear ${fullName || firstName},
 
-${scheduleKind === 'agreement_signing'
-  ? (isReschedule ? 'Your agreement signing schedule has been updated.' : 'You have been scheduled for an agreement signing appointment.')
-  : (isReschedule ? 'Your interview schedule has been updated.' : 'You have been scheduled for an interview.')}
+${introText}
 
-Position: ${jobTitle}
-Date: ${interviewDateDisplay}
-Time: ${interviewTimeDisplay}
-Location: ${interviewLocationDisplay}
-${
-  interview.interviewer
-    ? `Interviewer: ${interview.interviewer}\n`
-    : ''
-}
+${detailsTitle}
+- ${positionLabel}: ${jobTitle}
+- Date: ${interviewDateDisplay}
+- Time: ${interviewTimeDisplay}${tz ? ` (${tz})` : ''}
+- Location/Platform: ${interviewLocationDisplay}
+${interview.interviewer ? `- Interviewer: ${interview.interviewer}` : ''}
+${meetingUrl ? `- Meeting link: ${meetingUrl}` : ''}
+- Application ID: ${applicationId}
 
-Please confirm your availability through the applicant portal.
+What to do next
+- Confirm your availability in the Each-R applicant portal.
+${likelyOnline ? '- If online, join 5 minutes early and test your audio/video.' : '- If onsite, arrive 10–15 minutes early and bring a valid ID.'}
 
-If you are unable to attend at this schedule, please contact HR as soon as possible to arrange a different time.
+If you need to reschedule, please request a change through the portal as soon as possible.
 
-This is an automated message from Roadwise. Please do not reply directly to this email.
+Security reminder: Roadwise HR will never ask for your password by email. If you did not apply for this role, you can ignore this message.
 
-© ${new Date().getFullYear()} Roadwise. All rights reserved.
+This is an automated notification from Roadwise HR via Each-R. Please do not reply to this email.
 
 Reference: ${scheduleRef}
 Generated: ${generatedAtIso}
-Note: Email delivery may be delayed by spam filtering. Your latest schedule in the portal is the source of truth.
-        `;
+© ${new Date().getFullYear()} Roadwise. All rights reserved.
+`;
 
         try {
           const sendGridResponse = await fetch("https://api.sendgrid.com/v3/mail/send", {
@@ -555,8 +611,10 @@ Note: Email delivery may be delayed by spam filtering. Your latest schedule in t
                   },
                 },
               ],
-              from: { email: SENDGRID_FROM_EMAIL, name: "Roadwise HR" },
-              reply_to: { email: SENDGRID_FROM_EMAIL, name: "Roadwise HR" },
+              from: { email: SENDGRID_FROM_EMAIL, name: HR_FROM_NAME },
+              reply_to: HR_REPLY_TO_EMAIL
+                ? { email: HR_REPLY_TO_EMAIL, name: HR_REPLY_TO_NAME }
+                : { email: SENDGRID_FROM_EMAIL, name: HR_FROM_NAME },
               content: [
                 {
                   type: "text/plain",
