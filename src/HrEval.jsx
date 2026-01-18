@@ -45,6 +45,8 @@ function HrEval() {
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
   const [alertType, setAlertType] = useState("info"); // 'success', 'error', 'info', 'warning'
+  const [employeeInSeparation, setEmployeeInSeparation] = useState(false);
+  const [separationDetails, setSeparationDetails] = useState(null);
 
   // Fetch employees from database (HR sees all employees)
   useEffect(() => {
@@ -106,6 +108,34 @@ function HrEval() {
     setAlertMessage(message);
     setAlertType(type);
     setShowAlertModal(true);
+  };
+
+  // Check if employee is in separation process
+  const checkEmployeeSeparationStatus = async (employeeId) => {
+    try {
+      const { data, error } = await supabase
+        .from('employee_separations')
+        .select('*')
+        .eq('employee_id', employeeId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('Error checking separation status:', error);
+        return;
+      }
+
+      if (data) {
+        setEmployeeInSeparation(true);
+        setSeparationDetails(data);
+      } else {
+        setEmployeeInSeparation(false);
+        setSeparationDetails(null);
+      }
+    } catch (err) {
+      console.error('Error checking separation status:', err);
+      setEmployeeInSeparation(false);
+      setSeparationDetails(null);
+    }
   };
 
   // Fetch all evaluations for employees
@@ -1308,9 +1338,10 @@ function HrEval() {
                                       Evaluation History
                                     </p>
                                     <button
-                                      onClick={(e) => {
+                                      onClick={async (e) => {
                                         e.stopPropagation();
                                         setSelectedEmployee(employee);
+                                        await checkEmployeeSeparationStatus(employee.id);
                                         setShowUploadModal(true);
                                       }}
                                       className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2"
@@ -1670,6 +1701,8 @@ function HrEval() {
                     },
                   ]);
                   setFinalRemarks("");
+                  setEmployeeInSeparation(false);
+                  setSeparationDetails(null);
                 }}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -1684,6 +1717,24 @@ function HrEval() {
                 Employee: <span className="font-semibold text-gray-800">{selectedEmployee?.name}</span>
               </p>
             </div>
+
+            {/* Separation Warning Banner */}
+            {employeeInSeparation && (
+              <div className="mb-4 bg-orange-50 border-l-4 border-orange-500 p-4 rounded">
+                <div className="flex items-start">
+                  <svg className="w-5 h-5 text-orange-600 mr-3 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-orange-800 mb-1">Employee in Separation Process</h4>
+                    <p className="text-sm text-orange-700">
+                      This employee is currently in the process of separation (Status: <span className="font-medium">{separationDetails?.status || 'pending'}</span>). 
+                      You can still upload an evaluation if needed.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-6">
               {uploadRecords.map((record, index) => (
@@ -1895,6 +1946,8 @@ function HrEval() {
                       },
                     ]);
                     setFinalRemarks("");
+                    setEmployeeInSeparation(false);
+                    setSeparationDetails(null);
                   }}
                   className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
                 >

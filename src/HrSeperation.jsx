@@ -39,9 +39,26 @@ function HrSeperation() {
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
+    // Save scroll position before page unload
+    const handleBeforeUnload = () => {
+      const detailView = document.querySelector('.flex-1.overflow-y-auto.pr-6');
+      const employeeList = document.querySelector('.flex-1.overflow-y-auto');
+      
+      if (detailView) {
+        sessionStorage.setItem('hrSeparationScrollPosition', detailView.scrollTop.toString());
+      }
+      if (employeeList) {
+        sessionStorage.setItem('hrSeparationListScrollPosition', employeeList.scrollTop.toString());
+      }
+      // Save main window scroll position
+      sessionStorage.setItem('hrSeparationWindowScrollPosition', window.scrollY.toString());
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
 
@@ -223,6 +240,18 @@ function HrSeperation() {
       });
 
       setEmployees(transformedEmployees);
+      
+      // Restore selected employee from sessionStorage if exists
+      const savedEmployeeId = sessionStorage.getItem('selectedEmployeeId');
+      if (savedEmployeeId && transformedEmployees.length > 0) {
+        const employeeToSelect = transformedEmployees.find(emp => emp.id === savedEmployeeId);
+        if (employeeToSelect) {
+          setSelectedEmployee(employeeToSelect);
+        } else {
+          // Employee no longer exists, clear from storage
+          sessionStorage.removeItem('selectedEmployeeId');
+        }
+      }
     } catch (err) {
       console.error('Error fetching employee separations:', err);
       setError(`Failed to load employee data: ${err.message}`);
@@ -259,6 +288,15 @@ function HrSeperation() {
   const [pendingTerminateEmployeeId, setPendingTerminateEmployeeId] = useState(null);
   const [showTerminateConfirm, setShowTerminateConfirm] = useState(false);
   const [showTerminateSuccess, setShowTerminateSuccess] = useState(false);
+  
+  // Loading states for operations
+  const [isApproving, setIsApproving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isTerminating, setIsTerminating] = useState(false);
+  const [isValidating, setIsValidating] = useState(false);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [isMarkingCompleted, setIsMarkingCompleted] = useState(false);
+  const [isUploadingForms, setIsUploadingForms] = useState(false);
 
   // State for global templates (staging area)
   const [showTemplateManager, setShowTemplateManager] = useState(false);
@@ -266,14 +304,92 @@ function HrSeperation() {
   const [stagedClearanceTemplate, setStagedClearanceTemplate] = useState(null);
   const [stagedInterviewTemplate, setStagedInterviewTemplate] = useState(null);
 
+  // Restore scroll position when selected employee changes
+  useEffect(() => {
+    if (selectedEmployee && !loading) {
+      const savedScrollPosition = sessionStorage.getItem('hrSeparationScrollPosition');
+      if (savedScrollPosition) {
+        const detailView = document.querySelector('.flex-1.overflow-y-auto.pr-6');
+        if (detailView) {
+          // Use setTimeout to ensure DOM is ready
+          setTimeout(() => {
+            detailView.scrollTop = parseInt(savedScrollPosition, 10);
+          }, 100);
+        }
+      }
+    }
+  }, [selectedEmployee, loading]);
+
+  // Restore employee list scroll position when employees are loaded
+  useEffect(() => {
+    if (employees.length > 0 && !loading) {
+      const savedListScrollPosition = sessionStorage.getItem('hrSeparationListScrollPosition');
+      if (savedListScrollPosition) {
+        const employeeList = document.querySelector('.flex-1.overflow-y-auto');
+        if (employeeList) {
+          setTimeout(() => {
+            employeeList.scrollTop = parseInt(savedListScrollPosition, 10);
+          }, 100);
+        }
+      }
+    }
+  }, [employees, loading]);
+
+  // Restore and track main window scroll position
+  useEffect(() => {
+    // Restore window scroll position
+    const savedWindowScrollPosition = sessionStorage.getItem('hrSeparationWindowScrollPosition');
+    if (savedWindowScrollPosition) {
+      setTimeout(() => {
+        window.scrollTo(0, parseInt(savedWindowScrollPosition, 10));
+      }, 100);
+    }
+
+    // Save window scroll position as user scrolls
+    const handleWindowScroll = () => {
+      sessionStorage.setItem('hrSeparationWindowScrollPosition', window.scrollY.toString());
+    };
+    window.addEventListener('scroll', handleWindowScroll);
+
+    return () => {
+      window.removeEventListener('scroll', handleWindowScroll);
+    };
+  }, []);
+
   const handleEmployeeClick = (employee) => {
     setSelectedEmployee(employee);
     setFinalDocFiles([]);
-    // Fields will auto-fill when templates are loaded, no need to manually set here
+    // Save selected employee ID to sessionStorage for persistence across refreshes
+    sessionStorage.setItem('selectedEmployeeId', employee.id);
   };
 
+  // Auto-populate templates when employee is selected or templates change
+  useEffect(() => {
+    if (selectedEmployee && templates) {
+      // Auto-fill from global templates if they exist
+      if (templates.exit_clearance_form_url && !hrExitClearanceFile) {
+        // Create a pseudo-file object to represent the template
+        setHrExitClearanceFile({ 
+          name: templates.exit_clearance_form_filename,
+          isTemplate: true,
+          url: templates.exit_clearance_form_url
+        });
+      }
+      if (templates.exit_interview_form_url && !hrExitInterviewFile) {
+        setHrExitInterviewFile({ 
+          name: templates.exit_interview_form_filename,
+          isTemplate: true,
+          url: templates.exit_interview_form_url
+        });
+      }
+    }
+  }, [selectedEmployee, templates]);
+
   const handleApproveResignation = async (employeeId) => {
+    if (isApproving) return;
+    
     try {
+      setIsApproving(true);
       const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) return;
 
@@ -311,6 +427,8 @@ function HrSeperation() {
       setError(`Failed to approve resignation: ${err.message}`);
       setShowApproveConfirm(false);
       setPendingApprovalId(null);
+    } finally {
+      setIsApproving(false);
     }
   };
 
@@ -352,11 +470,13 @@ function HrSeperation() {
 
   const handleUploadHrForms = async (employeeId) => {
     if (!hrExitClearanceFile || !hrExitInterviewFile) return;
+    if (isUploadingForms) return;
     
     setShowUploadFormsConfirm(false);
     setPendingUploadEmployeeId(null);
     
     try {
+      setIsUploadingForms(true);
       setError(null);
       const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) return;
@@ -383,43 +503,62 @@ function HrSeperation() {
         }
       }
 
-      // Upload Exit Clearance Form
-      const clearanceExt = hrExitClearanceFile.name.split('.').pop();
-      const clearanceFileName = `${employee.employeeUserId}/exit_clearance_form_${Date.now()}.${clearanceExt}`;
-      
-      const { error: clearanceUploadError } = await supabase.storage
-        .from('separation-documents')
-        .upload(clearanceFileName, hrExitClearanceFile, {
-          cacheControl: '3600',
-          upsert: false
-        });
+      let clearanceFileName, clearanceOriginalName;
+      let interviewFileName, interviewOriginalName;
 
-      if (clearanceUploadError) throw clearanceUploadError;
+      // Handle Exit Clearance Form - could be template or custom file
+      if (hrExitClearanceFile.isTemplate) {
+        // Using template - just reference the template URL
+        clearanceFileName = hrExitClearanceFile.url;
+        clearanceOriginalName = hrExitClearanceFile.name;
+      } else {
+        // Custom file - upload it
+        const clearanceExt = hrExitClearanceFile.name.split('.').pop();
+        clearanceFileName = `${employee.employeeUserId}/exit_clearance_form_${Date.now()}.${clearanceExt}`;
+        clearanceOriginalName = hrExitClearanceFile.name;
+        
+        const { error: clearanceUploadError } = await supabase.storage
+          .from('separation-documents')
+          .upload(clearanceFileName, hrExitClearanceFile, {
+            cacheControl: '3600',
+            upsert: false
+          });
 
-      // Upload Exit Interview Form
-      const interviewExt = hrExitInterviewFile.name.split('.').pop();
-      const interviewFileName = `${employee.employeeUserId}/exit_interview_form_${Date.now()}.${interviewExt}`;
-      
-      const { error: interviewUploadError } = await supabase.storage
-        .from('separation-documents')
-        .upload(interviewFileName, hrExitInterviewFile, {
-          cacheControl: '3600',
-          upsert: false
-        });
+        if (clearanceUploadError) throw clearanceUploadError;
+      }
 
-      if (interviewUploadError) throw interviewUploadError;
+      // Handle Exit Interview Form - could be template or custom file
+      if (hrExitInterviewFile.isTemplate) {
+        // Using template - just reference the template URL
+        interviewFileName = hrExitInterviewFile.url;
+        interviewOriginalName = hrExitInterviewFile.name;
+      } else {
+        // Custom file - upload it
+        const interviewExt = hrExitInterviewFile.name.split('.').pop();
+        interviewFileName = `${employee.employeeUserId}/exit_interview_form_${Date.now()}.${interviewExt}`;
+        interviewOriginalName = hrExitInterviewFile.name;
+        
+        const { error: interviewUploadError } = await supabase.storage
+          .from('separation-documents')
+          .upload(interviewFileName, hrExitInterviewFile, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (interviewUploadError) throw interviewUploadError;
+      }
 
       // Update database
       const { error: updateError } = await supabase
         .from('employee_separations')
         .update({
           exit_clearance_form_url: clearanceFileName,
-          exit_clearance_form_filename: hrExitClearanceFile.name,
+          exit_clearance_form_filename: clearanceOriginalName,
           exit_clearance_form_status: 'uploaded',
           exit_clearance_form_uploaded_by: hrUserId,
           exit_clearance_form_uploaded_at: new Date().toISOString(),
           exit_interview_form_url: interviewFileName,
-          exit_interview_form_filename: hrExitInterviewFile.name,
+          exit_interview_form_filename: interviewOriginalName,
           exit_interview_form_status: 'uploaded',
           exit_interview_form_uploaded_by: hrUserId,
           exit_interview_form_uploaded_at: new Date().toISOString()
@@ -454,11 +593,16 @@ function HrSeperation() {
       console.error('Error uploading HR forms:', err);
       setError(`Failed to upload forms: ${err.message}`);
       setShowUploadFormsConfirm(false);
+    } finally {
+      setIsUploadingForms(false);
     }
   };
 
   const handleValidateDocument = async (employeeId, docType) => {
+    if (isValidating) return;
+    
     try {
+      setIsValidating(true);
       const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) return;
 
@@ -510,11 +654,16 @@ function HrSeperation() {
       setError(`Failed to validate document: ${err.message}`);
       setShowValidateConfirm(false);
       setPendingValidation(null);
+    } finally {
+      setIsValidating(false);
     }
   };
 
   const handleRejectDocument = async (employeeId, docType) => {
+    if (isRejecting) return;
+    
     try {
+      setIsRejecting(true);
       const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) return;
 
@@ -570,6 +719,8 @@ function HrSeperation() {
       setError(`Failed to reject document: ${err.message}`);
       setShowRejectConfirm(false);
       setPendingValidation(null);
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -654,10 +805,13 @@ function HrSeperation() {
   };
 
   const handleMarkCompleted = async (employeeId) => {
+    if (isMarkingCompleted) return;
+    
     setShowMarkCompletedConfirm(false);
     setPendingCompletionEmployeeId(null);
     
     try {
+      setIsMarkingCompleted(true);
       const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) return;
 
@@ -688,14 +842,19 @@ function HrSeperation() {
     } catch (err) {
       console.error('Error marking as completed:', err);
       setError(`Failed to mark as completed: ${err.message}`);
+    } finally {
+      setIsMarkingCompleted(false);
     }
   };
 
   const handleDeleteSeparation = async (employeeId) => {
+    if (isDeleting) return;
+    
     setShowDeleteConfirm(false);
     setPendingDeleteEmployeeId(null);
     
     try {
+      setIsDeleting(true);
       const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) return;
 
@@ -727,13 +886,18 @@ function HrSeperation() {
     } catch (err) {
       console.error('Error deleting separation:', err);
       setError(`Failed to delete separation: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
   const handleTerminateEmployee = async (employeeId) => {
+    if (isTerminating) return;
+    
     setShowTerminateConfirm(false);
     
     try {
+      setIsTerminating(true);
       const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) return;
 
@@ -802,6 +966,8 @@ function HrSeperation() {
     } catch (err) {
       console.error('Error terminating employee:', err);
       setError(`Failed to terminate employee: ${err.message}`);
+    } finally {
+      setIsTerminating(false);
     }
   };
 
@@ -1056,7 +1222,13 @@ function HrSeperation() {
         </div>
 
         {/* Employee List */}
-        <div className="flex-1 overflow-y-auto">
+        <div 
+          className="flex-1 overflow-y-auto"
+          onScroll={(e) => {
+            // Save employee list scroll position as user scrolls
+            sessionStorage.setItem('hrSeparationListScrollPosition', e.currentTarget.scrollTop.toString());
+          }}
+        >
           {loading ? (
             <div className="p-4 text-center text-gray-500">Loading...</div>
           ) : filteredEmployees.length === 0 ? (
@@ -1102,7 +1274,13 @@ function HrSeperation() {
       </div>
 
       {/* Right Side - Detail View */}
-      <div className="flex-1 overflow-y-auto pr-6">
+      <div 
+        className="flex-1 overflow-y-auto pr-6"
+        onScroll={(e) => {
+          // Save scroll position as user scrolls
+          sessionStorage.setItem('hrSeparationScrollPosition', e.currentTarget.scrollTop.toString());
+        }}
+      >
         {selectedEmployee ? (
           <div className="p-6">
             <div className="mb-6">
@@ -1166,22 +1344,21 @@ function HrSeperation() {
                         
                         if (error) throw error;
                         
-                        const url = URL.createObjectURL(data);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = selectedEmployee.resignationFile;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
+                        // Create a blob URL and open in new tab
+                        const blob = new Blob([data], { type: data.type });
+                        const url = URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                        
+                        // Clean up the URL after a short delay
+                        setTimeout(() => URL.revokeObjectURL(url), 1000);
                       } catch (err) {
-                        console.error('Error downloading file:', err);
-                        alert('Failed to download file');
+                        console.error('Error viewing file:', err);
+                        alert('Failed to open file for viewing');
                       }
                     }}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                   >
-                    Download
+                    View
                   </button>
                 </div>
 
@@ -1247,58 +1424,168 @@ function HrSeperation() {
                     ? 'bg-green-50 border-green-200' 
                     : 'bg-blue-50 border-blue-200'
                 }`}>
-                  <h4 className="font-medium text-gray-800 mb-3">Upload Forms for Employee Download</h4>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="font-medium text-gray-800">Provide Forms for Employee Download</h4>
+                    {templates?.exit_clearance_form_url && templates?.exit_interview_form_url && (
+                      <span className="text-xs text-green-600 font-medium flex items-center gap-1">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        Using Global Templates
+                      </span>
+                    )}
+                  </div>
+
+                  {!templates?.exit_clearance_form_url || !templates?.exit_interview_form_url ? (
+                    <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <svg className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                        </svg>
+                        <div>
+                          <p className="text-sm font-medium text-yellow-800">No Global Templates Set</p>
+                          <p className="text-xs text-yellow-700 mt-1">
+                            Upload templates in "Manage Templates" to automatically use them for all employees.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="space-y-3">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Exit Clearance Form Template
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Exit Clearance Form
                       </label>
                       {hrExitClearanceFile ? (
-                        <div className="flex items-center justify-between p-3 bg-white border border-gray-300 rounded-md">
-                          <p className="text-sm text-gray-700">📎 {hrExitClearanceFile.name}</p>
-                          <button
-                            onClick={() => setHrExitClearanceFile(null)}
-                            className="text-red-600 hover:text-red-800 text-sm font-medium"
-                          >
-                            Remove
-                          </button>
+                        <div className={`flex items-center justify-between p-3 rounded-md ${
+                          hrExitClearanceFile.isTemplate 
+                            ? 'bg-green-50 border-2 border-green-300' 
+                            : 'bg-white border border-gray-300'
+                        }`}>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {hrExitClearanceFile.isTemplate ? (
+                              <span className="flex-shrink-0 px-2 py-0.5 bg-green-600 text-white text-xs rounded font-medium">
+                                TEMPLATE
+                              </span>
+                            ) : null}
+                            <p className="text-sm text-gray-700 truncate">📎 {hrExitClearanceFile.name}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {hrExitClearanceFile.isTemplate && (
+                              <label className="cursor-pointer">
+                                <input
+                                  type="file"
+                                  accept=".pdf,.doc,.docx"
+                                  onChange={(e) => {
+                                    if (e.target.files[0]) {
+                                      setHrExitClearanceFile(e.target.files[0]);
+                                    }
+                                  }}
+                                  className="hidden"
+                                />
+                                <span className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                                  Update
+                                </span>
+                              </label>
+                            )}
+                          </div>
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-500 p-3 bg-white border border-gray-300 rounded-md">
-                          No template selected. Upload in "Manage Templates" to auto-fill.
-                        </p>
+                        <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
+                          <p className="text-sm text-gray-500 mb-2">No file selected</p>
+                          <label className="cursor-pointer inline-block px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx"
+                              onChange={(e) => {
+                                if (e.target.files[0]) {
+                                  setHrExitClearanceFile(e.target.files[0]);
+                                }
+                              }}
+                              className="hidden"
+                            />
+                            Select Custom File
+                          </label>
+                        </div>
                       )}
                     </div>
+
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Exit Interview Form Template
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Exit Interview Form
                       </label>
                       {hrExitInterviewFile ? (
-                        <div className="flex items-center justify-between p-3 bg-white border border-gray-300 rounded-md">
-                          <p className="text-sm text-gray-700">📎 {hrExitInterviewFile.name}</p>
-                          <button
-                            onClick={() => setHrExitInterviewFile(null)}
-                            className="text-red-600 hover:text-red-800 text-sm font-medium"
-                          >
-                            Remove
-                          </button>
+                        <div className={`flex items-center justify-between p-3 rounded-md ${
+                          hrExitInterviewFile.isTemplate 
+                            ? 'bg-green-50 border-2 border-green-300' 
+                            : 'bg-white border border-gray-300'
+                        }`}>
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {hrExitInterviewFile.isTemplate ? (
+                              <span className="flex-shrink-0 px-2 py-0.5 bg-green-600 text-white text-xs rounded font-medium">
+                                TEMPLATE
+                              </span>
+                            ) : null}
+                            <p className="text-sm text-gray-700 truncate">📎 {hrExitInterviewFile.name}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {hrExitInterviewFile.isTemplate && (
+                              <label className="cursor-pointer">
+                                <input
+                                  type="file"
+                                  accept=".pdf,.doc,.docx"
+                                  onChange={(e) => {
+                                    if (e.target.files[0]) {
+                                      setHrExitInterviewFile(e.target.files[0]);
+                                    }
+                                  }}
+                                  className="hidden"
+                                />
+                                <span className="text-blue-600 hover:text-blue-800 text-sm font-medium">
+                                  Update
+                                </span>
+                              </label>
+                            )}
+                          </div>
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-500 p-3 bg-white border border-gray-300 rounded-md">
-                          No template selected. Upload in "Manage Templates" to auto-fill.
+                        <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
+                          <p className="text-sm text-gray-500 mb-2">No file selected</p>
+                          <label className="cursor-pointer inline-block px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
+                            <input
+                              type="file"
+                              accept=".pdf,.doc,.docx"
+                              onChange={(e) => {
+                                if (e.target.files[0]) {
+                                  setHrExitInterviewFile(e.target.files[0]);
+                                }
+                              }}
+                              className="hidden"
+                            />
+                            Select Custom File
+                          </label>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2">
+                      <button
+                        onClick={() => {
+                          setPendingUploadEmployeeId(selectedEmployee.id);
+                          setShowUploadFormsConfirm(true);
+                        }}
+                        disabled={!hrExitClearanceFile || !hrExitInterviewFile}
+                        className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
+                      >
+                        {selectedEmployee.hrExitFormsUploaded ? 'Update Forms for Employee' : 'Send Forms to Employee'}
+                      </button>
+                      {selectedEmployee.hrExitFormsUploaded && (
+                        <p className="text-xs text-gray-500 mt-2 text-center">
+                          Forms already uploaded. Click to update with new versions.
                         </p>
                       )}
                     </div>
-                    <button
-                      onClick={() => {
-                        setPendingUploadEmployeeId(selectedEmployee.id);
-                        setShowUploadFormsConfirm(true);
-                      }}
-                      disabled={!hrExitClearanceFile || !hrExitInterviewFile}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                    >
-                      Upload Files
-                    </button>
                   </div>
                 </div>
 
@@ -1498,9 +1785,14 @@ function HrSeperation() {
                           setPendingTerminateEmployeeId(selectedEmployee.id);
                           setShowTerminateModal(true);
                         }}
-                        className="w-full px-4 py-3 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors font-medium"
+                        disabled={selectedEmployee.isTerminated}
+                        className={`w-full px-4 py-3 rounded-md transition-colors font-medium ${
+                          selectedEmployee.isTerminated
+                            ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                            : 'bg-red-600 text-white hover:bg-red-700'
+                        }`}
                       >
-                        Terminate Employee
+                        {selectedEmployee.isTerminated ? 'Employee Already Terminated' : 'Terminate Employee'}
                       </button>
                     </div>
                   )}
@@ -1553,9 +1845,10 @@ function HrSeperation() {
               </button>
               <button
                 onClick={() => handleApproveResignation(pendingApprovalId)}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                disabled={isApproving}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Approve
+                {isApproving ? 'Approving...' : 'Approve'}
               </button>
             </div>
           </div>
@@ -1630,9 +1923,10 @@ function HrSeperation() {
               </button>
               <button
                 onClick={() => handleTerminateEmployee(pendingTerminateEmployeeId)}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                disabled={isTerminating}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Confirm Terminate
+                {isTerminating ? 'Terminating...' : 'Confirm Terminate'}
               </button>
             </div>
           </div>
@@ -1659,9 +1953,10 @@ function HrSeperation() {
               </button>
               <button
                 onClick={() => handleDeleteSeparation(pendingDeleteEmployeeId)}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                disabled={isDeleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Delete
+                {isDeleting ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>
@@ -1721,9 +2016,10 @@ function HrSeperation() {
               </button>
               <button
                 onClick={() => handleUploadHrForms(pendingUploadEmployeeId)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                disabled={isUploadingForms}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Upload
+                {isUploadingForms ? 'Uploading...' : 'Upload'}
               </button>
             </div>
           </div>
@@ -1931,9 +2227,10 @@ function HrSeperation() {
               </button>
               <button
                 onClick={() => handleValidateDocument(pendingValidation?.employeeId, pendingValidation?.docType)}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                disabled={isValidating}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Validate
+                {isValidating ? 'Validating...' : 'Validate'}
               </button>
             </div>
           </div>
@@ -1960,9 +2257,10 @@ function HrSeperation() {
               </button>
               <button
                 onClick={() => handleRejectDocument(pendingValidation?.employeeId, pendingValidation?.docType)}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                disabled={isRejecting}
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Require Re-submission
+                {isRejecting ? 'Processing...' : 'Require Re-submission'}
               </button>
             </div>
           </div>
@@ -2073,9 +2371,10 @@ function HrSeperation() {
               </button>
               <button
                 onClick={() => handleUploadFinalDocs(selectedEmployee.id)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                disabled={uploadingFinalDocs}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Upload
+                {uploadingFinalDocs ? 'Uploading...' : 'Upload'}
               </button>
             </div>
           </div>
@@ -2102,9 +2401,10 @@ function HrSeperation() {
               </button>
               <button
                 onClick={() => handleMarkCompleted(pendingCompletionEmployeeId)}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                disabled={isMarkingCompleted}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Mark as Completed
+                {isMarkingCompleted ? 'Processing...' : 'Mark as Completed'}
               </button>
             </div>
           </div>

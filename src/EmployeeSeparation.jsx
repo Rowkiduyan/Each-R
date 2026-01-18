@@ -17,9 +17,8 @@ function EmployeeSeparation() {
   // Separation record from database
   const [separationRecord, setSeparationRecord] = useState(null);
   
-  // Resignation Type Selection
-  const [resignationType, setResignationType] = useState(null); // null, 'resignation', 'immediate'
-  const [showTypeSelection, setShowTypeSelection] = useState(true);
+  // Resignation Type Selection - default to 'resignation'
+  const [resignationType, setResignationType] = useState('resignation'); // 'resignation' or 'immediate'
   
   // Stage 1: Resignation Letter
   const [resignationFile, setResignationFile] = useState(null);
@@ -63,6 +62,37 @@ function EmployeeSeparation() {
       fetchTemplates();
     }
   }, [employeeData]);
+
+  // Save and restore scroll position
+  useEffect(() => {
+    // Save scroll position as user scrolls
+    const handleScroll = () => {
+      sessionStorage.setItem('employeeSeparationScrollPosition', window.scrollY.toString());
+    };
+    window.addEventListener('scroll', handleScroll);
+
+    // Save scroll position before page unload
+    const handleBeforeUnload = () => {
+      sessionStorage.setItem('employeeSeparationScrollPosition', window.scrollY.toString());
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
+  // Restore scroll position after content is loaded
+  useEffect(() => {
+    if (!loading) {
+      const savedScrollPosition = sessionStorage.getItem('employeeSeparationScrollPosition');
+      if (savedScrollPosition) {
+        // Restore scroll position immediately
+        window.scrollTo(0, parseInt(savedScrollPosition, 10));
+      }
+    }
+  }, [loading]);
 
   const fetchTemplates = async () => {
     try {
@@ -117,9 +147,10 @@ function EmployeeSeparation() {
 
       if (data) {
         setSeparationRecord(data);
-        setResignationType(data.type || null);
-        // Hide type selection if type is already set OR if separation is completed OR terminated
-        setShowTypeSelection(!data.type && data.status !== 'completed' && !data.is_terminated); 
+        // Set resignation type from database or keep default
+        if (data.type) {
+          setResignationType(data.type);
+        }
         setResignationStatus(data.resignation_status || 'none');
         setExitClearanceStatus(data.signed_exit_clearance_status || 'none');
         setExitInterviewStatus(data.signed_exit_interview_status || 'none');
@@ -146,6 +177,9 @@ function EmployeeSeparation() {
   };
 
   const handleResignationSubmit = async () => {
+    // Prevent double submission
+    if (uploading) return;
+    
     const employeeId = employeeData?.id || userId;
     console.log('Employee Data:', employeeData);
     console.log('Employee ID for submission:', employeeId);
@@ -264,6 +298,9 @@ function EmployeeSeparation() {
   const isStage3Active = exitClearanceStatus === "submitted" && exitInterviewStatus === "submitted";
 
   const handleExitClearanceSubmit = async () => {
+    // Prevent double submission
+    if (uploadingClearance) return;
+    
     const employeeId = employeeData?.id;
     if (!exitClearanceFile || !employeeId) return;
     
@@ -317,7 +354,12 @@ function EmployeeSeparation() {
 
       setExitClearanceStatus("submitted");
       setSuccess('Exit clearance form submitted successfully!');
+      
+      // Save scroll position before refresh
+      const scrollPosition = window.scrollY;
       await fetchSeparationRecord();
+      // Restore scroll position after refresh
+      setTimeout(() => window.scrollTo(0, scrollPosition), 0);
       
     } catch (err) {
       console.error('Error submitting exit clearance:', err);
@@ -328,6 +370,9 @@ function EmployeeSeparation() {
   };
 
   const handleExitInterviewSubmit = async () => {
+    // Prevent double submission
+    if (uploadingInterview) return;
+    
     const employeeId = employeeData?.id;
     if (!exitInterviewFile || !employeeId) return;
     
@@ -381,7 +426,12 @@ function EmployeeSeparation() {
 
       setExitInterviewStatus("submitted");
       setSuccess('Exit interview form submitted successfully!');
+      
+      // Save scroll position before refresh
+      const scrollPosition = window.scrollY;
       await fetchSeparationRecord();
+      // Restore scroll position after refresh
+      setTimeout(() => window.scrollTo(0, scrollPosition), 0);
       
     } catch (err) {
       console.error('Error submitting exit interview:', err);
@@ -455,84 +505,18 @@ function EmployeeSeparation() {
         </div>
       )}
 
-      {/* Resignation Type Selection */}
-      {showTypeSelection && !isTerminated && (
-        <div className="bg-white shadow-lg rounded-lg p-6 mb-6">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Select Resignation Type</h2>
-          <p className="text-gray-600 mb-6">Please choose the type of resignation before proceeding.</p>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Regular Resignation */}
-            <button
-              onClick={() => {
-                setResignationType('resignation');
-                setShowTypeSelection(false);
-              }}
-              className="border-2 border-gray-300 rounded-lg p-6 hover:border-blue-500 hover:bg-blue-50 transition-all text-left group"
-            >
-              <div className="flex items-start">
-                <div className="flex-shrink-0 mr-4">
-                  <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2 group-hover:text-blue-600">Regular Resignation</h3>
-                  <p className="text-sm text-gray-600">Submit your resignation with standard notice period and complete the full separation process.</p>
-                </div>
-              </div>
-            </button>
-
-            {/* Immediate Resignation */}
-            <button
-              onClick={() => {
-                setResignationType('immediate');
-                setShowTypeSelection(false);
-              }}
-              className="border-2 border-gray-300 rounded-lg p-6 hover:border-orange-500 hover:bg-orange-50 transition-all text-left group"
-            >
-              <div className="flex items-start">
-                <div className="flex-shrink-0 mr-4">
-                  <svg className="w-8 h-8 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2 group-hover:text-orange-600">Immediate Resignation</h3>
-                  <p className="text-sm text-gray-600">Resign immediately without notice period. This option should only be used in urgent situations.</p>
-                </div>
-              </div>
-            </button>
-          </div>
+      {/* Resignation Type Badge - Show after submission */}
+      {resignationStatus !== 'none' && (
+        <div className="mb-4 flex items-center gap-2">
+          <span className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+            resignationType === 'immediate' 
+              ? 'bg-orange-100 text-orange-800 border border-orange-300' 
+              : 'bg-blue-100 text-blue-800 border border-blue-300'
+          }`}>
+            {resignationType === 'immediate' ? '⚡ Immediate Resignation' : '📄 Regular Resignation'}
+          </span>
         </div>
       )}
-
-      {/* Show progress and stages only after type is selected */}
-      {resignationType && !showTypeSelection && (
-        <>
-          {/* Resignation Type Badge */}
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className={`px-4 py-2 rounded-lg text-sm font-semibold ${
-                resignationType === 'immediate' 
-                  ? 'bg-orange-100 text-orange-800 border border-orange-300' 
-                  : 'bg-blue-100 text-blue-800 border border-blue-300'
-              }`}>
-                {resignationType === 'immediate' ? '⚡ Immediate Resignation' : '📄 Regular Resignation'}
-              </span>
-            </div>
-            {resignationStatus === 'none' && (
-              <button
-                onClick={() => {
-                  setResignationType(null);
-                  setShowTypeSelection(true);
-                }}
-                className="text-sm text-gray-600 hover:text-gray-800 underline"
-              >
-                Change Type
-              </button>
-            )}
-          </div>
 
       {/* Progress Bar */}
       <div className="mb-12">
@@ -586,38 +570,85 @@ function EmployeeSeparation() {
         </div>
       </div>
 
-      {/* Back to Type Selection Button */}
-      {resignationStatus === 'none' && (
-        <button
-          onClick={() => {
-            setResignationType(null);
-            setShowTypeSelection(true);
-          }}
-          className="mb-4 inline-flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors text-sm font-medium"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Type Selection
-        </button>
-      )}
-
       {/* Stage 1: Resignation Submission */}
-      <div className="bg-white shadow-lg rounded-lg p-6 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Stage 1: Resignation Submission</h2>
-          <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-            resignationStatus === "validated" ? 'bg-green-100 text-green-800' :
-            resignationStatus === "submitted" ? 'bg-orange-100 text-orange-800' :
-            'bg-gray-100 text-gray-600'
-          }`}>
-            {resignationStatus === "validated" ? "Validated" : resignationStatus === "submitted" ? "Pending HR Review" : "Not Submitted"}
-          </span>
-        </div>
-        <p className="text-gray-600 mb-4">Upload your resignation letter to begin the separation process.</p>
-        
-        <div className="space-y-4">
-          <div>
+      {resignationStatus !== 'validated' && (
+        <div className="bg-white shadow-lg rounded-lg p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-800">Stage 1: Resignation Submission</h2>
+            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+              resignationStatus === "validated" ? 'bg-green-100 text-green-800' :
+              resignationStatus === "submitted" ? 'bg-orange-100 text-orange-800' :
+              'bg-gray-100 text-gray-600'
+            }`}>
+              {resignationStatus === "validated" ? "Validated" : resignationStatus === "submitted" ? "Pending HR Review" : "Not Submitted"}
+            </span>
+          </div>
+          <p className="text-gray-600 mb-4">
+            {resignationStatus === 'none' 
+              ? 'Upload your resignation letter to begin the separation process.' 
+              : 'You can update or delete your resignation letter while it is pending HR review.'}
+          </p>
+          
+          <div className="space-y-4">
+            {/* Resignation Type Selector - Only show when status is 'none' */}
+            {resignationStatus === 'none' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Resignation Type
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                    resignationType === 'resignation'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="resignationType"
+                      value="resignation"
+                      checked={resignationType === 'resignation'}
+                      onChange={(e) => setResignationType(e.target.value)}
+                      className="mt-1 mr-3 h-4 w-4 text-blue-600"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span className="font-semibold text-gray-800">Regular Resignation</span>
+                      </div>
+                      <p className="text-sm text-gray-600 mt-1">Submit with standard notice period</p>
+                    </div>
+                  </label>
+                  
+                  <label className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                    resignationType === 'immediate'
+                      ? 'border-orange-500 bg-orange-50'
+                      : 'border-gray-300 hover:border-orange-300 hover:bg-orange-50'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="resignationType"
+                      value="immediate"
+                      checked={resignationType === 'immediate'}
+                      onChange={(e) => setResignationType(e.target.value)}
+                      className="mt-1 mr-3 h-4 w-4 text-orange-600"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="font-semibold text-gray-800">Immediate Resignation</span>
+                      </div>
+                      <p className="text-sm text-gray-600 mt-1">Resign immediately without notice</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Resignation Letter
             </label>
@@ -673,8 +704,31 @@ function EmployeeSeparation() {
               </button>
             )}
           </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Stage 1: After Validation - Show confirmation */}
+      {resignationStatus === 'validated' && (
+        <div className="bg-white shadow-lg rounded-lg p-6 mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-800">Stage 1: Resignation Submission</h2>
+            <span className="px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              ✓ Validated
+            </span>
+          </div>
+          <p className="text-gray-600 mb-4">Your resignation letter has been validated by HR.</p>
+          
+          <div className="space-y-4">
+            {uploadedFileName && (
+              <div className="p-4 bg-green-50 rounded-lg border border-green-200">
+                <p className="text-sm font-medium text-gray-700 mb-1">Submitted File:</p>
+                <p className="text-sm text-green-600">✓ {uploadedFileName}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Stage 2: Clearance & Exit Interview */}
       <div className={`bg-white shadow-lg rounded-lg p-6 mb-6 ${!isStage2Unlocked ? 'opacity-60' : ''}`}>
@@ -1061,8 +1115,6 @@ function EmployeeSeparation() {
           </div>
         </div>
       )}
-        </>
-      )}
 
       {/* Submit Confirmation Modal */}
       {showSubmitConfirm && (
@@ -1075,21 +1127,23 @@ function EmployeeSeparation() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowSubmitConfirm(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                disabled={uploading}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleResignationSubmit}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                disabled={uploading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Submit
+                {uploading ? 'Submitting...' : 'Submit'}
               </button>
             </div>
           </div>
         </div>
       )}
-      
+
       {/* Update Confirmation Modal */}
       {showUpdateConfirm && (
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
@@ -1101,15 +1155,17 @@ function EmployeeSeparation() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowUpdateConfirm(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                disabled={uploading}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={handleResignationSubmit}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                disabled={uploading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                Update
+                {uploading ? 'Updating...' : 'Update'}
               </button>
             </div>
           </div>
@@ -1120,25 +1176,26 @@ function EmployeeSeparation() {
       {showRemoveConfirm && (
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
           <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Remove Resignation Letter?</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Delete Resignation Letter?</h3>
             <p className="text-gray-600 mb-6">
-              Are you sure you want to permanently delete your resignation letter? This action cannot be undone.
+              Are you sure you want to delete your submitted resignation letter? This will reset your separation process.
             </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowRemoveConfirm(false)}
                 disabled={uploading}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={async () => {
+                  if (uploading) return;
+                  
                   try {
                     setUploading(true);
                     setError(null);
                     
-                    // Delete file from storage if exists
                     if (separationRecord?.resignation_letter_url) {
                       const { error: deleteError } = await supabase.storage
                         .from('separation-documents')
@@ -1150,7 +1207,6 @@ function EmployeeSeparation() {
                       }
                     }
                     
-                    // Delete record from database
                     if (separationRecord?.id) {
                       const { error: dbError } = await supabase
                         .from('employee_separations')
@@ -1163,12 +1219,11 @@ function EmployeeSeparation() {
                       }
                     }
                     
-                    // Reset UI state
                     setResignationFile(null);
                     setSeparationRecord(null);
                     setResignationStatus('none');
                     setUploadedFileName(null);
-                    setFileInputKey(Date.now()); // Reset file input
+                    setFileInputKey(Date.now());
                     setShowRemoveConfirm(false);
                     setSuccess('Resignation letter deleted successfully.');
                     
@@ -1181,7 +1236,7 @@ function EmployeeSeparation() {
                   }
                 }}
                 disabled={uploading}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {uploading ? 'Removing...' : 'Remove'}
               </button>
@@ -1205,15 +1260,17 @@ function EmployeeSeparation() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowExitClearanceConfirm(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                disabled={uploadingClearance}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleExitClearanceSubmit}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                disabled={uploadingClearance}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {separationRecord?.signed_exit_clearance_url ? 'Update' : 'Submit'}
+                {uploadingClearance ? (separationRecord?.signed_exit_clearance_url ? 'Updating...' : 'Uploading...') : separationRecord?.signed_exit_clearance_url ? 'Update' : 'Submit'}
               </button>
             </div>
           </div>
@@ -1235,15 +1292,17 @@ function EmployeeSeparation() {
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setShowExitInterviewConfirm(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                disabled={uploadingInterview}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleExitInterviewSubmit}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                disabled={uploadingInterview}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {separationRecord?.signed_exit_interview_url ? 'Update' : 'Submit'}
+                {uploadingInterview ? (separationRecord?.signed_exit_interview_url ? 'Updating...' : 'Uploading...') : separationRecord?.signed_exit_interview_url ? 'Update' : 'Submit'}
               </button>
             </div>
           </div>
