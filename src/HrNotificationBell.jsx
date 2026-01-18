@@ -1,7 +1,7 @@
 // HrNotificationBell.jsx - Notification bell component for HR to see new applicants and interview responses
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead } from './notifications';
+import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, createNotification } from './notifications';
 import { getStoredJson } from './authStorage';
 
 function HrNotificationBell() {
@@ -24,6 +24,7 @@ function HrNotificationBell() {
         const currentUserId = hrUser.id;
         
         await fetchNotifications(currentUserId, hrUser);
+        await checkEmployeeEvaluationsDue(currentUserId);
 
         // Set up real-time subscription for notifications table only
         // (We don't subscribe to applications table to avoid duplicates since we manually create notifications)
@@ -66,6 +67,76 @@ function HrNotificationBell() {
         console.error('Error fetching notifications:', error);
       } finally {
         setLoading(false);
+      }
+    };
+
+    const checkEmployeeEvaluationsDue = async (hrUserId) => {
+      try {
+        console.log('Checking employee evaluations for HR:', hrUserId);
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Get all employees with their most recent evaluations
+        const { data: employees, error: empError } = await supabase
+          .from('employees')
+          .select('id, fname, lname, mname');
+
+        if (empError) {
+          console.error('Error fetching employees:', empError);
+          return;
+        }
+
+        if (!employees || employees.length === 0) return;
+
+        // For each employee, check their most recent evaluation
+        for (const employee of employees) {
+          const { data: evaluations, error: evalError } = await supabase
+            .from('evaluations')
+            .select('next_due, date_evaluated')
+            .eq('employee_id', employee.id)
+            .order('date_evaluated', { ascending: false })
+            .limit(1);
+
+          if (evalError || !evaluations || evaluations.length === 0 || !evaluations[0].next_due) {
+            continue;
+          }
+
+          const nextDue = new Date(evaluations[0].next_due);
+          nextDue.setHours(0, 0, 0, 0);
+          
+          const diffTime = nextDue - today;
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+          // Check if notification already exists for this employee today
+          const notificationKey = `hr_eval_due_${employee.id}_${today.toISOString().split('T')[0]}`;
+          const existingNotification = localStorage.getItem(notificationKey);
+
+          // Only create notification if due today or in 3 days, and not already notified today
+          if ((diffDays === 0 || diffDays === 3) && !existingNotification) {
+            const employeeName = `${employee.fname} ${employee.lname}${employee.mname ? ' ' + employee.mname : ''}`;
+            const message = diffDays === 0 
+              ? `${employeeName}'s evaluation is due today. Please ensure it is completed.` 
+              : `${employeeName}'s evaluation is due in 3 days (${nextDue.toLocaleDateString()}).`;
+            
+            await createNotification({
+              userId: hrUserId,
+              type: 'evaluation_reminder',
+              title: diffDays === 0 ? 'Evaluation Due Today' : 'Evaluation Due in 3 Days',
+              message: message,
+              userType: 'profile'
+            });
+
+            // Mark that we've sent notification for this employee today
+            localStorage.setItem(notificationKey, 'true');
+          }
+        }
+        
+        // Refresh notifications to show new ones
+        await fetchNotifications(hrUserId, currentHrUser);
+        
+      } catch (error) {
+        console.error('Error checking employee evaluations:', error);
       }
     };
 

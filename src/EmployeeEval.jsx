@@ -12,6 +12,7 @@ function EmployeeEval() {
     const [employeeInfo, setEmployeeInfo] = useState(null);
     const [showDismissedModal, setShowDismissedModal] = useState(false);
     const [dismissedEvaluation, setDismissedEvaluation] = useState(null);
+    const [resignationLetterRequired, setResignationLetterRequired] = useState(true);
 
     useEffect(() => {
         if (userEmail) {
@@ -55,6 +56,14 @@ function EmployeeEval() {
                 if (evalData && evalData.length > 0) {
                     const mostRecent = evalData[0];
                     if (mostRecent.remarks === 'Dismissed') {
+                        // Fetch separation record to check resignation letter requirement
+                        const { data: sepData } = await supabase
+                            .from('employee_separations')
+                            .select('resignation_letter_required')
+                            .eq('employee_id', empData.id)
+                            .maybeSingle();
+                        
+                        setResignationLetterRequired(sepData?.resignation_letter_required !== false);
                         setDismissedEvaluation(mostRecent);
                         setShowDismissedModal(true);
                     }
@@ -490,7 +499,9 @@ function EmployeeEval() {
                                         <strong>What happens next:</strong>
                                     </p>
                                     <ul className="text-sm text-red-700 mt-2 space-y-1 list-disc list-inside">
-                                        <li>You are required to submit a resignation letter</li>
+                                        {resignationLetterRequired && (
+                                            <li>You are required to submit a resignation letter</li>
+                                        )}
                                         <li>Navigate to the Separation section to complete the process</li>
                                         <li>HR will guide you through the exit procedures</li>
                                     </ul>

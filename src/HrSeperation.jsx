@@ -146,7 +146,9 @@ function HrSeperation() {
             : 'N/A',
           stage,
           resignationType: sep.type || 'resignation',
-          resignationStatus: sep.resignation_status === 'validated' ? 'Validated' : 'Submitted',
+          resignationStatus: sep.resignation_status === 'validated' ? 'Validated' : 
+                            sep.resignation_status === 'none' ? 'Not Required' : 'Submitted',
+          resignationLetterRequired: sep.resignation_letter_required !== false,
           exitClearanceStatus: sep.signed_exit_clearance_status === 'validated' ? 'Validated' : 
                                sep.signed_exit_clearance_status === 'resubmission_required' ? 'Re-submission Required' :
                                sep.signed_exit_clearance_status === 'submitted' ? 'Submitted' : 
@@ -1314,7 +1316,8 @@ function HrSeperation() {
               )}
             </div>
 
-            {/* Stage 1: Resignation Review */}
+            {/* Stage 1: Resignation Review - Only show if resignation letter exists */}
+            {selectedEmployee.resignationFile && (
             <div className={`bg-white rounded-lg shadow-md p-6 mb-6 ${selectedEmployee.isResignationApproved ? 'opacity-50' : ''}`}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-semibold text-gray-800">Stage 1: Resignation Letter Review</h3>
@@ -1404,10 +1407,18 @@ function HrSeperation() {
                 )}
               </div>
             </div>
+            )}
 
             {/* Stage 2: Clearance & Exit Interview */}
-            {selectedEmployee.isResignationApproved && (
+            {(selectedEmployee.isResignationApproved || !selectedEmployee.resignationLetterRequired) && (
               <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                {!selectedEmployee.resignationLetterRequired && (
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <p className="text-sm text-blue-800">
+                      <strong>Note:</strong> This employee was dismissed and does not require a resignation letter. You can proceed directly with exit clearance and interview forms.
+                    </p>
+                  </div>
+                )}
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-xl font-semibold text-gray-800">Stage 2: Clearance & Exit Interview</h3>
                   <button
@@ -1800,7 +1811,7 @@ function HrSeperation() {
               </div>
             )}
 
-            {!selectedEmployee.isResignationApproved && (
+            {!selectedEmployee.isResignationApproved && selectedEmployee.resignationLetterRequired && (
               <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500">
                 <p>Approve the resignation letter to unlock Stage 2</p>
               </div>

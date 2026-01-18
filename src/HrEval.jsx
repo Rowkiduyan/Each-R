@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "./supabaseClient";
+import { createNotification } from './notifications';
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -23,6 +24,9 @@ function HrEval() {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [updatingType, setUpdatingType] = useState(false);
+  const [updatingNextDue, setUpdatingNextDue] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [uploadRecords, setUploadRecords] = useState([
@@ -35,6 +39,7 @@ function HrEval() {
     },
   ]);
   const [finalRemarks, setFinalRemarks] = useState("");
+  const [requireResignationLetter, setRequireResignationLetter] = useState(false);
   const [showUploadConfirm, setShowUploadConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -298,6 +303,48 @@ function HrEval() {
         }
       }
 
+      // Check if final remarks is "Dismissed" - create or update separation record
+      if (finalRemarks === 'Dismissed') {
+        // Check if a separation record already exists
+        const { data: existingSeparation } = await supabase
+          .from('employee_separations')
+          .select('*')
+          .eq('employee_id', selectedEmployee.id)
+          .maybeSingle();
+
+        if (existingSeparation) {
+          // Update existing separation record with resignation letter requirement
+          const { error: updateSepError } = await supabase
+            .from('employee_separations')
+            .update({ 
+              resignation_letter_required: requireResignationLetter,
+              updated_at: new Date().toISOString()
+            })
+            .eq('employee_id', selectedEmployee.id);
+
+          if (updateSepError) {
+            console.error('Error updating separation record:', updateSepError);
+          }
+        } else {
+          // Create new separation record
+          const { error: insertSepError } = await supabase
+            .from('employee_separations')
+            .insert({
+              employee_id: selectedEmployee.id,
+              status: 'pending',
+              resignation_status: 'none',
+              resignation_letter_required: requireResignationLetter,
+              type: 'resignation',
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+
+          if (insertSepError) {
+            console.error('Error creating separation record:', insertSepError);
+          }
+        }
+      }
+
       // Check if we need to change employee type from Probationary to Regular
       // This happens when a probationary employee gets a "Retained" remark
       if (selectedEmployee?.employmentType === 'probationary') {
@@ -379,6 +426,17 @@ function HrEval() {
         );
       }
 
+      // Create notification for the employee
+      if (successCount > 0) {
+        await createNotification({
+          userId: selectedEmployee.id,
+          type: 'evaluation_uploaded',
+          title: 'New Evaluation Record',
+          message: `HR has uploaded ${successCount} evaluation record${successCount > 1 ? 's' : ''} for you. Final remarks: ${finalRemarks}`,
+          userType: 'employee'
+        });
+      }
+
       // Reset form and close modal
       setUploadRecords([
         {
@@ -407,9 +465,59 @@ function HrEval() {
 
   // Handle delete evaluation
   const handleDeleteEvaluation = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleting) return;
 
+    setDeleting(true);
     try {
+      // If evaluation has "Dismissed" remarks, delete associated separation record
+      if (deleteTarget.remarks === "Dismissed") {
+        // First, get the separation record to check for uploaded files
+        const { data: separationData } = await supabase
+          .from("employee_separations")
+          .select("resignation_letter_url, signed_exit_clearance_url, signed_exit_interview_url")
+          .eq("employee_id", deleteTarget.employee_id)
+          .maybeSingle();
+
+        // Delete any uploaded files from storage
+        if (separationData) {
+          const filesToDelete = [
+            separationData.resignation_letter_url,
+            separationData.signed_exit_clearance_url,
+            separationData.signed_exit_interview_url
+          ].filter(Boolean);
+
+          if (filesToDelete.length > 0) {
+            const { error: storageError } = await supabase.storage
+              .from("separation-documents")
+              .remove(filesToDelete);
+
+            if (storageError) {
+              console.error("Error deleting separation files:", storageError);
+            }
+          }
+        }
+
+        // Delete the separation record
+        const { error: separationDeleteError } = await supabase
+          .from("employee_separations")
+          .delete()
+          .eq("employee_id", deleteTarget.employee_id);
+
+        if (separationDeleteError) {
+          console.error("Error deleting separation record:", separationDeleteError);
+          // Continue with evaluation deletion even if separation deletion fails
+        } else {
+          console.log("Associated separation record and files deleted successfully");
+          
+          // Also delete any dismissal-related notifications for this employee
+          await supabase
+            .from("notifications")
+            .delete()
+            .eq("user_id", deleteTarget.employee_id)
+            .eq("type", "evaluation_uploaded");
+        }
+      }
+
       // Delete file from storage
       if (deleteTarget.file_path) {
         const { error: storageError } = await supabase.storage
@@ -460,6 +568,8 @@ function HrEval() {
     } catch (err) {
       console.error("Error deleting evaluation:", err);
       showAlert("An error occurred. Please try again.", "error");
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -475,8 +585,9 @@ function HrEval() {
 
   // Confirm type change
   const confirmTypeChange = async () => {
-    if (!typeChangeData) return;
+    if (!typeChangeData || updatingType) return;
 
+    setUpdatingType(true);
     try {
       // Calculate next_due based on employee type
       let nextDueDate = null;
@@ -549,6 +660,8 @@ function HrEval() {
     } catch (err) {
       console.error("Error updating employee type:", err);
       showAlert("An error occurred. Please try again.", "error");
+    } finally {
+      setUpdatingType(false);
     }
   };
 
@@ -570,8 +683,9 @@ function HrEval() {
 
   // Confirm next due date change
   const confirmNextDueChange = async () => {
-    if (!nextDueChangeData) return;
+    if (!nextDueChangeData || updatingNextDue) return;
 
+    setUpdatingNextDue(true);
     try {
       // Handle empty string as null for database
       const nextDueValue = nextDueChangeData.nextDueDate === "" ? null : nextDueChangeData.nextDueDate;
@@ -602,6 +716,8 @@ function HrEval() {
     } catch (err) {
       console.error("Error updating next due date:", err);
       showAlert("An error occurred. Please try again.", "error");
+    } finally {
+      setUpdatingNextDue(false);
     }
   };
 
@@ -1701,6 +1817,7 @@ function HrEval() {
                     },
                   ]);
                   setFinalRemarks("");
+                  setRequireResignationLetter(false);
                   setEmployeeInSeparation(false);
                   setSeparationDetails(null);
                 }}
@@ -1822,6 +1939,7 @@ function HrEval() {
                         <input
                           type="date"
                           value={record.dateEvaluated}
+                          max={new Date().toISOString().split('T')[0]}
                           onChange={(e) => {
                             const newRecords = [...uploadRecords];
                             newRecords[index].dateEvaluated = e.target.value;
@@ -1904,6 +2022,28 @@ function HrEval() {
                   <option value="Observe">Observe</option>
                   <option value="Dismissed">Dismissed</option>
                 </select>
+                
+                {/* Resignation Letter Requirement - Only show when Dismissed is selected */}
+                {finalRemarks === "Dismissed" && (
+                  <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={requireResignationLetter}
+                        onChange={(e) => setRequireResignationLetter(e.target.checked)}
+                        className="mt-0.5 w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                      />
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">
+                          Require employee to upload resignation letter
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          If checked, the employee will be required to upload a resignation letter as part of the separation process.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+                )}
               </div>
 
               <button
@@ -1946,6 +2086,7 @@ function HrEval() {
                       },
                     ]);
                     setFinalRemarks("");
+                    setRequireResignationLetter(false);
                     setEmployeeInSeparation(false);
                     setSeparationDetails(null);
                   }}
@@ -2042,9 +2183,10 @@ function HrEval() {
               </button>
               <button
                 onClick={handleDeleteEvaluation}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                disabled={deleting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:bg-red-300 disabled:cursor-not-allowed"
               >
-                Delete Evaluation
+                {deleting ? "Deleting..." : "Delete Evaluation"}
               </button>
             </div>
           </div>
@@ -2094,9 +2236,10 @@ function HrEval() {
               </button>
               <button
                 onClick={confirmTypeChange}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={updatingType}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-blue-300 disabled:cursor-not-allowed"
               >
-                Confirm Change
+                {updatingType ? "Updating..." : "Confirm Change"}
               </button>
             </div>
           </div>
@@ -2142,9 +2285,10 @@ function HrEval() {
               </button>
               <button
                 onClick={confirmNextDueChange}
-                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                disabled={updatingNextDue}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:bg-orange-300 disabled:cursor-not-allowed"
               >
-                Confirm
+                {updatingNextDue ? "Updating..." : "Confirm"}
               </button>
             </div>
           </div>

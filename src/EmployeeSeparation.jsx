@@ -23,6 +23,7 @@ function EmployeeSeparation() {
   // Stage 1: Resignation Letter
   const [resignationFile, setResignationFile] = useState(null);
   const [resignationStatus, setResignationStatus] = useState("none"); // none, submitted, validated
+  const [resignationLetterRequired, setResignationLetterRequired] = useState(true); // Track if resignation letter is required
   const [uploadedFileName, setUploadedFileName] = useState(null); // Store original filename
   const [fileInputKey, setFileInputKey] = useState(Date.now()); // Key to control file input
   
@@ -147,8 +148,15 @@ function EmployeeSeparation() {
 
       if (data) {
         setSeparationRecord(data);
+        // Check if resignation letter is required (default to true if not set)
+        const isResignationLetterRequired = data.resignation_letter_required !== false;
+        setResignationLetterRequired(isResignationLetterRequired);
+        
         // Set resignation type from database or keep default
-        if (data.type) {
+        // If HR requires resignation letter, force immediate resignation
+        if (isResignationLetterRequired) {
+          setResignationType('immediate');
+        } else if (data.type) {
           setResignationType(data.type);
         }
         setResignationStatus(data.resignation_status || 'none');
@@ -166,7 +174,21 @@ function EmployeeSeparation() {
           setUploadedFileName(data.resignation_original_filename);
         }
       } else {
-        console.log('No separation record found for user');
+        // No separation record found - reset to default state
+        console.log('No separation record found for user - resetting to defaults');
+        setSeparationRecord(null);
+        setResignationLetterRequired(true);
+        setResignationType('resignation');
+        setResignationStatus('none');
+        setExitClearanceStatus('none');
+        setExitInterviewStatus('none');
+        setFinalDocs([]);
+        setIsCompleted(false);
+        setIsTerminated(false);
+        setAccountExpiresAt(null);
+        setTerminationDocUrl(null);
+        setTerminationDocFilename(null);
+        setUploadedFileName(null);
       }
     } catch (err) {
       console.error('Error fetching separation record:', err);
@@ -294,7 +316,7 @@ function EmployeeSeparation() {
     }
   };
 
-  const isStage2Unlocked = resignationStatus === "validated";
+  const isStage2Unlocked = !resignationLetterRequired || resignationStatus === "validated";
   const isStage3Active = exitClearanceStatus === "submitted" && exitInterviewStatus === "submitted";
 
   const handleExitClearanceSubmit = async () => {
@@ -529,25 +551,27 @@ function EmployeeSeparation() {
             ></div>
           </div>
 
-          {/* Stage 1 */}
-          <div className="relative z-10 flex flex-col items-center">
-            <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
-              currentStage >= 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
-            }`}>
-              {resignationStatus === "validated" ? '✓' : '1'}
+          {/* Stage 1 - Only show if resignation letter is required */}
+          {resignationLetterRequired && (
+            <div className="relative z-10 flex flex-col items-center">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
+                currentStage >= 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
+              }`}>
+                {resignationStatus === "validated" ? '✓' : '1'}
+              </div>
+              <div className="mt-2 text-center">
+                <p className="text-sm font-medium text-gray-700">Resignation</p>
+                <p className="text-xs text-gray-500">Submission</p>
+              </div>
             </div>
-            <div className="mt-2 text-center">
-              <p className="text-sm font-medium text-gray-700">Resignation</p>
-              <p className="text-xs text-gray-500">Submission</p>
-            </div>
-          </div>
+          )}
 
           {/* Stage 2 */}
           <div className="relative z-10 flex flex-col items-center">
             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
               currentStage >= 2 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
             } ${!isStage2Unlocked ? 'opacity-50' : ''}`}>
-              {isStage3Active ? '✓' : '2'}
+              {isStage3Active ? '✓' : resignationLetterRequired ? '2' : '1'}
             </div>
             <div className="mt-2 text-center">
               <p className="text-sm font-medium text-gray-700">Clearance &</p>
@@ -560,7 +584,7 @@ function EmployeeSeparation() {
             <div className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
               currentStage >= 3 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
             }`}>
-              3
+              {resignationLetterRequired ? '3' : '2'}
             </div>
             <div className="mt-2 text-center">
               <p className="text-sm font-medium text-gray-700">Final</p>
@@ -570,8 +594,8 @@ function EmployeeSeparation() {
         </div>
       </div>
 
-      {/* Stage 1: Resignation Submission */}
-      {resignationStatus !== 'validated' && (
+      {/* Stage 1: Resignation Submission - Only show if resignation letter is required */}
+      {resignationLetterRequired && resignationStatus !== 'validated' && (
         <div className="bg-white shadow-lg rounded-lg p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-800">Stage 1: Resignation Submission</h2>
@@ -595,12 +619,17 @@ function EmployeeSeparation() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Resignation Type
+                  {separationRecord && resignationLetterRequired && (
+                    <span className="ml-2 text-xs text-orange-600 font-normal">(Set by HR - Immediate required)</span>
+                  )}
                 </label>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <label className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  <label className={`flex items-start p-4 border-2 rounded-lg transition-all ${
                     resignationType === 'resignation'
                       ? 'border-blue-500 bg-blue-50'
-                      : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50'
+                      : (separationRecord && resignationLetterRequired)
+                      ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+                      : 'border-gray-300 hover:border-blue-300 hover:bg-blue-50 cursor-pointer'
                   }`}>
                     <input
                       type="radio"
@@ -608,7 +637,8 @@ function EmployeeSeparation() {
                       value="resignation"
                       checked={resignationType === 'resignation'}
                       onChange={(e) => setResignationType(e.target.value)}
-                      className="mt-1 mr-3 h-4 w-4 text-blue-600"
+                      disabled={separationRecord && resignationLetterRequired}
+                      className="mt-1 mr-3 h-4 w-4 text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
@@ -621,10 +651,14 @@ function EmployeeSeparation() {
                     </div>
                   </label>
                   
-                  <label className={`flex items-start p-4 border-2 rounded-lg cursor-pointer transition-all ${
+                  <label className={`flex items-start p-4 border-2 rounded-lg transition-all ${
                     resignationType === 'immediate'
-                      ? 'border-orange-500 bg-orange-50'
-                      : 'border-gray-300 hover:border-orange-300 hover:bg-orange-50'
+                      ? (separationRecord && resignationLetterRequired)
+                        ? 'border-orange-500 bg-orange-50 cursor-default'
+                        : 'border-orange-500 bg-orange-50 cursor-pointer'
+                      : (separationRecord && resignationLetterRequired)
+                      ? 'border-gray-200 bg-gray-50 opacity-50 cursor-not-allowed'
+                      : 'border-gray-300 hover:border-orange-300 hover:bg-orange-50 cursor-pointer'
                   }`}>
                     <input
                       type="radio"
@@ -632,7 +666,8 @@ function EmployeeSeparation() {
                       value="immediate"
                       checked={resignationType === 'immediate'}
                       onChange={(e) => setResignationType(e.target.value)}
-                      className="mt-1 mr-3 h-4 w-4 text-orange-600"
+                      disabled={separationRecord && resignationLetterRequired}
+                      className="mt-1 mr-3 h-4 w-4 text-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
@@ -708,8 +743,8 @@ function EmployeeSeparation() {
         </div>
       )}
 
-      {/* Stage 1: After Validation - Show confirmation */}
-      {resignationStatus === 'validated' && (
+      {/* Stage 1: After Validation - Show confirmation - Only show if resignation letter is required */}
+      {resignationLetterRequired && resignationStatus === 'validated' && (
         <div className="bg-white shadow-lg rounded-lg p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-800">Stage 1: Resignation Submission</h2>
@@ -742,7 +777,10 @@ function EmployeeSeparation() {
         </div>
         <p className="text-gray-600 mb-4">
           {!isStage2Unlocked 
-            ? "This stage will be unlocked once HR validates your resignation letter."
+            ? (resignationLetterRequired 
+                ? "This stage will be unlocked once HR validates your resignation letter."
+                : "This stage is locked. Please wait for HR to process your separation."
+              )
             : "Download the forms, complete them, and upload the signed documents."}
         </p>
 

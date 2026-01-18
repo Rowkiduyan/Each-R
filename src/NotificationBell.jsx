@@ -5,7 +5,8 @@ import {
   getNotifications, 
   getUnreadNotificationsCount, 
   markNotificationAsRead, 
-  markAllNotificationsAsRead 
+  markAllNotificationsAsRead,
+  createNotification 
 } from './notifications';
 
 function NotificationBell() {
@@ -68,19 +69,20 @@ function NotificationBell() {
           if (employeeData?.email) {
             console.log('Checking requirements for employee:', employeeData.email);
             await checkEmployeeRequirements(employeeData.email);
+            await checkEvaluationDueDate(notificationUserId);
           }
         }
 
         // Set up real-time subscription for notifications
         channel = supabase
-          .channel(`notifications-${user.id}`)
+          .channel(`notifications-${notificationUserId}`)
           .on(
             'postgres_changes',
             {
               event: 'INSERT',
               schema: 'public',
               table: 'notifications',
-              filter: `user_id=eq.${user.id}`
+              filter: `user_id=eq.${notificationUserId}`
             },
             (payload) => {
               console.log('New notification received:', payload);
@@ -96,7 +98,7 @@ function NotificationBell() {
               event: 'UPDATE',
               schema: 'public',
               table: 'notifications',
-              filter: `user_id=eq.${user.id}`
+              filter: `user_id=eq.${notificationUserId}`
             },
             (payload) => {
               console.log('Notification updated:', payload);
@@ -107,7 +109,7 @@ function NotificationBell() {
                   )
                 );
                 // Recalculate unread count
-                fetchUnreadCount(user.id);
+                fetchUnreadCount(notificationUserId);
               }
             }
           )
@@ -251,6 +253,69 @@ function NotificationBell() {
       }
     };
 
+    const checkEvaluationDueDate = async (employeeId) => {
+      try {
+        console.log('Checking evaluation due date for employee:', employeeId);
+        
+        // Get the most recent evaluation with next_due date
+        const { data: evaluations, error } = await supabase
+          .from('evaluations')
+          .select('next_due, date_evaluated')
+          .eq('employee_id', employeeId)
+          .order('date_evaluated', { ascending: false })
+          .limit(1);
+
+        if (error) {
+          console.error('Error fetching evaluation:', error);
+          return;
+        }
+
+        if (!evaluations || evaluations.length === 0 || !evaluations[0].next_due) {
+          console.log('No evaluation with next_due date found');
+          return;
+        }
+
+        const nextDue = new Date(evaluations[0].next_due);
+        nextDue.setHours(0, 0, 0, 0);
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const diffTime = nextDue - today;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        console.log('Next due date:', nextDue, 'Days until due:', diffDays);
+
+        // Check if notification already exists for today
+        const notificationKey = `eval_due_${employeeId}_${today.toISOString().split('T')[0]}`;
+        const existingNotification = localStorage.getItem(notificationKey);
+
+        // Only create notification if due today or in 3 days, and not already notified today
+        if ((diffDays === 0 || diffDays === 3) && !existingNotification) {
+          const message = diffDays === 0 
+            ? 'Your evaluation is due today! Please contact HR.' 
+            : 'Your evaluation is due in 3 days. Please prepare accordingly.';
+          
+          await createNotification({
+            userId: employeeId,
+            type: 'evaluation_reminder',
+            title: diffDays === 0 ? 'Evaluation Due Today' : 'Evaluation Due Soon',
+            message: message,
+            userType: 'employee'
+          });
+
+          // Mark that we've sent notification for today
+          localStorage.setItem(notificationKey, 'true');
+          
+          // Refresh notifications to show the new one
+          await fetchNotifications(employeeId);
+          await fetchUnreadCount(employeeId);
+        }
+      } catch (error) {
+        console.error('Error checking evaluation due date:', error);
+      }
+    };
+
     initializeNotifications();
 
     return () => {
@@ -270,31 +335,18 @@ function NotificationBell() {
   const handleMarkAllAsRead = async () => {
     if (!userId) return;
     
-    // Mark all unread notifications in the database
-    const notificationIds = notifications
-      .filter(n => !n.read)
-      .map(n => n.id);
+    // Use the utility function to mark all as read
+    const success = await markAllNotificationsAsRead(userId);
     
-    if (notificationIds.length > 0) {
-      try {
-        const { error } = await supabase
-          .from('notifications')
-          .update({ read: true })
-          .in('id', notificationIds);
-        
-        if (error) {
-          console.error('Error marking notifications as read:', error);
-        }
-      } catch (err) {
-        console.error('Error updating notifications:', err);
-      }
+    if (success) {
+      // Update local state
+      setUnreadCount(0);
+      setNotifications(prev => 
+        prev.map(notif => ({ ...notif, read: true }))
+      );
+    } else {
+      console.error('Failed to mark all notifications as read');
     }
-    
-    // Update local state
-    setUnreadCount(0);
-    setNotifications(prev => 
-      prev.map(notif => ({ ...notif, read: true }))
-    );
   };
 
   const formatTimeAgo = (dateString) => {

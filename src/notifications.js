@@ -419,6 +419,62 @@ export async function createFormValidatedNotification({
   });
 }
 
+// Notify all HR users about separation submissions (resignation/clearance/interview)
+export async function notifyHRAboutSeparationSubmission({
+  employeeName,
+  submissionType // 'resignation' | 'clearance' | 'interview'
+}) {
+  try {
+    const { data: hrUsers, error: hrError } = await supabase
+      .from('profiles')
+      .select('id')
+      .or('role.eq.HR,role.eq.Admin');
+
+    if (hrError) {
+      console.error('Error fetching HR users:', hrError);
+      return { success: false, error: hrError };
+    }
+
+    if (!hrUsers || hrUsers.length === 0) {
+      return { success: true, message: 'No HR users to notify' };
+    }
+
+    let title, message;
+    if (submissionType === 'resignation') {
+      title = 'Resignation Letter Submitted';
+      message = `${employeeName} has submitted a resignation letter. Please review and validate.`;
+    } else if (submissionType === 'clearance') {
+      title = 'Exit Clearance Submitted';
+      message = `${employeeName} has submitted the signed exit clearance form.`;
+    } else {
+      title = 'Exit Interview Submitted';
+      message = `${employeeName} has submitted the signed exit interview form.`;
+    }
+
+    const notifications = await Promise.all(
+      hrUsers.map(hrUser =>
+        createNotification({
+          userId: hrUser.id,
+          applicationId: null,
+          type: `separation_${submissionType}_submitted`,
+          title,
+          message,
+          userType: 'profile'
+        })
+      )
+    );
+
+    const successful = notifications.filter(n => n.success).length;
+    const failed = notifications.filter(n => !n.success).length;
+
+    console.log(`Separation submission: notified ${successful} HR users, ${failed} failed`);
+    return { success: true, notified: successful, failed };
+  } catch (err) {
+    console.error('Unexpected error notifying HR about separation submission:', err);
+    return { success: false, error: err };
+  }
+}
+
 // Helper function to create form resubmission required notification
 export async function createFormResubmissionNotification({
   employeeUserId,
@@ -434,75 +490,6 @@ export async function createFormResubmissionNotification({
     message: `HR has requested you to re-submit your ${formName}. Please review and upload a corrected version.`,
     userType: 'employee'
   });
-}
-
-// Helper function to notify HR about employee separation submissions
-export async function notifyHRAboutSeparationSubmission({
-  employeeName,
-  submissionType // 'resignation', 'clearance', 'interview'
-}) {
-  try {
-    // Fetch all HR users
-    const { data: hrUsers, error: hrError } = await supabase
-      .from('profiles')
-      .select('id')
-      .ilike('role', 'hr');
-
-    if (hrError) {
-      console.error('Error fetching HR users:', hrError);
-      return { success: false, error: hrError };
-    }
-
-    if (!hrUsers || hrUsers.length === 0) {
-      console.warn('No HR users found to notify');
-      return { success: false, error: 'No HR users found' };
-    }
-
-    const titleMap = {
-      'resignation': 'New Resignation Letter Submitted',
-      'clearance': 'Exit Clearance Form Submitted',
-      'interview': 'Exit Interview Form Submitted'
-    };
-
-    const messageMap = {
-      'resignation': `${employeeName} has submitted a resignation letter for review.`,
-      'clearance': `${employeeName} has submitted their signed Exit Clearance Form for validation.`,
-      'interview': `${employeeName} has submitted their signed Exit Interview Form for validation.`
-    };
-
-    // Create notifications for all HR users
-    const notifications = await Promise.all(
-      hrUsers.map(async (hr) => {
-        try {
-          const result = await createNotification({
-            userId: hr.id,
-            applicationId: null,
-            type: `separation_${submissionType}_submitted`,
-            title: titleMap[submissionType],
-            message: messageMap[submissionType]
-          });
-          return { ...result, hrId: hr.id };
-        } catch (error) {
-          console.error(`Failed to notify HR user ${hr.id}:`, error);
-          return { success: false, error, hrId: hr.id };
-        }
-      })
-    );
-
-    const successCount = notifications.filter(n => n.success).length;
-    console.log(`Created ${successCount}/${hrUsers.length} HR notifications for ${submissionType}`);
-    
-    return { 
-      success: successCount > 0, 
-      notifications,
-      successCount,
-      totalCount: hrUsers.length
-    };
-
-  } catch (err) {
-    console.error('Unexpected error notifying HR about separation submission:', err);
-    return { success: false, error: err };
-  }
 }
 
 // Helper function to notify employee about separation completion

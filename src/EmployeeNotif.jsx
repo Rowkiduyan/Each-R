@@ -18,20 +18,10 @@ function EmployeeNotif() {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr className="hover:bg-gray-50">
-                                <td className="p-2 border text-center">Training Reminder</td>
-                                <td className="p-2 border text-center">Excel Spreadsheet training tomorrow</td>
-                                <td className="p-2 border text-center">June 04, 2025</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                                <td className="p-2 border text-center">Schedule Update</td>
-                                <td className="p-2 border text-center">You have requirements to submit</td>
-                                <td className="p-2 border text-center">June 03, 2025</td>
-                            </tr>
-                            <tr className="hover:bg-gray-50">
-                                <td className="p-2 border text-center">System Maintenance</td>
-                                <td className="p-2 border text-center">Your Password has been changed by the admin</td>
-                                <td className="p-2 border text-center">June 02, 2025</td>
+                            <tr>
+                                <td colSpan="3" className="p-4 text-center text-gray-500 text-sm">
+                                    No notifications to display
+                                </td>
                             </tr>
                         </tbody>
                     </table>
