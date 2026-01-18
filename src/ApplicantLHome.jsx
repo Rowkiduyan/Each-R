@@ -71,6 +71,7 @@ import SkillsInput from './components/SkillsInput';
     const [profileData, setProfileData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
     const [birthdayError, setBirthdayError] = useState('');
     const [formBirthdayError, setFormBirthdayError] = useState('');
     const [startDateError, setStartDateError] = useState('');
@@ -1411,15 +1412,20 @@ const formatDateForInput = (dateString) => {
 
     // final submit -> save to Supabase.applications
     const handleFinalSubmit = async () => {
+      if (submitting) return; // Prevent double submission
+      
+      setSubmitting(true);
       setErrorMessage('');
 
       const { data: { session }, error: sessErr } = await supabase.auth.getSession();
       if (sessErr) {
         setErrorMessage('Could not check session: ' + sessErr.message);
+        setSubmitting(false);
         return;
       }
       if (!session) {
         setErrorMessage('Please log in again.');
+        setSubmitting(false);
         setTimeout(() => {
           navigate('/applicant/login', { replace: true, state: { redirectTo: '/applicantl/home' } });
         }, 2000);
@@ -1642,6 +1648,7 @@ const formatDateForInput = (dateString) => {
 
       setShowSummary(false);
       setShowSuccessPage(true);
+      setSubmitting(false);
     };
 
     const [authChecked, setAuthChecked] = useState(false);
@@ -4947,13 +4954,14 @@ const formatDateForInput = (dateString) => {
                     </button>
                     <button
                       type="button"
-                      className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                      className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      disabled={submitting}
                       onClick={async () => {
                         setShowConfirmDialog(false);
                         await handleFinalSubmit();
                       }}
                     >
-                      Confirm
+                      {submitting ? 'Submitting...' : 'Confirm'}
                     </button>
                   </div>
                 </div>

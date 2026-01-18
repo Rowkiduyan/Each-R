@@ -1593,10 +1593,10 @@ function HrRecruitment() {
   const fetchInterviews = async () => {
     console.log('[fetchInterviews] Starting to fetch interviews...');
     try {
-      // First get applications with interview dates, join with job_posts to get title
+      // First get applications with interview dates, join with job_posts to get title and depot
       const { data: applicationsData, error: appsError } = await supabase
         .from('applications')
-        .select('id, user_id, payload, interview_date, interview_time, interview_location, status, job_posts:job_posts ( title )')
+        .select('id, user_id, payload, interview_date, interview_time, interview_location, status, job_posts:job_posts ( title, depot )')
         .not('interview_date', 'is', null)
         .order('interview_date', { ascending: true });
       
@@ -1674,12 +1674,14 @@ function HrRecruitment() {
         
         // Get position/title - prioritize job_posts.title, then payload fields
         const position = app.job_posts?.title ?? source.position ?? source.title ?? 'Position Not Set';
+        const depot = app.job_posts?.depot || source.depot || 'Unknown';
         const interviewType = payloadObj.interview_type || source.interview_type || 'onsite';
         
         return {
           id: app.id,
           applicant_name: applicantName,
           position: position,
+          depot: depot,
           time: app.interview_time || 'Not set',
           date: app.interview_date,
           status: app.status || 'scheduled',
@@ -1701,7 +1703,7 @@ function HrRecruitment() {
     try {
       const { data: applicationsData, error: appsError } = await supabase
         .from('applications')
-        .select('id, user_id, payload, status, job_posts:job_posts ( title )')
+        .select('id, user_id, payload, status, job_posts:job_posts ( title, depot )')
         .order('created_at', { ascending: false });
 
       if (appsError) {
@@ -1770,11 +1772,13 @@ function HrRecruitment() {
 
           const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
           const position = app.job_posts?.title ?? source.position ?? source.title ?? 'Position Not Set';
+          const depot = app.job_posts?.depot || source.depot || 'Unknown';
 
           return {
             id: app.id,
             applicant_name: applicantName,
             position,
+            depot: depot,
             time: signingTime,
             date: signingDate,
             location: signingLocation,
@@ -1812,7 +1816,25 @@ function HrRecruitment() {
 
   const getTodayInterviews = () => {
     const today = new Date().toISOString().split('T')[0];
-    const todayInterviews = interviews.filter(interview => interview.date === today && String(interview.status || '').toLowerCase() !== 'hired');
+    let todayInterviews = interviews.filter(interview => interview.date === today && String(interview.status || '').toLowerCase() !== 'hired');
+    
+    console.log('[getTodayInterviews] Before filtering:', todayInterviews.length, 'interviews');
+    console.log('[getTodayInterviews] currentUser:', currentUser);
+    console.log('[getTodayInterviews] currentUser.role:', currentUser?.role);
+    console.log('[getTodayInterviews] currentUser.depot:', currentUser?.depot);
+    
+    // Filter by depot for HRC users (case-insensitive role check)
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      console.log('[getTodayInterviews] Filtering by depot:', currentUser.depot);
+      todayInterviews = todayInterviews.filter(interview => {
+        console.log('[getTodayInterviews] Interview depot:', interview.depot, 'vs HRC depot:', currentUser.depot, 'Match:', interview.depot === currentUser.depot);
+        return interview.depot === currentUser.depot;
+      });
+      console.log('[getTodayInterviews] After filtering:', todayInterviews.length, 'interviews');
+    } else {
+      console.log('[getTodayInterviews] Not filtering - role:', currentUser?.role, 'depot:', currentUser?.depot);
+    }
+    
     return todayInterviews.sort((a, b) => {
       if (!a.time || a.time === 'Not set') return 1;
       if (!b.time || b.time === 'Not set') return -1;
@@ -1824,7 +1846,13 @@ function HrRecruitment() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowDate = tomorrow.toISOString().split('T')[0];
-    const tomorrowInterviews = interviews.filter(interview => interview.date === tomorrowDate && String(interview.status || '').toLowerCase() !== 'hired');
+    let tomorrowInterviews = interviews.filter(interview => interview.date === tomorrowDate && String(interview.status || '').toLowerCase() !== 'hired');
+    
+    // Filter by depot for HRC users (case-insensitive role check)
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      tomorrowInterviews = tomorrowInterviews.filter(interview => interview.depot === currentUser.depot);
+    }
+    
     return tomorrowInterviews.sort((a, b) => {
       if (!a.time || a.time === 'Not set') return 1;
       if (!b.time || b.time === 'Not set') return -1;
@@ -1842,7 +1870,12 @@ function HrRecruitment() {
       return interviewDate >= today && interviewDate <= nextWeek;
     });
 
-    const filteredWeek = weekInterviews.filter((interview) => String(interview.status || '').toLowerCase() !== 'hired');
+    let filteredWeek = weekInterviews.filter((interview) => String(interview.status || '').toLowerCase() !== 'hired');
+    
+    // Filter by depot for HRC users (case-insensitive role check)
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      filteredWeek = filteredWeek.filter(interview => interview.depot === currentUser.depot);
+    }
     
     return filteredWeek.sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
@@ -1854,10 +1887,16 @@ function HrRecruitment() {
 
   const getPastInterviews = () => {
     const todayStr = new Date().toISOString().split('T')[0];
-    const pastInterviews = interviews.filter(interview =>
+    let pastInterviews = interviews.filter(interview =>
       String(interview.status || '').toLowerCase() === 'hired' ||
       (interview.date && interview.date < todayStr)
     );
+    
+    // Filter by depot for HRC users (case-insensitive role check)
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      pastInterviews = pastInterviews.filter(interview => interview.depot === currentUser.depot);
+    }
+    
     return pastInterviews.sort((a, b) => {
       if (a.date !== b.date) return b.date.localeCompare(a.date);
       if (!a.time || a.time === 'Not set') return 1;
@@ -1868,7 +1907,13 @@ function HrRecruitment() {
 
   const getTodaySigningSchedules = () => {
     const today = new Date().toISOString().split('T')[0];
-    const todaySchedules = signingSchedules.filter((s) => s.date === today && String(s.status || '').toLowerCase() !== 'hired');
+    let todaySchedules = signingSchedules.filter((s) => s.date === today && String(s.status || '').toLowerCase() !== 'hired');
+    
+    // Filter by depot for HRC users (case-insensitive role check)
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      todaySchedules = todaySchedules.filter(s => s.depot === currentUser.depot);
+    }
+    
     return todaySchedules.sort((a, b) => {
       if (!a.time || a.time === 'Not set') return 1;
       if (!b.time || b.time === 'Not set') return -1;
@@ -1880,7 +1925,13 @@ function HrRecruitment() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowDate = tomorrow.toISOString().split('T')[0];
-    const tomorrowSchedules = signingSchedules.filter((s) => s.date === tomorrowDate && String(s.status || '').toLowerCase() !== 'hired');
+    let tomorrowSchedules = signingSchedules.filter((s) => s.date === tomorrowDate && String(s.status || '').toLowerCase() !== 'hired');
+    
+    // Filter by depot for HRC users (case-insensitive role check)
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      tomorrowSchedules = tomorrowSchedules.filter(s => s.depot === currentUser.depot);
+    }
+    
     return tomorrowSchedules.sort((a, b) => {
       if (!a.time || a.time === 'Not set') return 1;
       if (!b.time || b.time === 'Not set') return -1;
@@ -1898,7 +1949,13 @@ function HrRecruitment() {
       return d >= today && d <= nextWeek;
     });
 
-    const filteredWeek = weekSchedules.filter((s) => String(s.status || '').toLowerCase() !== 'hired');
+    let filteredWeek = weekSchedules.filter((s) => String(s.status || '').toLowerCase() !== 'hired');
+    
+    // Filter by depot for HRC users (case-insensitive role check)
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      filteredWeek = filteredWeek.filter(s => s.depot === currentUser.depot);
+    }
+    
     return filteredWeek.sort((a, b) => {
       if (a.date !== b.date) return String(a.date).localeCompare(String(b.date));
       if (!a.time || a.time === 'Not set') return 1;
@@ -1909,10 +1966,16 @@ function HrRecruitment() {
 
   const getPastSigningSchedules = () => {
     const todayStr = new Date().toISOString().split('T')[0];
-    const past = signingSchedules.filter((s) =>
+    let past = signingSchedules.filter((s) =>
       String(s.status || '').toLowerCase() === 'hired' ||
       (s.date && s.date < todayStr)
     );
+    
+    // Filter by depot for HRC users (case-insensitive role check)
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      past = past.filter(s => s.depot === currentUser.depot);
+    }
+    
     return past.sort((a, b) => {
       if (a.date !== b.date) return String(b.date).localeCompare(String(a.date));
       if (!a.time || a.time === 'Not set') return 1;

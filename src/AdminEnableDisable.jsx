@@ -332,6 +332,7 @@ function AdminEnableDisable() {
               <option value="HRC">HRC</option>
               <option value="Employee">Employee</option>
               <option value="Agency">Agency</option>
+              <option value="Applicant">Applicant</option>
             </select>
           </div>
 
