@@ -401,9 +401,8 @@ function EmployeeLayout() {
                         </div>
                         
                         <div className="flex items-center gap-6">
-                            <a href="#" className="hover:text-gray-700 hover:underline">Terms & conditions</a>
-                            <a href="#" className="hover:text-gray-700 hover:underline">Security</a>
-                            <a href="#" className="hover:text-gray-700 hover:underline">Privacy</a>
+                            <NavLink to="/terms-and-conditions" className="hover:text-gray-700 hover:underline">Terms &amp; Conditions</NavLink>
+                            <NavLink to="/privacy" className="hover:text-gray-700 hover:underline">Privacy</NavLink>
                             <span className="text-gray-400">Copyright © 2025, Roadwise</span>
                         </div>
                     </div>

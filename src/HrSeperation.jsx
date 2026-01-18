@@ -50,7 +50,7 @@ function HrSeperation() {
       const { data, error } = await supabase
         .from('separation_form_templates')
         .select('*')
-        .single();
+        .maybeSingle();
 
       if (error && error.code !== 'PGRST116') throw error; // Ignore "not found" error
       

@@ -209,16 +209,12 @@ function ApplicantLayout() {
                 My Application
               </NavLink>
               <NavLink
-                to="#"
-                className="pb-1 hover:text-gray-900 transition-colors"
+                to="/applicant/about"
+                className={({ isActive }) =>
+                  `pb-1 ${isActive ? "text-red-600 border-b-2 border-red-600" : "hover:text-gray-900 transition-colors"}`
+                }
               >
                 About
-              </NavLink>
-              <NavLink
-                to="#"
-                className="pb-1 hover:text-gray-900 transition-colors"
-              >
-                Contact Us
               </NavLink>
             </nav>
 
@@ -318,9 +314,8 @@ function ApplicantLayout() {
             </div>
             
             <div className="flex items-center gap-6">
-              <a href="#" className="hover:text-gray-700 hover:underline">Terms & conditions</a>
-              <a href="#" className="hover:text-gray-700 hover:underline">Security</a>
-              <a href="#" className="hover:text-gray-700 hover:underline">Privacy</a>
+              <NavLink to="/terms-and-conditions" className="hover:text-gray-700 hover:underline">Terms &amp; Conditions</NavLink>
+              <NavLink to="/privacy" className="hover:text-gray-700 hover:underline">Privacy</NavLink>
               <span className="text-gray-400">Copyright © 2025, Roadwise</span>
             </div>
           </div>

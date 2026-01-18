@@ -43,6 +43,9 @@ import AdminCreate from "./AdminCreate";
 import AdminEnableDisable from "./AdminEnableDisable";
 import AdminImportEmployees from "./AdminImportEmployees";
 import TermsAndPrivacy from "./TermsAndPrivacy";
+import TermsAndConditions from "./T&C";
+import Privacy from "./Privacy";
+import About from "./About";
 import AccountSettings from "./AccountSettings";
 import AgencyProfile from "./AgencyProfile";
 
@@ -53,6 +56,8 @@ function App() {
     <Routes>
       {/* Public routes */}
       <Route path="/terms-and-privacy" element={<TermsAndPrivacy />} />
+      <Route path="/terms-and-conditions" element={<TermsAndConditions />} />
+      <Route path="/privacy" element={<Privacy />} />
 
       {/* HR protected routes */}
       <Route
@@ -124,6 +129,7 @@ function App() {
       <Route path="/" element={<GuestLayout />}>
         <Route index element={<ApplicantGHome />} />
         <Route path="applicantg/home" element={<ApplicantGHome />} />
+        <Route path="about" element={<About />} />
         <Route path="applicant/login" element={<ApplicantLogin />} />
         <Route path="applicant/register" element={<ApplicantRegister />} />
         <Route path="applicant/verify" element={<VerifyEmail />} />
@@ -135,6 +141,7 @@ function App() {
       <Route element={<ApplicantLayout />}>
         <Route path="/applicantl/home" element={<ApplicantLHome />} />
         <Route path="/applicant/applications" element={<ApplicantApplications />} />
+        <Route path="/applicant/about" element={<About />} />
         <Route path="/applicant/account-settings" element={<AccountSettings />} />
       </Route>
 
