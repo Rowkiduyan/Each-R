@@ -38,7 +38,7 @@ function AdminImportEmployees() {
   const allowedStatuses = ['Regular', 'Probationary'];
 
   // HR columns
-  const hrRequiredColumns = ['first_name', 'last_name', 'department', 'depot', 'role'];
+  const hrRequiredColumns = ['first_name', 'last_name', 'department', 'depot', 'role', 'personal_email'];
   const allowedRoles = ['HR', 'HRC', 'Admin'];
 
   // Parse CSV file
@@ -388,7 +388,11 @@ function AdminImportEmployees() {
           if (!row.role || !row.role.trim()) validationErrors.push(`Row ${rowNum}: Missing role`);
           if (!row.depot || !row.depot.trim()) validationErrors.push(`Row ${rowNum}: Missing depot`);
           if (!row.department || !row.department.trim()) validationErrors.push(`Row ${rowNum}: Missing department`);
+          if (!row.personal_email || !row.personal_email.trim()) validationErrors.push(`Row ${rowNum}: Missing personal_email`);
 
+          if (row.personal_email && !row.personal_email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+            validationErrors.push(`Row ${rowNum}: Invalid personal_email format`);
+          }
           if (row.role && !allowedRoles.includes(row.role)) {
             validationErrors.push(`Row ${rowNum}: Invalid role. Must be: ${allowedRoles.join(', ')}`);
           }
@@ -533,6 +537,7 @@ function AdminImportEmployees() {
           importResult.details.push({
             email: email,
             password: password,
+            personal_email: hr.personal_email,
             role: hr.role,
             first_name: hr.first_name,
             last_name: hr.last_name,
@@ -648,12 +653,18 @@ function AdminImportEmployees() {
     for (let i = 0; i < accounts.length; i++) {
       const account = accounts[i];
       try {
+        if (!account.personal_email) {
+          console.error(`No personal email found for ${account.email}`);
+          setHrEmailProgress({ sent: i + 1, total: accounts.length });
+          continue;
+        }
+        
         await emailjs.send(
           'service_1mdfp37',
           'template_k8bt6ed',
           {
             to_name: `${account.first_name} ${account.last_name}`,
-            to_email: account.email,
+            to_email: account.personal_email,
             email: account.email,
             password: account.password,
             login_url: window.location.origin + '/hr/login',
@@ -691,9 +702,9 @@ function AdminImportEmployees() {
   const downloadHRTemplate = () => {
     const headers = hrRequiredColumns.join(',');
     const examples = [
-      'Jane,Smith,Human Resources,Manila,HR',
-      'John,Doe,Human Resources,Quezon,HRC',
-      'Sarah,Johnson,Administration,Manila,Admin'
+      'Jane,Smith,Human Resources,Manila,HR,jane.smith@gmail.com',
+      'John,Doe,Human Resources,Quezon,HRC,john.doe@gmail.com',
+      'Sarah,Johnson,Administration,Manila,Admin,sarah.johnson@gmail.com'
     ];
     const csv = `${headers}\n${examples.join('\n')}`;
     
@@ -976,9 +987,10 @@ function AdminImportEmployees() {
           <h3 className="font-semibold text-purple-800 mb-2">📋 Instructions:</h3>
           <ol className="list-decimal list-inside space-y-1 text-sm text-purple-900">
             <li>Download the HR Staff CSV template below</li>
-            <li>Fill in staff data with columns: first_name, last_name, department, depot, role</li>
+            <li>Fill in staff data with columns: first_name, last_name, department, depot, role, personal_email</li>
             <li>Valid roles: HR, HRC, Admin</li>
             <li>Work email will be auto-generated: @roadwisehr.com for HR/HRC, @adminhr.com for Admin</li>
+            <li>Credentials will be sent to the personal_email address provided</li>
             <li>Upload the completed CSV file</li>
             <li>Review the preview and confirm import</li>
             <li>Download the results file containing generated passwords</li>
@@ -1045,6 +1057,7 @@ function AdminImportEmployees() {
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Depot</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Personal Email</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -1068,6 +1081,7 @@ function AdminImportEmployees() {
                             <td className="px-3 py-2 text-sm text-gray-900">{row.first_name} {row.last_name}</td>
                             <td className="px-3 py-2 text-sm text-gray-900">{row.department || '-'}</td>
                             <td className="px-3 py-2 text-sm text-gray-900">{row.depot}</td>
+                            <td className="px-3 py-2 text-sm text-gray-900">{row.personal_email}</td>
                           </tr>
                         );
                       })}
