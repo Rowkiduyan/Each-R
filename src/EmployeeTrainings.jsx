@@ -1312,8 +1312,8 @@ function EmployeeTrainings() {
                     <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
                         {/* Header - Fixed */}
                         <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 relative">
-                            <h2 className="text-center font-bold text-xl text-gray-800">Training Schedule Details</h2>
-                            <p className="text-center text-xs text-gray-500 mt-1">Complete information about this training</p>
+                            <h2 className="text-center font-bold text-xl text-gray-800">Schedule Details</h2>
+                            <p className="text-center text-xs text-gray-500 mt-1">Complete information about this schedule</p>
                             <button 
                                 onClick={() => setShowDetails(false)} 
                                 className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
@@ -1348,7 +1348,7 @@ function EmployeeTrainings() {
                                 <div className="bg-gray-50 rounded-lg p-4">
                                     <div className="space-y-3">
                                         <div>
-                                            <p className="text-xs text-gray-500 font-medium mb-1">Training Title</p>
+                                            <p className="text-xs text-gray-500 font-medium mb-1">Title</p>
                                             <p className="text-base text-gray-900 font-semibold">{selectedTraining.title}</p>
                                         </div>
                                         

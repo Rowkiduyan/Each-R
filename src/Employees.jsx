@@ -866,11 +866,10 @@ function Employees() {
     }
   };
 
-  // Fetch certificates when employee is selected or certifications tab is active
+  // Fetch certificates when employee is selected or profiling tab is active
   useEffect(() => {
-    if (selectedEmployee && activeTab === 'certifications') {
+    if (selectedEmployee && activeTab === 'profiling') {
       fetchExternalCertificates(selectedEmployee);
-      fetchRoadwiseCertificates(selectedEmployee);
     }
   }, [selectedEmployee, activeTab]);
 
@@ -2001,7 +2000,6 @@ function Employees() {
     { key: 'documents', label: 'Documents' },
     { key: 'onboarding', label: 'Onboarding' },
     { key: 'evaluation', label: 'Evaluation' },
-    { key: 'certifications', label: 'Certifications' },
     { key: 'separation', label: 'Separation' },
   ];
 
@@ -3156,6 +3154,67 @@ function Employees() {
                                   </div>
                                 </div>
                               </div>
+
+                              {/* External Certificates Section */}
+                              <div>
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">External Certificates</h5>
+                                <div className="border border-gray-200 rounded-lg p-4">
+                                  {loadingCertificates ? (
+                                    <div className="text-center py-8">
+                                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
+                                        <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-gray-600 font-medium">Loading certificates...</p>
+                                    </div>
+                                  ) : externalCertificates.length > 0 ? (
+                                    <div className="grid grid-cols-1 gap-3">
+                                      {externalCertificates.map((cert) => (
+                                        <div 
+                                          key={cert.id} 
+                                          className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-all"
+                                        >
+                                          <svg className="w-5 h-5 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                          </svg>
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-gray-800 truncate">
+                                              {cert.title || cert.name}
+                                            </p>
+                                            <p className="text-xs text-gray-500">
+                                              {cert.title && cert.name !== cert.title && (
+                                                <span className="text-gray-400">{cert.name} • </span>
+                                              )}
+                                              {formatDate(cert.uploaded_at)}
+                                            </p>
+                                          </div>
+                                          <button
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              window.open(cert.certificate_url, '_blank');
+                                            }}
+                                            className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                                            title="View certificate"
+                                          >
+                                            View
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-8">
+                                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-gray-600 font-medium">No external certificates uploaded</p>
+                                      <p className="text-xs text-gray-500 mt-1">Employee-uploaded certifications will appear here</p>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           )}
 
@@ -3978,215 +4037,7 @@ function Employees() {
                             </div>
                           )}
 
-                          {/* CERTIFICATIONS TAB */}
-                          {activeTab === 'certifications' && (
-                            <div className="space-y-6">
-                              <div className="mb-4">
-                                <h5 className="font-semibold text-gray-800">Employee Certifications</h5>
-                              </div>
 
-                              {/* Roadwise Certificates Section */}
-                              <div>
-                                <h6 className="font-medium text-blue-700 mb-3 flex items-center gap-2">
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-                                  </svg>
-                                  Roadwise Certificates
-                                </h6>
-                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                  {loadingRoadwiseCertificates ? (
-                                    <div className="text-center py-8">
-                                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
-                                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                        </svg>
-                                      </div>
-                                      <p className="text-sm text-blue-700 font-medium">Loading certificates...</p>
-                                    </div>
-                                  ) : roadwiseCertificates.length > 0 ? (
-                                    <div className="space-y-2">
-                                      {roadwiseCertificates.map((cert) => (
-                                        <div 
-                                          key={cert.id} 
-                                          className="flex items-center gap-3 p-3 bg-white rounded-lg border border-blue-200 hover:bg-blue-50 hover:border-blue-300 transition-all group"
-                                        >
-                                          <svg className="w-5 h-5 text-blue-600 flex-shrink-0 group-hover:text-blue-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                          </svg>
-                                          <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-700">
-                                              {cert.trainingTitle}
-                                            </p>
-                                            <p className="text-xs text-gray-500">
-                                              {formatDate(cert.uploadedAt)}
-                                            </p>
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <button
-                                              onClick={async (e) => {
-                                                e.stopPropagation();
-                                                try {
-                                                  // Fetch the file and trigger download
-                                                  const response = await fetch(cert.certificateUrl);
-                                                  const blob = await response.blob();
-                                                  const url = window.URL.createObjectURL(blob);
-                                                  const link = document.createElement('a');
-                                                  link.href = url;
-                                                  const fileName = cert.fileName || cert.certificateUrl.split('/').pop() || 'certificate.pdf';
-                                                  link.download = fileName;
-                                                  document.body.appendChild(link);
-                                                  link.click();
-                                                  document.body.removeChild(link);
-                                                  window.URL.revokeObjectURL(url);
-                                                } catch (error) {
-                                                  console.error('Error downloading certificate:', error);
-                                                  // Fallback to direct download
-                                                  window.open(cert.certificateUrl, '_blank');
-                                                }
-                                              }}
-                                              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-blue-100 transition-colors"
-                                              title="Download certificate"
-                                            >
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                              </svg>
-                                              Download
-                                            </button>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                window.open(cert.certificateUrl, '_blank');
-                                              }}
-                                              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-                                              title="View certificate"
-                                            >
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                              </svg>
-                                              View
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-center py-8">
-                                      <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                        <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                      </div>
-                                      <p className="text-sm text-blue-700 font-medium">No company training certificates yet</p>
-                                      <p className="text-xs text-blue-600 mt-1">Certificates from completed trainings will appear here</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-
-                              {/* External Certificates Section */}
-                              <div>
-                                <h6 className="font-medium text-purple-700 mb-3 flex items-center gap-2">
-                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                                  </svg>
-                                  External Certificates
-                                </h6>
-                                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                                  {loadingCertificates ? (
-                                    <div className="text-center py-8">
-                                      <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3 animate-pulse">
-                                        <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                        </svg>
-                                      </div>
-                                      <p className="text-sm text-purple-700 font-medium">Loading certificates...</p>
-                                    </div>
-                                  ) : externalCertificates.length > 0 ? (
-                                    <div className="space-y-2">
-                                      {externalCertificates.map((cert) => (
-                                        <div 
-                                          key={cert.id} 
-                                          className="flex items-center gap-3 p-3 bg-white rounded-lg border border-purple-200 hover:bg-purple-50 hover:border-purple-300 transition-all group"
-                                        >
-                                          <svg className="w-5 h-5 text-purple-600 flex-shrink-0 group-hover:text-purple-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                          </svg>
-                                          <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-gray-800 truncate group-hover:text-purple-700">
-                                              {cert.title || cert.name}
-                                            </p>
-                                            <p className="text-xs text-gray-500">
-                                              {cert.title && cert.name !== cert.title && (
-                                                <span className="text-gray-400">{cert.name} • </span>
-                                              )}
-                                              {formatDate(cert.uploaded_at)}
-                                            </p>
-                                          </div>
-                                          <div className="flex items-center gap-2">
-                                            <button
-                                              onClick={async (e) => {
-                                                e.stopPropagation();
-                                                try {
-                                                  // Fetch the file and trigger download
-                                                  const response = await fetch(cert.certificate_url);
-                                                  const blob = await response.blob();
-                                                  const url = window.URL.createObjectURL(blob);
-                                                  const link = document.createElement('a');
-                                                  link.href = url;
-                                                  const fileName = cert.name || cert.certificate_url.split('/').pop() || 'certificate.pdf';
-                                                  link.download = fileName;
-                                                  document.body.appendChild(link);
-                                                  link.click();
-                                                  document.body.removeChild(link);
-                                                  window.URL.revokeObjectURL(url);
-                                                } catch (error) {
-                                                  console.error('Error downloading certificate:', error);
-                                                  // Fallback to direct download
-                                                  window.open(cert.certificate_url, '_blank');
-                                                }
-                                              }}
-                                              className="text-purple-600 hover:text-purple-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-purple-100 transition-colors"
-                                              title="Download certificate"
-                                            >
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                              </svg>
-                                              Download
-                                            </button>
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                window.open(cert.certificate_url, '_blank');
-                                              }}
-                                              className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1 text-sm px-2 py-1 rounded hover:bg-blue-50 transition-colors"
-                                              title="View certificate"
-                                            >
-                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                              </svg>
-                                              View
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <div className="text-center py-8">
-                                      <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                        <svg className="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                      </div>
-                                      <p className="text-sm text-purple-700 font-medium">No external certificates uploaded</p>
-                                      <p className="text-xs text-purple-600 mt-1">Employee-uploaded certifications will appear here</p>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          )}
 
                         </div>
                       </div>
