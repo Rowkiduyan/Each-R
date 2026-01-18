@@ -1308,171 +1308,170 @@ function EmployeeTrainings() {
 
             {/* Training Details Modal */}
             {showDetails && selectedTraining && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowDetails(false)}>
-                    <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-                        {/* Header */}
-                        <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h2 className="text-lg font-bold text-gray-900">Schedule Details</h2>
-                                    <p className="text-xs text-gray-500 mt-0.5">Complete information about this training session</p>
-                                </div>
-                                <button 
-                                    onClick={() => setShowDetails(false)} 
-                                    className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
-                                >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
+                <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50" onClick={() => setShowDetails(false)}>
+                    <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+                        {/* Header - Fixed */}
+                        <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 relative">
+                            <h2 className="text-center font-bold text-xl text-gray-800">Training Schedule Details</h2>
+                            <p className="text-center text-xs text-gray-500 mt-1">Complete information about this training</p>
+                            <button 
+                                onClick={() => setShowDetails(false)} 
+                                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
                         </div>
-
-                        {/* Content - Single Column Layout */}
-                        <div className="flex-1 overflow-y-auto">
-                            <div className="max-w-3xl mx-auto p-6">
-                                {/* Title Section */}
-                                <div className="mb-4">
-                                    <h3 className="text-xl font-bold text-gray-900">{selectedTraining.title}</h3>
-                                </div>
-
-                                {/* Description Section */}
-                                <div className="mb-6">
-                                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{selectedTraining.description || 'No description provided'}</p>
-                                </div>
-
-                                {/* Training Image */}
-                                {selectedTraining.image_url && (
-                                    <div className="mb-4">
-                                        <img 
-                                            src={selectedTraining.image_url} 
-                                            alt={selectedTraining.title}
-                                            className="w-full h-auto object-contain rounded-lg shadow-md border border-gray-200 max-h-96"
-                                            onError={(e) => {
-                                                console.error('Failed to load image:', selectedTraining.image_url);
-                                                e.target.style.display = 'none';
-                                            }}
-                                            onLoad={() => console.log('Image loaded successfully:', selectedTraining.image_url)}
-                                        />
-                                    </div>
-                                )}
-                                {!selectedTraining.image_url && (
-                                    <div className="mb-4 p-4 bg-gray-100 rounded-lg border border-gray-200 text-center">
-                                        <svg className="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                        </svg>
-                                        <p className="text-xs text-gray-500">No image available</p>
-                                    </div>
-                                )}
-
-                                {/* Divider */}
-                                <div className="my-6 border-t border-gray-200"></div>
-
-                                {/* Basic Info */}
-                                <div className="space-y-3">
-                                    {/* Date */}
-                                    <div>
-                                        <p className="text-xs text-gray-500 mb-1">Date</p>
-                                        <p className="text-sm font-semibold text-gray-900">{formatDate(selectedTraining.date)}</p>
-                                    </div>
-                                    
-                                    {/* Time Row - Start and End Side by Side */}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <p className="text-xs text-gray-500 mb-1">Start Time</p>
-                                            <p className="text-sm font-semibold text-gray-900">{formatTime(selectedTraining.start_at)}</p>
-                                        </div>
-                                        <div>
-                                            <p className="text-xs text-gray-500 mb-1">End Time</p>
-                                            <p className="text-sm font-semibold text-gray-900">{formatEndTime(selectedTraining.end_at)}</p>
-                                        </div>
-                                    </div>
-                                    
-                                    {/* Duration */}
-                                    <div>
-                                        <p className="text-xs text-gray-500 mb-1">Duration</p>
-                                        <p className="text-sm font-semibold text-gray-900">{calculateDuration(selectedTraining.start_at, selectedTraining.end_at)}</p>
-                                    </div>
-                                    
-                                    {/* Schedule Type */}
-                                    <div>
-                                        <p className="text-xs text-gray-500 mb-1">Schedule Type</p>
-                                        <p className="text-sm font-semibold text-gray-900">
-                                            {selectedTraining.schedule_type === 'online' ? 'Online' : 'Onsite'}
-                                        </p>
-                                    </div>
-                                    
-                                    {/* Venue */}
-                                    {selectedTraining.venue && (
-                                        <div>
-                                            <p className="text-xs text-gray-500 mb-1">Venue</p>
-                                            <p className="text-sm font-semibold text-gray-900">{selectedTraining.venue}</p>
-                                        </div>
-                                    )}
-                                </div>
+                        
+                        {/* Content - Scrollable */}
+                        <div className="flex-1 overflow-y-auto px-6 py-5">
+                            <div className="space-y-4">
                                 
+                                {/* Training Image - At Top */}
+                                {selectedTraining.image_url && (
+                                    <div className="bg-gray-50 rounded-lg p-3">
+                                        <div className="rounded border border-gray-200 bg-white p-2">
+                                            <img 
+                                                src={selectedTraining.image_url} 
+                                                alt={selectedTraining.title}
+                                                className="w-full h-auto max-h-48 object-contain rounded"
+                                                onError={(e) => {
+                                                    e.target.style.display = 'none';
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Training Title & Description */}
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <div className="space-y-3">
+                                        <div>
+                                            <p className="text-xs text-gray-500 font-medium mb-1">Training Title</p>
+                                            <p className="text-base text-gray-900 font-semibold">{selectedTraining.title}</p>
+                                        </div>
+                                        
+                                        {selectedTraining.description && (
+                                            <div className="pt-2 border-t border-gray-200">
+                                                <p className="text-xs text-gray-500 font-medium mb-1">Description</p>
+                                                <p className="text-sm text-gray-900 whitespace-pre-line leading-relaxed">{selectedTraining.description}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Schedule Details */}
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-3">Schedule Details</h3>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <p className="text-xs text-gray-500 font-medium mb-1">Date</p>
+                                            <p className="text-sm text-gray-900 font-semibold">
+                                                {selectedTraining.start_at && selectedTraining.end_at && new Date(selectedTraining.end_at).toDateString() !== new Date(selectedTraining.start_at).toDateString()
+                                                    ? `${new Date(selectedTraining.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${new Date(selectedTraining.end_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                                                    : selectedTraining.start_at ? new Date(selectedTraining.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : formatDate(selectedTraining.date)
+                                                }
+                                            </p>
+                                        </div>
+                                        
+                                        <div>
+                                            <p className="text-xs text-gray-500 font-medium mb-1">Time</p>
+                                            <p className="text-sm text-gray-900 font-semibold">{formatTime(selectedTraining.start_at)} - {formatEndTime(selectedTraining.end_at)}</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Location & Type */}
+                                <div className="bg-gray-50 rounded-lg p-4">
+                                    <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-3">Location & Type</h3>
+                                    <div className="space-y-3">
+                                        <div>
+                                            <p className="text-xs text-gray-500 font-medium mb-1">Schedule Type</p>
+                                            <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${selectedTraining.schedule_type === 'online' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                                                {selectedTraining.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                                            </span>
+                                        </div>
+                                        
+                                        {selectedTraining.venue && (
+                                            <div className="pt-2 border-t border-gray-200">
+                                                <p className="text-xs text-gray-500 font-medium mb-1">{selectedTraining.schedule_type === 'online' ? 'Meeting Link' : 'Venue'}</p>
+                                                {selectedTraining.schedule_type === 'online' ? (
+                                                    <a 
+                                                        href={selectedTraining.venue} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="text-sm text-blue-600 hover:text-blue-700 hover:underline inline-block break-all font-medium"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        {selectedTraining.venue}
+                                                    </a>
+                                                ) : (
+                                                    <p className="text-sm text-gray-900 font-semibold">{selectedTraining.venue}</p>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
                                 {/* My Attendance Status */}
                                 {selectedTraining.attendance && (() => {
                                     const attendanceStatus = getEmployeeAttendanceStatus(selectedTraining);
                                     if (attendanceStatus.isPresent === null) return null;
                                     
                                     return (
-                                        <>
-                                            <div className="my-6 border-t border-gray-200"></div>
-                                            
-                                            <div>
-                                                <h3 className="text-sm font-bold text-gray-900 mb-3">My Attendance Status</h3>
-                                                <div className={`p-4 rounded-lg border-2 ${
-                                                    attendanceStatus.isPresent
-                                                        ? 'bg-green-50 border-green-300'
-                                                        : 'bg-red-50 border-red-300'
-                                                }`}>
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                                        <div className="bg-gray-50 rounded-lg p-4">
+                                            <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-3">My Attendance Status</h3>
+                                            <div className={`p-4 rounded-lg border-2 ${
+                                                attendanceStatus.isPresent
+                                                    ? 'bg-green-50 border-green-300'
+                                                    : 'bg-red-50 border-red-300'
+                                            }`}>
+                                                <div className="flex items-center gap-3">
+                                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
+                                                        attendanceStatus.isPresent
+                                                            ? 'bg-green-500'
+                                                            : 'bg-red-500'
+                                                    }`}>
+                                                        {attendanceStatus.isPresent ? (
+                                                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                                            </svg>
+                                                        ) : (
+                                                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                                            </svg>
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <p className={`text-lg font-bold ${
                                                             attendanceStatus.isPresent
-                                                                ? 'bg-green-500'
-                                                                : 'bg-red-500'
+                                                                ? 'text-green-700'
+                                                                : 'text-red-700'
                                                         }`}>
-                                                            {attendanceStatus.isPresent ? (
-                                                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                                                </svg>
-                                                            ) : (
-                                                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                                                                </svg>
-                                                            )}
-                                                        </div>
-                                                        <div>
-                                                            <p className={`text-lg font-bold ${
-                                                                attendanceStatus.isPresent
-                                                                    ? 'text-green-700'
-                                                                    : 'text-red-700'
-                                                            }`}>
-                                                                {attendanceStatus.isPresent ? 'Present' : 'Absent'}
-                                                            </p>
-                                                            <p className={`text-sm ${
-                                                                attendanceStatus.isPresent
-                                                                    ? 'text-green-600'
-                                                                    : 'text-red-600'
-                                                            }`}>
-                                                                {attendanceStatus.isPresent
-                                                                    ? 'You attended this training'
-                                                                    : 'You did not attend this training'
-                                                                }
-                                                            </p>
-                                                        </div>
+                                                            {attendanceStatus.isPresent ? 'Present' : 'Absent'}
+                                                        </p>
+                                                        <p className={`text-sm ${
+                                                            attendanceStatus.isPresent
+                                                                ? 'text-green-600'
+                                                                : 'text-red-600'
+                                                        }`}>
+                                                            {attendanceStatus.isPresent
+                                                                ? 'You attended this training'
+                                                                : 'You did not attend this training'
+                                                            }
+                                                        </p>
                                                     </div>
                                                 </div>
                                             </div>
-                                        </>
+                                        </div>
                                     );
                                 })()}
                             </div>
                         </div>
 
                         {/* Footer */}
-                        <div className="border-t border-gray-100 px-6 py-3 bg-gray-50 flex justify-end">
+                        <div className="border-t border-gray-100 px-6 py-3 bg-gray-50 flex justify-end flex-shrink-0">
                             <button
                                 onClick={() => setShowDetails(false)}
                                 className="px-5 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-semibold text-sm shadow-sm"

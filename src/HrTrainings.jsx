@@ -23,6 +23,7 @@ function HrTrainings() {
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [alertMessage, setAlertMessage] = useState("");
   const [showConfirmAddModal, setShowConfirmAddModal] = useState(false);
+  const [isCreatingTraining, setIsCreatingTraining] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [showCertificateConfirmModal, setShowCertificateConfirmModal] = useState(false);
@@ -49,8 +50,9 @@ function HrTrainings() {
   const [form, setForm] = useState({
     title: "",
     venue: "",
-    date: "",
+    duration_start_date: "",
     time: "",
+    end_date: "",
     end_time: "",
     description: "",
     schedule_type: "onsite", // onsite or online
@@ -66,11 +68,18 @@ function HrTrainings() {
   const [newTemplateName, setNewTemplateName] = useState("");
   const [newTemplateFile, setNewTemplateFile] = useState(null);
   
+  // Certificate template state for edit form
+  const [selectedTemplateIdEdit, setSelectedTemplateIdEdit] = useState("");
+  const [uploadNewTemplateEdit, setUploadNewTemplateEdit] = useState(false);
+  const [newTemplateNameEdit, setNewTemplateNameEdit] = useState("");
+  const [newTemplateFileEdit, setNewTemplateFileEdit] = useState(null);
+  
   const [editForm, setEditForm] = useState({
     title: "",
     venue: "",
-    date: "",
+    duration_start_date: "",
     time: "",
+    end_date: "",
     end_time: "",
     description: "",
     schedule_type: "onsite"
@@ -579,8 +588,8 @@ function HrTrainings() {
       setShowAlertModal(true);
       return;
     }
-    if (!form.date || !form.time || !form.end_time) {
-      setAlertMessage("Please provide date, start time, and end time.");
+    if (!form.duration_start_date || !form.time || !form.end_time) {
+      setAlertMessage("Please provide start date, start time, and end time.");
       setShowAlertModal(true);
       return;
     }
@@ -606,11 +615,12 @@ function HrTrainings() {
   
   // Actual submission after confirmation
   const confirmAddTraining = async () => {
-    setShowConfirmAddModal(false);
+    setIsCreatingTraining(true);
 
     // Create Date objects and format with local timezone to preserve the intended time
-    const startAt = new Date(`${form.date}T${form.time}:00`);
-    const endAt = new Date(`${form.date}T${form.end_time}:00`);
+    const startAt = new Date(`${form.duration_start_date}T${form.time}:00`);
+    const endDate = form.end_date || form.duration_start_date; // Use end_date if provided, otherwise same as start
+    const endAt = new Date(`${endDate}T${form.end_time}:00`);
     
     // Format as ISO string with timezone offset (e.g., "2026-01-13T03:00:00+08:00")
     const formatWithTimezone = (date) => {
@@ -632,6 +642,7 @@ function HrTrainings() {
     if (endAt <= startAt) {
       setAlertMessage("End time must be after start time.");
       setShowAlertModal(true);
+      setIsCreatingTraining(false);
       return;
     }
     
@@ -658,6 +669,7 @@ function HrTrainings() {
           console.error('Error uploading image:', uploadError);
           setAlertMessage(`Failed to upload image: ${uploadError.message}`);
           setShowAlertModal(true);
+          setIsCreatingTraining(false);
           return;
         }
 
@@ -753,6 +765,7 @@ function HrTrainings() {
         console.error('Error creating training:', error);
         setAlertMessage(`Failed to create training schedule: ${error.message || 'Unknown error'}`);
         setShowAlertModal(true);
+        setIsCreatingTraining(false);
         return;
       }
 
@@ -762,7 +775,7 @@ function HrTrainings() {
       }
 
       // Reset form
-      setForm({ title: "", venue: "", date: "", time: "", end_time: "", description: "", schedule_type: "onsite", image_url: "" });
+      setForm({ title: "", venue: "", duration_start_date: "", time: "", end_date: "", end_time: "", description: "", schedule_type: "onsite", image_url: "" });
       setImageFile(null);
       setSelectedTemplateId("");
       setUploadNewTemplate(false);
@@ -773,6 +786,8 @@ function HrTrainings() {
       setSelectedPositions([]);
       setEmployeesByPositionMap({});
       setShowAdd(false);
+      setShowConfirmAddModal(false);
+      setIsCreatingTraining(false);
       
       // Refresh list
       fetchTrainings();
@@ -782,6 +797,7 @@ function HrTrainings() {
       console.error('Error creating training:', error);
       setAlertMessage(`Failed to create training schedule: ${error.message || 'Unknown error'}`);
       setShowAlertModal(true);
+      setIsCreatingTraining(false);
     }
   };
 
@@ -794,8 +810,8 @@ function HrTrainings() {
       setShowAlertModal(true);
       return;
     }
-    if (!editForm.date || !editForm.time || !editForm.end_time) {
-      setAlertMessage("Please provide date, start time, and end time.");
+    if (!editForm.duration_start_date || !editForm.time || !editForm.end_time) {
+      setAlertMessage("Please provide start date, start time, and end time.");
       setShowAlertModal(true);
       return;
     }
@@ -816,8 +832,9 @@ function HrTrainings() {
     }
 
     // Create Date objects and format with local timezone to preserve the intended time
-    const startAt = new Date(`${editForm.date}T${editForm.time}:00`);
-    const endAt = new Date(`${editForm.date}T${editForm.end_time}:00`);
+    const startAt = new Date(`${editForm.duration_start_date}T${editForm.time}:00`);
+    const endDate = editForm.end_date || editForm.duration_start_date; // Use end_date if provided, otherwise same as start
+    const endAt = new Date(`${endDate}T${editForm.end_time}:00`);
     
     // Format as ISO string with timezone offset (e.g., "2026-01-13T03:00:00+08:00")
     const formatWithTimezone = (date) => {
@@ -876,6 +893,48 @@ function HrTrainings() {
         uploadedImageUrl = publicUrl;
       }
 
+      // Handle certificate template upload if needed for edit
+      let certificateTemplateId = selectedTemplateIdEdit || selectedTraining.certificate_template_id || null;
+      
+      if (uploadNewTemplateEdit && newTemplateNameEdit && newTemplateFileEdit) {
+        try {
+          // Upload template file to storage
+          const templateFileName = `${Date.now()}_${newTemplateFileEdit.name}`;
+          const { data: templateUploadData, error: templateUploadError } = await supabase.storage
+            .from('certificate-templates')
+            .upload(templateFileName, newTemplateFileEdit, {
+              cacheControl: '3600',
+              upsert: false
+            });
+
+          if (templateUploadError) throw templateUploadError;
+
+          // Get public URL for the template
+          const { data: { publicUrl: templatePublicUrl } } = supabase.storage
+            .from('certificate-templates')
+            .getPublicUrl(templateFileName);
+
+          // Insert template record into database
+          const { data: templateData, error: templateDbError } = await supabase
+            .from('certificate_templates')
+            .insert([{
+              template_name: newTemplateNameEdit,
+              file_url: templatePublicUrl,
+              is_active: true
+            }])
+            .select()
+            .single();
+
+          if (templateDbError) throw templateDbError;
+          
+          certificateTemplateId = templateData.id;
+        } catch (err) {
+          console.error('Error uploading certificate template:', err);
+          setAlertMessage(`Warning: Training will be updated but certificate template upload failed: ${err.message}`);
+          setShowAlertModal(true);
+        }
+      }
+
       const { data, error } = await supabase
         .from('trainings')
         .update({
@@ -889,7 +948,8 @@ function HrTrainings() {
           // keep is_active in sync with whether the training is in the future
           is_active: isActiveFlag,
           schedule_type: editForm.schedule_type || 'onsite',
-          image_url: uploadedImageUrl
+          image_url: uploadedImageUrl,
+          certificate_template_id: certificateTemplateId
         })
         .eq('id', selectedTraining.id)
         .select()
@@ -970,11 +1030,27 @@ function HrTrainings() {
       endTime = `${hours}:${minutes}`;
     }
     
+    // Extract dates from timestamps
+    const startDate = training.start_at ? new Date(training.start_at) : null;
+    const endDateObj = training.end_at ? new Date(training.end_at) : null;
+    
+    const startDateStr = startDate ? startDate.getFullYear() + '-' + 
+      String(startDate.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(startDate.getDate()).padStart(2, '0') : "";
+    
+    const endDateStr = endDateObj ? endDateObj.getFullYear() + '-' + 
+      String(endDateObj.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(endDateObj.getDate()).padStart(2, '0') : "";
+    
+    // Check if same day, if so, don't set end_date
+    const isSameDay = startDate && endDateObj && startDate.toDateString() === endDateObj.toDateString();
+    
     setEditForm({
       title: training.title || "",
       venue: training.venue || "",
-      date: training.date || "",
+      duration_start_date: startDateStr,
       time: training.time || "",
+      end_date: isSameDay ? "" : endDateStr,
       end_time: endTime,
       description: training.description || "",
       schedule_type: training.schedule_type || "onsite"
@@ -987,6 +1063,13 @@ function HrTrainings() {
     setImageFileEdit(null);
     setSelectedPositionsEdit([]);
     setEmployeesByPositionMapEdit({});
+    
+    // Reset certificate template fields
+    setSelectedTemplateIdEdit(training.certificate_template_id || "");
+    setUploadNewTemplateEdit(false);
+    setNewTemplateNameEdit("");
+    setNewTemplateFileEdit(null);
+    
     setActionMenuOpen(null);
     setShowEdit(true);
   };
@@ -1337,6 +1420,23 @@ function HrTrainings() {
     }
   };
 
+  // Format date range for multi-day trainings
+  const formatDateRange = (training) => {
+    if (!training.start_at) return 'Not set';
+    const startDate = new Date(training.start_at);
+    const endDate = training.end_at ? new Date(training.end_at) : startDate;
+    
+    const startStr = startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const endStr = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    
+    // Check if same day
+    if (startDate.toDateString() === endDate.toDateString()) {
+      return startStr;
+    }
+    
+    return `${startStr} - ${endStr}`;
+  };
+
   // Format time to 12-hour with AM/PM (handles both time strings and timestamps)
   const formatTime = (timeStrOrTimestamp) => {
     if (!timeStrOrTimestamp) return 'Not set';
@@ -1584,7 +1684,7 @@ function HrTrainings() {
                             )}
                           </div>
                           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                            <span className="font-medium">{formatDate(training.date)}</span>
+                            <span className="font-medium">{formatDateRange(training)}</span>
                             <span className="text-gray-300">•</span>
                             <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
                             <span className="text-gray-300">•</span>
@@ -1669,7 +1769,7 @@ function HrTrainings() {
                         <div className="flex-1 min-w-0">
                           <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-orange-600 transition-colors">{training.title}</h3>
                           <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                            <span className="font-medium">{formatDate(training.date)}</span>
+                            <span className="font-medium">{formatDateRange(training)}</span>
                             <span className="text-gray-300">•</span>
                             <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
                             <span className="text-gray-300">•</span>
@@ -1741,7 +1841,7 @@ function HrTrainings() {
                       <div className="flex-1 min-w-0">
                         <h3 className="text-base font-bold text-gray-900 mb-2 group-hover:text-green-600 transition-colors">{training.title}</h3>
                         <div className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
-                          <span className="font-medium">{formatDate(training.date)}</span>
+                          <span className="font-medium">{formatDateRange(training)}</span>
                           <span className="text-gray-300">•</span>
                           <span>{formatTime(training.start_at)} - {formatEndTime(training.end_at)}</span>
                           <span className="text-gray-300">•</span>
@@ -1831,342 +1931,223 @@ function HrTrainings() {
 
       {/* Training Details Modal */}
       {showDetails && selectedTraining && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowDetails(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-5xl shadow-2xl max-h-[85vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">Schedule Details</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">Complete information about this schedule</p>
-                </div>
-                <button 
-                  onClick={() => setShowDetails(false)} 
-                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50" onClick={() => setShowDetails(false)}>
+          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
+            {/* Header - Fixed */}
+            <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 relative">
+              <h2 className="text-center font-bold text-xl text-gray-800">Training Schedule Details</h2>
+              <p className="text-center text-xs text-gray-500 mt-1">Complete information about this training</p>
+              <button 
+                onClick={() => setShowDetails(false)} 
+                className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
-
-            {/* Content - Two Column Layout */}
-            <div className="flex-1 overflow-hidden flex">
-              {/* Left Side - Training Information */}
-              <div className="w-[55%] overflow-y-auto p-6 border-r border-gray-200">
-                {/* Title Section */}
-                <div className="mb-4">
-                  <h3 className="text-xl font-bold text-gray-900">{selectedTraining.title}</h3>
-                </div>
-
-                {/* Description Section */}
-                <div className="mb-6">
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{selectedTraining.description || 'No description provided'}</p>
-                </div>
-
-                {/* Training Image */}
+            
+            {/* Content - Scrollable */}
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <div className="space-y-4">
+                
+                {/* Training Image - At Top */}
                 {selectedTraining.image_url && (
-                  <div className="mb-4">
-                    <img 
-                      src={selectedTraining.image_url} 
-                      alt={selectedTraining.title}
-                      className="w-full h-auto object-contain rounded-lg shadow-md border border-gray-200 max-h-96"
-                      onError={(e) => {
-                        console.error('Failed to load image:', selectedTraining.image_url);
-                        e.target.style.display = 'none';
-                      }}
-                      onLoad={() => console.log('Image loaded successfully:', selectedTraining.image_url)}
-                    />
-                  </div>
-                )}
-                {!selectedTraining.image_url && (
-                  <div className="mb-4 p-4 bg-gray-100 rounded-lg border border-gray-200 text-center">
-                    <svg className="w-12 h-12 mx-auto text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <p className="text-xs text-gray-500">No image available</p>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="rounded border border-gray-200 bg-white p-2">
+                      <img 
+                        src={selectedTraining.image_url} 
+                        alt={selectedTraining.title}
+                        className="w-full h-auto max-h-48 object-contain rounded"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                        }}
+                      />
+                    </div>
                   </div>
                 )}
 
-                {/* Divider */}
-                <div className="my-6 border-t border-gray-200"></div>
-
-                {/* Schedule Information Section */}
-                <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-gray-900 uppercase tracking-wide mb-4">Schedule Information</h4>
-                  
-                  {/* Schedule Type Badge */}
-                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-100">
-                    {selectedTraining.schedule_type === 'online' ? (
-                      <>
-                        <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
-                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                          </svg>
-                        </div>
-                        <div>
-                          <p className="text-xs font-medium text-gray-600">Schedule Type</p>
-                          <p className="text-sm font-bold text-blue-700">Online Meeting</p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center flex-shrink-0 shadow-sm">
-                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                          </svg>
-                        </div>
-                        <div>
-                          <p className="text-sm font-bold text-indigo-700">Onsite</p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Date & Time Card */}
-                  <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3 shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-medium text-gray-500 mb-0.5">Date</p>
-                        <p className="text-sm font-bold text-gray-900">{formatDate(selectedTraining.date)}</p>
-                      </div>
+                {/* Training Title & Description */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium mb-1">Training Title</p>
+                      <p className="text-base text-gray-900 font-semibold">{selectedTraining.title}</p>
                     </div>
                     
-                    <div className="border-t border-gray-100 pt-3">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="flex items-start gap-2">
-                          <svg className="w-4 h-4 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <div>
-                            <p className="text-xs font-medium text-gray-500">Start</p>
-                            <p className="text-sm font-bold text-gray-900">{formatTime(selectedTraining.start_at)}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-start gap-2">
-                          <svg className="w-4 h-4 text-orange-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          <div>
-                            <p className="text-xs font-medium text-gray-500">End</p>
-                            <p className="text-sm font-bold text-gray-900">{formatEndTime(selectedTraining.end_at)}</p>
-                          </div>
-                        </div>
+                    {selectedTraining.description && (
+                      <div className="pt-2 border-t border-gray-200">
+                        <p className="text-xs text-gray-500 font-medium mb-1">Description</p>
+                        <p className="text-sm text-gray-900 whitespace-pre-line leading-relaxed">{selectedTraining.description}</p>
                       </div>
-                    </div>
+                    )}
+                  </div>
+                </div>
 
-                    <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div className="flex-1">
-                        <p className="text-xs font-medium text-gray-500 inline">Duration: </p>
-                        <span className="text-sm font-bold text-purple-700">{calculateDuration(selectedTraining.start_at, selectedTraining.end_at)}</span>
-                      </div>
+                {/* Schedule Details */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-3">Schedule Details</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium mb-1">Date</p>
+                      <p className="text-sm text-gray-900 font-semibold">
+                        {selectedTraining.start_at && selectedTraining.end_at && new Date(selectedTraining.end_at).toDateString() !== new Date(selectedTraining.start_at).toDateString()
+                          ? `${new Date(selectedTraining.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${new Date(selectedTraining.end_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                          : selectedTraining.start_at ? new Date(selectedTraining.start_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set'
+                        }
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium mb-1">Time</p>
+                      <p className="text-sm text-gray-900 font-semibold">{formatTime(selectedTraining.start_at)} - {formatEndTime(selectedTraining.end_at)}</p>
                     </div>
                   </div>
-                  
-                  {/* Location/Link Card */}
-                  <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-                    <div className="flex items-start gap-3">
+                </div>
+
+                {/* Location & Type */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-3">Location & Type</h3>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="text-xs text-gray-500 font-medium mb-1">Schedule Type</p>
+                      <span className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${selectedTraining.schedule_type === 'online' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                        {selectedTraining.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                      </span>
+                    </div>
+                    
+                    <div className="pt-2 border-t border-gray-200">
+                      <p className="text-xs text-gray-500 font-medium mb-1">{selectedTraining.schedule_type === 'online' ? 'Meeting Link' : 'Venue'}</p>
                       {selectedTraining.schedule_type === 'online' ? (
-                        <>
-                          <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-medium text-gray-500 mb-1">Meeting Link</p>
-                            <a 
-                              href={selectedTraining.venue} 
-                              target="_blank" 
-                              rel="noopener noreferrer"
-                              className="text-sm font-semibold text-blue-600 hover:text-blue-700 hover:underline break-all inline-flex items-center gap-1 group"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              <span className="break-all">{selectedTraining.venue || 'Not set'}</span>
-                              <svg className="w-3 h-3 group-hover:translate-x-0.5 transition-transform flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                              </svg>
-                            </a>
-                          </div>
-                        </>
+                        <a 
+                          href={selectedTraining.venue} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 hover:text-blue-700 hover:underline inline-block break-all font-medium"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {selectedTraining.venue || 'Not set'}
+                        </a>
                       ) : (
-                        <>
-                          <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                          </div>
-                          <div className="flex-1">
-                            <p className="text-xs font-medium text-gray-500 mb-1">Location</p>
-                            <p className="text-sm font-semibold text-gray-900">{selectedTraining.venue || 'Not set'}</p>
-                          </div>
-                        </>
+                        <p className="text-sm text-gray-900 font-semibold">{selectedTraining.venue || 'Not set'}</p>
                       )}
                     </div>
                   </div>
                 </div>
-              </div>
 
-              {/* Right Side - Attendees List */}
-              <div className="w-[45%] flex flex-col bg-gray-50">
-                <div className="p-4 border-b border-gray-200 bg-white">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900">
-                        Attendees ({(() => {
-                          const filtered = selectedTraining.attendees?.filter(attendee => {
-                            const name = typeof attendee === "string" ? attendee : attendee.name || "";
-                            return name.toLowerCase().includes(attendeeSearchQuery.toLowerCase());
-                          }) || [];
-                          return `${filtered.length}/${selectedTraining.attendees?.length || 0}`;
-                        })()})
-                      </h3>
+                {/* Training Materials Section */}
+                {selectedTraining.certificate_template_id && (
+                  <div className="space-y-4">
+                    <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide pb-2 border-b border-gray-200">Training Materials</h3>
+                    <div className="space-y-3">
+                      <div className="bg-gray-50 rounded-lg p-3">
+                        <p className="text-xs text-gray-500 font-medium mb-1">Certificate Template</p>
+                        <p className="text-sm text-gray-900 font-semibold inline-flex items-center gap-1.5">
+                          <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          {certificateTemplates.find(t => t.id === selectedTraining.certificate_template_id)?.template_name || 'Template assigned'}
+                        </p>
+                      </div>
                     </div>
-                    {(() => {
-                      // Only show attendance summary for completed trainings (has marked attendance)
-                      const hasMarkedAttendance = selectedTraining.attendance && Object.keys(selectedTraining.attendance).length > 0 && Object.values(selectedTraining.attendance).some(val => val === true || val === false);
-                      if (!selectedTraining.is_active && hasMarkedAttendance) {
-                        return (
-                          <div className="flex items-center gap-3 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-200">
-                            <div className="flex items-center gap-1.5">
-                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                              <span className="text-xs font-semibold text-gray-700">
-                                {Object.values(selectedTraining.attendance || {}).filter(Boolean).length}
-                              </span>
-                            </div>
-                            <div className="w-px h-3 bg-gray-300"></div>
-                            <div className="flex items-center gap-1.5">
-                              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                              <span className="text-xs font-semibold text-gray-700">
-                                {Object.values(selectedTraining.attendance || {}).filter((v) => v === false).length}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })()}
                   </div>
-                  
-                  {/* Search Bar */}
-                  <div className="relative">
-                    <svg
-                      className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <input
-                      type="text"
-                      placeholder="Search attendees..."
-                      value={attendeeSearchQuery}
-                      onChange={(e) => setAttendeeSearchQuery(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 bg-white"
-                    />
-                  </div>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto p-3">
-                  <div className="space-y-2">
-                    {(() => {
-                      const filteredAttendees = selectedTraining.attendees?.filter(attendee => {
-                        const name = typeof attendee === "string" ? attendee : attendee.name || "";
-                        return name.toLowerCase().includes(attendeeSearchQuery.toLowerCase());
-                      }) || [];
-                      
-                      if (filteredAttendees.length === 0) {
-                        return (
-                          <div className="text-center py-8 text-gray-500">
-                            <svg className="w-12 h-12 mx-auto text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                            </svg>
-                            <p className="text-sm font-medium">No attendees found</p>
-                            <p className="text-xs mt-1">Try adjusting your search</p>
-                          </div>
-                        );
-                      }
-                      
-                      return filteredAttendees.map((attendee, idx) => {
-                        const name = typeof attendee === "string" ? attendee : attendee.name || "";
-                        const attendedFlag = !!selectedTraining.attendance?.[name];
-                        // Only show attendance status for completed trainings (has marked attendance)
-                        const hasMarkedAttendance = selectedTraining.attendance && Object.keys(selectedTraining.attendance).length > 0 && Object.values(selectedTraining.attendance).some(val => val === true || val === false);
-                        return (
-                          <div 
-                            key={idx} 
-                            className="bg-white rounded-lg p-3 border border-gray-200 hover:shadow-sm transition-all"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-white text-sm font-semibold shadow-sm flex-shrink-0">
-                                {getInitials(name)}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-gray-900">{name}</p>
-                                {!selectedTraining.is_active && hasMarkedAttendance && (
-                                  <div className="flex items-center gap-1.5 mt-1">
-                                    <span
-                                      className={`inline-flex items-center text-xs px-2 py-0.5 rounded-full font-semibold ${
-                                        attendedFlag
-                                          ? "bg-green-100 text-green-700"
-                                          : "bg-red-100 text-red-700"
-                                      }`}
-                                    >
-                                      {attendedFlag ? "✓ Present" : "✗ Absent"}
-                                    </span>
-                                  </div>
+                )}
+
+                {/* Attendees */}
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-3">
+                    Attendees <span className="text-gray-500 font-normal">({selectedTraining.attendees?.length || 0})</span>
+                  </h3>
+                  <div className="max-h-40 overflow-y-auto border border-gray-200 rounded bg-white">
+                    {selectedTraining.attendees && selectedTraining.attendees.length > 0 ? (
+                      <div className="divide-y divide-gray-100">
+                        {selectedTraining.attendees.map((attendee, index) => {
+                          const attendeeName = typeof attendee === 'string' ? attendee : attendee.name || attendee;
+                          const wasPresent = selectedTraining.attendance && selectedTraining.attendance[attendeeName] === true;
+                          const isCompleted = selectedTraining.status === 'completed';
+                          
+                          return (
+                            <div key={index} className="px-3 py-2.5 flex items-center justify-between hover:bg-gray-50">
+                              <div className="flex items-center gap-2">
+                                <span className="text-sm text-gray-900">{attendeeName}</span>
+                                {isCompleted && (
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                    wasPresent 
+                                      ? 'bg-green-100 text-green-700' 
+                                      : 'bg-red-100 text-red-700'
+                                  }`}>
+                                    {wasPresent ? 'Present' : 'Absent'}
+                                  </span>
                                 )}
                               </div>
+                              {isCompleted && wasPresent && selectedTraining.certificate_template_id && (
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    try {
+                                      const employee = employeeOptions.find(emp => emp.name === attendeeName);
+                                      if (!employee) {
+                                        alert('Employee not found');
+                                        return;
+                                      }
+                                      
+                                      // Check if certificate already exists
+                                      const { data: existingCerts } = await supabase
+                                        .from('training_certificates')
+                                        .select('certificate_url')
+                                        .eq('training_id', selectedTraining.id)
+                                        .eq('employee_id', employee.id)
+                                        .single();
+                                      
+                                      if (existingCerts?.certificate_url) {
+                                        window.open(existingCerts.certificate_url, '_blank');
+                                      } else {
+                                        alert('Certificate not yet generated. Please use "Send Certificates" from the menu.');
+                                      }
+                                    } catch (error) {
+                                      console.error('Error:', error);
+                                      alert('Certificate not found. Please generate certificates first.');
+                                    }
+                                  }}
+                                  className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
+                                >
+                                  View Certificate
+                                </button>
+                              )}
                             </div>
-                          </div>
-                        );
-                      });
-                    })()}
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="px-3 py-4 text-center text-sm text-gray-500">
+                        No attendees
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Footer */}
-            <div className="border-t border-gray-100 px-6 py-3 bg-gray-50 flex justify-end">
-              <button
-                onClick={() => setShowDetails(false)}
-                className="px-5 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-semibold text-sm shadow-sm"
-              >
-                Close
-              </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {/* Add Training Modal */}
-      {showAdd && (
+      {showAdd && !showConfirmAddModal && (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col h-[650px]">
+          <div className="bg-white rounded-xl w-full max-w-4xl shadow-xl flex flex-col max-h-[90vh]">
             {/* Header - Fixed */}
-            <div className="px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-white">
-              <h2 className="text-center font-semibold text-lg text-gray-800">Add Schedule</h2>
+            <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-red-50 to-orange-50">
+              <h2 className="text-center font-bold text-xl text-gray-800">Add Training Schedule</h2>
+              <p className="text-center text-xs text-gray-500 mt-1">Fill in the details below</p>
             </div>
             
-            {/* Content - Two Column Layout */}
-            <div className="flex-1 overflow-hidden flex">
-              {/* Left Side - Form Fields (50% width) */}
-              <div className="w-[50%] px-5 py-4 border-r border-gray-200 overflow-y-auto">
-                <form onSubmit={onSubmit} className="h-full">
-                  <div className="grid grid-cols-1 gap-2.5">
-                    <div className="grid grid-cols-2 gap-3">
+            {/* Content - Single Column Scrollable */}
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <form onSubmit={onSubmit}>
+                <div className="space-y-4">
+                  {/* Title and Schedule Type */}
+                  <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
                           Title <span className="text-red-500">*</span>
@@ -2249,14 +2230,30 @@ function HrTrainings() {
                         )}
                       </div>
                     </div>
+                    
+                    {/* Venue */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                        {form.schedule_type === 'online' ? 'Meeting Link' : 'Venue'} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        name="venue"
+                        value={form.venue}
+                        onChange={onChange}
+                        required
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        placeholder={form.schedule_type === 'online' ? 'Google Meet, Zoom, etc.' : 'Location address'}
+                      />
+                    </div>
+                    
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                          Date <span className="text-red-500">*</span>
+                          Start Date <span className="text-red-500">*</span>
                         </label>
                         <input
-                          name="date"
-                          value={form.date}
+                          name="duration_start_date"
+                          value={form.duration_start_date}
                           onChange={onChange}
                           type="date"
                           required
@@ -2266,16 +2263,17 @@ function HrTrainings() {
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                          {form.schedule_type === 'online' ? 'Meeting Link' : 'Venue'} <span className="text-red-500">*</span>
+                          End Date <span className="text-gray-500 font-normal">(Optional, for multi-day training)</span>
                         </label>
                         <input
-                          name="venue"
-                          value={form.venue}
+                          name="end_date"
+                          value={form.end_date}
                           onChange={onChange}
-                          required
+                          type="date"
+                          min={form.duration_start_date || new Date().toISOString().split('T')[0]}
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-                          placeholder={form.schedule_type === 'online' ? 'Google Meet, Zoom, etc.' : 'Location address'}
                         />
+                        <p className="text-xs text-gray-500 mt-0.5">Leave empty for single-day training</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -2325,13 +2323,24 @@ function HrTrainings() {
                     </div>
                     
                     {/* Certificate Template Section */}
-                    <div className="border-t border-gray-200 pt-3">
-                      <label className="block text-xs font-medium text-gray-700 mb-2">
-                        Certificate Template <span className="text-gray-500 font-normal">(Optional)</span>
-                      </label>
+                    <div className="border-t border-gray-200 pt-4 mt-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <label className="text-sm font-semibold text-gray-800">
+                          Certificate Template
+                        </label>
+                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Optional</span>
+                        <div className="group relative">
+                          <svg className="w-4 h-4 text-blue-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <div className="absolute left-0 top-6 w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                            Upload a Word (.docx) template with placeholders to generate certificates for attendees automatically after the training.
+                          </div>
+                        </div>
+                      </div>
                       
                       {/* Toggle between existing and new template */}
-                      <div className="flex gap-3 mb-2">
+                      <div className="flex gap-2 mb-3">
                         <button
                           type="button"
                           onClick={() => {
@@ -2341,9 +2350,9 @@ function HrTrainings() {
                             setNewTemplateFile(null);
                           }}
                           disabled={newTemplateName || newTemplateFile}
-                          className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
+                          className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
                             !uploadNewTemplate
-                              ? 'bg-blue-600 text-white shadow-sm'
+                              ? 'bg-blue-600 text-white shadow-md'
                               : (newTemplateName || newTemplateFile)
                               ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -2359,9 +2368,9 @@ function HrTrainings() {
                             setSelectedTemplateId("");
                           }}
                           disabled={selectedTemplateId !== ""}
-                          className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
+                          className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
                             uploadNewTemplate
-                              ? 'bg-blue-600 text-white shadow-sm'
+                              ? 'bg-blue-600 text-white shadow-md'
                               : selectedTemplateId !== ""
                               ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -2373,13 +2382,13 @@ function HrTrainings() {
                       
                       {!uploadNewTemplate ? (
                         /* Select from existing templates */
-                        <div>
+                        <div className="space-y-2">
                           <select
                             value={selectedTemplateId}
                             onChange={(e) => setSelectedTemplateId(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-colors"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-colors"
                           >
-                            <option value="">No template</option>
+                            <option value="">Select a template...</option>
                             {certificateTemplates.map(template => (
                               <option key={template.id} value={template.id}>
                                 {template.template_name}
@@ -2387,62 +2396,104 @@ function HrTrainings() {
                             ))}
                           </select>
                           {certificateTemplates.length === 0 && (
-                            <p className="text-xs text-gray-500 mt-1">No templates available. Upload a new one.</p>
+                            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                              </svg>
+                              <span>No templates available. Switch to "Upload New" to create one.</span>
+                            </div>
                           )}
                           {selectedTemplateId && (
-                            <p className="text-xs text-green-700 mt-1 font-medium">✓ Template selected. Upload option is now disabled.</p>
+                            <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>Template selected. Upload option is now disabled.</span>
+                            </div>
                           )}
                         </div>
                       ) : (
                         /* Upload new template */
-                        <div className="space-y-2">
-                          <input
-                            type="text"
-                            value={newTemplateName}
-                            onChange={(e) => setNewTemplateName(e.target.value)}
-                            placeholder="Template name (e.g., Training Certificate 2024)"
-                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                          <input
-                            type="file"
-                            accept=".docx"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                if (!file.name.endsWith('.docx')) {
-                                  setAlertMessage('Please select a Word document (.docx) file');
-                                  setShowAlertModal(true);
-                                  e.target.value = '';
-                                  return;
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1.5">Template Name</label>
+                            <input
+                              type="text"
+                              value={newTemplateName}
+                              onChange={(e) => setNewTemplateName(e.target.value)}
+                              placeholder="e.g., Training Certificate 2024"
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1.5">Upload Template (.docx)</label>
+                            <input
+                              type="file"
+                              accept=".docx"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  if (!file.name.endsWith('.docx')) {
+                                    setAlertMessage('Please select a Word document (.docx) file');
+                                    setShowAlertModal(true);
+                                    e.target.value = '';
+                                    return;
+                                  }
+                                  setNewTemplateFile(file);
                                 }
-                                setNewTemplateFile(file);
-                              }
-                            }}
-                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                          />
-                          {newTemplateFile && (
-                            <p className="text-xs text-gray-500 truncate">{newTemplateFile.name}</p>
-                          )}
+                              }}
+                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                            />
+                            {newTemplateFile && (
+                              <div className="mt-2 flex items-center gap-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-2">
+                                <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <span className="truncate flex-1">{newTemplateFile.name}</span>
+                              </div>
+                            )}
+                          </div>
                           {(newTemplateName || newTemplateFile) && (
-                            <p className="text-xs text-green-700 font-medium">✓ Uploading new template. Choose existing option is now disabled.</p>
+                            <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
+                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span>Uploading new template. Choose existing option is now disabled.</span>
+                            </div>
                           )}
-                          <div className="bg-blue-50 border border-blue-200 p-2 rounded text-xs">
-                            <p className="font-semibold text-blue-900 mb-1">📝 Placeholders:</p>
-                            <p className="text-blue-800">
-                              <code className="bg-white px-1 rounded">{'{employee_name}'}</code>,{' '}
-                              <code className="bg-white px-1 rounded">{'{training_title}'}</code>,{' '}
-                              <code className="bg-white px-1 rounded">{'{training_date}'}</code>,{' '}
-                              <code className="bg-white px-1 rounded">{'{completion_date}'}</code>
-                            </p>
+                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3">
+                            <div className="flex items-start gap-2 mb-2">
+                              <svg className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <div>
+                                <p className="font-semibold text-sm text-blue-900 mb-1">Template Placeholders</p>
+                                <p className="text-xs text-blue-800 mb-2">Use these in your Word document. They'll be replaced automatically:</p>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  <div className="bg-white rounded px-2 py-1 border border-blue-200">
+                                    <code className="text-blue-700 font-mono">{'{employee_name}'}</code>
+                                  </div>
+                                  <div className="bg-white rounded px-2 py-1 border border-blue-200">
+                                    <code className="text-blue-700 font-mono">{'{training_title}'}</code>
+                                  </div>
+                                  <div className="bg-white rounded px-2 py-1 border border-blue-200">
+                                    <code className="text-blue-700 font-mono">{'{venue}'}</code>
+                                  </div>
+                                  <div className="bg-white rounded px-2 py-1 border border-blue-200">
+                                    <code className="text-blue-700 font-mono">{'{completion_date}'}</code>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </div>
                       )}
                     </div>
                     
-                    {/* Attendees Section Header */}
-                    <div className="pt-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-xs font-medium text-gray-700">
+                    {/* Attendees Section */}
+                    <div className="border-t border-gray-200 pt-4 mt-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="block text-sm font-semibold text-gray-800">
                           Attendees <span className="text-red-500">*</span>
                         </label>
                         <button
@@ -2457,7 +2508,7 @@ function HrTrainings() {
                               setAttendees(employeeOptions.map(emp => emp.name));
                             }
                           }}
-                          className={`px-2.5 py-1 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center gap-1.5 text-xs font-semibold group ${
+                          className={`px-3 py-1.5 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center gap-2 text-xs font-semibold group ${
                             attendees.length === employeeOptions.length
                               ? 'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700'
                               : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
@@ -2465,14 +2516,14 @@ function HrTrainings() {
                         >
                           {attendees.length === employeeOptions.length ? (
                             <>
-                              <svg className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                               </svg>
                               <span>Deselect All</span>
                             </>
                           ) : (
                             <>
-                              <svg className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               <span>Select All ({employeeOptions.length})</span>
@@ -2480,156 +2531,162 @@ function HrTrainings() {
                           )}
                         </button>
                       </div>
-                    </div>
-                    
-                    {/* Position Selection */}
-                    <div>
-                      <select
-                        value=""
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handlePositionSelect(e.target.value);
-                            e.target.value = "";
-                          }
-                        }}
-                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
-                      >
-                        <option value="">Select by Position</option>
-                        {positions
-                          .filter(pos => !selectedPositions.includes(pos))
-                          .map((pos, idx) => (
-                            <option key={idx} value={pos}>
-                              {pos}
-                            </option>
-                          ))}
-                      </select>
                       
-                      {/* Selected Positions Chips */}
-                      {selectedPositions.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-gray-50 rounded-lg border border-gray-200">
-                          {selectedPositions.map((pos) => {
-                            const empCount = employeesByPositionMap[pos]?.length || 0;
-                            return (
-                              <div
-                                key={pos}
-                                className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-md px-2 py-0.5 group hover:bg-blue-100 transition-colors"
-                              >
-                                <span className="text-xs font-medium text-blue-800">{pos}</span>
-                                <span className="text-[10px] text-blue-700 bg-blue-200 px-1 py-0.5 rounded-full font-medium">
-                                  {empCount}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handlePositionRemove(pos)}
-                                  className="text-blue-600 hover:text-red-600 hover:bg-red-100 rounded-full p-0.5 transition-colors"
-                                  title={`Remove ${pos} and its employees`}
-                                >
-                                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </form>
-              </div>
-
-              {/* Right Side - Others Search and Selected Attendees List (50% width) */}
-              <div className="w-[50%] px-5 py-4 bg-gray-50 overflow-hidden">
-                <div className="h-full flex flex-col">
-                  {/* Search Input - Optional for additional employees */}
-                  <div className="mb-2.5 relative">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Others
-                    </label>
-                    <input
-                      type="text"
-                      value={employeeSearchQuery}
-                      onChange={(e) => {
-                        setEmployeeSearchQuery(e.target.value);
-                        setShowEmployeeSuggestions(e.target.value.length > 0);
-                      }}
-                      onKeyDown={onAttendeeKeyDown}
-                      onFocus={() => {
-                        if (employeeSearchQuery) setShowEmployeeSuggestions(true);
-                      }}
-                      className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
-                      placeholder="Search employee name..."
-                    />
-                    {showEmployeeSuggestions && filteredEmployees.length > 0 && (
-                      <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {filteredEmployees.map((emp, i) => {
-                          const alreadyAdded = attendees.includes(emp.name);
-                          return (
-                            <li
-                              key={i}
-                              className={`px-3 py-2 text-sm border-b last:border-b-0 ${
-                                alreadyAdded
-                                  ? 'text-gray-400 bg-gray-50 cursor-not-allowed'
-                                  : 'text-gray-700 hover:bg-gray-100 cursor-pointer'
-                              }`}
-                              onMouseDown={(e) => {
-                                if (alreadyAdded) return;
-                                e.preventDefault();
-                                handleEmployeeSelect(emp);
-                              }}
-                            >
-                              {emp.name}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                  
-                  {/* Attendees List - Scrollable */}
-                  <div className="flex-1 flex flex-col min-h-0">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-gray-700">
-                        Selected Depots <span className="text-gray-500">({attendees.length})</span>
-                      </span>
-                      {attendees.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAttendees([]);
-                            setSelectedPositions([]);
-                            setEmployeesByPositionMap({});
+                      {/* Position Selection */}
+                      <div className="mb-3">
+                        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                          Select by Position
+                        </label>
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handlePositionSelect(e.target.value);
+                              e.target.value = "";
+                            }
                           }}
-                          className="text-xs text-red-600 hover:text-red-700 font-medium transition-colors"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
                         >
-                          Clear All
-                        </button>
-                      )}
-                    </div>
-                    <div className="border border-gray-300 rounded-lg p-2 bg-white flex-1 overflow-y-auto">
-                      {attendees.length > 0 ? (
-                        <div className="space-y-1">
-                          {attendees.map((name, i) => (
-                            <div key={i} className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors">
-                              <span className="text-xs text-gray-700 truncate flex-1">{name}</span>
-                              <button
-                                type="button"
-                                onClick={() => removeAttendee(i)}
-                                className="text-red-600 hover:text-red-700 text-sm font-bold ml-2 flex-shrink-0 transition-colors"
-                                title="Remove"
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ))}
+                          <option value="">Choose a position...</option>
+                          {positions
+                            .filter(pos => !selectedPositions.includes(pos))
+                            .map((pos, idx) => (
+                              <option key={idx} value={pos}>
+                                {pos}
+                              </option>
+                            ))}
+                        </select>
+                        
+                        {/* Selected Positions Chips */}
+                        {selectedPositions.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2.5 bg-blue-50 rounded-lg border border-blue-200">
+                            {selectedPositions.map((pos) => {
+                              const empCount = employeesByPositionMap[pos]?.length || 0;
+                              return (
+                                <div
+                                  key={pos}
+                                  className="flex items-center gap-1.5 bg-white border border-blue-300 rounded-md px-2.5 py-1 group hover:bg-blue-50 transition-colors"
+                                >
+                                  <span className="text-xs font-medium text-blue-800">{pos}</span>
+                                  <span className="text-[10px] text-blue-700 bg-blue-200 px-1.5 py-0.5 rounded-full font-medium">
+                                    {empCount}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePositionRemove(pos)}
+                                    className="text-blue-600 hover:text-red-600 hover:bg-red-100 rounded-full p-0.5 transition-colors"
+                                    title={`Remove ${pos} and its employees`}
+                                  >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Search Individual Employees */}
+                      <div className="mb-3 relative">
+                        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                          Search Individual Employee
+                        </label>
+                        <input
+                          type="text"
+                          value={employeeSearchQuery}
+                          onChange={(e) => {
+                            setEmployeeSearchQuery(e.target.value);
+                            setShowEmployeeSuggestions(e.target.value.length > 0);
+                          }}
+                          onKeyDown={onAttendeeKeyDown}
+                          onFocus={() => {
+                            if (employeeSearchQuery) setShowEmployeeSuggestions(true);
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
+                          placeholder="Type employee name..."
+                        />
+                        {showEmployeeSuggestions && filteredEmployees.length > 0 && (
+                          <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                            {filteredEmployees.map((emp, i) => {
+                              const alreadyAdded = attendees.includes(emp.name);
+                              return (
+                                <li
+                                  key={i}
+                                  className={`px-3 py-2 text-sm border-b last:border-b-0 ${
+                                    alreadyAdded
+                                      ? 'text-gray-400 bg-gray-50 cursor-not-allowed'
+                                      : 'text-gray-700 hover:bg-gray-100 cursor-pointer'
+                                  }`}
+                                  onMouseDown={(e) => {
+                                    if (alreadyAdded) return;
+                                    e.preventDefault();
+                                    handleEmployeeSelect(emp);
+                                  }}
+                                >
+                                  {emp.name}
+                                  {alreadyAdded && <span className="text-xs ml-2">(Already added)</span>}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                      
+                      {/* Selected Attendees List */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-gray-700">
+                            Selected Attendees <span className="text-gray-600">({attendees.length})</span>
+                          </span>
+                          {attendees.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAttendees([]);
+                                setSelectedPositions([]);
+                                setEmployeesByPositionMap({});
+                              }}
+                              className="text-xs text-red-600 hover:text-red-700 font-medium transition-colors hover:underline"
+                            >
+                              Clear All
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <p className="text-xs text-gray-400 text-center py-8">No attendees added yet. Select positions or search for employees.</p>
-                      )}
+                        <div className="border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
+                          {attendees.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {attendees.map((name, i) => (
+                                <div key={i} className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-200 hover:border-blue-300 transition-colors group">
+                                  <span className="text-xs text-gray-700 truncate flex-1">{name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAttendee(i)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full p-1 ml-2 flex-shrink-0 transition-colors opacity-0 group-hover:opacity-100"
+                                    title="Remove attendee"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8">
+                              <svg className="w-12 h-12 mx-auto text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                              </svg>
+                              <p className="text-xs text-gray-500">No attendees selected yet</p>
+                              <p className="text-xs text-gray-400 mt-1">Select positions or search for employees above</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
                 </div>
-              </div>
+              </form>
             </div>
             
             {/* Footer - Fixed */}
@@ -2666,18 +2723,17 @@ function HrTrainings() {
       {/* Edit Training Modal */}
       {showEdit && selectedTraining && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50">
-          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col h-[650px]">
+          <div className="bg-white rounded-xl w-full max-w-4xl shadow-xl flex flex-col max-h-[90vh]">
             {/* Header - Fixed */}
-            <div className="px-5 py-3 border-b border-gray-200 flex-shrink-0 bg-white">
-              <h2 className="text-center font-semibold text-lg text-gray-800">Edit Schedule</h2>
+            <div className="px-5 py-4 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-red-50 to-red-100">
+              <h2 className="text-center font-bold text-xl text-gray-800">Edit Training Schedule</h2>
+              <p className="text-center text-xs text-gray-600 mt-1">Update the training details and manage attendees</p>
             </div>
             
-            {/* Content - Two Column Layout */}
-            <div className="flex-1 overflow-hidden flex">
-              {/* Left Side - Form Fields (50% width) */}
-              <div className="w-[50%] px-5 py-4 border-r border-gray-200 overflow-y-auto">
-                <form onSubmit={onSaveChanges} className="h-full">
-                  <div className="grid grid-cols-1 gap-2.5">
+            {/* Content - Single Column Scrollable */}
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              <form onSubmit={onSaveChanges}>
+                <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
@@ -2764,14 +2820,30 @@ function HrTrainings() {
                         )}
                       </div>
                     </div>
+                    
+                    {/* Venue */}
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 mb-0.5">
+                        {editForm.schedule_type === 'online' ? 'Meeting Link' : 'Venue'} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        name="venue"
+                        value={editForm.venue}
+                        onChange={onEditChange}
+                        required
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        placeholder={editForm.schedule_type === 'online' ? 'Google Meet, Zoom, etc.' : 'Location address'}
+                      />
+                    </div>
+                    
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                          Date <span className="text-red-500">*</span>
+                          Start Date <span className="text-red-500">*</span>
                         </label>
                         <input
-                          name="date"
-                          value={editForm.date}
+                          name="duration_start_date"
+                          value={editForm.duration_start_date}
                           onChange={onEditChange}
                           type="date"
                           required
@@ -2781,16 +2853,17 @@ function HrTrainings() {
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                          {editForm.schedule_type === 'online' ? 'Meeting Link' : 'Venue'} <span className="text-red-500">*</span>
+                          End Date <span className="text-gray-500 font-normal">(Optional, for multi-day training)</span>
                         </label>
                         <input
-                          name="venue"
-                          value={editForm.venue}
+                          name="end_date"
+                          value={editForm.end_date}
                           onChange={onEditChange}
-                          required
+                          type="date"
+                          min={editForm.duration_start_date || new Date().toISOString().split('T')[0]}
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
-                          placeholder={editForm.schedule_type === 'online' ? 'Google Meet, Zoom, etc.' : 'Location address'}
                         />
+                        <p className="text-xs text-gray-500 mt-0.5">Leave empty for single-day training</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
@@ -2839,10 +2912,125 @@ function HrTrainings() {
                       />
                     </div>
                     
-                    {/* Attendees Section Header */}
-                    <div className="pt-1">
-                      <div className="flex items-center justify-between mb-2">
-                        <label className="block text-xs font-medium text-gray-700">
+                    {/* Certificate Template Section */}
+                    <div className="border-t border-gray-200 pt-3">
+                      <label className="block text-xs font-medium text-gray-700 mb-2">
+                        Certificate Template <span className="text-gray-500 font-normal">(Optional)</span>
+                      </label>
+                      
+                      {/* Toggle between existing and new template */}
+                      <div className="flex gap-3 mb-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUploadNewTemplateEdit(false);
+                            // Clear upload fields when switching to existing
+                            setNewTemplateNameEdit("");
+                            setNewTemplateFileEdit(null);
+                          }}
+                          disabled={newTemplateNameEdit || newTemplateFileEdit}
+                          className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
+                            !uploadNewTemplateEdit
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : (newTemplateNameEdit || newTemplateFileEdit)
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          Choose Existing
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setUploadNewTemplateEdit(true);
+                            // Clear selected template when switching to upload
+                            setSelectedTemplateIdEdit("");
+                          }}
+                          disabled={selectedTemplateIdEdit !== ""}
+                          className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
+                            uploadNewTemplateEdit
+                              ? 'bg-blue-600 text-white shadow-sm'
+                              : selectedTemplateIdEdit !== ""
+                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                          }`}
+                        >
+                          Upload New
+                        </button>
+                      </div>
+                      
+                      {!uploadNewTemplateEdit ? (
+                        /* Select from existing templates */
+                        <div>
+                          <select
+                            value={selectedTemplateIdEdit}
+                            onChange={(e) => setSelectedTemplateIdEdit(e.target.value)}
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-colors"
+                          >
+                            <option value="">No template</option>
+                            {certificateTemplates.map(template => (
+                              <option key={template.id} value={template.id}>
+                                {template.template_name}
+                              </option>
+                            ))}
+                          </select>
+                          {certificateTemplates.length === 0 && (
+                            <p className="text-xs text-gray-500 mt-1">No templates available. Upload a new one.</p>
+                          )}
+                          {selectedTemplateIdEdit && (
+                            <p className="text-xs text-green-700 mt-1 font-medium">✓ Template selected. Upload option is now disabled.</p>
+                          )}
+                        </div>
+                      ) : (
+                        /* Upload new template */
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={newTemplateNameEdit}
+                            onChange={(e) => setNewTemplateNameEdit(e.target.value)}
+                            placeholder="Template name (e.g., Training Certificate 2024)"
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <input
+                            type="file"
+                            accept=".docx"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                if (!file.name.endsWith('.docx')) {
+                                  setAlertMessage('Please select a Word document (.docx) file');
+                                  setShowAlertModal(true);
+                                  e.target.value = '';
+                                  return;
+                                }
+                                setNewTemplateFileEdit(file);
+                              }
+                            }}
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {newTemplateFileEdit && (
+                            <p className="text-xs text-gray-500 truncate">{newTemplateFileEdit.name}</p>
+                          )}
+                          {(newTemplateNameEdit || newTemplateFileEdit) && (
+                            <p className="text-xs text-green-700 font-medium">✓ Uploading new template. Choose existing option is now disabled.</p>
+                          )}
+                          <div className="bg-blue-50 border border-blue-200 p-2 rounded text-xs">
+                            <p className="font-semibold text-blue-900 mb-1">📝 Placeholders:</p>
+                            <p className="text-blue-800">
+                              <code className="bg-white px-1 rounded">{'{employee_name}'}</code>,{' '}
+                              <code className="bg-white px-1 rounded">{'{training_title}'}</code>,{' '}
+                              <code className="bg-white px-1 rounded">{'{venue}'}</code>,{' '}
+                              <code className="bg-white px-1 rounded">{'{completion_date}'}</code>
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* Attendees Section */}
+                    <div className="border-t border-gray-200 pt-4 mt-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <label className="block text-sm font-semibold text-gray-800">
                           Attendees <span className="text-red-500">*</span>
                         </label>
                         <button
@@ -2857,7 +3045,7 @@ function HrTrainings() {
                               setAttendeesEdit(employeeOptions.map(emp => emp.name));
                             }
                           }}
-                          className={`px-2.5 py-1 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center gap-1.5 text-xs font-semibold group ${
+                          className={`px-3 py-1.5 rounded-lg transition-all shadow-sm hover:shadow-md flex items-center gap-2 text-xs font-semibold group ${
                             attendeesEdit.length === employeeOptions.length
                               ? 'bg-gradient-to-r from-red-500 to-red-600 text-white hover:from-red-600 hover:to-red-700'
                               : 'bg-gradient-to-r from-blue-500 to-blue-600 text-white hover:from-blue-600 hover:to-blue-700'
@@ -2865,14 +3053,14 @@ function HrTrainings() {
                         >
                           {attendeesEdit.length === employeeOptions.length ? (
                             <>
-                              <svg className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                               </svg>
                               <span>Deselect All</span>
                             </>
                           ) : (
                             <>
-                              <svg className="w-3.5 h-3.5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <svg className="w-4 h-4 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               <span>Select All ({employeeOptions.length})</span>
@@ -2880,156 +3068,162 @@ function HrTrainings() {
                           )}
                         </button>
                       </div>
-                    </div>
-                    
-                    {/* Position Selection */}
-                    <div>
-                      <select
-                        value=""
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            handlePositionSelectEdit(e.target.value);
-                            e.target.value = "";
-                          }
-                        }}
-                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
-                      >
-                        <option value="">Select by Position</option>
-                        {positions
-                          .filter(pos => !selectedPositionsEdit.includes(pos))
-                          .map((pos, idx) => (
-                            <option key={idx} value={pos}>
-                              {pos}
-                            </option>
-                          ))}
-                      </select>
                       
-                      {/* Selected Positions Chips */}
-                      {selectedPositionsEdit.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-gray-50 rounded-lg border border-gray-200">
-                          {selectedPositionsEdit.map((pos) => {
-                            const empCount = employeesByPositionMapEdit[pos]?.length || 0;
-                            return (
-                              <div
-                                key={pos}
-                                className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-md px-2 py-0.5 group hover:bg-blue-100 transition-colors"
-                              >
-                                <span className="text-xs font-medium text-blue-800">{pos}</span>
-                                <span className="text-[10px] text-blue-700 bg-blue-200 px-1 py-0.5 rounded-full font-medium">
-                                  {empCount}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handlePositionRemoveEdit(pos)}
-                                  className="text-blue-600 hover:text-red-600 hover:bg-red-100 rounded-full p-0.5 transition-colors"
-                                  title={`Remove ${pos} and its employees`}
-                                >
-                                  <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </form>
-              </div>
-
-              {/* Right Side - Others Search and Selected Attendees List (50% width) */}
-              <div className="w-[50%] px-5 py-4 bg-gray-50 overflow-hidden">
-                <div className="h-full flex flex-col">
-                  {/* Search Input - Optional for additional employees */}
-                  <div className="mb-2.5 relative">
-                    <label className="block text-xs font-medium text-gray-700 mb-1">
-                      Others
-                    </label>
-                    <input
-                      type="text"
-                      value={employeeSearchQueryEdit}
-                      onChange={(e) => {
-                        setEmployeeSearchQueryEdit(e.target.value);
-                        setShowEmployeeSuggestionsEdit(e.target.value.length > 0);
-                      }}
-                      onKeyDown={onAttendeeKeyDownEdit}
-                      onFocus={() => {
-                        if (employeeSearchQueryEdit) setShowEmployeeSuggestionsEdit(true);
-                      }}
-                      className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
-                      placeholder="Search employee name..."
-                    />
-                    {showEmployeeSuggestionsEdit && filteredEmployeesEdit.length > 0 && (
-                      <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                        {filteredEmployeesEdit.map((emp, i) => {
-                          const alreadyAdded = attendeesEdit.includes(emp.name);
-                          return (
-                            <li
-                              key={i}
-                              className={`px-3 py-2 text-sm border-b last:border-b-0 ${
-                                alreadyAdded
-                                  ? 'text-gray-400 bg-gray-50 cursor-not-allowed'
-                                  : 'text-gray-700 hover:bg-gray-100 cursor-pointer'
-                              }`}
-                              onMouseDown={(e) => {
-                                if (alreadyAdded) return;
-                                e.preventDefault();
-                                handleEmployeeSelectEdit(emp);
-                              }}
-                            >
-                              {emp.name}
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                  
-                  {/* Attendees List - Scrollable */}
-                  <div className="flex-1 flex flex-col min-h-0">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-medium text-gray-700">
-                        Selected Depots <span className="text-gray-500">({attendeesEdit.length})</span>
-                      </span>
-                      {attendeesEdit.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAttendeesEdit([]);
-                            setSelectedPositionsEdit([]);
-                            setEmployeesByPositionMapEdit({});
+                      {/* Position Selection */}
+                      <div className="mb-3">
+                        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                          Select by Position
+                        </label>
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handlePositionSelectEdit(e.target.value);
+                              e.target.value = "";
+                            }
                           }}
-                          className="text-xs text-red-600 hover:text-red-700 font-medium transition-colors"
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
                         >
-                          Clear All
-                        </button>
-                      )}
-                    </div>
-                    <div className="border border-gray-300 rounded-lg p-2 bg-white flex-1 overflow-y-auto">
-                      {attendeesEdit.length > 0 ? (
-                        <div className="space-y-1">
-                          {attendeesEdit.map((name, i) => (
-                            <div key={i} className="flex items-center justify-between px-2 py-1 bg-gray-50 rounded border border-gray-200 hover:bg-gray-100 transition-colors">
-                              <span className="text-xs text-gray-700 truncate flex-1">{name}</span>
-                              <button
-                                type="button"
-                                onClick={() => removeAttendeeEdit(i)}
-                                className="text-red-600 hover:text-red-700 text-sm font-bold ml-2 flex-shrink-0 transition-colors"
-                                title="Remove"
-                              >
-                                ×
-                              </button>
-                            </div>
-                          ))}
+                          <option value="">Choose a position...</option>
+                          {positions
+                            .filter(pos => !selectedPositionsEdit.includes(pos))
+                            .map((pos, idx) => (
+                              <option key={idx} value={pos}>
+                                {pos}
+                              </option>
+                            ))}
+                        </select>
+                        
+                        {/* Selected Positions Chips */}
+                        {selectedPositionsEdit.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2.5 bg-blue-50 rounded-lg border border-blue-200">
+                            {selectedPositionsEdit.map((pos) => {
+                              const empCount = employeesByPositionMapEdit[pos]?.length || 0;
+                              return (
+                                <div
+                                  key={pos}
+                                  className="flex items-center gap-1.5 bg-white border border-blue-300 rounded-md px-2.5 py-1 group hover:bg-blue-50 transition-colors"
+                                >
+                                  <span className="text-xs font-medium text-blue-800">{pos}</span>
+                                  <span className="text-[10px] text-blue-700 bg-blue-200 px-1.5 py-0.5 rounded-full font-medium">
+                                    {empCount}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePositionRemoveEdit(pos)}
+                                    className="text-blue-600 hover:text-red-600 hover:bg-red-100 rounded-full p-0.5 transition-colors"
+                                    title={`Remove ${pos} and its employees`}
+                                  >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Search Individual Employees */}
+                      <div className="mb-3 relative">
+                        <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                          Search Individual Employee
+                        </label>
+                        <input
+                          type="text"
+                          value={employeeSearchQueryEdit}
+                          onChange={(e) => {
+                            setEmployeeSearchQueryEdit(e.target.value);
+                            setShowEmployeeSuggestionsEdit(e.target.value.length > 0);
+                          }}
+                          onKeyDown={onAttendeeKeyDownEdit}
+                          onFocus={() => {
+                            if (employeeSearchQueryEdit) setShowEmployeeSuggestionsEdit(true);
+                          }}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
+                          placeholder="Type employee name..."
+                        />
+                        {showEmployeeSuggestionsEdit && filteredEmployeesEdit.length > 0 && (
+                          <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                            {filteredEmployeesEdit.map((emp, i) => {
+                              const alreadyAdded = attendeesEdit.includes(emp.name);
+                              return (
+                                <li
+                                  key={i}
+                                  className={`px-3 py-2 text-sm border-b last:border-b-0 ${
+                                    alreadyAdded
+                                      ? 'text-gray-400 bg-gray-50 cursor-not-allowed'
+                                      : 'text-gray-700 hover:bg-gray-100 cursor-pointer'
+                                  }`}
+                                  onMouseDown={(e) => {
+                                    if (alreadyAdded) return;
+                                    e.preventDefault();
+                                    handleEmployeeSelectEdit(emp);
+                                  }}
+                                >
+                                  {emp.name}
+                                  {alreadyAdded && <span className="text-xs ml-2">(Already added)</span>}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                      
+                      {/* Selected Attendees List */}
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-gray-700">
+                            Selected Attendees <span className="text-gray-600">({attendeesEdit.length})</span>
+                          </span>
+                          {attendeesEdit.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAttendeesEdit([]);
+                                setSelectedPositionsEdit([]);
+                                setEmployeesByPositionMapEdit({});
+                              }}
+                              className="text-xs text-red-600 hover:text-red-700 font-medium transition-colors hover:underline"
+                            >
+                              Clear All
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <p className="text-xs text-gray-400 text-center py-8">No attendees added yet. Select positions or search for employees.</p>
-                      )}
+                        <div className="border border-gray-300 rounded-lg p-3 bg-gray-50 max-h-48 overflow-y-auto">
+                          {attendeesEdit.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {attendeesEdit.map((name, i) => (
+                                <div key={i} className="flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-200 hover:border-blue-300 transition-colors group">
+                                  <span className="text-xs text-gray-700 truncate flex-1">{name}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAttendeeEdit(i)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50 rounded-full p-1 ml-2 flex-shrink-0 transition-colors opacity-0 group-hover:opacity-100"
+                                    title="Remove attendee"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-8">
+                              <svg className="w-12 h-12 mx-auto text-gray-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                              </svg>
+                              <p className="text-xs text-gray-500">No attendees selected yet</p>
+                              <p className="text-xs text-gray-400 mt-1">Select positions or search for employees above</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
                 </div>
-              </div>
+              </form>
             </div>
             
             {/* Footer - Fixed */}
@@ -3260,8 +3454,8 @@ function HrTrainings() {
 
       {/* Confirm Add Training Modal */}
       {showConfirmAddModal && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowConfirmAddModal(false)}>
-          <div className="bg-white/95 backdrop-blur-md rounded-xl w-full max-w-md shadow-2xl border border-black" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center px-4 z-50" onClick={() => setShowConfirmAddModal(false)}>
+          <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-4 border-b border-gray-200">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -3275,23 +3469,91 @@ function HrTrainings() {
                 </div>
               </div>
             </div>
-            <div className="px-6 py-4">
+            <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">
               <div className="space-y-3">
+                
+                {/* Training Image - At Top */}
+                {imageFile && (
+                  <div className="rounded-lg border border-gray-200 overflow-hidden">
+                    <img 
+                      src={URL.createObjectURL(imageFile)} 
+                      alt="Training preview" 
+                      className="w-full h-auto max-h-48 object-contain bg-gray-50"
+                    />
+                  </div>
+                )}
+
                 <div>
                   <p className="text-xs text-gray-500 uppercase font-semibold">Training Title</p>
                   <p className="text-sm text-gray-900 font-medium mt-1">{form.title}</p>
                 </div>
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold">Date & Time</p>
-                  <p className="text-sm text-gray-900 mt-1">{form.date} at {form.time} - {form.end_time}</p>
+                
+                {form.description && (
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold">Description</p>
+                    <p className="text-sm text-gray-900 mt-1">{form.description}</p>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold">Start Date</p>
+                    <p className="text-sm text-gray-900 mt-1">{form.duration_start_date ? new Date(form.duration_start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Not set'}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold">End Date</p>
+                    <p className="text-sm text-gray-900 mt-1">{form.end_date ? new Date(form.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Same day'}</p>
+                  </div>
                 </div>
+                
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold">Start Time</p>
+                    <p className="text-sm text-gray-900 mt-1">{form.time}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold">End Time</p>
+                    <p className="text-sm text-gray-900 mt-1">{form.end_time}</p>
+                  </div>
+                </div>
+                
                 <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold">Venue</p>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Schedule Type</p>
+                  <p className="text-sm text-gray-900 mt-1 inline-flex items-center gap-1.5">
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${form.schedule_type === 'online' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}`}>
+                      {form.schedule_type === 'online' ? 'Online' : 'Onsite'}
+                    </span>
+                  </p>
+                </div>
+                
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">{form.schedule_type === 'online' ? 'Meeting Link' : 'Venue'}</p>
                   <p className="text-sm text-gray-900 mt-1">{form.venue}</p>
                 </div>
+                
+                {(selectedTemplateId || (uploadNewTemplate && newTemplateName)) && (
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase font-semibold">Certificate Template</p>
+                    <p className="text-sm text-gray-900 mt-1 inline-flex items-center gap-1.5">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      {selectedTemplateId ? certificateTemplates.find(t => t.id === selectedTemplateId)?.template_name : newTemplateName}
+                    </p>
+                  </div>
+                )}
+                
                 <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold">Attendees</p>
-                  <p className="text-sm text-gray-900 mt-1">{attendees.length} employee(s)</p>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Attendees ({attendees.length})</p>
+                  <div className="mt-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg">
+                    <div className="divide-y divide-gray-100">
+                      {attendees.map((attendee, index) => (
+                        <div key={index} className="px-3 py-2 text-sm text-gray-900 hover:bg-gray-50">
+                          {attendee}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
               <p className="text-sm text-gray-600 mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -3301,15 +3563,23 @@ function HrTrainings() {
             <div className="px-6 py-4 bg-gray-50/80 border-t border-gray-200 flex justify-end gap-3">
               <button
                 onClick={() => setShowConfirmAddModal(false)}
-                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
+                disabled={isCreatingTraining}
+                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Cancel
               </button>
               <button
                 onClick={confirmAddTraining}
-                className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] transition-colors font-medium text-sm"
+                disabled={isCreatingTraining}
+                className="px-4 py-2 rounded-lg bg-[#800000] text-white hover:bg-[#990000] transition-colors font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
               >
-                Confirm & Create
+                {isCreatingTraining && (
+                  <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {isCreatingTraining ? 'Creating...' : 'Confirm & Create'}
               </button>
             </div>
           </div>
