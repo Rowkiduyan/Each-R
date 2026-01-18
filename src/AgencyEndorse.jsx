@@ -1383,6 +1383,46 @@ function AgencyEndorse() {
         trainingCertFilePath = uploadData?.path || filePath;
       }
 
+      // Upload license photocopy (optional, but required by UI validation for driver jobs) to application-files.
+      // IMPORTANT: never store raw File/Blob objects in the DB payload.
+      let licensePhotocopyPath =
+        vals.licensePhotocopyPath ||
+        vals.license_photocopy_path ||
+        vals.licenseFilePath ||
+        vals.license_file_path ||
+        vals.photocopyPath ||
+        vals.photocopy_path ||
+        null;
+
+      const licenseFile = vals.licenseFile || null;
+      const isUploadableLicenseBlob =
+        licenseFile &&
+        typeof licenseFile === 'object' &&
+        typeof licenseFile.size === 'number' &&
+        typeof licenseFile.type === 'string' &&
+        typeof Blob !== 'undefined' &&
+        licenseFile instanceof Blob;
+
+      if (isUploadableLicenseBlob) {
+        const fileName = String(licenseFile.name || 'license-photocopy').replace(/\s+/g, '_');
+        const safeEmail = String(email || 'unknown').replace(/[^a-z0-9@._-]/gi, '_');
+        const prefix = authUserId || agencyProfileId || 'agency';
+        const filePath = `${prefix}/license-photocopy/${safeEmail}/${Date.now()}-${fileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('application-files')
+          .upload(filePath, licenseFile, {
+            upsert: true,
+            contentType: licenseFile.type || undefined,
+          });
+
+        if (uploadError) {
+          throw new Error('Failed to upload license photocopy: ' + uploadError.message);
+        }
+
+        licensePhotocopyPath = uploadData?.path || filePath;
+      }
+
       // Include resume in applicant data if available
       // Avoid including raw File objects in DB payload.
       // eslint-disable-next-line no-unused-vars
@@ -1402,12 +1442,26 @@ function AgencyEndorse() {
         department: jobDepartment || vals.department || null,
         ...(applicantResumePath && { resumePath: applicantResumePath }),
         ...(trainingCertFilePath && { trainingCertFilePath }),
+        ...(licensePhotocopyPath && { licensePhotocopyPath }),
       };
 
       // prepare payload
       const payload = {
         applicant: applicantData,
         ...(trainingCertFilePath && { trainingCertFilePath }),
+        ...(licensePhotocopyPath && {
+          requirements: {
+            license: {
+              // Keep a few keys for backwards/forwards compatibility with other screens.
+              photocopyPath: licensePhotocopyPath,
+              photocopy_path: licensePhotocopyPath,
+              filePath: licensePhotocopyPath,
+              file_path: licensePhotocopyPath,
+              licenseFilePath: licensePhotocopyPath,
+              license_file_path: licensePhotocopyPath,
+            },
+          },
+        }),
         workExperiences,
         meta: {
           source: "agency",

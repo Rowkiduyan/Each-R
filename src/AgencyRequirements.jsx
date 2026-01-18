@@ -821,7 +821,9 @@ function AgencyRequirements() {
           file_path: uploadData.path,
           filePath: uploadData.path,
           submitted_at: new Date().toISOString(),
-          status: 'pending',
+          // Mark as submitted so both Agency and HR UIs reflect the upload.
+          // HR validation will later set this to approved/resubmit.
+          status: 'submitted',
         };
 
         if (idx >= 0) {

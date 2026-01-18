@@ -2670,27 +2670,91 @@ function AgencyEndorsements() {
                               {isDeliveryCrew(selectedEmployee, job) && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
-                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                    <div>
-                                      <span className="text-gray-500">License Classification:</span>
-                                      <span className="ml-2">{displayValue(formData.licenseClassification)}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">License Expiry Date:</span>
-                                      <span className="ml-2">{displayDate(formData.licenseExpiry)}</span>
-                                    </div>
-                                    {formData.restrictionCodes && Array.isArray(formData.restrictionCodes) && formData.restrictionCodes.length > 0 && (
-                                      <div className="md:col-span-2">
-                                        <span className="text-gray-500">Restriction Codes:</span>
-                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
-                                          {formData.restrictionCodes.map((code, idx) => (
-                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
-                                              {code}
-                                            </span>
-                                          ))}
-                                        </div>
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                      <div>
+                                        <span className="text-gray-500">License Classification:</span>
+                                        <span className="ml-2">{displayValue(formData.licenseClassification)}</span>
                                       </div>
-                                    )}
+                                      <div>
+                                        <span className="text-gray-500">License Expiry Date:</span>
+                                        <span className="ml-2">{displayDate(formData.licenseExpiry)}</span>
+                                      </div>
+                                      {formData.restrictionCodes && Array.isArray(formData.restrictionCodes) && formData.restrictionCodes.length > 0 && (
+                                        <div className="md:col-span-2">
+                                          <span className="text-gray-500">Restriction Codes:</span>
+                                          <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                            {formData.restrictionCodes.map((code, idx) => (
+                                              <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                                {code}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="mt-4 pt-4 border-t border-gray-200">
+                                      <div className="text-xs font-semibold text-gray-600 mb-2">Photocopy of License</div>
+                                      {(() => {
+                                        const isPdfUrl = (url) => /\.pdf($|\?|#)/i.test(String(url || ''));
+                                        const isImageUrl = (url) => /\.(png|jpe?g|webp|gif)($|\?|#)/i.test(String(url || ''));
+
+                                        if (loadingRequirements) {
+                                          return <div className="text-xs text-gray-400">Loading…</div>;
+                                        }
+
+                                        const payloadRequirements =
+                                          payload?.requirements ||
+                                          payload?.form?.requirements ||
+                                          payload?.applicant?.requirements ||
+                                          null;
+
+                                        const licenseReq =
+                                          payloadRequirements?.license ||
+                                          employeeRequirements?.license ||
+                                          employeeRequirements?.requirements?.license ||
+                                          {};
+
+                                        const photocopyPath =
+                                          licenseReq.filePath ||
+                                          licenseReq.file_path ||
+                                          licenseReq.licenseFilePath ||
+                                          licenseReq.license_file_path ||
+                                          licenseReq.photocopyPath ||
+                                          licenseReq.photocopy_path ||
+                                          licenseReq.licensePhotocopyPath ||
+                                          licenseReq.license_photocopy_path ||
+                                          null;
+
+                                        const photocopyUrl = photocopyPath
+                                          ? String(photocopyPath).startsWith('http')
+                                            ? String(photocopyPath)
+                                            : getFileUrl(photocopyPath)
+                                          : null;
+
+                                        if (!photocopyUrl) return <div className="text-xs text-gray-400 italic">None</div>;
+
+                                        return (
+                                          <div className="space-y-3">
+                                            <div>
+                                              <a href={photocopyUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                                Open
+                                              </a>
+                                            </div>
+                                            {isImageUrl(photocopyUrl) ? (
+                                              <a href={photocopyUrl} target="_blank" rel="noopener noreferrer">
+                                                <img src={photocopyUrl} alt="License Photocopy" className="w-full max-h-[420px] object-contain bg-gray-50 rounded" />
+                                              </a>
+                                            ) : isPdfUrl(photocopyUrl) ? (
+                                              <iframe title="License Photocopy" src={photocopyUrl} className="w-full h-[420px] rounded bg-gray-50 border" />
+                                            ) : (
+                                              <div className="text-xs text-gray-400">Preview unavailable. Use Open.</div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
                                   </div>
                                 </div>
                               )}
@@ -3714,27 +3778,91 @@ function AgencyEndorsements() {
                               {isDeliveryCrew(selectedEmployee, job) && (
                                 <div>
                                   <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
-                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                    <div>
-                                      <span className="text-gray-500">License Classification:</span>
-                                      <span className="ml-2">{displayValue(formData.licenseClassification)}</span>
-                                    </div>
-                                    <div>
-                                      <span className="text-gray-500">License Expiry Date:</span>
-                                      <span className="ml-2">{displayDate(formData.licenseExpiry)}</span>
-                                    </div>
-                                    {formData.restrictionCodes && Array.isArray(formData.restrictionCodes) && formData.restrictionCodes.length > 0 && (
-                                      <div className="md:col-span-2">
-                                        <span className="text-gray-500">Restriction Codes:</span>
-                                        <div className="ml-2 mt-1 flex flex-wrap gap-2">
-                                          {formData.restrictionCodes.map((code, idx) => (
-                                            <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
-                                              {code}
-                                            </span>
-                                          ))}
-                                        </div>
+                                  <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                      <div>
+                                        <span className="text-gray-500">License Classification:</span>
+                                        <span className="ml-2">{displayValue(formData.licenseClassification)}</span>
                                       </div>
-                                    )}
+                                      <div>
+                                        <span className="text-gray-500">License Expiry Date:</span>
+                                        <span className="ml-2">{displayDate(formData.licenseExpiry)}</span>
+                                      </div>
+                                      {formData.restrictionCodes && Array.isArray(formData.restrictionCodes) && formData.restrictionCodes.length > 0 && (
+                                        <div className="md:col-span-2">
+                                          <span className="text-gray-500">Restriction Codes:</span>
+                                          <div className="ml-2 mt-1 flex flex-wrap gap-2">
+                                            {formData.restrictionCodes.map((code, idx) => (
+                                              <span key={idx} className="px-2 py-1 bg-gray-100 rounded text-gray-800 text-sm">
+                                                {code}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="mt-4 pt-4 border-t border-gray-200">
+                                      <div className="text-xs font-semibold text-gray-600 mb-2">Photocopy of License</div>
+                                      {(() => {
+                                        const isPdfUrl = (url) => /\.pdf($|\?|#)/i.test(String(url || ''));
+                                        const isImageUrl = (url) => /\.(png|jpe?g|webp|gif)($|\?|#)/i.test(String(url || ''));
+
+                                        if (loadingRequirements) {
+                                          return <div className="text-xs text-gray-400">Loading…</div>;
+                                        }
+
+                                        const payloadRequirements =
+                                          payload?.requirements ||
+                                          payload?.form?.requirements ||
+                                          payload?.applicant?.requirements ||
+                                          null;
+
+                                        const licenseReq =
+                                          payloadRequirements?.license ||
+                                          employeeRequirements?.license ||
+                                          employeeRequirements?.requirements?.license ||
+                                          {};
+
+                                        const photocopyPath =
+                                          licenseReq.filePath ||
+                                          licenseReq.file_path ||
+                                          licenseReq.licenseFilePath ||
+                                          licenseReq.license_file_path ||
+                                          licenseReq.photocopyPath ||
+                                          licenseReq.photocopy_path ||
+                                          licenseReq.licensePhotocopyPath ||
+                                          licenseReq.license_photocopy_path ||
+                                          null;
+
+                                        const photocopyUrl = photocopyPath
+                                          ? String(photocopyPath).startsWith('http')
+                                            ? String(photocopyPath)
+                                            : getFileUrl(photocopyPath)
+                                          : null;
+
+                                        if (!photocopyUrl) return <div className="text-xs text-gray-400 italic">None</div>;
+
+                                        return (
+                                          <div className="space-y-3">
+                                            <div>
+                                              <a href={photocopyUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                                Open
+                                              </a>
+                                            </div>
+                                            {isImageUrl(photocopyUrl) ? (
+                                              <a href={photocopyUrl} target="_blank" rel="noopener noreferrer">
+                                                <img src={photocopyUrl} alt="License Photocopy" className="w-full max-h-[420px] object-contain bg-gray-50 rounded" />
+                                              </a>
+                                            ) : isPdfUrl(photocopyUrl) ? (
+                                              <iframe title="License Photocopy" src={photocopyUrl} className="w-full h-[420px] rounded bg-gray-50 border" />
+                                            ) : (
+                                              <div className="text-xs text-gray-400">Preview unavailable. Use Open.</div>
+                                            )}
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
                                   </div>
                                 </div>
                               )}
