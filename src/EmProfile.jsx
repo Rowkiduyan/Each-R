@@ -14,24 +14,51 @@ function EmpProfile() {
 
             try {
                 setLoading(true);
-                const { data, error } = await supabase
+                
+                // Fetch employee data
+                const { data: employeeData, error: employeeError } = await supabase
                     .from('employees')
                     .select('*')
                     .eq('email', userEmail)
                     .maybeSingle();
 
-                if (error) {
-                    console.error('Error fetching employee profile:', error);
+                if (employeeError) {
+                    console.error('Error fetching employee profile:', employeeError);
                     setProfileData(null);
-                } else if (data) {
-                    setProfileData({
-                        ...data,
-                        employment_status: data.employment_status || 'regular' // Temporary dummy data
-                    });
-                } else {
+                    setLoading(false);
+                    return;
+                }
+
+                if (!employeeData) {
                     console.warn('No employee profile found for email:', userEmail);
                     setProfileData(null);
+                    setLoading(false);
+                    return;
                 }
+
+                // Fetch applicant data to get personal information (address, sex, birthday, marital status)
+                // NOTE: This requires an RLS policy allowing employees to read their applicant data
+                const { data: applicantData, error: applicantError } = await supabase
+                    .from('applicants')
+                    .select('address, sex, birthday, marital_status')
+                    .eq('id', employeeData.id)
+                    .maybeSingle();
+
+                if (applicantError) {
+                    console.error('Error fetching applicant data:', applicantError);
+                }
+
+                // Merge employee and applicant data
+                setProfileData({
+                    ...employeeData,
+                    // Use applicant data for personal information if available
+                    personal_email: employeeData.personal_email || applicantData?.email || employeeData.email,
+                    address: applicantData?.address || employeeData.address || 'Not specified',
+                    sex: applicantData?.sex || employeeData.sex || 'Not specified',
+                    birthday: applicantData?.birthday || employeeData.birthday,
+                    marital_status: applicantData?.marital_status || employeeData.marital_status || 'Not specified',
+                    employment_status: employeeData.status || 'regular'
+                });
             } catch (err) {
                 console.error('Error:', err);
                 setProfileData(null);
@@ -155,26 +182,26 @@ function EmpProfile() {
                                 <span className="text-gray-800 font-medium">{profileData.address || 'Not specified'}</span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-sm text-gray-500 mb-1">Contact Number</span>
-                                <span className="text-gray-800 font-medium">{profileData.contact_number || 'Not specified'}</span>
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-sm text-gray-500 mb-1">Email</span>
-                                <span className="text-gray-800 font-medium">{profileData.email || 'Not specified'}</span>
-                            </div>
-                        </div>
-                        <div className="space-y-4">
-                            <div className="flex flex-col">
                                 <span className="text-sm text-gray-500 mb-1">Sex</span>
                                 <span className="text-gray-800 font-medium">{profileData.sex || 'Not specified'}</span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-sm text-gray-500 mb-1">Birthday</span>
+                                <span className="text-sm text-gray-500 mb-1">Birthdate</span>
                                 <span className="text-gray-800 font-medium">{formatDate(profileData.birthday)}</span>
+                            </div>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="flex flex-col">
+                                <span className="text-sm text-gray-500 mb-1">Contact Number</span>
+                                <span className="text-gray-800 font-medium">{profileData.contact_number || 'Not specified'}</span>
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-sm text-gray-500 mb-1">Age</span>
                                 <span className="text-gray-800 font-medium">{calculateAge(profileData.birthday)} years old</span>
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm text-gray-500 mb-1">Personal Email</span>
+                                <span className="text-gray-800 font-medium">{profileData.personal_email || 'Not specified'}</span>
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-sm text-gray-500 mb-1">Marital Status</span>
@@ -199,35 +226,32 @@ function EmpProfile() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4">
                             <div className="flex flex-col">
+                                <span className="text-sm text-gray-500 mb-1">Company Email</span>
+                                <span className="text-gray-800 font-medium">{profileData.company_email || userEmail || 'Not specified'}</span>
+                            </div>
+                            <div className="flex flex-col">
                                 <span className="text-sm text-gray-500 mb-1">Employment Start Date</span>
                                 <span className="text-gray-800 font-medium">{formatDate(profileData.date_hired)}</span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-sm text-gray-500 mb-1">Resume</span>
-                                {profileData.resume_url ? (
-                                    <a href={profileData.resume_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                        View Resume
-                                    </a>
-                                ) : (
-                                    <span className="text-gray-500">Not uploaded</span>
-                                )}
+                                <span className="text-sm text-gray-500 mb-1">Position</span>
+                                <span className="text-gray-800 font-medium">{profileData.position || 'Not specified'}</span>
+                            </div>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="flex flex-col">
+                                <span className="text-sm text-gray-500 mb-1">Department</span>
+                                <span className="text-gray-800 font-medium">{profileData.department || 'Not specified'}</span>
                             </div>
                             <div className="flex flex-col">
-                                <span className="text-sm text-gray-500 mb-1">Application Form</span>
-                                {profileData.application_form_url ? (
-                                    <a href={profileData.application_form_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                        </svg>
-                                        View Application
-                                    </a>
-                                ) : (
-                                    <span className="text-gray-500">Not uploaded</span>
-                                )}
+                                <span className="text-sm text-gray-500 mb-1">Employment Type</span>
+                                <span className="text-gray-800 font-medium">
+                                    {profileData.employment_status === 'regular' ? 'Regular' : 'Under Probation'}
+                                </span>
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-sm text-gray-500 mb-1">Depot</span>
+                                <span className="text-gray-800 font-medium">{profileData.depot || 'Not specified'}</span>
                             </div>
                         </div>
                         </div>
