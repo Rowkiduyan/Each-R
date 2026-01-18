@@ -378,6 +378,7 @@ function EmployeeLayout() {
                     <EmployeeUserContext.Provider value={{ 
                         userId: currentUserId, 
                         userEmail: currentUserEmail,
+                        employeeUser: employeeUser,
                         employeeData: employeeUser 
                     }}>
                         <Outlet />
