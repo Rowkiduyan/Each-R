@@ -24,6 +24,7 @@ function HrTrainings() {
   const [alertMessage, setAlertMessage] = useState("");
   const [showConfirmAddModal, setShowConfirmAddModal] = useState(false);
   const [isCreatingTraining, setIsCreatingTraining] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState({});
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [showCertificateConfirmModal, setShowCertificateConfirmModal] = useState(false);
@@ -437,6 +438,14 @@ function HrTrainings() {
   const onChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
+    // Clear error for this field when user types
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => {
+        const newErrors = { ...prev };
+        delete newErrors[name];
+        return newErrors;
+      });
+    }
   };
 
   const onEditChange = (e) => {
@@ -448,6 +457,14 @@ function HrTrainings() {
     const employeeName = typeof employee === 'string' ? employee : employee.name;
     if (!attendees.includes(employeeName)) {
       setAttendees((prev) => [...prev, employeeName]);
+      // Clear attendees error when they add someone
+      if (fieldErrors.attendees) {
+        setFieldErrors((prev) => {
+          const newErrors = { ...prev };
+          delete newErrors.attendees;
+          return newErrors;
+        });
+      }
     }
     setEmployeeSearchQuery("");
     setShowEmployeeSuggestions(false);
@@ -555,7 +572,6 @@ function HrTrainings() {
           training_date: formattedDate,
           training_time: `${formattedTime} - ${endTime}`,
           training_venue: trainingData.venue || 'TBA',
-          training_description: trainingData.description || 'No description provided',
           training_type: trainingData.schedule_type === 'online' ? 'Online Training' : 'On-site Training',
           training_image: trainingData.image_url || ''
         };
@@ -583,31 +599,26 @@ function HrTrainings() {
   // Create new training
   const onSubmit = async (e) => {
     e.preventDefault();
-    if (!form.title) {
-      setAlertMessage("Title is required.");
-      setShowAlertModal(true);
+    
+    // Validate all required fields and collect errors
+    const errors = {};
+    if (!form.title) errors.title = true;
+    if (!form.duration_start_date) errors.duration_start_date = true;
+    if (!form.time) errors.time = true;
+    if (!form.end_time) errors.end_time = true;
+    if (!form.venue) errors.venue = true;
+    if (!form.description) errors.description = true;
+    if (!attendees || attendees.length === 0) errors.attendees = true;
+    if (!selectedTemplateId || selectedTemplateId === "") errors.certificateTemplate = true;
+    
+    // If there are validation errors, highlight fields and stop
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
       return;
     }
-    if (!form.duration_start_date || !form.time || !form.end_time) {
-      setAlertMessage("Please provide start date, start time, and end time.");
-      setShowAlertModal(true);
-      return;
-    }
-    if (!form.venue) {
-      setAlertMessage("Venue is required.");
-      setShowAlertModal(true);
-      return;
-    }
-    if (!form.description) {
-      setAlertMessage("Description is required.");
-      setShowAlertModal(true);
-      return;
-    }
-    if (!attendees || attendees.length === 0) {
-      setAlertMessage("At least one attendee is required.");
-      setShowAlertModal(true);
-      return;
-    }
+    
+    // Clear any previous errors
+    setFieldErrors({});
     
     // Show confirmation modal
     setShowConfirmAddModal(true);
@@ -1935,8 +1946,8 @@ function HrTrainings() {
           <div className="bg-white rounded-xl w-full max-w-6xl shadow-xl flex flex-col max-h-[90vh]" onClick={(e) => e.stopPropagation()}>
             {/* Header - Fixed */}
             <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-blue-50 to-indigo-50 relative">
-              <h2 className="text-center font-bold text-xl text-gray-800">Training Schedule Details</h2>
-              <p className="text-center text-xs text-gray-500 mt-1">Complete information about this training</p>
+              <h2 className="text-center font-bold text-xl text-gray-800">Schedule Details</h2>
+              <p className="text-center text-xs text-gray-500 mt-1">Complete information about this schedule</p>
               <button 
                 onClick={() => setShowDetails(false)} 
                 className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
@@ -1971,7 +1982,7 @@ function HrTrainings() {
                 <div className="bg-gray-50 rounded-lg p-4">
                   <div className="space-y-3">
                     <div>
-                      <p className="text-xs text-gray-500 font-medium mb-1">Training Title</p>
+                      <p className="text-xs text-gray-500 font-medium mb-1">Title</p>
                       <p className="text-base text-gray-900 font-semibold">{selectedTraining.title}</p>
                     </div>
                     
@@ -2157,7 +2168,9 @@ function HrTrainings() {
                           value={form.title}
                           onChange={onChange}
                           required
-                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
+                            fieldErrors.title ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
+                          }`}
                           placeholder="Personal Development"
                         />
                       </div>
@@ -2241,7 +2254,9 @@ function HrTrainings() {
                         value={form.venue}
                         onChange={onChange}
                         required
-                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                        className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
+                          fieldErrors.venue ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
+                        }`}
                         placeholder={form.schedule_type === 'online' ? 'Google Meet, Zoom, etc.' : 'Location address'}
                       />
                     </div>
@@ -2258,7 +2273,9 @@ function HrTrainings() {
                           type="date"
                           required
                           min={new Date().toISOString().split('T')[0]}
-                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
+                            fieldErrors.duration_start_date ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
+                          }`}
                         />
                       </div>
                       <div>
@@ -2287,7 +2304,9 @@ function HrTrainings() {
                           onChange={onChange}
                           type="time"
                           required
-                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
+                            fieldErrors.time ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
+                          }`}
                         />
                       </div>
                       <div>
@@ -2300,7 +2319,9 @@ function HrTrainings() {
                           onChange={onChange}
                           type="time"
                           required
-                          className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
+                          className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
+                            fieldErrors.end_time ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
+                          }`}
                         />
                       </div>
                     </div>
@@ -2317,18 +2338,19 @@ function HrTrainings() {
                         onChange={onChange}
                         rows="2"
                         required
-                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 resize-none transition-colors"
+                        className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none transition-colors ${
+                          fieldErrors.description ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
+                        }`}
                         placeholder="Training details..."
                       />
                     </div>
                     
                     {/* Certificate Template Section */}
-                    <div className="border-t border-gray-200 pt-4 mt-4">
+                    <div className={`pt-4 mt-4 ${fieldErrors.certificateTemplate ? 'border-t-2 border-red-500' : 'border-t border-gray-200'}`}>
                       <div className="flex items-center gap-2 mb-3">
-                        <label className="text-sm font-semibold text-gray-800">
+                        <label className={`text-sm font-semibold ${fieldErrors.certificateTemplate ? 'text-red-600' : 'text-gray-800'}`}>
                           Certificate Template
                         </label>
-                        <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Optional</span>
                         <div className="group relative">
                           <svg className="w-4 h-4 text-blue-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -2385,7 +2407,16 @@ function HrTrainings() {
                         <div className="space-y-2">
                           <select
                             value={selectedTemplateId}
-                            onChange={(e) => setSelectedTemplateId(e.target.value)}
+                            onChange={(e) => {
+                              setSelectedTemplateId(e.target.value);
+                              if (fieldErrors.certificateTemplate) {
+                                setFieldErrors((prev) => {
+                                  const newErrors = { ...prev };
+                                  delete newErrors.certificateTemplate;
+                                  return newErrors;
+                                });
+                              }
+                            }}
                             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-colors"
                           >
                             <option value="">Select a template...</option>
@@ -2491,9 +2522,9 @@ function HrTrainings() {
                     </div>
                     
                     {/* Attendees Section */}
-                    <div className="border-t border-gray-200 pt-4 mt-4">
+                    <div className={`pt-4 mt-4 ${fieldErrors.attendees ? 'border-t-2 border-red-500' : 'border-t border-gray-200'}`}>
                       <div className="flex items-center justify-between mb-3">
-                        <label className="block text-sm font-semibold text-gray-800">
+                        <label className={`block text-sm font-semibold ${fieldErrors.attendees ? 'text-red-600' : 'text-gray-800'}`}>
                           Attendees <span className="text-red-500">*</span>
                         </label>
                         <button
@@ -3393,6 +3424,8 @@ function HrTrainings() {
           </div>
         </div>
       )}
+
+
 
       {/* Alert Modal */}
       {showAlertModal && (

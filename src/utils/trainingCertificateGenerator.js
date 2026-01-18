@@ -100,7 +100,6 @@ export async function generateTrainingCertificates(training, attendees) {
         certificateData.employee_name = String(attendee.name || '');
         certificateData.training_title = String(training.title || 'Training Program');
         certificateData.training_date = String(trainingDate);
-        certificateData.description = String(training.description || 'Professional development training');
         certificateData.venue = String(training.venue || 'N/A');
         certificateData.completion_date = String(completionDate);
 
