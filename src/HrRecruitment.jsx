@@ -13,7 +13,8 @@ async function scheduleInterviewClient(applicationId, interview) {
   try {
     const functionName = "schedule-interview-with-notification";
     const { data, error } = await supabase.functions.invoke(functionName, {
-      body: { applicationId, interview },
+      // Be explicit about schedule kind so the edge function cannot infer/misroute.
+      body: { applicationId, interview, kind: 'interview' },
     });
 
     if (error) throw error;
@@ -24,110 +25,37 @@ async function scheduleInterviewClient(applicationId, interview) {
   }
 }
 
-/**
- * scheduleInterviewClient
-                          <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                              <div>
-                                <span className="text-gray-500">License Classification:</span>
-                                <span className="ml-2">{displayValue(licenseClassification) || renderNone()}</span>
-                              </div>
-                              <div>
-                                <span className="text-gray-500">License Expiry Date:</span>
-                                <span className="ml-2">{displayDate(licenseExpiry)}</span>
-                              </div>
-                              {Array.isArray(restrictionCodes) && restrictionCodes.filter(Boolean).length > 0 && (
-                                <div className="md:col-span-2">
-                                  <span className="text-gray-500">Restriction Codes:</span>
-                                  {displayValue(restrictionCodes)}
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="mt-4 pt-4 border-t border-gray-200">
-                              <div className="text-xs font-semibold text-gray-600 mb-2">Photocopy of License</div>
-                              {(() => {
-                                const isPdfUrl = (url) => /\.pdf($|\?|#)/i.test(String(url || ''));
-                                const isImageUrl = (url) => /\.(png|jpe?g|webp|gif)($|\?|#)/i.test(String(url || ''));
-
-                                if (selectedApplicantLicensePhotocopyUrl) {
-                                  const url = selectedApplicantLicensePhotocopyUrl;
-                                  return (
-                                    <div className="space-y-3">
-                                      <div>
-                                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
-                                          Open
-                                        </a>
-                                      </div>
-                                      {isImageUrl(url) ? (
-                                        <a href={url} target="_blank" rel="noopener noreferrer">
-                                          <img src={url} alt="License Photocopy" className="w-full max-h-[420px] object-contain bg-gray-50 rounded" />
-                                        </a>
-                                      ) : isPdfUrl(url) ? (
-                                        <iframe title="License Photocopy" src={url} className="w-full h-[420px] rounded bg-gray-50 border" />
-                                      ) : (
-                                        <div className="text-xs text-gray-400">Preview unavailable. Use Open.</div>
-                                      )}
-                                    </div>
-                                  );
-                                }
-
-                                const hasAny = !!(selectedApplicantLicenseFrontUrl || selectedApplicantLicenseBackUrl);
-                                if (!hasAny) return <div className="text-xs text-gray-400 italic">None</div>;
-
-                                return (
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="border border-gray-200 rounded-lg p-3">
-                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
-                                      {selectedApplicantLicenseFrontUrl ? (
-                                        <a href={selectedApplicantLicenseFrontUrl} target="_blank" rel="noopener noreferrer">
-                                          <img
-                                            src={selectedApplicantLicenseFrontUrl}
-                                            alt="Driver's License Front"
-                                            className="w-full h-40 object-contain bg-gray-50 rounded"
-                                          />
-                                        </a>
-                                      ) : (
-                                        <div className="text-xs text-gray-400 italic">None</div>
-                                      )}
-                                    </div>
-                                    <div className="border border-gray-200 rounded-lg p-3">
-                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
-                                      {selectedApplicantLicenseBackUrl ? (
-                                        <a href={selectedApplicantLicenseBackUrl} target="_blank" rel="noopener noreferrer">
-                                          <img
-                                            src={selectedApplicantLicenseBackUrl}
-                                            alt="Driver's License Back"
-                                            className="w-full h-40 object-contain bg-gray-50 rounded"
-                                          />
-                                        </a>
-                                      ) : (
-                                        <div className="text-xs text-gray-400 italic">None</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                            </div>
-                          </div>
-}
-        password: employeeData.employeePassword,
-        firstName: employeeData.firstName,
-        lastName: employeeData.lastName,
-      }),
+// Invokes the Supabase Edge Function that schedules agreement signing + sends notifications + email.
+async function scheduleAgreementSigningClient(applicationId, appointment) {
+  try {
+    const functionName = "schedule-agreement-signing-with-notification";
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: { applicationId, appointment },
     });
 
-    if (res instanceof Response) {
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(JSON.stringify(json || { status: res.status }));
-      }
-      return { ok: true, data: json };
-    } else if (res?.error) {
-      throw res.error;
-    } else {
-      return { ok: true, data: res };
-    }
+    if (error) throw error;
+    return { ok: true, data };
+  } catch (err) {
+    console.error("scheduleAgreementSigningClient error:", err);
+    return { ok: false, error: err };
+  }
+}
+
+// Invokes the Supabase Edge Function that creates/updates the employee Auth account.
+async function createEmployeeAuthAccount(employeeData) {
+  try {
+    const functionName = "create-employee-auth";
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: {
+        employeeEmail: String(employeeData?.employeeEmail || '').trim(),
+        employeePassword: String(employeeData?.employeePassword || ''),
+        firstName: employeeData?.firstName || null,
+        lastName: employeeData?.lastName || null,
+      },
+    });
+
+    if (error) throw error;
+    return { ok: true, data };
   } catch (err) {
     console.error("createEmployeeAuthAccount error:", err);
     return { ok: false, error: err };
@@ -141,21 +69,12 @@ async function scheduleInterviewClient(applicationId, interview) {
 async function sendEmployeeAccountEmail(employeeData) {
   try {
     const functionName = "send-employee-credentials";
-    const res = await supabase.functions.invoke(functionName, {
-      body: JSON.stringify(employeeData),
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: employeeData,
     });
 
-    if (res instanceof Response) {
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(JSON.stringify(json || { status: res.status }));
-      }
-      return { ok: true, data: json };
-    } else if (res?.error) {
-      throw res.error;
-    } else {
-      return { ok: true, data: res };
-    }
+    if (error) throw error;
+    return { ok: true, data };
   } catch (err) {
     console.error("sendEmployeeAccountEmail error:", err);
     return { ok: false, error: err };
@@ -170,6 +89,50 @@ function generateEmployeeEmail(firstName, lastName) {
   const lastPart = lastName.toLowerCase().replace(/\s+/g, "");
   return `${firstInitial}${lastPart}@roadwise.com`;
 }
+
+async function generateUniqueEmployeeEmail(firstName, lastName) {
+  const base = generateEmployeeEmail(firstName, lastName);
+  if (!base) return null;
+
+  const [baseLocal, baseDomain] = base.split("@");
+  const domain = baseDomain ? `@${baseDomain}` : "@roadwise.com";
+  const local = (baseLocal || "").toLowerCase();
+
+  // Prefer avoiding email collisions to prevent overwriting someone else's Auth account.
+  // We use the employees/profiles tables as our canonical "already in use" sources.
+  try {
+    const [empRes, profRes] = await Promise.all([
+      supabase
+        .from("employees")
+        .select("email")
+        .ilike("email", `${local}%${domain}`)
+        .limit(200),
+      supabase
+        .from("profiles")
+        .select("email")
+        .ilike("email", `${local}%${domain}`)
+        .limit(200),
+    ]);
+
+    const used = new Set();
+    (empRes?.data || []).forEach((r) => used.add(String(r?.email || "").trim().toLowerCase()));
+    (profRes?.data || []).forEach((r) => used.add(String(r?.email || "").trim().toLowerCase()));
+
+    const baseLower = base.toLowerCase();
+    if (!used.has(baseLower)) return base;
+
+    for (let i = 2; i <= 99; i += 1) {
+      const candidate = `${local}${i}${domain}`;
+      if (!used.has(candidate.toLowerCase())) return candidate;
+    }
+
+    const rand = Math.floor(1000 + Math.random() * 9000);
+    return `${local}${rand}${domain}`;
+  } catch (e) {
+    console.warn("generateUniqueEmployeeEmail failed; falling back to base email", e);
+    return base;
+  }
+ }
 
 function generateEmployeePassword(firstName, lastName, birthday) {
   const firstInitial = firstName ? firstName.charAt(0).toUpperCase() : "E";
@@ -2359,9 +2322,9 @@ function HrRecruitment() {
         let employeePassword = null;
 
         if (isAgencyApplicant) {
-          employeeEmail = applicantEmail || generateEmployeeEmail(firstName, lastName);
+          employeeEmail = applicantEmail || (await generateUniqueEmployeeEmail(firstName, lastName));
         } else {
-          employeeEmail = generateEmployeeEmail(firstName, lastName);
+          employeeEmail = await generateUniqueEmployeeEmail(firstName, lastName);
           employeePassword = generateEmployeePassword(firstName, lastName, birthday);
         }
 
@@ -2649,7 +2612,7 @@ function HrRecruitment() {
         // Send email with credentials
         // Send email with credentials only for direct hires who got an account
         // Only send once - guard against duplicate sends
-        if (!isAgencyApplicant && employeePassword && !emailSent) {
+        if (!isAgencyApplicant && employeePassword && authUserId && !emailSent) {
           try {
             emailSent = true; // Set flag before sending to prevent duplicates
             const emailResult = await sendEmployeeAccountEmail({
@@ -2845,17 +2808,18 @@ function HrRecruitment() {
       const signingIsReschedule = Boolean(r.data?.isReschedule);
       const signingHasEmailStatus = typeof r.data?.emailSent === 'boolean' || r.data?.emailError;
       const signingEmailSent = Boolean(r.data?.emailSent);
+      const signingEmailTo = r.data?.emailTo ? String(r.data.emailTo) : '';
       const signingEmailNote = !signingHasEmailStatus
-        ? 'Email status unknown (redeploy edge function to see email status).'
+        ? ''
         : signingEmailSent
-          ? 'Email sent.'
+          ? `Email queued${signingEmailTo ? ` to ${signingEmailTo}` : ''} (delivery may be delayed).`
           : (r.data?.emailError?.body || r.data?.emailError?.message)
-            ? `Email not sent: ${r.data?.emailError?.body || r.data?.emailError?.message}`
-            : 'Email not sent (check function logs).';
+            ? 'Email not sent.'
+            : 'Email not sent.';
 
       setSuccessMessage(
         `Agreement signing ${signingIsReschedule ? 'Rescheduled' : 'Scheduled'}: ${apptSummary}. ` +
-        `In-app notification created. ${signingEmailNote}`
+        `In-app notification created.${signingEmailNote ? ` ${signingEmailNote}` : ''}`
       );
       setShowSuccessAlert(true);
     } catch (err) {
@@ -3041,17 +3005,18 @@ function HrRecruitment() {
       const interviewSummary = `${selectedApplicationForInterview.name} - ${interviewForm.date} at ${interviewForm.time}, ${interviewForm.location}`;
       const hasEmailStatus = typeof r.data?.emailSent === 'boolean' || r.data?.emailError;
       const emailSent = Boolean(r.data?.emailSent);
+      const emailTo = r.data?.emailTo ? String(r.data.emailTo) : '';
       const emailNote = !hasEmailStatus
-        ? 'Email status unknown (redeploy edge function to see email status).'
+        ? ''
         : emailSent
-          ? 'Email sent.'
+          ? `Email queued${emailTo ? ` to ${emailTo}` : ''} (delivery may be delayed).`
           : (r.data?.emailError?.body || r.data?.emailError?.message)
-            ? `Email not sent: ${r.data?.emailError?.body || r.data?.emailError?.message}`
-            : 'Email not sent (check function logs).';
+            ? 'Email not sent.'
+            : 'Email not sent.';
 
       setSuccessMessage(
         `Interview ${isReschedule ? 'Rescheduled' : 'Scheduled'}: ${interviewSummary}. ` +
-        `In-app notification created. ${emailNote}`
+        `In-app notification created.${emailNote ? ` ${emailNote}` : ''}`
       );
       setShowSuccessAlert(true);
     } catch (err) {
@@ -6645,11 +6610,11 @@ function HrRecruitment() {
                             </div>
                           ) : (
                             <>
-                              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
+                              <div className="mt-4 grid grid-cols-1 gap-2 text-sm text-gray-700">
                                 <div><span className="font-medium text-gray-800">Date:</span> {selectedApplicant?.interview_date || <span className="text-gray-500 italic">None</span>}</div>
+                                <div><span className="font-medium text-gray-800">{interviewType === 'online' ? 'Meeting Link' : 'Location'}:</span> {selectedApplicant?.interview_location || <span className="text-gray-500 italic">None</span>}</div>
+                                <div><span className="font-medium text-gray-800">Interviewer:</span> {selectedApplicant?.interviewer || <span className="text-gray-500 italic">None</span>}</div>
                                 <div><span className="font-medium text-gray-800">Time:</span> {selectedApplicant?.interview_time || <span className="text-gray-500 italic">None</span>}</div>
-                                <div className="sm:col-span-2"><span className="font-medium text-gray-800">{interviewType === 'online' ? 'Meeting Link' : 'Location'}:</span> {selectedApplicant?.interview_location || <span className="text-gray-500 italic">None</span>}</div>
-                                <div className="sm:col-span-2"><span className="font-medium text-gray-800">Interviewer:</span> {selectedApplicant?.interviewer || <span className="text-gray-500 italic">None</span>}</div>
                               </div>
 
                               {rescheduleRequested && (rescheduleReqObj?.note || rescheduleReqObj?.preferred_date || rescheduleReqObj?.preferredDate || rescheduleReqObj?.preferred_time_from || rescheduleReqObj?.preferredTimeFrom || rescheduleReqObj?.preferred_time_to || rescheduleReqObj?.preferredTimeTo) ? (
@@ -7023,18 +6988,18 @@ function HrRecruitment() {
                             </div>
                           ) : (
                             <>
-                              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm text-gray-700">
+                              <div className="mt-4 grid grid-cols-1 gap-2 text-sm text-gray-700">
                                 <div>
                                   <span className="font-medium text-gray-800">Date:</span>{" "}
                                   {selectedApplicant?.agreement_signing_date || <span className="text-gray-500 italic">None</span>}
                                 </div>
                                 <div>
-                                  <span className="font-medium text-gray-800">Time:</span>{" "}
-                                  {selectedApplicant?.agreement_signing_time || <span className="text-gray-500 italic">None</span>}
-                                </div>
-                                <div className="sm:col-span-2">
                                   <span className="font-medium text-gray-800">Location / Link:</span>{" "}
                                   {selectedApplicant?.agreement_signing_location || <span className="text-gray-500 italic">None</span>}
+                                </div>
+                                <div>
+                                  <span className="font-medium text-gray-800">Time:</span>{" "}
+                                  {selectedApplicant?.agreement_signing_time || <span className="text-gray-500 italic">None</span>}
                                 </div>
                               </div>
 

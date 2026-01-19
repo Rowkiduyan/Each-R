@@ -29,3 +29,13 @@ export const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 })
 
+// Public/anon client (no persisted session). Useful for read-only aggregate queries
+// that should behave the same for guests and logged-in users.
+export const supabasePublic = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+})
+

@@ -1,7 +1,7 @@
 // src/AgencyHome.jsx
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { supabase } from "./supabaseClient";
+import { supabase, supabasePublic } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
 import Roadwise from './Roadwise.png';
 
@@ -99,7 +99,16 @@ function AgencyHome() {
       const ids = (jobsList || []).map((j) => j?.id).filter(Boolean);
       if (ids.length === 0) return jobsList || [];
 
-      const { data, error } = await supabase
+      const idSet = new Set(ids.map((v) => String(v)));
+      const hiredByJobId = new Map();
+
+      const bump = (jobId) => {
+        const key = String(jobId || '');
+        if (!key || !idSet.has(key)) return;
+        hiredByJobId.set(key, (hiredByJobId.get(key) || 0) + 1);
+      };
+
+      const { data, error } = await supabasePublic
         .from("applications")
         .select("job_id, status")
         .in("job_id", ids);
@@ -109,17 +118,40 @@ function AgencyHome() {
         return jobsList || [];
       }
 
-      const hiredByJobId = new Map();
       for (const row of data || []) {
         if (!row?.job_id) continue;
-        if (String(row.status || "").toLowerCase() !== "hired") continue;
-        hiredByJobId.set(row.job_id, (hiredByJobId.get(row.job_id) || 0) + 1);
+        if (String(row.status || "").trim().toLowerCase() !== "hired") continue;
+        bump(row.job_id);
+      }
+
+      // Back-compat: older application rows may store job id inside payload meta.
+      const { data: legacyData, error: legacyError } = await supabasePublic
+        .from("applications")
+        .select("job_id, status, payload")
+        .is("job_id", null)
+        .limit(5000);
+
+      if (legacyError) {
+        console.warn("AgencyHome: failed to load legacy application stats:", legacyError);
+      } else {
+        for (const row of legacyData || []) {
+          if (String(row?.status || "").trim().toLowerCase() !== "hired") continue;
+
+          const payload = row?.payload;
+          const legacyJobId =
+            payload?.meta?.job_id ||
+            payload?.meta?.jobId ||
+            payload?.job_id ||
+            payload?.jobId;
+
+          if (legacyJobId) bump(legacyJobId);
+        }
       }
 
       return (jobsList || []).map((j) => {
         const totalNum = Number(j.positions_needed);
         const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
-        const hiredCount = hiredByJobId.get(j.id) || 0;
+        const hiredCount = hiredByJobId.get(String(j.id)) || 0;
         const remaining = hasLimit ? Math.max(0, totalNum - hiredCount) : null;
         return { ...j, hired_count: hiredCount, remaining_slots: remaining };
       });

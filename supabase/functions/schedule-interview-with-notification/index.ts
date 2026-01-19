@@ -4,12 +4,16 @@
 import { serve } from "https://deno.land/std@0.200.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.26.0";
 
-// Reuse the same SendGrid configuration used for employee credentials
-const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY");
-const SENDGRID_FROM_EMAIL = Deno.env.get("SENDGRID_FROM_EMAIL") || "noreply@roadwise.com";
+// Email provider: EmailJS (temporary replacement for SendGrid)
+const EMAILJS_SERVICE_ID = Deno.env.get("EMAILJS_SERVICE_ID");
+const EMAILJS_PUBLIC_KEY = Deno.env.get("EMAILJS_PUBLIC_KEY");
+const EMAILJS_PRIVATE_KEY = Deno.env.get("EMAILJS_PRIVATE_KEY");
+const EMAILJS_TEMPLATE_ID = Deno.env.get("EMAILJS_TEMPLATE_ID");
+const EMAILJS_TEMPLATE_ID_INTERVIEW = Deno.env.get("EMAILJS_TEMPLATE_ID_INTERVIEW") || EMAILJS_TEMPLATE_ID;
 const HR_FROM_NAME = Deno.env.get("HR_FROM_NAME") || "Roadwise HR (Each-R)";
 const HR_REPLY_TO_EMAIL = Deno.env.get("HR_REPLY_TO_EMAIL") || "";
 const HR_REPLY_TO_NAME = Deno.env.get("HR_REPLY_TO_NAME") || "Roadwise HR";
+const HR_SUPPORT_EMAIL = Deno.env.get("HR_SUPPORT_EMAIL") || HR_REPLY_TO_EMAIL || "noreply@roadwise.com";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -295,10 +299,14 @@ serve(async (req) => {
     let emailMessageId: string | null = null;
     let emailError: any = null;
     let emailTo: string | null = null;
+    const emailTemplateIdUsed = EMAILJS_TEMPLATE_ID_INTERVIEW || null;
 
-    if (!SENDGRID_API_KEY) {
-      emailError = { code: 'missing_sendgrid_api_key', message: 'SENDGRID_API_KEY not configured' };
-      console.error("SENDGRID_API_KEY not configured - skipping interview email");
+    if (!EMAILJS_SERVICE_ID || !EMAILJS_PUBLIC_KEY || !EMAILJS_TEMPLATE_ID_INTERVIEW || !EMAILJS_PRIVATE_KEY) {
+      emailError = {
+        code: 'missing_emailjs_config',
+        message: 'EMAILJS_SERVICE_ID / EMAILJS_PUBLIC_KEY / EMAILJS_PRIVATE_KEY / EMAILJS_TEMPLATE_ID_INTERVIEW not configured',
+      };
+      console.error("EmailJS not configured - skipping interview email");
     } else {
       // Prefer applicants table; fallback to payload email/name (some environments may not have an applicants row)
       const { data: applicant, error: applicantError } = await supabase
@@ -363,7 +371,7 @@ serve(async (req) => {
         const safeGeneratedAt = escapeHtml(generatedAtIso);
         const safeAppId = escapeHtml(applicationId);
         const safeMeetingUrl = meetingUrl ? escapeHtml(meetingUrl) : '';
-        const safeSupportEmail = escapeHtml(HR_REPLY_TO_EMAIL || SENDGRID_FROM_EMAIL);
+        const safeSupportEmail = escapeHtml(HR_SUPPORT_EMAIL);
 
         const statusText = pillText;
         // Brand theme (red/white) for email UI
@@ -591,59 +599,51 @@ Generated: ${generatedAtIso}
 `;
 
         try {
-          const sendGridResponse = await fetch("https://api.sendgrid.com/v3/mail/send", {
+          const emailJsResp = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
             method: "POST",
-            headers: {
-              "Authorization": `Bearer ${SENDGRID_API_KEY}`,
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              personalizations: [
-                {
-                  to: [{ email: toEmail }],
-                  subject: emailSubject,
-                  custom_args: {
-                    applicationId: String(applicationId),
-                    scheduleKind: String(scheduleKind),
-                    isReschedule: String(Boolean(isReschedule)),
-                    scheduleRef,
-                    generatedAt: generatedAtIso,
-                  },
-                },
-              ],
-              from: { email: SENDGRID_FROM_EMAIL, name: HR_FROM_NAME },
-              reply_to: HR_REPLY_TO_EMAIL
-                ? { email: HR_REPLY_TO_EMAIL, name: HR_REPLY_TO_NAME }
-                : { email: SENDGRID_FROM_EMAIL, name: HR_FROM_NAME },
-              content: [
-                {
-                  type: "text/plain",
-                  value: textContent,
-                },
-                {
-                  type: "text/html",
-                  value: htmlContent,
-                },
-              ],
+              service_id: EMAILJS_SERVICE_ID,
+              template_id: EMAILJS_TEMPLATE_ID_INTERVIEW,
+              user_id: EMAILJS_PUBLIC_KEY,
+              accessToken: EMAILJS_PRIVATE_KEY,
+              template_params: {
+                to_email: toEmail,
+                to_name: fullName || firstName,
+                // Compatibility aliases for templates using {{email}} / {{name}}
+                email: toEmail,
+                name: fullName || firstName,
+                subject: emailSubject,
+                message: textContent,
+                message_html: htmlContent,
+                schedule_kind: String(scheduleKind),
+                is_reschedule: String(Boolean(isReschedule)),
+                application_id: String(applicationId),
+                schedule_ref: scheduleRef,
+                generated_at: generatedAtIso,
+                reply_to: HR_REPLY_TO_EMAIL || HR_SUPPORT_EMAIL,
+                reply_to_name: HR_REPLY_TO_NAME || HR_FROM_NAME,
+                from_name: HR_FROM_NAME,
+              },
             }),
           });
 
-          if (!sendGridResponse.ok) {
-            const errorText = await sendGridResponse.text();
+          if (!emailJsResp.ok) {
+            const errorText = await emailJsResp.text();
             emailError = {
-              code: 'sendgrid_rejected',
-              status: sendGridResponse.status,
-              statusText: sendGridResponse.statusText,
+              code: 'emailjs_rejected',
+              status: emailJsResp.status,
+              statusText: emailJsResp.statusText,
               body: errorText,
             };
-            console.error("SendGrid interview email error:", errorText);
+            console.error("EmailJS interview email error:", errorText);
           } else {
             emailSent = true;
-            emailMessageId = sendGridResponse.headers.get('x-message-id') || sendGridResponse.headers.get('X-Message-Id');
+            emailMessageId = null;
           }
         } catch (emailErr) {
-          emailError = { code: 'sendgrid_exception', message: String((emailErr as any)?.message || emailErr) };
-          console.error("Unexpected error sending interview email via SendGrid:", emailErr);
+          emailError = { code: 'emailjs_exception', message: String((emailErr as any)?.message || emailErr) };
+          console.error("Unexpected error sending interview email via EmailJS:", emailErr);
         }
       }
     }
@@ -652,6 +652,7 @@ Generated: ${generatedAtIso}
       JSON.stringify({ 
         success: true, 
         kind: scheduleKind,
+        emailTemplateIdUsed,
         message: scheduleKind === 'agreement_signing'
           ? 'Agreement signing scheduled and notification sent successfully'
           : 'Interview scheduled and notification sent successfully',

@@ -2,8 +2,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY");
-const SENDGRID_FROM_EMAIL = Deno.env.get("SENDGRID_FROM_EMAIL") || "noreply@roadwise.com";
+// Email provider: EmailJS (temporary replacement for SendGrid)
+const EMAILJS_SERVICE_ID = Deno.env.get("EMAILJS_SERVICE_ID");
+const EMAILJS_PUBLIC_KEY = Deno.env.get("EMAILJS_PUBLIC_KEY");
+const EMAILJS_PRIVATE_KEY = Deno.env.get("EMAILJS_PRIVATE_KEY");
+const EMAILJS_TEMPLATE_ID = Deno.env.get("EMAILJS_TEMPLATE_ID");
+const EMAILJS_TEMPLATE_ID_EMPLOYEE_CREDENTIALS = Deno.env.get("EMAILJS_TEMPLATE_ID_EMPLOYEE_CREDENTIALS") || EMAILJS_TEMPLATE_ID;
+
+const HR_FROM_NAME = Deno.env.get("HR_FROM_NAME") || "Roadwise HR";
+const HR_REPLY_TO_EMAIL = Deno.env.get("HR_REPLY_TO_EMAIL") || "";
+const HR_REPLY_TO_NAME = Deno.env.get("HR_REPLY_TO_NAME") || "Roadwise HR";
+const HR_SUPPORT_EMAIL = Deno.env.get("HR_SUPPORT_EMAIL") || HR_REPLY_TO_EMAIL || "noreply@roadwise.com";
+const APP_BASE_URL = (Deno.env.get("APP_BASE_URL") || Deno.env.get("VITE_APP_BASE_URL") || "").trim();
+
+function escapeHtml(input: unknown): string {
+  return String(input ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 serve(async (req) => {
   // Handle CORS
@@ -38,8 +57,8 @@ serve(async (req) => {
       );
     }
 
-    if (!SENDGRID_API_KEY) {
-      console.error("SENDGRID_API_KEY not configured");
+    if (!EMAILJS_SERVICE_ID || !EMAILJS_PUBLIC_KEY || !EMAILJS_TEMPLATE_ID_EMPLOYEE_CREDENTIALS || !EMAILJS_PRIVATE_KEY) {
+      console.error("EmailJS not configured");
       return new Response(
         JSON.stringify({ error: "Email service not configured" }),
         {
@@ -49,238 +68,212 @@ serve(async (req) => {
       );
     }
 
-    // Create HTML email template
+    const recipientName = (fullName || `${firstName || ''} ${lastName || ''}`.trim() || 'Employee').toString().trim();
+    const safeRecipientName = escapeHtml(recipientName);
+    const safeEmployeeEmail = escapeHtml(employeeEmail);
+    const safeEmployeePassword = escapeHtml(employeePassword);
+    const safeSupportEmail = escapeHtml(HR_SUPPORT_EMAIL);
+
+    const portalUrl = APP_BASE_URL ? `${APP_BASE_URL.replace(/\/+$/, '')}/employee/login` : '';
+    const safePortalUrl = portalUrl ? escapeHtml(portalUrl) : '';
+    const year = new Date().getFullYear();
+
+    const brandRed = '#dc2626';
+    const brandRedDark = '#b91c1c';
+    const brandRose100 = '#ffe4e6';
+    const brandRose200 = '#fecdd3';
+
+    const statusText = 'Employee Account Created';
+    const statusBorder = brandRose200;
+    const statusBg = '#ffffff';
+    const statusFg = brandRedDark;
+
+    const ctaHtml = safePortalUrl
+      ? `
+                  <tr>
+                    <td style="padding:14px 18px 0;">
+                      <a href="${safePortalUrl}" style="display:inline-block; background:${brandRed}; color:#ffffff; text-decoration:none; font-weight:900; padding:10px 14px; border-radius:10px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:13px;">
+                        Open Employee Portal
+                      </a>
+                    </td>
+                  </tr>
+      `
+      : '';
+
+    // Table-based HTML email template (matches interview/agreement signing styling)
     const htmlContent = `
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Roadwise - Employee Account</title>
-  <style>
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      line-height: 1.6;
-      color: #333;
-      max-width: 600px;
-      margin: 0 auto;
-      padding: 20px;
-      background-color: #f4f4f4;
-    }
-    .container {
-      background-color: #ffffff;
-      border-radius: 8px;
-      padding: 40px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
-    .header {
-      text-align: center;
-      margin-bottom: 30px;
-    }
-    .logo {
-      font-size: 36px;
-      font-weight: bold;
-      font-style: italic;
-      color: #dc2626;
-      margin-bottom: 10px;
-    }
-    .title {
-      font-size: 24px;
-      font-weight: 600;
-      color: #1f2937;
-      margin-bottom: 10px;
-    }
-    .subtitle {
-      font-size: 16px;
-      color: #6b7280;
-      margin-bottom: 30px;
-    }
-    .content {
-      background-color: #f9fafb;
-      border-left: 4px solid #dc2626;
-      padding: 20px;
-      margin: 20px 0;
-      border-radius: 4px;
-    }
-    .credentials-box {
-      background-color: #ffffff;
-      border: 2px solid #e5e7eb;
-      border-radius: 6px;
-      padding: 20px;
-      margin: 20px 0;
-    }
-    .credential-item {
-      margin: 15px 0;
-    }
-    .label {
-      font-weight: 600;
-      color: #374151;
-      font-size: 14px;
-      margin-bottom: 5px;
-      display: block;
-    }
-    .value {
-      font-family: 'Courier New', monospace;
-      font-size: 16px;
-      color: #1f2937;
-      background-color: #f3f4f6;
-      padding: 10px;
-      border-radius: 4px;
-      word-break: break-all;
-    }
-    .password-warning {
-      background-color: #fef3c7;
-      border-left: 4px solid #f59e0b;
-      padding: 15px;
-      margin: 20px 0;
-      border-radius: 4px;
-      font-size: 14px;
-      color: #92400e;
-    }
-    .button {
-      display: inline-block;
-      background-color: #dc2626;
-      color: #ffffff;
-      padding: 12px 24px;
-      text-decoration: none;
-      border-radius: 6px;
-      font-weight: 600;
-      margin: 20px 0;
-      text-align: center;
-    }
-    .footer {
-      margin-top: 30px;
-      padding-top: 20px;
-      border-top: 1px solid #e5e7eb;
-      font-size: 14px;
-      color: #6b7280;
-      text-align: center;
-    }
-    .highlight {
-      color: #dc2626;
-      font-weight: 600;
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div class="logo">Each-R</div>
-      <div class="title">Welcome to Roadwise!</div>
-      <div class="subtitle">Your Employee Account Has Been Created</div>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <title>Welcome to Roadwise - Employee Account</title>
+  </head>
+  <body style="margin:0; padding:0; background:#ffffff;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+      Your Roadwise employee account credentials.
     </div>
 
-    <div class="content">
-      <p>Dear ${fullName || `${firstName} ${lastName}`},</p>
-      <p>Congratulations! We are pleased to inform you that you have been successfully hired and your employee account has been created.</p>
-      <p>You can now access the Roadwise Employee Portal using the credentials below:</p>
-    </div>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#ffffff; padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px; max-width:600px;">
+            <tr>
+              <td style="padding:0 12px 12px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${brandRed}; border-radius:14px;">
+                  <tr>
+                    <td style="padding:16px 18px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td align="left" style="font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                            <div style="font-size:14px; font-weight:800; color:#ffffff; letter-spacing:0.2px;">Roadwise HR</div>
+                            <div style="font-size:12px; color:${brandRose100}; margin-top:2px;">Each-R • Account Credentials</div>
+                          </td>
+                          <td align="right" style="font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                            <span style="display:inline-block; border:1px solid ${statusBorder}; background:${statusBg}; color:${statusFg}; font-size:12px; font-weight:800; padding:6px 10px; border-radius:999px;">
+                              ${escapeHtml(statusText)}
+                            </span>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
 
-    <div class="credentials-box">
-      <div class="credential-item">
-        <span class="label">Employee Email:</span>
-        <div class="value">${employeeEmail}</div>
-      </div>
-      <div class="credential-item">
-        <span class="label">Password:</span>
-        <div class="value">${employeePassword}</div>
-      </div>
-    </div>
+            <tr>
+              <td style="padding:0 12px; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border:1px solid #e5e7eb; border-radius:14px;">
+                  <tr>
+                    <td style="padding:18px 18px 0;">
+                      <div style="font-size:12px; font-weight:800; color:#6b7280; text-transform:uppercase; letter-spacing:0.12em;">Employee Credentials</div>
+                      <div style="font-size:22px; font-weight:900; color:#111827; margin-top:6px;">Welcome to Roadwise!</div>
+                    </td>
+                  </tr>
 
-    <div class="password-warning">
-      <strong>⚠️ Important:</strong> Please change your password after your first login for security purposes.
-    </div>
+                  <tr>
+                    <td style="padding:14px 18px 0;">
+                      <div style="font-size:14px; color:#111827;">Dear ${safeRecipientName},</div>
+                      <div style="font-size:14px; color:#374151; margin-top:8px;">Congratulations! Your employee account has been created. Please use the credentials below to log in.</div>
+                    </td>
+                  </tr>
 
-    <div style="text-align: center; margin: 30px 0;">
-      <p style="margin-bottom: 10px;">You can access the Employee Portal at:</p>
-      <p style="font-family: 'Courier New', monospace; background-color: #f3f4f6; padding: 10px; border-radius: 4px; margin: 10px 0;">
-        [Your Application URL]/employee/login
-      </p>
-      <p style="font-size: 14px; color: #6b7280; margin-top: 10px;">
-        Please contact HR for the exact login URL.
-      </p>
-    </div>
+                  <tr>
+                    <td style="padding:16px 18px 0;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:12px;">
+                        <tr>
+                          <td style="padding:14px 14px 10px; font-size:13px; font-weight:900; color:#111827; font-family:Segoe UI, Roboto, Arial, sans-serif;">Login Details</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 14px 14px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:13px; color:#111827;">
+                            <div style="margin:8px 0;"><span style="color:#6b7280; font-weight:800;">Employee Email:</span></div>
+                            <div style="font-family:Consolas, 'Courier New', monospace; background:#f3f4f6; padding:10px; border-radius:10px; border:1px solid #e5e7eb;">${safeEmployeeEmail}</div>
 
-    <div class="content">
-      <p><strong>Next Steps:</strong></p>
-      <ul style="margin: 10px 0; padding-left: 20px;">
-        <li>Log in using the credentials provided above</li>
-        <li>Complete your employee profile</li>
-        <li>Review company policies and guidelines</li>
-        <li>Contact HR if you have any questions</li>
-      </ul>
-    </div>
+                            <div style="margin:12px 0 8px;"><span style="color:#6b7280; font-weight:800;">Password:</span></div>
+                            <div style="font-family:Consolas, 'Courier New', monospace; background:#f3f4f6; padding:10px; border-radius:10px; border:1px solid #e5e7eb;">${safeEmployeePassword}</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
 
-    <div class="footer">
-      <p>This is an automated message from <span class="highlight">Roadwise</span>.</p>
-      <p>Please do not reply to this email. If you have any questions, please contact the HR department.</p>
-      <p style="margin-top: 15px; font-size: 12px; color: #9ca3af;">
-        © ${new Date().getFullYear()} Roadwise. All rights reserved.
-      </p>
-    </div>
-  </div>
-</body>
+                  <tr>
+                    <td style="padding:14px 18px 0;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#fff7ed; border:1px solid #fed7aa; border-radius:12px;">
+                        <tr>
+                          <td style="padding:12px 14px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:13px; color:#9a3412;">
+                            <strong>Important:</strong> Please change your password after your first login for security purposes.
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  ${ctaHtml}
+
+                  <tr>
+                    <td style="padding:16px 18px 18px; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                      ${safePortalUrl ? `
+                      <div style="font-size:12px; color:#6b7280; margin-top:10px;">
+                        Portal URL: <a href="${safePortalUrl}" style="color:${brandRed}; text-decoration:none; font-weight:800;">${safePortalUrl}</a>
+                      </div>
+                      ` : `
+                      <div style="font-size:12px; color:#6b7280; margin-top:10px;">
+                        Please contact HR for the exact Employee Portal login URL.
+                      </div>
+                      `}
+                      <div style="font-size:12px; color:#6b7280; margin-top:12px;">
+                        This is an automated message from Roadwise. Please do not reply directly to this email.
+                        For support, contact <a href="mailto:${safeSupportEmail}" style="color:${brandRed}; text-decoration:none; font-weight:800;">${safeSupportEmail}</a>.
+                      </div>
+                      <div style="font-size:11px; color:#9ca3af; margin-top:10px;">© ${year} Roadwise</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
 </html>
     `;
 
     // Plain text version
-    const textContent = `
-Welcome to Roadwise!
+    const textContent = `Welcome to Roadwise!
 
-Dear ${fullName || `${firstName} ${lastName}`},
+  Dear ${recipientName},
 
-Congratulations! We are pleased to inform you that you have been successfully hired and your employee account has been created.
+  Your employee account has been created. Use the credentials below to log in:
 
-You can now access the Roadwise Employee Portal using the credentials below:
+  Employee Email: ${employeeEmail}
+  Password: ${employeePassword}
 
-Employee Email: ${employeeEmail}
-Password: ${employeePassword}
+  Important: Please change your password after your first login.
 
-⚠️ Important: Please change your password after your first login for security purposes.
+  ${portalUrl ? `Employee Portal: ${portalUrl}
+  ` : "Please contact HR for the Employee Portal login URL.\n"}
 
-Next Steps:
-- Log in using the credentials provided above
-- Complete your employee profile
-- Review company policies and guidelines
-- Contact HR if you have any questions
-
-This is an automated message from Roadwise.
-Please do not reply to this email. If you have any questions, please contact the HR department.
-
-© ${new Date().getFullYear()} Roadwise. All rights reserved.
+  This is an automated message from Roadwise. Please do not reply directly to this email.
+  Support: ${HR_SUPPORT_EMAIL}
     `;
 
-    // Send email via SendGrid
-    const sendGridResponse = await fetch("https://api.sendgrid.com/v3/mail/send", {
+    // Send email via EmailJS
+    const emailSubject = "Welcome to Roadwise - Your Employee Account Credentials";
+    const emailJsResp = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
       method: "POST",
-      headers: {
-        "Authorization": `Bearer ${SENDGRID_API_KEY}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        personalizations: [
-          {
-            to: [{ email: toEmail }],
-            subject: "Welcome to Roadwise - Your Employee Account Credentials",
-          },
-        ],
-        from: { email: SENDGRID_FROM_EMAIL, name: "Roadwise HR" },
-        content: [
-          {
-            type: "text/plain",
-            value: textContent,
-          },
-          {
-            type: "text/html",
-            value: htmlContent,
-          },
-        ],
+        service_id: EMAILJS_SERVICE_ID,
+        template_id: EMAILJS_TEMPLATE_ID_EMPLOYEE_CREDENTIALS,
+        user_id: EMAILJS_PUBLIC_KEY,
+        accessToken: EMAILJS_PRIVATE_KEY,
+        template_params: {
+          to_email: toEmail,
+          to_name: fullName || `${firstName || ''} ${lastName || ''}`.trim() || 'Employee',
+          // Compatibility aliases for templates using {{email}} / {{name}}
+          email: toEmail,
+          name: fullName || `${firstName || ''} ${lastName || ''}`.trim() || 'Employee',
+          subject: emailSubject,
+          message: textContent,
+          message_html: htmlContent,
+          employee_email: employeeEmail,
+          employee_password: employeePassword,
+          first_name: firstName,
+          last_name: lastName,
+          reply_to: HR_REPLY_TO_EMAIL || HR_SUPPORT_EMAIL,
+          reply_to_name: HR_REPLY_TO_NAME || HR_FROM_NAME,
+          from_name: HR_FROM_NAME,
+        },
       }),
     });
 
-    if (!sendGridResponse.ok) {
-      const errorText = await sendGridResponse.text();
-      console.error("SendGrid error:", errorText);
+    if (!emailJsResp.ok) {
+      const errorText = await emailJsResp.text();
+      console.error("EmailJS error:", errorText);
       return new Response(
         JSON.stringify({ error: "Failed to send email", details: errorText }),
         {
@@ -291,7 +284,7 @@ Please do not reply to this email. If you have any questions, please contact the
     }
 
     return new Response(
-      JSON.stringify({ success: true, message: "Email sent successfully" }),
+      JSON.stringify({ success: true, message: "Email queued" }),
       {
         status: 200,
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },

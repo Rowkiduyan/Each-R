@@ -18,15 +18,29 @@ serve(async (req) => {
   }
 
   try {
-    const body = await req.json();
-    console.log("Received request body:", JSON.stringify(body, null, 2));
-    
-    const {
-      email,
-      password,
-      firstName,
-      lastName,
-    } = body;
+    // Some callers mistakenly send the body as a JSON-string. Accept both object and string.
+    const raw = await req.text();
+    let body: any = {};
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      body = {};
+    }
+    if (typeof body === "string") {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = {};
+      }
+    }
+
+    // Accept both legacy keys and current frontend keys
+    const emailRaw = body?.email ?? body?.employeeEmail ?? body?.employee_email;
+    const password = body?.password ?? body?.employeePassword ?? body?.employee_password;
+    const firstName = body?.firstName ?? body?.first_name ?? body?.fname ?? body?.first;
+    const lastName = body?.lastName ?? body?.last_name ?? body?.lname ?? body?.last;
+
+    const email = String(emailRaw || "").trim().toLowerCase();
 
     console.log("Parsed values:", { email, hasPassword: !!password, firstName, lastName });
 
@@ -59,9 +73,37 @@ serve(async (req) => {
       },
     });
 
-    // Check if user already exists
-    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-    const existingUser = existingUsers?.users?.find((u) => u.email === email);
+    // Check if user already exists.
+    // IMPORTANT: listUsers is paginated; using only the first page can miss existing accounts.
+    // Prefer getUserByEmail when available, otherwise paginate listUsers.
+    let existingUser: any = null;
+    try {
+      const fn = (supabaseAdmin as any)?.auth?.admin?.getUserByEmail;
+      if (typeof fn === "function") {
+        const { data, error } = await fn.call(supabaseAdmin.auth.admin, email);
+        if (!error && data?.user) existingUser = data.user;
+      }
+    } catch (e) {
+      console.warn("getUserByEmail lookup failed, falling back to listUsers pagination:", e);
+    }
+
+    if (!existingUser) {
+      const perPage = 1000;
+      for (let page = 1; page <= 20; page += 1) {
+        const { data: listed, error: listError } = await (supabaseAdmin as any).auth.admin.listUsers({
+          page,
+          perPage,
+        });
+        if (listError) {
+          console.warn("listUsers error:", listError);
+          break;
+        }
+        const users = listed?.users || [];
+        existingUser = users.find((u: any) => String(u?.email || "").trim().toLowerCase() === email) || null;
+        if (existingUser) break;
+        if (users.length < perPage) break;
+      }
+    }
 
     let userId;
     
@@ -74,6 +116,7 @@ serve(async (req) => {
           password: password,
           email_confirm: true, // Ensure email is confirmed
           user_metadata: {
+            ...(existingUser.user_metadata || {}),
             first_name: firstName,
             last_name: lastName,
             role: "Employee",
@@ -128,7 +171,8 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         message: existingUser ? "Password updated successfully" : "Account created successfully",
-        userId: userId 
+        userId: userId,
+        email: email,
       }),
       {
         status: 200,

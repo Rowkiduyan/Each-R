@@ -4,8 +4,16 @@
 import { serve } from "https://deno.land/std@0.200.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.26.0";
 
-const SENDGRID_API_KEY = Deno.env.get("SENDGRID_API_KEY");
-const SENDGRID_FROM_EMAIL = Deno.env.get("SENDGRID_FROM_EMAIL") || "noreply@roadwise.com";
+// Email provider: EmailJS (temporary replacement for SendGrid)
+const EMAILJS_SERVICE_ID = Deno.env.get("EMAILJS_SERVICE_ID");
+const EMAILJS_PUBLIC_KEY = Deno.env.get("EMAILJS_PUBLIC_KEY");
+const EMAILJS_PRIVATE_KEY = Deno.env.get("EMAILJS_PRIVATE_KEY");
+const EMAILJS_TEMPLATE_ID = Deno.env.get("EMAILJS_TEMPLATE_ID");
+const EMAILJS_TEMPLATE_ID_AGREEMENT_SIGNING = Deno.env.get("EMAILJS_TEMPLATE_ID_AGREEMENT_SIGNING") || EMAILJS_TEMPLATE_ID;
+const HR_FROM_NAME = Deno.env.get("HR_FROM_NAME") || "Roadwise HR (Each-R)";
+const HR_REPLY_TO_EMAIL = Deno.env.get("HR_REPLY_TO_EMAIL") || "";
+const HR_REPLY_TO_NAME = Deno.env.get("HR_REPLY_TO_NAME") || "Roadwise HR";
+const HR_SUPPORT_EMAIL = Deno.env.get("HR_SUPPORT_EMAIL") || HR_REPLY_TO_EMAIL || "noreply@roadwise.com";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,6 +44,21 @@ function extractApplicantContact(payload: any): { email: string | null; firstNam
   const firstName = src?.firstName || src?.fname || src?.first_name || null;
   const lastName = src?.lastName || src?.lname || src?.last_name || null;
   return { email: email ? String(email).trim() : null, firstName: firstName ? String(firstName).trim() : null, lastName: lastName ? String(lastName).trim() : null };
+}
+
+function escapeHtml(input: unknown): string {
+  return String(input ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function extractFirstUrl(text: unknown): string | null {
+  const raw = String(text ?? '');
+  const match = raw.match(/https?:\/\/[^\s<>\"]+/i);
+  return match ? match[0] : null;
 }
 
 serve(async (req) => {
@@ -183,14 +206,14 @@ serve(async (req) => {
         safeTime = appointment.time
       }
     }
-    
-    const safeLocation = appointment.location || "To be confirmed";
+
+    const appointmentLocationRaw = appointment.location || "To be confirmed";
 
     const notificationType = isReschedule ? "agreement_signing_rescheduled" : "agreement_signing_scheduled";
     const notificationTitle = isReschedule ? "Agreement Signing Rescheduled" : "Agreement Signing Scheduled";
     const notificationMessage = isReschedule
-      ? `Your agreement signing appointment has been rescheduled to ${formattedDate} at ${safeTime} in ${safeLocation}. Please check your application and confirm your availability.`
-      : `Your agreement signing appointment has been scheduled for ${formattedDate} at ${safeTime} in ${safeLocation}. Please confirm your availability.`;
+      ? `Your agreement signing appointment has been rescheduled to ${formattedDate} at ${safeTime} in ${appointmentLocationRaw}. Please check your application and confirm your availability.`
+      : `Your agreement signing appointment has been scheduled for ${formattedDate} at ${safeTime} in ${appointmentLocationRaw}. Please confirm your availability.`;
 
     // Applicant notification
     const { error: notificationError } = await supabase
@@ -226,8 +249,8 @@ serve(async (req) => {
         : "Endorsed Employee Agreement Signing Scheduled";
 
       const agencyNotificationMessage = isReschedule
-        ? `Agreement signing appointment for ${applicantName} has been rescheduled to ${formattedDate} at ${safeTime} in ${safeLocation}.`
-        : `Agreement signing appointment for ${applicantName} has been scheduled for ${formattedDate} at ${safeTime} in ${safeLocation}.`;
+        ? `Agreement signing appointment for ${applicantName} has been rescheduled to ${formattedDate} at ${safeTime} in ${appointmentLocationRaw}.`
+        : `Agreement signing appointment for ${applicantName} has been scheduled for ${formattedDate} at ${safeTime} in ${appointmentLocationRaw}.`;
 
       const { error: agencyNotificationError } = await supabase
         .from("notifications")
@@ -246,15 +269,18 @@ serve(async (req) => {
       }
     }
 
-    // Email via SendGrid
+    // Email via EmailJS
     let emailSent = false;
     let emailMessageId: string | null = null;
     let emailError: any = null;
     let emailTo: string | null = null;
 
-    if (!SENDGRID_API_KEY) {
-      emailError = { code: 'missing_sendgrid_api_key', message: 'SENDGRID_API_KEY not configured' };
-      console.error("SENDGRID_API_KEY not configured - skipping agreement signing email");
+    if (!EMAILJS_SERVICE_ID || !EMAILJS_PUBLIC_KEY || !EMAILJS_TEMPLATE_ID_AGREEMENT_SIGNING || !EMAILJS_PRIVATE_KEY) {
+      emailError = {
+        code: 'missing_emailjs_config',
+        message: 'EMAILJS_SERVICE_ID / EMAILJS_PUBLIC_KEY / EMAILJS_PRIVATE_KEY / EMAILJS_TEMPLATE_ID_AGREEMENT_SIGNING not configured',
+      };
+      console.error("EmailJS not configured - skipping agreement signing email");
     } else {
       const { data: applicant, error: applicantError } = await supabase
         .from("applicants")
@@ -283,81 +309,170 @@ serve(async (req) => {
 
         const apptDateDisplay = formattedDate;
         const apptTimeDisplay = safeTime;
-        const emailSubject = isReschedule
-          ? `Updated Agreement Signing: ${jobTitle} (${apptDateDisplay} ${apptTimeDisplay})`
-          : `Agreement Signing: ${jobTitle} (${apptDateDisplay} ${apptTimeDisplay})`;
+        const appointmentLocationDisplay = appointmentLocationRaw || 'To be confirmed';
+        const meetingUrl = extractFirstUrl(appointmentLocationDisplay);
 
-        const pillText = isReschedule ? "Agreement Signing Rescheduled" : "Agreement Signing Scheduled";
-        const introHtml = isReschedule
-          ? 'Your agreement signing schedule has been <span class="highlight">updated</span>. Please review the updated details below:'
-          : 'Please review the details for your agreement signing appointment below:';
+        const scheduleTitle = 'Agreement Signing';
+        const emailSubject = isReschedule
+          ? `Updated ${scheduleTitle} — ${jobTitle} — ${apptDateDisplay} at ${apptTimeDisplay}`
+          : `${scheduleTitle} Scheduled — ${jobTitle} — ${apptDateDisplay} at ${apptTimeDisplay}`;
+
+        const pillText = isReschedule ? `${scheduleTitle} Updated` : `${scheduleTitle} Scheduled`;
+        const introText = isReschedule
+          ? 'This email confirms an update to your agreement signing appointment. Please review the updated details below.'
+          : 'This email confirms your agreement signing appointment. Please review the details below.';
+
+        const safeFullName = escapeHtml(fullName || firstName);
+        const safeJobTitle = escapeHtml(jobTitle);
+        const safeDate = escapeHtml(apptDateDisplay);
+        const safeTimeDisplay = escapeHtml(apptTimeDisplay);
+        const safeLocationHtml = escapeHtml(appointmentLocationDisplay);
+        const safeScheduleRef = escapeHtml(scheduleRef);
+        const safeGeneratedAt = escapeHtml(generatedAtIso);
+        const safeSupportEmail = escapeHtml(HR_SUPPORT_EMAIL);
+
+        const statusText = pillText;
+        const brandRed = '#dc2626';
+        const brandRedDark = '#b91c1c';
+        const brandRose100 = '#ffe4e6';
+        const brandRose200 = '#fecdd3';
+        const statusBorder = brandRose200;
+        const statusBg = '#ffffff';
+        const statusFg = brandRedDark;
+
+        const primaryCtaUrl = meetingUrl || '';
+        const primaryCtaLabel = meetingUrl ? 'Open appointment link' : '';
+
+        const ctaHtml = primaryCtaUrl
+          ? `
+                  <tr>
+                    <td style="padding:14px 18px 0;">
+                      <a href="${escapeHtml(primaryCtaUrl)}" style="display:inline-block; background:${brandRed}; color:#ffffff; text-decoration:none; font-weight:900; padding:10px 14px; border-radius:10px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:13px;">
+                        ${escapeHtml(primaryCtaLabel)}
+                      </a>
+                    </td>
+                  </tr>
+          `
+          : '';
 
         const htmlContent = `
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${emailSubject}</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; line-height: 1.6; color: #111827; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f3f4f6; }
-    .container { background-color: #ffffff; border-radius: 12px; padding: 32px 24px; box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08); border: 1px solid #e5e7eb; }
-    .header { text-align: center; margin-bottom: 28px; }
-    .logo-brand { font-size: 28px; font-weight: 700; color: #dc2626; letter-spacing: -0.5px; margin: 0; font-style: italic; font-family: Georgia, 'Times New Roman', serif; }
-    .logo-tagline { font-size: 11px; color: #4b5563; margin-top: 4px; font-weight: 400; letter-spacing: 0.5px; text-transform: uppercase; }
-    h1 { font-size: 22px; margin: 16px 0 8px; color: #111827; }
-    .pill { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #ffffff; background: ${isReschedule ? '#f97316' : '#16a34a'}; margin-bottom: 12px; }
-    .section { background-color: #f9fafb; border-radius: 10px; padding: 16px 18px; border: 1px solid #e5e7eb; margin: 18px 0; }
-    .section-title { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px; }
-    .row { display: flex; justify-content: space-between; margin: 4px 0; font-size: 14px; }
-    .label { font-weight: 600; color: #4b5563; }
-    .value { color: #111827; }
-    .highlight { color: #dc2626; font-weight: 600; }
-    .footer { margin-top: 28px; font-size: 12px; color: #9ca3af; border-top: 1px solid #e5e7eb; padding-top: 16px; text-align: center; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div>
-        <div class="logo-brand">Each-R</div>
-        <div class="logo-tagline">Each Record for Roadwise</div>
-      </div>
-      <div class="pill">${pillText}</div>
-      <h1>${jobTitle}</h1>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="x-apple-disable-message-reformatting" />
+    <title>${escapeHtml(emailSubject)}</title>
+  </head>
+  <body style="margin:0; padding:0; background:#ffffff;">
+    <div style="display:none; max-height:0; overflow:hidden; opacity:0; color:transparent;">
+      ${escapeHtml(scheduleTitle)} on ${safeDate} at ${safeTimeDisplay}.
     </div>
 
-    <p>Dear ${fullName || firstName},</p>
-    <p>${introHtml}</p>
+    <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#ffffff; padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px; max-width:600px;">
+            <tr>
+              <td style="padding:0 12px 12px;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${brandRed}; border-radius:14px;">
+                  <tr>
+                    <td style="padding:16px 18px;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td align="left" style="font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                            <div style="font-size:14px; font-weight:800; color:#ffffff; letter-spacing:0.2px;">Roadwise HR</div>
+                            <div style="font-size:12px; color:${brandRose100}; margin-top:2px;">Each-R • Recruitment Updates</div>
+                          </td>
+                          <td align="right" style="font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                            <span style="display:inline-block; border:1px solid ${statusBorder}; background:${statusBg}; color:${statusFg}; font-size:12px; font-weight:800; padding:6px 10px; border-radius:999px;">
+                              ${escapeHtml(statusText)}
+                            </span>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
 
-    <div class="section">
-      <div class="section-title">Appointment Details</div>
-      <div class="row"><span class="label">Date:</span><span class="value">${formattedDate}</span></div>
-      <div class="row"><span class="label">Time:</span><span class="value">${safeTime}</span></div>
-      <div class="row"><span class="label">Location:</span><span class="value">${safeLocation}</span></div>
-    </div>
+            <tr>
+              <td style="padding:0 12px; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="border:1px solid #e5e7eb; border-radius:14px;">
+                  <tr>
+                    <td style="padding:18px 18px 0;">
+                      <div style="font-size:12px; font-weight:800; color:#6b7280; text-transform:uppercase; letter-spacing:0.12em;">${escapeHtml(scheduleTitle)}</div>
+                      <div style="font-size:22px; font-weight:900; color:#111827; margin-top:6px;">${safeJobTitle}</div>
+                    </td>
+                  </tr>
 
-    <div class="section">
-      <div class="section-title">Next Steps</div>
-      <ul style="margin: 4px 0 0 18px; padding: 0; font-size: 14px; color: #4b5563;">
-        <li>Please confirm your availability through the applicant portal.</li>
-        <li>Arrive at least 10–15 minutes before your scheduled time.</li>
-        <li>Prepare a valid ID and any required documents.</li>
-      </ul>
-    </div>
+                  <tr>
+                    <td style="padding:14px 18px 0;">
+                      <div style="font-size:14px; color:#111827;">Dear ${safeFullName},</div>
+                      <div style="font-size:14px; color:#374151; margin-top:8px;">${escapeHtml(introText)}</div>
+                    </td>
+                  </tr>
 
-    <div class="footer">
-      <p>This is an automated message from <span class="highlight">Roadwise</span>. Please do not reply directly to this email.</p>
-      <p>&copy; ${new Date().getFullYear()} Roadwise. All rights reserved.</p>
-    </div>
+                  <tr>
+                    <td style="padding:16px 18px 0;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:12px;">
+                        <tr>
+                          <td style="padding:14px 14px 10px; font-size:13px; font-weight:900; color:#111827; font-family:Segoe UI, Roboto, Arial, sans-serif;">Appointment Details</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 14px 14px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:13px; color:#111827;">
+                            <div style="margin:6px 0;"><span style="color:#6b7280; font-weight:800;">Date:</span> ${safeDate}</div>
+                            <div style="margin:6px 0;"><span style="color:#6b7280; font-weight:800;">Time:</span> ${safeTimeDisplay}</div>
+                            <div style="margin:6px 0;"><span style="color:#6b7280; font-weight:800;">Location:</span> ${safeLocationHtml}</div>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
 
-    <p style="margin-top: 12px; font-size: 12px; color: #9ca3af; text-align: center;">
-      Reference: ${scheduleRef}<br/>
-      Generated: ${generatedAtIso}<br/>
-      Note: Email delivery may be delayed by spam filtering. Your latest schedule in the portal is the source of truth.
-    </p>
-  </div>
-</body>
+                  ${ctaHtml}
+
+                  <tr>
+                    <td style="padding:16px 18px 0;">
+                      <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#ffffff; border:1px solid #e5e7eb; border-radius:12px;">
+                        <tr>
+                          <td style="padding:14px 14px 10px; font-size:13px; font-weight:900; color:#111827; font-family:Segoe UI, Roboto, Arial, sans-serif;">Next Steps</td>
+                        </tr>
+                        <tr>
+                          <td style="padding:0 14px 14px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:13px; color:#374151;">
+                            <ul style="margin:6px 0 0 18px; padding:0;">
+                              <li style="margin:6px 0;">Please confirm your availability through the applicant portal.</li>
+                              <li style="margin:6px 0;">Arrive at least 10–15 minutes before your scheduled time.</li>
+                              <li style="margin:6px 0;">Prepare a valid ID and any required documents.</li>
+                            </ul>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="padding:16px 18px 18px; font-family:Segoe UI, Roboto, Arial, sans-serif;">
+                      <div style="font-size:12px; color:#6b7280;">
+                        This is an automated message from Roadwise. Please do not reply directly to this email.
+                        For support, contact <a href="mailto:${safeSupportEmail}" style="color:${brandRed}; text-decoration:none; font-weight:800;">${safeSupportEmail}</a>.
+                      </div>
+                      <div style="font-size:11px; color:#9ca3af; margin-top:10px;">
+                        Reference: ${safeScheduleRef}<br/>
+                        Generated: ${safeGeneratedAt}<br/>
+                        Note: Email delivery may be delayed by spam filtering. Your latest schedule in the portal is the source of truth.
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
 </html>
         `;
 
@@ -370,7 +485,7 @@ ${isReschedule ? "Your agreement signing schedule has been updated." : "You have
 Position: ${jobTitle}
 Date: ${formattedDate}
 Time: ${safeTime}
-Location: ${safeLocation}
+Location: ${appointmentLocationRaw}
 
 Please confirm your availability through the applicant portal.
 
@@ -382,49 +497,51 @@ Note: Email delivery may be delayed by spam filtering. Your latest schedule in t
         `;
 
         try {
-          const sendGridResponse = await fetch("https://api.sendgrid.com/v3/mail/send", {
+          const emailJsResp = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
             method: "POST",
-            headers: {
-              Authorization: `Bearer ${SENDGRID_API_KEY}`,
-              "Content-Type": "application/json",
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              personalizations: [{
-                to: [{ email: toEmail }],
+              service_id: EMAILJS_SERVICE_ID,
+              template_id: EMAILJS_TEMPLATE_ID_AGREEMENT_SIGNING,
+              user_id: EMAILJS_PUBLIC_KEY,
+              accessToken: EMAILJS_PRIVATE_KEY,
+              template_params: {
+                to_email: toEmail,
+                to_name: fullName || firstName,
+                // Compatibility aliases for templates using {{email}} / {{name}}
+                email: toEmail,
+                name: fullName || firstName,
                 subject: emailSubject,
-                custom_args: {
-                  applicationId: String(applicationId),
-                  scheduleKind: 'agreement_signing',
-                  isReschedule: String(Boolean(isReschedule)),
-                  scheduleRef,
-                  generatedAt: generatedAtIso,
-                },
-              }],
-              from: { email: SENDGRID_FROM_EMAIL, name: "Roadwise HR" },
-              reply_to: { email: SENDGRID_FROM_EMAIL, name: "Roadwise HR" },
-              content: [
-                { type: "text/plain", value: textContent },
-                { type: "text/html", value: htmlContent },
-              ],
+                message: textContent,
+                message_html: htmlContent,
+                schedule_kind: 'agreement_signing',
+                is_reschedule: String(Boolean(isReschedule)),
+                application_id: String(applicationId),
+                schedule_ref: scheduleRef,
+                generated_at: generatedAtIso,
+                reply_to: HR_REPLY_TO_EMAIL || HR_SUPPORT_EMAIL,
+                reply_to_name: HR_REPLY_TO_NAME || HR_FROM_NAME,
+                from_name: HR_FROM_NAME,
+              },
             }),
           });
 
-          if (!sendGridResponse.ok) {
-            const errorText = await sendGridResponse.text();
+          if (!emailJsResp.ok) {
+            const errorText = await emailJsResp.text();
             emailError = {
-              code: 'sendgrid_rejected',
-              status: sendGridResponse.status,
-              statusText: sendGridResponse.statusText,
+              code: 'emailjs_rejected',
+              status: emailJsResp.status,
+              statusText: emailJsResp.statusText,
               body: errorText,
             };
-            console.error("SendGrid agreement signing email error:", errorText);
+            console.error("EmailJS agreement signing email error:", errorText);
           } else {
             emailSent = true;
-            emailMessageId = sendGridResponse.headers.get('x-message-id') || sendGridResponse.headers.get('X-Message-Id');
+            emailMessageId = null;
           }
         } catch (emailErr) {
-          emailError = { code: 'sendgrid_exception', message: String((emailErr as any)?.message || emailErr) };
-          console.error("Unexpected error sending agreement signing email via SendGrid:", emailErr);
+          emailError = { code: 'emailjs_exception', message: String((emailErr as any)?.message || emailErr) };
+          console.error("Unexpected error sending agreement signing email via EmailJS:", emailErr);
         }
       }
     }
@@ -446,7 +563,7 @@ Note: Email delivery may be delayed by spam filtering. Your latest schedule in t
   } catch (err) {
     console.error("Unexpected error:", err);
     return new Response(
-      JSON.stringify({ error: "Unexpected error", details: String(err?.message || err) }),
+      JSON.stringify({ error: "Unexpected error", details: String((err as any)?.message || err) }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { supabase } from './supabaseClient';
+import { supabase, supabasePublic } from './supabaseClient';
 
 function ApplicantGHome() {
   const navigate = useNavigate();
@@ -53,7 +53,16 @@ function ApplicantGHome() {
     const ids = (jobsList || []).map((j) => j?.id).filter(Boolean);
     if (ids.length === 0) return jobsList;
 
-    const { data, error } = await supabase
+    const idSet = new Set(ids.map((v) => String(v)));
+    const hiredByJobId = new Map();
+
+    const bump = (jobId) => {
+      const key = String(jobId || '');
+      if (!key || !idSet.has(key)) return;
+      hiredByJobId.set(key, (hiredByJobId.get(key) || 0) + 1);
+    };
+
+    const { data, error } = await supabasePublic
       .from('applications')
       .select('job_id, status')
       .in('job_id', ids);
@@ -63,13 +72,36 @@ function ApplicantGHome() {
       return jobsList;
     }
 
-    const hiredByJobId = new Map();
     for (const row of data || []) {
       const jobId = row?.job_id;
       if (!jobId) continue;
-      const status = String(row?.status || '').toLowerCase();
-      if (status === 'hired') {
-        hiredByJobId.set(jobId, (hiredByJobId.get(jobId) || 0) + 1);
+      const status = String(row?.status || '').trim().toLowerCase();
+      if (status === 'hired') bump(jobId);
+    }
+
+    // Back-compat: some older application rows may not have job_id populated.
+    // Fall back to payload.meta.job_id / payload.job_id if present.
+    const { data: legacyData, error: legacyError } = await supabasePublic
+      .from('applications')
+      .select('job_id, status, payload')
+      .is('job_id', null)
+      .limit(5000);
+
+    if (legacyError) {
+      console.warn('load legacy application stats error:', legacyError);
+    } else {
+      for (const row of legacyData || []) {
+        const status = String(row?.status || '').trim().toLowerCase();
+        if (status !== 'hired') continue;
+
+        const payload = row?.payload;
+        const legacyJobId =
+          payload?.meta?.job_id ||
+          payload?.meta?.jobId ||
+          payload?.job_id ||
+          payload?.jobId;
+
+        if (legacyJobId) bump(legacyJobId);
       }
     }
 
@@ -77,7 +109,7 @@ function ApplicantGHome() {
       const totalNum = Number(job?.positions_needed);
       const hasLimit = Number.isFinite(totalNum) && totalNum > 0;
       const total = hasLimit ? totalNum : null;
-      const hired = hiredByJobId.get(job?.id) || 0;
+      const hired = hiredByJobId.get(String(job?.id)) || 0;
       const remaining = hasLimit ? Math.max(totalNum - hired, 0) : null;
       return { ...job, hired_count: hired, remaining_slots: remaining };
     });

@@ -225,21 +225,21 @@ export function AssessmentSectionCard({
       {hasInterview ? (
         <>
           <div className="grid grid-cols-1 gap-2 text-sm text-gray-700">
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-4">
               <span className="text-gray-500">Date</span>
-              <span className="font-semibold text-gray-900">{formatDateLabel(schedule?.date) || '—'}</span>
+              <span className="font-semibold text-gray-900 text-left break-words">{formatDateLabel(schedule?.date) || '—'}</span>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-4">
               <span className="text-gray-500">Time</span>
-              <span className="font-semibold text-gray-900">{formatTime12h(schedule?.time) || '—'}</span>
+              <span className="font-semibold text-gray-900 text-left break-words">{formatTime12h(schedule?.time) || '—'}</span>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-4">
               <span className="text-gray-500">Location</span>
-              <span className="font-semibold text-gray-900">{schedule?.location || '—'}</span>
+              <span className="font-semibold text-gray-900 text-left break-words">{schedule?.location || '—'}</span>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-4">
               <span className="text-gray-500">Interviewer</span>
-              <span className="font-semibold text-gray-900">{schedule?.interviewer || '—'}</span>
+              <span className="font-semibold text-gray-900 text-left break-words">{schedule?.interviewer || '—'}</span>
             </div>
           </div>
 
@@ -271,21 +271,21 @@ export function AssessmentSectionCard({
       ) : (
         <>
           <div className="grid grid-cols-1 gap-2 text-sm text-gray-700">
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-4">
               <span className="text-gray-500">Date</span>
-              <span className="text-gray-500 italic">To be scheduled</span>
+              <span className="text-gray-500 italic text-left">To be scheduled</span>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-4">
               <span className="text-gray-500">Time</span>
-              <span className="text-gray-500 italic">To be scheduled</span>
+              <span className="text-gray-500 italic text-left">To be scheduled</span>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-4">
               <span className="text-gray-500">Location</span>
-              <span className="text-gray-500 italic">To be scheduled</span>
+              <span className="text-gray-500 italic text-left">To be scheduled</span>
             </div>
-            <div className="flex items-center justify-between">
+            <div className="grid grid-cols-[110px_1fr] gap-4">
               <span className="text-gray-500">Interviewer</span>
-              <span className="text-gray-500 italic">To be assigned</span>
+              <span className="text-gray-500 italic text-left">To be assigned</span>
             </div>
           </div>
           <div className="mt-3 text-xs text-gray-500">
@@ -376,17 +376,17 @@ export function SigningScheduleCard({ signing, locked }) {
         </span>
       </div>
       <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-gray-700">
-        <div className="flex items-center justify-between">
+        <div className="grid grid-cols-[110px_1fr] gap-4">
           <span className="text-gray-500">Date</span>
-          <span className="font-semibold text-gray-900">{signingDate || '—'}</span>
+          <span className="font-semibold text-gray-900 text-left break-words">{signingDate || '—'}</span>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="grid grid-cols-[110px_1fr] gap-4">
           <span className="text-gray-500">Time</span>
-          <span className="font-semibold text-gray-900">{signingTime || '—'}</span>
+          <span className="font-semibold text-gray-900 text-left break-words">{signingTime || '—'}</span>
         </div>
-        <div className="flex items-center justify-between">
+        <div className="grid grid-cols-[110px_1fr] gap-4">
           <span className="text-gray-500">Location</span>
-          <span className="font-semibold text-gray-900">{signing?.location || '—'}</span>
+          <span className="font-semibold text-gray-900 text-left break-words">{signing?.location || '—'}</span>
         </div>
       </div>
       <div className="mt-3 text-xs text-gray-500">

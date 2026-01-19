@@ -9,6 +9,66 @@ import ExcelJS from "exceljs";
 function Employees() {
   const navigate = useNavigate();
 
+  const generateTempPassword = () => {
+    const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    const symbols = '!@#$%';
+    const pick = (s) => s[Math.floor(Math.random() * s.length)];
+    let out = '';
+    out += pick('ABCDEFGHJKMNPQRSTUVWXYZ');
+    out += pick('abcdefghijkmnpqrstuvwxyz');
+    out += pick('23456789');
+    out += pick(symbols);
+    for (let i = 0; i < 8; i += 1) out += pick(alphabet);
+    return out.split('').sort(() => Math.random() - 0.5).join('');
+  };
+
+  const [sendingCredentials, setSendingCredentials] = useState(false);
+
+  const sendEmployeeCredentials = async (emp) => {
+    const employeeEmail = String(emp?.email || '').trim();
+    const toEmail = String(emp?.personal_email || emp?.email || '').trim();
+    const firstName = emp?.fname || '';
+    const lastName = emp?.lname || '';
+    const fullName = [firstName, emp?.mname, lastName].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+
+    if (!employeeEmail) {
+      throw new Error('Missing employee email.');
+    }
+    if (!toEmail) {
+      throw new Error('Missing recipient email.');
+    }
+
+    const employeePassword = generateTempPassword();
+
+    const { data: authData, error: authError } = await supabase.functions.invoke('create-employee-auth', {
+      body: {
+        employeeEmail,
+        employeePassword,
+        firstName,
+        lastName,
+      },
+    });
+
+    if (authError) throw authError;
+    if (!authData?.success || !authData?.userId) {
+      throw new Error(authData?.error || 'Auth account creation failed');
+    }
+
+    const { data: emailData, error: emailError } = await supabase.functions.invoke('send-employee-credentials', {
+      body: {
+        toEmail,
+        employeeEmail,
+        employeePassword,
+        firstName,
+        lastName,
+        fullName,
+      },
+    });
+
+    if (emailError) throw emailError;
+    return { authData, emailData };
+  };
+
   // master department list
   const departments = [
     "Operations Department",
@@ -2354,6 +2414,35 @@ function Employees() {
                               <p className="text-xs text-gray-500">#{selectedEmployee.id.slice(0, 8)}</p>
                               <p className="text-sm text-gray-600">{selectedEmployee.position || "—"} | {selectedEmployee.depot || "—"}</p>
                             </div>
+
+                            {!selectedEmployee.agency && (
+                              <button
+                                type="button"
+                                disabled={sendingCredentials}
+                                onClick={async () => {
+                                  if (!selectedEmployee) return;
+                                  setSendingCredentials(true);
+                                  try {
+                                    await sendEmployeeCredentials(selectedEmployee);
+                                    setSuccessMessage(`Login credentials sent to ${selectedEmployee.personal_email || selectedEmployee.email}.`);
+                                    setShowSuccessAlert(true);
+                                  } catch (e) {
+                                    setErrorMessage(e?.message || String(e));
+                                    setShowErrorAlert(true);
+                                  } finally {
+                                    setSendingCredentials(false);
+                                  }
+                                }}
+                                className={`px-3 py-2 rounded-lg text-sm font-semibold border transition-colors ${
+                                  sendingCredentials
+                                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                    : 'bg-red-600 text-white border-red-600 hover:bg-red-700'
+                                }`}
+                                title="Creates/updates the employee login and emails the credentials"
+                              >
+                                {sendingCredentials ? 'Sending…' : 'Send Login Credentials'}
+                              </button>
+                            )}
                           </div>
                         </div>
 
