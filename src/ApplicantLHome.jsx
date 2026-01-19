@@ -1,9 +1,15 @@
   import { Link, useNavigate, useLocation } from 'react-router-dom';
   import { useState, useEffect, useRef } from 'react';
   import { supabase } from './supabaseClient';
-import { createNotification } from './notifications';
+import { createNotification, notifyHRAboutInterviewResponse } from './notifications';
   import AutocompleteInput from './components/AutocompleteInput';
 import SkillsInput from './components/SkillsInput';
+import {
+  AssessmentSectionCard,
+  RemarksAndFilesCard,
+  SigningScheduleCard,
+  UploadedDocumentsSection,
+} from './components/ApplicantArtifactsPanels';
 
   const EDUCATION_LEVEL_OPTIONS = [
     { value: '', label: 'Select highest education' },
@@ -29,6 +35,7 @@ import SkillsInput from './components/SkillsInput';
     const [successMessage, setSuccessMessage] = useState('');
     const [showSuccessPage, setShowSuccessPage] = useState(false);
     const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+    const [showRejectInterviewDialog, setShowRejectInterviewDialog] = useState(false);
     const [showProfileIncompleteModal, setShowProfileIncompleteModal] = useState(false);
     const [profileIncompleteMessage, setProfileIncompleteMessage] = useState('');
     const [applicationTab, setApplicationTab] = useState('personal');
@@ -170,6 +177,8 @@ import SkillsInput from './components/SkillsInput';
     const [profileResumeFile, setProfileResumeFile] = useState(null);
     const [userApplication, setUserApplication] = useState(null);
     const [userApplications, setUserApplications] = useState([]);
+    const [myApplicationsStep, setMyApplicationsStep] = useState('Application');
+    const [selectedApplicationId, setSelectedApplicationId] = useState(null);
 
     // PSGC API states for location dropdowns
     const [provinces, setProvinces] = useState([]);
@@ -229,33 +238,36 @@ import SkillsInput from './components/SkillsInput';
             const mergedProfile = { ...data, ...addressParts };
 
             // Calculate age if birthday exists
-            const calculatedAge = data.birthday ? calculateAge(data.birthday) : '';
+            const resolvedBirthday = resolveBirthdayValue(mergedProfile);
+            const calculatedAge = resolvedBirthday ? calculateAge(resolvedBirthday) : '';
 
-            setProfileData(mergedProfile);
+            const mergedWithBirthday = { ...mergedProfile, birthday: resolvedBirthday };
+
+            setProfileData(mergedWithBirthday);
             setProfileForm({
-              address: mergedProfile.address || '',
-              unit_house_number: mergedProfile.unit_house_number || '',
-              street: mergedProfile.street || '',
-              barangay: mergedProfile.barangay || '',
-              city: mergedProfile.city || '',
-              province: mergedProfile.province || '',
-              postal_code: mergedProfile.postal_code || mergedProfile.zip || '',
-              zip: mergedProfile.zip || mergedProfile.postal_code || '',
-              sex: mergedProfile.sex || '',
-              birthday: mergedProfile.birthday || '',
-              age: calculatedAge || mergedProfile.age || '',
-              marital_status: mergedProfile.marital_status || '',
-              educational_attainment: normalizeEducationAttainment(mergedProfile.educational_attainment) || '',
-              institution_name: mergedProfile.institution_name || '',
-              year_graduated: mergedProfile.year_graduated || '',
-              education_program: mergedProfile.education_program || '',
-              skills: normalizeSkills(mergedProfile.skills),
-              work_experiences: mergedProfile.work_experiences || [],
-              character_references: normalizeCharacterReferences(mergedProfile.character_references),
-              preferred_depot: mergedProfile.preferred_depot || '',
-              resume_path: mergedProfile.resume_path || ''
+              address: mergedWithBirthday.address || '',
+              unit_house_number: mergedWithBirthday.unit_house_number || '',
+              street: mergedWithBirthday.street || '',
+              barangay: mergedWithBirthday.barangay || '',
+              city: mergedWithBirthday.city || '',
+              province: mergedWithBirthday.province || '',
+              postal_code: mergedWithBirthday.postal_code || mergedWithBirthday.zip || '',
+              zip: mergedWithBirthday.zip || mergedWithBirthday.postal_code || '',
+              sex: mergedWithBirthday.sex || '',
+              birthday: mergedWithBirthday.birthday || '',
+              age: calculatedAge || mergedWithBirthday.age || '',
+              marital_status: mergedWithBirthday.marital_status || '',
+              educational_attainment: normalizeEducationAttainment(mergedWithBirthday.educational_attainment) || '',
+              institution_name: mergedWithBirthday.institution_name || '',
+              year_graduated: mergedWithBirthday.year_graduated || '',
+              education_program: mergedWithBirthday.education_program || '',
+              skills: normalizeSkills(mergedWithBirthday.skills),
+              work_experiences: mergedWithBirthday.work_experiences || [],
+              character_references: normalizeCharacterReferences(mergedWithBirthday.character_references),
+              preferred_depot: mergedWithBirthday.preferred_depot || '',
+              resume_path: mergedWithBirthday.resume_path || ''
             });
-            prefillApplicationForm(mergedProfile);
+            prefillApplicationForm(mergedWithBirthday);
           }
         } catch (err) {
           console.error('Error:', err);
@@ -742,6 +754,15 @@ const handleSave = async () => {
       setProfileResumeFile(null);
     }
 
+    const birthdayValue = profileForm.birthday || '';
+    const birthdayPatch = { birthday: birthdayValue };
+    if (profileData && typeof profileData === 'object') {
+      if ('birth_date' in profileData) birthdayPatch.birth_date = birthdayValue;
+      if ('birthdate' in profileData) birthdayPatch.birthdate = birthdayValue;
+      if ('date_of_birth' in profileData) birthdayPatch.date_of_birth = birthdayValue;
+      if ('dob' in profileData) birthdayPatch.dob = birthdayValue;
+    }
+
     const baseUpdatePayload = {
         address: combinedAddress,
         unit_house_number: profileForm.unit_house_number,
@@ -751,7 +772,7 @@ const handleSave = async () => {
         province: profileForm.province,
         zip: profileForm.postal_code || profileForm.zip || '', // Use zip column (postal_code is just the form field name)
         sex: profileForm.sex,
-        birthday: profileForm.birthday,
+        ...birthdayPatch,
         age: profileForm.age,
         marital_status: profileForm.marital_status,
         educational_attainment: normalizeEducationAttainment(profileForm.educational_attainment) || null,
@@ -804,32 +825,37 @@ const handleSave = async () => {
 
 
     if (!fetchError && updatedData) {
-      const merged = { ...updatedData, ...parseAddressParts(updatedData) };
-      setProfileData(merged);
+      const mergedProfile = { ...updatedData, ...parseAddressParts(updatedData) };
+
+      const resolvedBirthday = resolveBirthdayValue(mergedProfile);
+      const calculatedAge = resolvedBirthday ? calculateAge(resolvedBirthday) : mergedProfile.age || '';
+      const mergedWithBirthday = { ...mergedProfile, birthday: resolvedBirthday };
+
+      setProfileData(mergedWithBirthday);
       setProfileForm({
-        address: merged.address || '',
-        unit_house_number: merged.unit_house_number || '',
-        street: merged.street || '',
-        barangay: merged.barangay || '',
-        city: merged.city || '',
-        province: merged.province || '',
-        postal_code: merged.postal_code || merged.zip || '',
-        zip: merged.zip || merged.postal_code || '',
-        sex: merged.sex || '',
-        birthday: merged.birthday || '',
-        age: merged.age || '',
-        marital_status: merged.marital_status || '',
-        educational_attainment: normalizeEducationAttainment(merged.educational_attainment) || '',
-        institution_name: merged.institution_name || '',
-        year_graduated: merged.year_graduated || '',
-        education_program: merged.education_program || '',
-        skills: normalizeSkills(merged.skills),
-        work_experiences: merged.work_experiences || [],
-        character_references: normalizeCharacterReferences(merged.character_references),
-        preferred_depot: merged.preferred_depot || '',
-        resume_path: merged.resume_path || ''
+        address: mergedWithBirthday.address || '',
+        unit_house_number: mergedWithBirthday.unit_house_number || '',
+        street: mergedWithBirthday.street || '',
+        barangay: mergedWithBirthday.barangay || '',
+        city: mergedWithBirthday.city || '',
+        province: mergedWithBirthday.province || '',
+        postal_code: mergedWithBirthday.postal_code || mergedWithBirthday.zip || '',
+        zip: mergedWithBirthday.zip || mergedWithBirthday.postal_code || '',
+        sex: mergedWithBirthday.sex || '',
+        birthday: mergedWithBirthday.birthday || '',
+        age: calculatedAge || '',
+        marital_status: mergedWithBirthday.marital_status || '',
+        educational_attainment: normalizeEducationAttainment(mergedWithBirthday.educational_attainment) || '',
+        institution_name: mergedWithBirthday.institution_name || '',
+        year_graduated: mergedWithBirthday.year_graduated || '',
+        education_program: mergedWithBirthday.education_program || '',
+        skills: normalizeSkills(mergedWithBirthday.skills),
+        work_experiences: mergedWithBirthday.work_experiences || [],
+        character_references: normalizeCharacterReferences(mergedWithBirthday.character_references),
+        preferred_depot: mergedWithBirthday.preferred_depot || '',
+        resume_path: mergedWithBirthday.resume_path || ''
       });
-      prefillApplicationForm(merged);
+      prefillApplicationForm(mergedWithBirthday);
     }
 
     setIsEditMode(false);
@@ -906,6 +932,155 @@ const formatDateForInput = (dateString) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+// Birthday can be stored under different column names depending on deployment.
+// Prefer explicit DOB fields over a generic `birthday`.
+const resolveBirthdayValue = (record = {}) => {
+  if (!record || typeof record !== 'object') return '';
+  return (
+    record.birth_date ||
+    record.birthdate ||
+    record.date_of_birth ||
+    record.dob ||
+    record.birthday ||
+    ''
+  );
+};
+
+const parsePayloadObject = (payload) => {
+  if (!payload) return {};
+  if (typeof payload === 'string') {
+    try {
+      const parsed = JSON.parse(payload);
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return payload && typeof payload === 'object' ? payload : {};
+};
+
+const getInterviewScheduleFromApplication = (application) => {
+  const payloadObj = parsePayloadObject(application?.payload);
+  const interviewObj = payloadObj?.interview || payloadObj?.form?.interview || {};
+
+  const date = application?.interview_date || interviewObj?.date || payloadObj?.form?.interview_date || null;
+  const time = application?.interview_time || interviewObj?.time || payloadObj?.form?.interview_time || null;
+  const location = application?.interview_location || interviewObj?.location || payloadObj?.form?.interview_location || null;
+  const interviewer = application?.interviewer || interviewObj?.interviewer || payloadObj?.form?.interviewer || null;
+  const type =
+    application?.interview_type ||
+    payloadObj?.interview_type ||
+    interviewObj?.type ||
+    'onsite';
+
+  return { date, time, location, interviewer, type };
+};
+
+const getInterviewNotesFromApplication = (application) => {
+  const payloadObj = parsePayloadObject(application?.payload);
+  const notes =
+    application?.interview_notes ??
+    payloadObj?.interview_notes ??
+    payloadObj?.interviewNotes ??
+    '';
+
+  const rawList = payloadObj?.interview_notes_attachments || payloadObj?.interviewNotesAttachments;
+  const list = Array.isArray(rawList) ? rawList.slice() : [];
+  const single = payloadObj?.interview_notes_attachment || payloadObj?.interviewNotesAttachment || null;
+  if (single && typeof single === 'object' && single.path) {
+    const exists = list.some((x) => x && typeof x === 'object' && x.path === single.path);
+    if (!exists) list.push(single);
+  }
+
+  // Keep backwards-compat with single-file columns.
+  const colPath = application?.interview_notes_file || payloadObj?.interview_notes_file || payloadObj?.interviewNotesFile || null;
+  const colLabel = application?.interview_notes_file_label || payloadObj?.interview_notes_file_label || payloadObj?.interviewNotesFileLabel || null;
+  if (colPath) {
+    const exists = list.some((x) => x && typeof x === 'object' && x.path === colPath);
+    if (!exists) {
+      list.push({
+        path: colPath,
+        label: colLabel || 'Interview Attachment',
+        originalName: null,
+        uploadedAt: null,
+      });
+    }
+  }
+
+  return { notes: String(notes || ''), attachments: list.filter(Boolean) };
+};
+
+const getAgreementSigningFromApplication = (application) => {
+  const payloadObj = parsePayloadObject(application?.payload);
+  const signing =
+    payloadObj?.agreement_signing ||
+    payloadObj?.agreementSigning ||
+    payloadObj?.signing_interview ||
+    payloadObj?.signingInterview ||
+    null;
+
+  const date =
+    application?.agreement_signing_date ||
+    signing?.date ||
+    null;
+  const time =
+    application?.agreement_signing_time ||
+    signing?.time ||
+    null;
+  const location =
+    application?.agreement_signing_location ||
+    signing?.location ||
+    null;
+
+  const status =
+    application?.agreement_signing_confirmed ||
+    payloadObj?.agreement_signing_confirmed ||
+    payloadObj?.agreementSigningConfirmed ||
+    'Idle';
+
+  return { date, time, location, status };
+};
+
+const getAgreementDocumentsFromApplication = (application) => {
+  const payloadObj = parsePayloadObject(application?.payload);
+  const rawList =
+    payloadObj?.agreement_documents ||
+    payloadObj?.agreementDocuments ||
+    payloadObj?.agreements_documents ||
+    null;
+  const list = Array.isArray(rawList) ? rawList.slice() : [];
+
+  // Compatibility: also show known agreement-related columns if present.
+  const compatKeys = [
+    { key: 'appointment_letter_file', label: 'Appointment Letter' },
+    { key: 'undertaking_file', label: 'Undertaking' },
+    { key: 'application_form_file', label: 'Application Form' },
+    { key: 'undertaking_duties_file', label: 'Undertaking Duties' },
+    { key: 'pre_employment_requirements_file', label: 'Pre-employment Requirements' },
+    { key: 'id_form_file', label: 'ID Form' },
+  ];
+  for (const item of compatKeys) {
+    const path = application?.[item.key] || payloadObj?.[item.key] || null;
+    if (!path) continue;
+    const exists = list.some((x) => x && typeof x === 'object' && x.path === path);
+    if (!exists) {
+      list.push({
+        path,
+        label: item.label,
+        originalName: null,
+        uploadedAt: null,
+      });
+    }
+  }
+
+  return list.filter((x) => x && typeof x === 'object' && x.path);
+};
+
+const getApplicationFilesPublicUrl = (path) => {
+  if (!path) return null;
+  return supabase.storage.from('application-files').getPublicUrl(path)?.data?.publicUrl || null;
 };
 
     // Helper function to normalize skills (array or string to array)
@@ -986,6 +1161,7 @@ const formatDateForInput = (dateString) => {
       // Normalize skills to array format
       const skillsValue = normalizeSkills(profile.skills);
       const { unit_house_number, street, barangay, city, province, zip } = parseAddressParts(profile);
+      const resolvedBirthday = resolveBirthdayValue(profile);
 
       const workFromProfile = Array.isArray(profile.work_experiences) ? profile.work_experiences : [];
       const refsFromProfile = normalizeCharacterReferences(profile.character_references);
@@ -1006,7 +1182,7 @@ const formatDateForInput = (dateString) => {
         zip: zip || '',
         contact: profile.contact_number || '',
         email: profile.email || '',
-        birthday: profile.birthday || '',
+        birthday: resolvedBirthday || '',
         maritalStatus: profile.marital_status ? profile.marital_status.toLowerCase() : '',
         sex: profile.sex || '',
         skills: skillsValue,
@@ -1040,7 +1216,6 @@ const formatDateForInput = (dateString) => {
         }
         return;
       }
-
       if (name === 'zip') {
         const numericValue = value.replace(/\D/g, '').slice(0, 4);
         setForm((f) => ({ ...f, [name]: numericValue }));
@@ -1102,7 +1277,7 @@ const formatDateForInput = (dateString) => {
     const fetchUserApplication = async (userId) => {
       const { data, error } = await supabase
         .from('applications')
-        .select('id, job_id, created_at, payload, status')
+        .select('*')
         .eq('user_id', userId)
         .order('created_at', { ascending: false })
         .limit(200);
@@ -1116,6 +1291,22 @@ const formatDateForInput = (dateString) => {
       setUserApplications(list);
       setUserApplication(list.length > 0 ? list[0] : null); // keep backward-compatible “latest”
     };
+
+    useEffect(() => {
+      const list = Array.isArray(userApplications) ? userApplications : [];
+      if (list.length === 0) {
+        setSelectedApplicationId(null);
+        return;
+      }
+
+      // Preserve current selection if it still exists.
+      const currentId = selectedApplicationId;
+      const stillExists = currentId && list.some((a) => String(a?.id) === String(currentId));
+      if (stillExists) return;
+
+      setSelectedApplicationId(list[0].id);
+      setMyApplicationsStep('Application');
+    }, [userApplications, selectedApplicationId]);
 
     const updateWork = (idx, key, value) => {
       setWorkExperiences((prev) => {
@@ -1658,6 +1849,18 @@ const formatDateForInput = (dateString) => {
     const appliedJobId = userApplication?.job_id || null;
     // Keep the existing “only show my job” behavior except when the latest application is rejected.
     const shouldLockToAppliedJob = hasExistingApplication && !!appliedJobId && latestApplicationStatus !== 'rejected';
+
+    const selectedApplication = (() => {
+      const list = Array.isArray(userApplications) ? userApplications : [];
+      if (selectedApplicationId) {
+        const found = list.find((a) => String(a?.id) === String(selectedApplicationId));
+        if (found) return found;
+      }
+      return userApplication || (list.length > 0 ? list[0] : null);
+    })();
+
+    const selectedApplicationPayload = parsePayloadObject(selectedApplication?.payload);
+    const selectedApplicationJob = selectedApplicationPayload?.job || selectedApplicationPayload?.form?.job || null;
 
     const getLatestStatusForJob = (jobId) => {
       if (!jobId) return '';
@@ -2824,8 +3027,246 @@ const formatDateForInput = (dateString) => {
             </section>
 
             <section className={`w-full ${activeTab === 'Applications' ? '' : 'hidden'}`}>
-              <div className="max-w-7xl mx-auto px-6 py-8">
-                {/* Applications content */}
+              <div className="max-w-7xl mx-auto px-6 py-8 space-y-6">
+                <div className="flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
+                  <div>
+                    <h2 className="text-3xl font-bold text-gray-900">My Applications</h2>
+                    <p className="text-gray-600 mt-1">Track your application progress, assessment schedule, and agreements.</p>
+                  </div>
+                  <button
+                    onClick={() => navigate('/applicant/applications')}
+                    className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-800 hover:bg-gray-50 text-sm font-medium"
+                  >
+                    Open Full View
+                  </button>
+                </div>
+
+                {!selectedApplication ? (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div className="text-gray-700 font-medium">No applications yet.</div>
+                    <div className="text-sm text-gray-500 mt-1">Apply to a job to start tracking your progress here.</div>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-200 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                      <div>
+                        <div className="text-lg font-semibold text-gray-900">
+                          {selectedApplicationJob?.title || selectedApplicationPayload?.job?.title || 'Application'}
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          {selectedApplicationJob?.depot ? `Depot: ${selectedApplicationJob.depot}` : null}
+                          {selectedApplicationJob?.depot ? <span className="mx-2">•</span> : null}
+                          {selectedApplication?.created_at ? (
+                            <span>
+                              Submitted {new Date(selectedApplication.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}
+                            </span>
+                          ) : (
+                            <span>Submitted date unavailable</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <select
+                          value={selectedApplicationId || selectedApplication?.id || ''}
+                          onChange={(e) => {
+                            setSelectedApplicationId(e.target.value);
+                            setMyApplicationsStep('Application');
+                          }}
+                          className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+                        >
+                          {(Array.isArray(userApplications) ? userApplications : []).map((app) => {
+                            const payloadObj = parsePayloadObject(app?.payload);
+                            const job = payloadObj?.job || payloadObj?.form?.job || null;
+                            const title = job?.title || `Job #${String(app?.job_id || '').slice(0, 8)}`;
+                            const when = app?.created_at
+                              ? new Date(app.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                              : 'Unknown date';
+                            return (
+                              <option key={app.id} value={app.id}>
+                                {title} — {when}
+                              </option>
+                            );
+                          })}
+                        </select>
+
+                        {(() => {
+                          const status = String(selectedApplication?.status || '').toLowerCase();
+                          const style =
+                            status === 'hired'
+                              ? 'bg-green-100 text-green-700 border-green-300'
+                              : status === 'rejected'
+                              ? 'bg-red-100 text-red-700 border-red-300'
+                              : 'bg-blue-100 text-blue-700 border-blue-300';
+                          const label = status ? status.replace(/_/g, ' ') : 'submitted';
+                          return (
+                            <span className={`px-3 py-1.5 rounded-full border text-xs font-semibold ${style}`}>
+                              {label.toUpperCase()}
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Stepper */}
+                    <div className="px-6 py-4 border-b border-gray-200">
+                      {(() => {
+                        const steps = ['Application', 'Assessment', 'Agreements'];
+                        return (
+                          <div className="flex flex-wrap gap-2">
+                            {steps.map((s) => {
+                              const active = myApplicationsStep === s;
+                              return (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  onClick={() => setMyApplicationsStep(s)}
+                                  className={
+                                    active
+                                      ? 'px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold'
+                                      : 'px-4 py-2 rounded-lg bg-gray-100 text-gray-800 text-sm font-semibold hover:bg-gray-200'
+                                  }
+                                >
+                                  {s}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Application */}
+                    {myApplicationsStep === 'Application' && (
+                      <div className="p-6 space-y-4">
+                        <div className="text-sm text-gray-700">
+                          {selectedApplicationJob?.description ? (
+                            <>
+                              <div className="font-semibold text-gray-900 mb-1">Job Description</div>
+                              <div className="text-gray-700">{selectedApplicationJob.description}</div>
+                            </>
+                          ) : (
+                            <span className="text-gray-500 italic">Job details will appear here when available.</span>
+                          )}
+                        </div>
+
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                          <div className="text-sm font-semibold text-gray-900">Application Snapshot</div>
+                          <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                            <div>
+                              <span className="text-gray-600">Position:</span>{' '}
+                              <span className="text-gray-900">{selectedApplicationJob?.title || '—'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Depot:</span>{' '}
+                              <span className="text-gray-900">{selectedApplicationJob?.depot || '—'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Department:</span>{' '}
+                              <span className="text-gray-900">{selectedApplicationJob?.department || selectedApplicationPayload?.form?.department || '—'}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-600">Submitted:</span>{' '}
+                              <span className="text-gray-900">
+                                {selectedApplication?.created_at ? formatDate(selectedApplication.created_at) : '—'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Assessment */}
+                    {myApplicationsStep === 'Assessment' && (
+                      <div className="p-6 space-y-6">
+                        {(() => {
+                          const interview = getInterviewScheduleFromApplication(selectedApplication);
+                          const payloadObj = parsePayloadObject(selectedApplication?.payload);
+                          const interviewConfirmed =
+                            selectedApplication?.interview_confirmed ||
+                            payloadObj?.interview_confirmed ||
+                            null;
+
+                          const rescheduleRequest =
+                            payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+
+                          return (
+                            <AssessmentSectionCard
+                              schedule={interview}
+                              interviewConfirmed={interviewConfirmed}
+                              rescheduleRequest={rescheduleRequest}
+                              onRequestReschedule={() => setShowRejectInterviewDialog(true)}
+                            />
+                          );
+                        })()}
+
+                        {(() => {
+                          const { notes, attachments } = getInterviewNotesFromApplication(selectedApplication);
+                          const legacy = [];
+                          if (selectedApplication?.interview_details_file) {
+                            legacy.push({ path: selectedApplication.interview_details_file, label: 'Interview Details' });
+                          }
+                          if (selectedApplication?.assessment_results_file) {
+                            legacy.push({ path: selectedApplication.assessment_results_file, label: 'Assessment Result' });
+                          }
+
+                          const files = [...(Array.isArray(attachments) ? attachments : []), ...legacy];
+
+                          return (
+                            <RemarksAndFilesCard
+                              title="Assessment Remarks and Files"
+                              remarks={notes}
+                              emptyRemarksText="No uploaded remarks or files."
+                              files={files}
+                              getPublicUrl={getApplicationFilesPublicUrl}
+                            />
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Agreements */}
+                    {myApplicationsStep === 'Agreements' && (
+                      <div className="p-6 space-y-6">
+                        {(() => {
+                          const payloadObj = parsePayloadObject(selectedApplication?.payload);
+                          const interviewConfirmedRaw =
+                            selectedApplication?.interview_confirmed || payloadObj?.interview_confirmed || null;
+                          const interviewConfirmedNormalized = interviewConfirmedRaw
+                            ? String(interviewConfirmedRaw).trim().toLowerCase()
+                            : null;
+                          const legacyRejected = interviewConfirmedNormalized === 'rejected';
+                          const rescheduleReqObj =
+                            payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+                          const rescheduleReqHandled = Boolean(rescheduleReqObj && (rescheduleReqObj.handled_at || rescheduleReqObj.handledAt));
+                          const rescheduleReqActive = Boolean(
+                            rescheduleReqObj &&
+                            typeof rescheduleReqObj === 'object' &&
+                            !rescheduleReqHandled &&
+                            (rescheduleReqObj.requested_at || rescheduleReqObj.requestedAt || rescheduleReqObj.note)
+                          );
+                          const locked = legacyRejected || rescheduleReqActive;
+
+                          const signing = getAgreementSigningFromApplication(selectedApplication);
+                          return <SigningScheduleCard signing={signing} locked={locked} />;
+                        })()}
+
+                        {(() => {
+                          const docs = getAgreementDocumentsFromApplication(selectedApplication);
+                          return (
+                            <UploadedDocumentsSection
+                              title="Uploaded Agreements"
+                              emptyText="No uploaded documents"
+                              documents={docs}
+                              getPublicUrl={getApplicationFilesPublicUrl}
+                              variant="list"
+                            />
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </section>
             
@@ -2834,6 +3275,136 @@ const formatDateForInput = (dateString) => {
                 {/* Notifications content */}
               </div>
             </section>
+
+            {/* Request Reschedule Dialog (My Applications) */}
+            {showRejectInterviewDialog && (
+              <div
+                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+                onClick={() => setShowRejectInterviewDialog(false)}
+              >
+                <div
+                  className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <h3 className="text-lg font-bold mb-4">Request for Reschedule</h3>
+                  <div className="text-sm text-gray-700 mb-6">
+                    Are you sure you want to request for a reschedule of this interview? HR will be notified and will reschedule your interview.
+                  </div>
+                  <div className="flex justify-end gap-3">
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                      onClick={() => setShowRejectInterviewDialog(false)}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      className="px-4 py-2 rounded bg-orange-500 text-white hover:bg-orange-600"
+                      onClick={async () => {
+                        if (!selectedApplication?.id) {
+                          setShowRejectInterviewDialog(false);
+                          return;
+                        }
+
+                        try {
+                          const rejectedAt = new Date().toISOString();
+
+                          const currentPayload = parsePayloadObject(selectedApplication?.payload);
+                          const existingReq =
+                            currentPayload?.interview_reschedule_request || currentPayload?.interviewRescheduleRequest || null;
+                          const existingEver = Boolean(
+                            existingReq &&
+                            (typeof existingReq !== 'object' ||
+                              existingReq.requested_at ||
+                              existingReq.requestedAt ||
+                              existingReq.note ||
+                              existingReq.preferred_date ||
+                              existingReq.preferredDate ||
+                              existingReq.preferred_time_from ||
+                              existingReq.preferredTimeFrom ||
+                              existingReq.preferred_time_to ||
+                              existingReq.preferredTimeTo ||
+                              existingReq.handled_at ||
+                              existingReq.handledAt)
+                          );
+                          if (existingEver) {
+                            setErrorMessage('You can only request an assessment reschedule once for this interview.');
+                            setTimeout(() => setErrorMessage(''), 5000);
+                            return;
+                          }
+
+                          const req = {
+                            requested_at: rejectedAt,
+                            requestedAt: rejectedAt,
+                            source: 'applicant',
+                            note: 'Requested via My Applications',
+                          };
+
+                          const updatedPayload = {
+                            ...currentPayload,
+                            interview_reschedule_request: req,
+                            interviewRescheduleRequest: req,
+                          };
+                          const { error: updateError } = await supabase
+                            .from('applications')
+                            .update({
+                              interview_confirmed: 'Rejected',
+                              interview_confirmed_at: rejectedAt,
+                              payload: updatedPayload,
+                            })
+                            .eq('id', selectedApplication.id);
+
+                          if (updateError) {
+                            console.error('Error requesting reschedule:', updateError);
+                            setErrorMessage('Failed to request reschedule. Please try again.');
+                            setTimeout(() => setErrorMessage(''), 5000);
+                            return;
+                          }
+
+                          // Update local list so UI reflects immediately.
+                          setUserApplications((prev) =>
+                            (Array.isArray(prev) ? prev : []).map((app) =>
+                              String(app?.id) === String(selectedApplication.id)
+                                ? { ...app, interview_confirmed: 'Rejected', interview_confirmed_at: rejectedAt, payload: updatedPayload }
+                                : app
+                            )
+                          );
+
+                          // Notify HR (best effort)
+                          try {
+                            const payloadObj = parsePayloadObject(selectedApplication?.payload);
+                            const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
+                            const applicantName = `${form.firstName || ''} ${form.middleName || ''} ${form.lastName || ''}`.trim() || 'Applicant';
+                            const position = selectedApplicationJob?.title || payloadObj?.job?.title || form.position || 'Position';
+                            const interview = getInterviewScheduleFromApplication(selectedApplication);
+                            await notifyHRAboutInterviewResponse({
+                              applicationId: selectedApplication.id,
+                              applicantName,
+                              position,
+                              responseType: 'reschedule_requested',
+                              interviewDate: interview?.date || null,
+                              interviewTime: interview?.time || null,
+                              responseNote: 'Requested via My Applications',
+                            });
+                          } catch (notifyError) {
+                            console.error('Error notifying HR about reschedule:', notifyError);
+                          }
+
+                          setShowRejectInterviewDialog(false);
+                        } catch (err) {
+                          console.error('Error requesting reschedule:', err);
+                          setErrorMessage('Failed to request reschedule. Please try again.');
+                          setTimeout(() => setErrorMessage(''), 5000);
+                        }
+                      }}
+                    >
+                      Request Reschedule
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <section className={`w-full ${activeTab === 'Profile' ? '' : 'hidden'}`}>
               <div className="max-w-7xl mx-auto px-6 py-8">

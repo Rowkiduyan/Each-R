@@ -1,7 +1,13 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
-import { createInterviewScheduledNotification, createInterviewRescheduledNotification, notifyHRAboutInterviewResponse, notifyHRAboutAgreementSigningResponse, notifyHRAboutApplicationRetraction } from './notifications';
+import { notifyHRAboutInterviewResponse, notifyHRAboutApplicationRetraction } from './notifications';
+import {
+  AssessmentSectionCard,
+  RemarksAndFilesCard,
+  SigningScheduleCard,
+  UploadedDocumentsSection,
+} from './components/ApplicantArtifactsPanels';
 
 function ApplicantApplications() {
   const navigate = useNavigate();
@@ -47,9 +53,10 @@ function ApplicantApplications() {
   const [activeStep, setActiveStep] = useState("Application");
   const [loading, setLoading] = useState(true);
   const [applicationData, setApplicationData] = useState(null);
+
   const [jobData, setJobData] = useState(null);
   const [profileData, setProfileData] = useState(null);
-  // status: done -> green, pending -> yellow, waiting -> orange
+
   const [stepStatus, setStepStatus] = useState({
     Application: "done",
     Assessment: "pending",
@@ -86,8 +93,10 @@ function ApplicantApplications() {
 
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showRejectDialog, setShowRejectDialog] = useState(false);
-  const [showAgreementConfirmDialog, setShowAgreementConfirmDialog] = useState(false);
-  const [showAgreementRescheduleDialog, setShowAgreementRescheduleDialog] = useState(false);
+  const [rescheduleNote, setRescheduleNote] = useState('');
+  const [reschedulePreferredDate, setReschedulePreferredDate] = useState('');
+  const [reschedulePreferredTimeFrom, setReschedulePreferredTimeFrom] = useState('');
+  const [reschedulePreferredTimeTo, setReschedulePreferredTimeTo] = useState('');
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [showRetractDialog, setShowRetractDialog] = useState(false);
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
@@ -97,12 +106,121 @@ function ApplicantApplications() {
   const [showRetractSuccess, setShowRetractSuccess] = useState(false);
   const [retractError, setRetractError] = useState('');
 
+  const parsePayloadObject = (payload) => {
+    if (!payload) return {};
+    if (typeof payload === 'string') {
+      try {
+        const parsed = JSON.parse(payload);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch {
+        return {};
+      }
+    }
+    return payload && typeof payload === 'object' ? payload : {};
+  };
+
+  const getApplicationFilesPublicUrl = (path) => {
+    if (!path) return null;
+    return supabase.storage.from('application-files').getPublicUrl(path)?.data?.publicUrl || null;
+  };
+
+  const getInterviewNotesFromApplication = (application) => {
+    const payloadObj = parsePayloadObject(application?.payload);
+    const notes =
+      application?.interview_notes ??
+      payloadObj?.interview_notes ??
+      payloadObj?.interviewNotes ??
+      '';
+
+    const rawList = payloadObj?.interview_notes_attachments || payloadObj?.interviewNotesAttachments;
+    const list = Array.isArray(rawList) ? rawList.slice() : [];
+    const single = payloadObj?.interview_notes_attachment || payloadObj?.interviewNotesAttachment || null;
+    if (single && typeof single === 'object' && single.path) {
+      const exists = list.some((x) => x && typeof x === 'object' && x.path === single.path);
+      if (!exists) list.push(single);
+    }
+
+    const colPath = application?.interview_notes_file || payloadObj?.interview_notes_file || payloadObj?.interviewNotesFile || null;
+    const colLabel = application?.interview_notes_file_label || payloadObj?.interview_notes_file_label || payloadObj?.interviewNotesFileLabel || null;
+    if (colPath) {
+      const exists = list.some((x) => x && typeof x === 'object' && x.path === colPath);
+      if (!exists) {
+        list.push({
+          path: colPath,
+          label: colLabel || 'Interview Attachment',
+          originalName: null,
+          uploadedAt: null,
+        });
+      }
+    }
+
+    return { notes: String(notes || ''), attachments: list.filter(Boolean) };
+  };
+
+  const getAgreementSigningFromApplication = (application) => {
+    const payloadObj = parsePayloadObject(application?.payload);
+    const signing =
+      payloadObj?.agreement_signing ||
+      payloadObj?.agreementSigning ||
+      payloadObj?.signing_interview ||
+      payloadObj?.signingInterview ||
+      null;
+
+    const date = application?.agreement_signing_date || signing?.date || null;
+    const time = application?.agreement_signing_time || signing?.time || null;
+    const location = application?.agreement_signing_location || signing?.location || null;
+    const status =
+      application?.agreement_signing_confirmed ||
+      payloadObj?.agreement_signing_confirmed ||
+      payloadObj?.agreementSigningConfirmed ||
+      'Idle';
+
+    return { date, time, location, status };
+  };
+
+  const getAgreementDocumentsFromApplication = (application) => {
+    const payloadObj = parsePayloadObject(application?.payload);
+    const rawList =
+      payloadObj?.agreement_documents ||
+      payloadObj?.agreementDocuments ||
+      payloadObj?.agreements_documents ||
+      null;
+    const list = Array.isArray(rawList) ? rawList.slice() : [];
+
+    const compatKeys = [
+      { key: 'appointment_letter_file', label: 'Employee Appointment Letter' },
+      { key: 'undertaking_file', label: 'Undertaking' },
+      { key: 'application_form_file', label: 'Application Form' },
+      { key: 'undertaking_duties_file', label: 'Undertaking of Duties and Responsibilities' },
+      { key: 'pre_employment_requirements_file', label: 'Roadwise Pre Employment Requirements' },
+      { key: 'id_form_file', label: 'ID Form' },
+    ];
+
+    for (const item of compatKeys) {
+      const path = application?.[item.key] || payloadObj?.[item.key] || null;
+      if (!path) continue;
+      const exists = list.some((x) => x && typeof x === 'object' && x.path === path);
+      if (!exists) {
+        list.push({
+          path,
+          label: item.label,
+          originalName: null,
+          uploadedAt: null,
+        });
+      }
+    }
+
+    return list.filter((x) => x && typeof x === 'object' && x.path);
+  };
+
+  const payloadObj = parsePayloadObject(applicationData?.payload);
+  const interviewObj = payloadObj?.interview || payloadObj?.form?.interview || {};
   const interview = {
-  date: applicationData?.interview_date || applicationData?.payload?.interview?.date || applicationData?.payload?.form?.interview_date || null,
-  time: applicationData?.interview_time || applicationData?.payload?.interview?.time || applicationData?.payload?.form?.interview_time || null,
-  location: applicationData?.interview_location || applicationData?.payload?.interview?.location || applicationData?.payload?.form?.interview_location || null,
-  interviewer: applicationData?.interviewer || applicationData?.payload?.interview?.interviewer || applicationData?.payload?.form?.interviewer || "",
-};
+    date: applicationData?.interview_date || interviewObj?.date || payloadObj?.form?.interview_date || null,
+    time: applicationData?.interview_time || interviewObj?.time || payloadObj?.form?.interview_time || null,
+    location: applicationData?.interview_location || interviewObj?.location || payloadObj?.form?.interview_location || null,
+    interviewer: applicationData?.interviewer || interviewObj?.interviewer || payloadObj?.form?.interviewer || "",
+  };
 
 
   const resumeName = applicationData?.payload?.form?.resumeName;
@@ -340,10 +458,10 @@ function ApplicantApplications() {
         }
 
         setLoading(false);
-      } catch (error) {
-        console.error('Error:', error);
-        setLoading(false);
-      }
+                  } catch (err) {
+                    console.error('Error confirming interview:', err);
+                    alert('Failed to confirm interview. Please try again.');
+                  }
     };
 
     fetchApplication();
@@ -1000,821 +1118,61 @@ function ApplicantApplications() {
                   Assessment & Interview
                 </h3>
               </div>
-              <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-gray-800">Interview Schedule</h2>
-                {(() => {
-                  // Get interview status from database
-                  const interviewStatus = applicationData?.interview_confirmed || applicationData?.payload?.interview_confirmed || 'Idle';
-                  
-                  // Only show status if applicant has responded (not Idle)
-                  if (interviewStatus === 'Confirmed') {
-                    return (
-                      <span className="text-sm px-2 py-1 rounded bg-green-100 text-green-800 border border-green-300">
-                        Status: Confirmed
-                      </span>
-                    );
-                  } else if (interviewStatus === 'Rejected') {
-                    return (
-                      <span className="text-sm px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300">
-                        Status: Reschedule Requested
-                      </span>
-                    );
-                  }
-                  return null;
-                })()}
-              </div>
-              <div className="bg-gray-50 border rounded-md p-4">
-                <div className="text-sm text-gray-800 font-semibold mb-2">Interview Schedule</div>
-                <div className="text-sm text-gray-700 space-y-1">
-                  <div><span className="font-medium">Date:</span> {interview.date}</div>
-                  <div><span className="font-medium">Time:</span> {interview.time}</div>
-                  <div><span className="font-medium">Location:</span> {interview.location}</div>
-                  <div><span className="font-medium">Interviewer:</span> {interview.interviewer}</div>
-                </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <div className="text-xs text-gray-500 italic">
-                    {interview.date ? 
-                      'Important Reminder: Please confirm at least a day before your schedule.' :
-                      'Please wait for HR to schedule your interview.'
-                    }
-                  </div>
+              <div className="p-6 space-y-6">
                   {(() => {
-                    // Get interview status
-                    const interviewStatus = applicationData?.interview_confirmed || applicationData?.payload?.interview_confirmed || 'Idle';
-                    
-                    // Show buttons only if no response has been made yet and interview is scheduled
-                    const showButtons = interviewStatus === 'Idle' && 
-                      interview.date && interview.time && interview.location;
-                    
+                    const interviewStatus = applicationData?.interview_confirmed || payloadObj?.interview_confirmed || 'Idle';
+                    const rescheduleRequest = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+                    return (
+                      <AssessmentSectionCard
+                        schedule={interview}
+                        interviewConfirmed={interviewStatus}
+                        rescheduleRequest={rescheduleRequest}
+                        onRequestReschedule={() => {
+                          setRescheduleNote('');
+                          setReschedulePreferredDate('');
+                          setReschedulePreferredTimeFrom('');
+                          setReschedulePreferredTimeTo('');
+                          setShowRejectDialog(true);
+                        }}
+                      />
+                    );
+                  })()}
+
+                  {(() => {
+                    const interviewStatus = applicationData?.interview_confirmed || payloadObj?.interview_confirmed || 'Idle';
+                    const statusLower = String(interviewStatus || '').toLowerCase();
+                    const showButtons = statusLower === 'idle' && interview?.date && interview?.time && interview?.location;
                     return showButtons ? (
-                      <div className="flex gap-2">
-                        <button type="button" className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600" onClick={() => setShowRejectDialog(true)}>
-                          Request for Reschedule
-                        </button>
-                        <button type="button" className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700" onClick={() => setShowConfirmDialog(true)}>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                          onClick={() => setShowConfirmDialog(true)}
+                        >
                           Confirm Interview
                         </button>
                       </div>
                     ) : null;
                   })()}
-                </div>
-              </div>
 
-              {/* Assessment Files - Always show file status */}
-              <div className="mt-6">
-                <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
-                <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
-                  <div className="col-span-6">Document</div>
-                  <div className="col-span-6">File</div>
-                </div>
-
-                {/* Interview Details File Row */}
-                <div className="border-b">
-                  <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                    <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
-                        <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
-                      </svg>
-                      Interview Details
-                    </div>
-                    <div className="col-span-12 md:col-span-6 text-sm">
-                      {(() => {
-                        // Check both direct field and payload - column takes priority
-                        const interviewFile = applicationData?.interview_details_file || 
-                                             (applicationData?.payload && typeof applicationData.payload === 'object' ? applicationData.payload.interview_details_file : null) ||
-                                             (typeof applicationData?.payload === 'string' ? (() => {
-                                               try {
-                                                 const parsed = JSON.parse(applicationData.payload);
-                                                 return parsed?.interview_details_file || null;
-                                               } catch {
-                                                 return null;
-                                               }
-                                             })() : null);
-                        if (interviewFile) {
-                          const fileUrl = supabase.storage.from('application-files').getPublicUrl(interviewFile)?.data?.publicUrl;
-                          const fileName = interviewFile.split('/').pop() || 'Interview Details';
-                          return (
-                            <div className="flex items-center gap-2">
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
-                                <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
-                              </svg>
-                              <a 
-                                href={fileUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-                                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
-                                </svg>
-                                {fileName}
-                              </a>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                              <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                            </svg>
-                            <span className="text-sm text-gray-500 italic">No file uploaded yet</span>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                </div>
-                
-                {/* Assessment Results File Row */}
-                <div className="border-b">
-                  <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                    <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
-                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
-                      </svg>
-                      In-Person Assessment Results
-                    </div>
-                    <div className="col-span-12 md:col-span-6 text-sm">
-                      {(() => {
-                        // Check both direct field and payload - column takes priority
-                        const assessmentFile = applicationData?.assessment_results_file || 
-                                              (applicationData?.payload && typeof applicationData.payload === 'object' ? applicationData.payload.assessment_results_file : null) ||
-                                              (typeof applicationData?.payload === 'string' ? (() => {
-                                                try {
-                                                  const parsed = JSON.parse(applicationData.payload);
-                                                  return parsed?.assessment_results_file || null;
-                                                } catch {
-                                                  return null;
-                                                }
-                                              })() : null);
-                        if (assessmentFile) {
-                          const fileUrl = supabase.storage.from('application-files').getPublicUrl(assessmentFile)?.data?.publicUrl;
-                          const fileName = assessmentFile.split('/').pop() || 'Assessment Results';
-                          return (
-                            <div className="flex items-center gap-2">
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
-                                <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
-                              </svg>
-                              <a 
-                                href={fileUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="text-blue-600 hover:underline text-sm flex items-center gap-1"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                  <path d="M10.75 2.75a.75.75 0 0 0-1.5 0v8.614L6.295 8.235a.75.75 0 1 0-1.09 1.03l4.25 4.5a.75.75 0 0 0 1.09 0l4.25-4.5a.75.75 0 0 0-1.09-1.03l-2.955 3.129V2.75Z" />
-                                  <path d="M3.5 12.75a.75.75 0 0 0-1.5 0v3.5A2.75 2.75 0 0 0 4.75 19h10.5A2.75 2.75 0 0 0 18 16.25v-3.5a.75.75 0 0 0-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5Z" />
-                                </svg>
-                                {fileName}
-                              </a>
-                            </div>
-                          );
-                        }
-                        return (
-                          <div className="flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                              <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                            </svg>
-                            <span className="text-sm text-gray-500 italic">No file uploaded yet</span>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              </div>
-            </section>
-          )}
-
-          {/* Requirements */}
-          {applicationData && (
-            <section className={`p-4 ${activeStep === "Requirements" ? "" : "hidden"}`}>
-              {/* Header summary (same as Application header portion inside card) */}
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded bg-gray-200 flex items-center justify-center text-gray-500 text-sm">
-                    {applicationData.payload?.form?.firstName?.[0] || ''}{applicationData.payload?.form?.lastName?.[0] || ''}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-800">
-                      {applicationData.payload?.form?.lastName || ''}, {applicationData.payload?.form?.firstName || ''} {applicationData.payload?.form?.middleName || ''}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Applied: {new Date(applicationData.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-xs text-gray-500">#{applicationData.id.slice(0, 8)}</div>
                   {(() => {
-                    const statusLower = String(applicationData?.status || applicationData?.payload?.status || '').trim().toLowerCase();
-                    const canRetract = statusLower !== 'hired' && statusLower !== 'rejected';
-                    if (!canRetract) return null;
+                    const { notes, attachments } = getInterviewNotesFromApplication(applicationData);
+                    const legacy = [];
+                    if (applicationData?.interview_details_file) legacy.push({ path: applicationData.interview_details_file, label: 'Interview Details' });
+                    if (applicationData?.assessment_results_file) legacy.push({ path: applicationData.assessment_results_file, label: 'Assessment Result' });
+                    const files = [...(Array.isArray(attachments) ? attachments : []), ...legacy];
+
                     return (
-                    <button 
-                      type="button" 
-                      className="text-sm text-blue-600 hover:underline mt-2 disabled:text-gray-400 disabled:cursor-not-allowed"
-                      onClick={() => setShowRetractDialog(true)}
-                      disabled={applicationRetracted || retracting}
-                    >
-                      {applicationRetracted ? "Application Retracted" : "Retract Application"}
-                    </button>
+                      <RemarksAndFilesCard
+                        title="Assessment Remarks and Files"
+                        remarks={notes}
+                        emptyRemarksText="No uploaded remarks or files."
+                        files={files}
+                        getPublicUrl={getApplicationFilesPublicUrl}
+                      />
                     );
                   })()}
                 </div>
-              </div>
-
-            {/* ID numbers row with lock/unlock */}
-            {(() => {
-              let requirements = applicationData?.requirements;
-              if (typeof requirements === 'string') {
-                try { requirements = JSON.parse(requirements); } catch { requirements = {}; }
-              }
-              const idNumbers = requirements?.id_numbers || {};
-
-              return (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-                  {[{key: 'sss', label: 'SSS No.'}, {key: 'philhealth', label: 'Philhealth No.'}, {key: 'pagibig', label: 'Pag-IBIG No.'}, {key: 'tin', label: 'TIN No.'}].map((item) => {
-                    const idData = idNumbers[item.key];
-                    const idStatus = idData?.status || "Submitted";
-                    const idRemarks = idData?.remarks || "";
-
-                    return (
-                      <div key={item.key} className="flex flex-col gap-2">
-                        <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    placeholder={item.label}
-                    value={idFields[item.key]}
-                    onChange={(e) => setIdFields((f) => ({ ...f, [item.key]: e.target.value }))}
-                    disabled={idLocked[item.key]}
-                    className={`flex-1 px-3 py-2 border border-gray-300 rounded bg-white text-sm focus:outline-none focus:ring-1 focus:ring-red-500 ${idLocked[item.key] ? 'bg-gray-100 text-gray-600' : ''}`}
-                  />
-                  {!idLocked[item.key] ? (
-                    <button
-                      type="button"
-                      className="text-xs px-3 py-1 rounded bg-green-600 text-white hover:bg-green-700"
-                      onClick={() => setIdLocked((l) => ({ ...l, [item.key]: true }))}
-                      title="Lock value"
-                    >
-                      ✓
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="text-xs px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
-                      onClick={() => setIdLocked((l) => ({ ...l, [item.key]: false }))}
-                      title="Unlock to edit"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-                        {idData && (
-                          <div className="flex flex-col gap-1">
-                            <span className={`text-xs px-2 py-1 rounded ${
-                              idStatus === "Validated" 
-                                ? "bg-green-100 text-green-800" 
-                                : idStatus === "Re-submit"
-                                ? "bg-red-100 text-red-800"
-                                : "bg-orange-100 text-orange-800"
-                            }`}>
-                              {idStatus}
-                            </span>
-                            {idRemarks && (
-                              <div className="text-xs text-gray-600 italic">HR Remarks: {idRemarks}</div>
-                            )}
-            </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })()}
-
-            {/* Specialized Training (read-only; provided during endorsement) */}
-            {(() => {
-              const payloadObj = typeof applicationData?.payload === 'string'
-                ? (() => {
-                    try {
-                      return JSON.parse(applicationData.payload);
-                    } catch {
-                      return {};
-                    }
-                  })()
-                : applicationData?.payload || {};
-
-              const form = payloadObj?.form || payloadObj?.applicant || payloadObj || {};
-
-              const specializedTraining =
-                form?.specializedTraining ||
-                form?.specialized_training ||
-                payloadObj?.specializedTraining ||
-                payloadObj?.specialized_training ||
-                '';
-
-              const specializedYear =
-                form?.specializedYear ||
-                form?.specialized_year ||
-                payloadObj?.specializedYear ||
-                payloadObj?.specialized_year ||
-                '';
-
-              const trainingCertFilePath =
-                form?.trainingCertFilePath ||
-                form?.training_cert_file_path ||
-                form?.specializedTrainingCertFilePath ||
-                form?.specialized_training_cert_file_path ||
-                payloadObj?.trainingCertFilePath ||
-                payloadObj?.training_cert_file_path ||
-                payloadObj?.specializedTrainingCertFilePath ||
-                payloadObj?.specialized_training_cert_file_path ||
-                null;
-
-              const certUrl = trainingCertFilePath
-                ? supabase.storage.from('application-files').getPublicUrl(trainingCertFilePath)?.data?.publicUrl
-                : null;
-
-              const fileName = trainingCertFilePath ? trainingCertFilePath.split('/').pop() : null;
-
-              return (
-                <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm mb-4">
-                  <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">
-                    Specialized Training
-                  </div>
-                  <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Training/Certification</div>
-                      <div className={specializedTraining ? "text-gray-900" : "text-gray-400 italic"}>
-                        {specializedTraining || 'None provided'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Year Completed</div>
-                      <div className={specializedYear ? "text-gray-900" : "text-gray-400 italic"}>
-                        {specializedYear || 'None'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 mb-1">Certificate File</div>
-                      {certUrl ? (
-                        <a
-                          href={certUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline text-sm"
-                        >
-                          {fileName || 'View File'}
-                        </a>
-                      ) : (
-                        <div className="text-gray-400 italic">No file uploaded</div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Documents table-like list */}
-            <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
-            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
-              <div className="col-span-6">&nbsp;</div>
-              <div className="col-span-3">Submission</div>
-              <div className="col-span-3">Remarks</div>
-            </div>
-
-            {(() => {
-              // Get requirements data - ensure it's properly loaded
-              let requirements = applicationData?.requirements;
-              
-              // If requirements is not set, try to get it from payload
-              if (!requirements && applicationData?.payload) {
-                let payload = applicationData.payload;
-                if (typeof payload === 'string') {
-                  try {
-                    payload = JSON.parse(payload);
-                  } catch {
-                    payload = {};
-                  }
-                }
-                requirements = payload?.requirements;
-              }
-              
-              // Parse if string
-              if (typeof requirements === 'string') {
-                try { 
-                  requirements = JSON.parse(requirements); 
-                } catch { 
-                  requirements = {}; 
-                }
-              }
-              
-              if (!requirements) {
-                requirements = {};
-              }
-              
-              const submittedDocuments = requirements?.documents || [];
-
-              return [
-                {name: 'PSA Birth Certificate *', key: 'psa_birth_certificate'},
-                {name: "Photocopy of Driver's License (Front and Back) *", key: 'drivers_license'},
-                {name: 'Photocopy of SSS ID', key: 'sss_id'},
-                {name: 'Photocopy of TIN ID', key: 'tin_id'},
-                {name: 'Photocopy of Philhealth MDR', key: 'philhealth_mdr'},
-                {name: 'Photocopy of HDMF or Proof of HDMF No. (Pag-IBIG)', key: 'pagibig'},
-                {name: 'Medical Examination Results *', hasDate: true, dateLabel: 'Date Validity *', key: 'medical_exam'},
-                {name: 'NBI Clearance', hasDate: true, dateLabel: 'Date Validity *', key: 'nbi_clearance'},
-                {name: 'Police Clearance', hasDate: true, dateLabel: 'Date Validity *', key: 'police_clearance'},
-              ].map((doc, idx) => {
-                const docKey = doc.key || `doc_${idx}`;
-                const file = documentFiles[docKey];
-                // Get date validity from state or existing file
-                const existingFile = submittedDocuments.find(d => d.key === docKey || d.name === doc.name);
-                const dateValidity = documentDateValidities[docKey] || existingFile?.date_validity || "";
-                const isUploading = uploadingDocuments[docKey];
-
-              return (
-              <div key={idx} className="border-b">
-                <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                  <div className="col-span-12 md:col-span-6 text-sm text-gray-800">
-                    {doc.name}
-                    {doc.hasDate && (
-                      <div className="mt-2">
-                        <label className="text-xs text-gray-600 mr-2">{doc.dateLabel}</label>
-                          <input 
-                            type="date" 
-                            value={dateValidity}
-                            onChange={(e) => setDocumentDateValidities(prev => ({ ...prev, [docKey]: e.target.value }))}
-                            className="px-2 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
-                          />
-                      </div>
-                    )}
-                  </div>
-                  <div className="col-span-12 md:col-span-3">
-                    <div className="flex items-center gap-2">
-                        {existingFile?.file_path ? (
-                          <div className="flex items-center gap-2">
-                            <a 
-                              href={supabase.storage.from('application-files').getPublicUrl(existingFile.file_path)?.data?.publicUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:underline text-xs"
-                            >
-                              {existingFile.file_path.split('/').pop()}
-                            </a>
-                            <button
-                              type="button"
-                              className="text-xs px-2 py-1 text-red-600 hover:text-red-800"
-                              onClick={() => {
-                                // Allow re-upload by clearing existing file reference
-                                setDocumentFiles(prev => {
-                                  const newFiles = { ...prev };
-                                  delete newFiles[docKey];
-                                  return newFiles;
-                                });
-                              }}
-                            >
-                              Change
-                            </button>
-                          </div>
-                        ) : file ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-blue-600 text-xs">{file.name}</span>
-                            <button
-                              type="button"
-                              className="text-xs px-2 py-1 text-red-600 hover:text-red-800"
-                              onClick={() => {
-                                setDocumentFiles(prev => {
-                                  const newFiles = { ...prev };
-                                  delete newFiles[docKey];
-                                  return newFiles;
-                                });
-                              }}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        ) : (
-                      <label className="inline-flex items-center gap-2 px-2 py-1 border border-gray-300 rounded bg-white text-xs cursor-pointer hover:bg-gray-50">
-                            <input 
-                              type="file" 
-                              accept=".pdf,.docx" 
-                              className="hidden" 
-                              onChange={(e) => {
-                          if (e.target.files && e.target.files[0]) {
-                                  setDocumentFiles(prev => ({ ...prev, [docKey]: e.target.files[0] }));
-                          }
-                              }} 
-                            />
-                        <span>Choose File</span>
-                        <span className="text-gray-500">No file chosen</span>
-                      </label>
-                        )}
-                    </div>
-                    <div className="text-[10px] text-gray-500 mt-1">PDF, DOCX | Max file size 10 mb</div>
-                  </div>
-                  <div className="col-span-12 md:col-span-3">
-                      {existingFile?.file_path ? (
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-block text-xs px-3 py-1 rounded ${
-                            existingFile.status === "Validated" 
-                              ? "bg-green-100 text-green-800 border border-green-300" 
-                              : existingFile.status === "Re-submit"
-                              ? "bg-red-100 text-red-800 border border-red-300"
-                              : "bg-orange-100 text-orange-800 border border-orange-300"
-                          }`}>
-                            {existingFile.status || "Submitted"}
-                          </span>
-                          {existingFile.remarks && (
-                            <div className="text-xs text-gray-600 italic mt-1">HR Remarks: {existingFile.remarks}</div>
-                          )}
-                        </div>
-                      ) : file ? (
-                        <span className="inline-block text-xs px-3 py-1 rounded bg-blue-100 text-blue-800">Ready to upload</span>
-                      ) : (
-                    <span className="inline-block text-xs px-3 py-1 rounded bg-red-700 text-white">No File</span>
-                      )}
-                  </div>
-                </div>
-              </div>
-              );
-              });
-            })()}
-
-            {/* Emergency contact */}
-            <div className="mt-4">
-              <div className="text-sm font-semibold text-gray-800 mb-2">Emergency Contact Information</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
-                <input 
-                  type="text" 
-                  placeholder="Contact Person's Name *" 
-                  value={emergencyContact.name}
-                  onChange={(e) => setEmergencyContact(prev => ({ ...prev, name: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
-                />
-                <input 
-                  type="text" 
-                  placeholder="Contact Person's Contact Number *" 
-                  value={emergencyContact.contactNumber}
-                  onChange={(e) => setEmergencyContact(prev => ({ ...prev, contactNumber: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-2">
-                <input 
-                  type="text" 
-                  placeholder="Contact Person's Address *" 
-                  value={emergencyContact.address}
-                  onChange={(e) => setEmergencyContact(prev => ({ ...prev, address: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
-                />
-                <input 
-                  type="text" 
-                  placeholder="Relation *" 
-                  value={emergencyContact.relation}
-                  onChange={(e) => setEmergencyContact(prev => ({ ...prev, relation: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-red-500" 
-                />
-              </div>
-              <div className="text-xs text-gray-600 italic mt-2">Important Reminder: Please wait for your requirements to be validated by your HR Department. Once validated, you may now proceed onsite to further process your employment.</div>
-              <div className="flex justify-end mt-4">
-                <button 
-                  type="button" 
-                  className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed"
-                  disabled={submittingRequirements}
-                  onClick={async () => {
-                    if (!applicationData?.id) {
-                      alert("No application found. Please refresh the page.");
-                      return;
-                    }
-
-                    // Validate required fields
-                    if (!emergencyContact.name || !emergencyContact.contactNumber || !emergencyContact.address || !emergencyContact.relation) {
-                      alert("Please fill in all emergency contact fields.");
-                      return;
-                    }
-
-                    setSubmittingRequirements(true);
-                    try {
-                      const { data: { user } } = await supabase.auth.getUser();
-                      if (!user) {
-                        alert("Please log in again.");
-                        return;
-                      }
-
-                      // Upload all document files
-                      const documents = [];
-                      const docList = [
-                        {name: 'PSA Birth Certificate *', key: 'psa_birth_certificate'},
-                        {name: "Photocopy of Driver's License (Front and Back) *", key: 'drivers_license'},
-                        {name: 'Photocopy of SSS ID', key: 'sss_id'},
-                        {name: 'Photocopy of TIN ID', key: 'tin_id'},
-                        {name: 'Photocopy of Philhealth MDR', key: 'philhealth_mdr'},
-                        {name: 'Photocopy of HDMF or Proof of HDMF No. (Pag-IBIG)', key: 'pagibig'},
-                        {name: 'Medical Examination Results *', hasDate: true, key: 'medical_exam'},
-                        {name: 'NBI Clearance', hasDate: true, key: 'nbi_clearance'},
-                        {name: 'Police Clearance', hasDate: true, key: 'police_clearance'},
-                      ];
-
-                      for (const doc of docList) {
-                        const docKey = doc.key;
-                        const file = documentFiles[docKey];
-                        const dateValidity = documentDateValidities[docKey] || null;
-
-                        // Check if file already exists in requirements
-                        let existingDoc = null;
-                        if (applicationData?.requirements) {
-                          let requirements = applicationData.requirements;
-                          if (typeof requirements === 'string') {
-                            try { requirements = JSON.parse(requirements); } catch { requirements = {}; }
-                          }
-                          existingDoc = requirements.documents?.find(d => d.key === docKey || d.name === doc.name);
-                        }
-
-                        if (file) {
-                          // Upload new file
-                          setUploadingDocuments(prev => ({ ...prev, [docKey]: true }));
-                          const sanitizedFileName = file.name.replace(/\s+/g, '_');
-                          const filePath = `requirements/${applicationData.id}/${docKey}/${Date.now()}-${sanitizedFileName}`;
-
-                          const { data: uploadData, error: uploadError } = await supabase.storage
-                            .from('application-files')
-                            .upload(filePath, file, { upsert: true });
-
-                          if (uploadError) {
-                            throw new Error(`Failed to upload ${doc.name}: ${uploadError.message}`);
-                          }
-
-                          documents.push({
-                            key: docKey,
-                            name: doc.name,
-                            file_path: uploadData.path,
-                            date_validity: dateValidity,
-                            status: "Submitted",
-                            remarks: "",
-                            submitted_at: new Date().toISOString(),
-                          });
-                        } else if (existingDoc) {
-                          // Keep existing document data, but update date validity if changed
-                          documents.push({
-                            ...existingDoc,
-                            date_validity: dateValidity || existingDoc.date_validity,
-                          });
-                        } else {
-                          // No file uploaded for this document
-                          documents.push({
-                            key: docKey,
-                            name: doc.name,
-                            file_path: null,
-                            date_validity: dateValidity,
-                            status: "No File",
-                            remarks: "",
-                            submitted_at: new Date().toISOString(),
-                          });
-                        }
-                        setUploadingDocuments(prev => ({ ...prev, [docKey]: false }));
-                      }
-
-                      // Prepare requirements data
-                      const requirementsData = {
-                        id_numbers: {
-                          sss: { value: idFields.sss, status: "Submitted" },
-                          philhealth: { value: idFields.philhealth, status: "Submitted" },
-                          pagibig: { value: idFields.pagibig, status: "Submitted" },
-                          tin: { value: idFields.tin, status: "Submitted" },
-                        },
-                        documents: documents,
-                        emergency_contact: {
-                          name: emergencyContact.name,
-                          contact_number: emergencyContact.contactNumber,
-                          address: emergencyContact.address,
-                          relation: emergencyContact.relation,
-                        },
-                        submitted_at: new Date().toISOString(),
-                        submitted: true,
-                      };
-
-                      // Try to update requirements column, fallback to payload
-                      let updateSuccess = false;
-                      const { error: updateError } = await supabase
-                        .from('applications')
-                        .update({ requirements: requirementsData })
-                        .eq('id', applicationData.id);
-
-                      if (updateError && updateError.code === 'PGRST204') {
-                        // Column doesn't exist, store in payload
-                        console.log('Requirements column not found, saving to payload');
-                        let currentPayload = applicationData.payload;
-                        if (typeof currentPayload === 'string') {
-                          try {
-                            currentPayload = JSON.parse(currentPayload);
-                          } catch {
-                            currentPayload = {};
-                          }
-                        }
-                        
-                        const updatedPayload = {
-                          ...currentPayload,
-                          requirements: requirementsData
-                        };
-                        
-                        const { error: payloadError } = await supabase
-                          .from('applications')
-                          .update({ payload: updatedPayload })
-                          .eq('id', applicationData.id);
-                        
-                        if (payloadError) {
-                          throw payloadError;
-                        }
-                        updateSuccess = true;
-                      } else if (updateError) {
-                        throw updateError;
-                      } else {
-                        updateSuccess = true;
-                      }
-
-                      // Reload application data to ensure we have the latest
-                      if (updateSuccess) {
-                        const { data: updatedApp, error: reloadError } = await supabase
-                          .from('applications')
-                          .select('*')
-                          .eq('id', applicationData.id)
-                          .single();
-                        
-                        if (!reloadError && updatedApp) {
-                          // Parse payload and requirements properly
-                          let payloadObj = updatedApp.payload;
-                          if (typeof payloadObj === 'string') {
-                            try {
-                              payloadObj = JSON.parse(payloadObj);
-                            } catch {
-                              payloadObj = {};
-                            }
-                          }
-
-                          // Get requirements from column or payload
-                          let loadedRequirements = null;
-                          if (updatedApp.requirements) {
-                            if (typeof updatedApp.requirements === 'string') {
-                              try {
-                                loadedRequirements = JSON.parse(updatedApp.requirements);
-                              } catch {
-                                loadedRequirements = null;
-                              }
-                            } else {
-                              loadedRequirements = updatedApp.requirements;
-                            }
-                          }
-                          
-                          if (!loadedRequirements && payloadObj?.requirements) {
-                            loadedRequirements = payloadObj.requirements;
-                            if (typeof loadedRequirements === 'string') {
-                              try {
-                                loadedRequirements = JSON.parse(loadedRequirements);
-                              } catch {
-                                loadedRequirements = {};
-                              }
-                            }
-                          }
-                          
-                          if (!loadedRequirements) {
-                            loadedRequirements = requirementsData; // Use what we just saved
-                          }
-
-                          setApplicationData({
-                            ...updatedApp,
-                            requirements: loadedRequirements,
-                            payload: payloadObj
-                          });
-                        } else {
-                          // Update local state as fallback
-                          setApplicationData(prev => ({
-                            ...prev,
-                            requirements: requirementsData,
-                            payload: prev.payload ? (typeof prev.payload === 'string' ? JSON.parse(prev.payload) : prev.payload) : {}
-                          }));
-                        }
-                      }
-
-                    setStepStatus(prev => ({ ...prev, Requirements: "done", Agreements: "pending" }));
-                    setActiveStep("Agreements");
-                    alert("Requirements submitted successfully! You can now proceed to Agreements.");
-                    } catch (err) {
-                      console.error('Error submitting requirements:', err);
-                      alert(`Failed to submit requirements: ${err.message || 'Unknown error'}`);
-                    } finally {
-                      setSubmittingRequirements(false);
-                    }
-                  }}
-                >
-                  {submittingRequirements ? "Submitting..." : "Submit"}
-                </button>
-              </div>
-            </div>
           </section>
           )}
 
@@ -1845,178 +1203,36 @@ function ApplicantApplications() {
                 </div>
               </div>
               <div className="p-6">
-                {/* Agreement Signing Schedule */}
-                {(() => {
-                  const payloadObj = typeof applicationData.payload === 'string'
-                    ? JSON.parse(applicationData.payload)
-                    : applicationData.payload || {};
-
-                  const signing =
-                    payloadObj?.agreement_signing ||
-                    payloadObj?.agreementSigning ||
-                    payloadObj?.signing_interview ||
-                    payloadObj?.signingInterview ||
-                    null;
-
-                  const signingDate = signing?.date || null;
-                  const signingTime = signing?.time || null;
-                  const signingLocation = signing?.location || null;
-                  const signingStatus = payloadObj?.agreement_signing_confirmed || payloadObj?.agreementSigningConfirmed || 'Idle';
-
-                  if (!signingDate) {
-                    return (
-                      <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm mb-6">
-                        <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200">
-                          Agreement Signing Schedule
-                        </div>
-                        <div className="p-4 text-sm text-gray-700">
-                          <span className="text-gray-500 italic">Awaiting HR schedule.</span>
-                        </div>
-                      </div>
+                <div className="space-y-6">
+                  {(() => {
+                    const signing = getAgreementSigningFromApplication(applicationData);
+                    const interviewStatus = applicationData?.interview_confirmed || payloadObj?.interview_confirmed || null;
+                    const legacyRejected = String(interviewStatus || '').trim().toLowerCase() === 'rejected';
+                    const rescheduleReqObj = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+                    const rescheduleReqHandled = Boolean(rescheduleReqObj && (rescheduleReqObj.handled_at || rescheduleReqObj.handledAt));
+                    const rescheduleReqActive = Boolean(
+                      rescheduleReqObj &&
+                      typeof rescheduleReqObj === 'object' &&
+                      !rescheduleReqHandled &&
+                      (rescheduleReqObj.requested_at || rescheduleReqObj.requestedAt || rescheduleReqObj.note)
                     );
-                  }
+                    const locked = legacyRejected || rescheduleReqActive;
+                    return <SigningScheduleCard signing={signing} locked={locked} />;
+                  })()}
 
-                  const statusPill = (() => {
-                    const v = String(signingStatus || '').toLowerCase();
-                    if (v === 'confirmed') {
-                      return (
-                        <span className="text-sm px-2 py-1 rounded bg-green-100 text-green-800 border border-green-300">
-                          Status: Confirmed
-                        </span>
-                      );
-                    }
-                    if (v === 'rejected') {
-                      return (
-                        <span className="text-sm px-2 py-1 rounded bg-orange-100 text-orange-800 border border-orange-300">
-                          Status: Reschedule Requested
-                        </span>
-                      );
-                    }
+                  {(() => {
+                    const docs = getAgreementDocumentsFromApplication(applicationData);
                     return (
-                      <span className="text-sm px-2 py-1 rounded bg-gray-100 text-gray-800 border border-gray-300">
-                        Status: Pending Confirmation
-                      </span>
+                      <UploadedDocumentsSection
+                        title="Uploaded Agreements"
+                        emptyText="No file uploaded yet"
+                        documents={docs}
+                        getPublicUrl={getApplicationFilesPublicUrl}
+                        variant="list"
+                      />
                     );
-                  })();
-
-                  return (
-                    <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm mb-6">
-                      <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200 flex items-center justify-between">
-                        <span>Agreement Signing Schedule</span>
-                        {statusPill}
-                      </div>
-                      <div className="p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                        <div>
-                          <span className="font-semibold text-gray-600">Date:</span>{' '}
-                          {signingDate ? (
-                            <span className="text-gray-800">{new Date(signingDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
-                          ) : (
-                            <span className="text-gray-400 italic">None</span>
-                          )}
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-600">Time:</span>{' '}
-                          {signingTime ? <span className="text-gray-800">{signingTime}</span> : <span className="text-gray-400 italic">None</span>}
-                        </div>
-                        <div>
-                          <span className="font-semibold text-gray-600">Location:</span>{' '}
-                          {signingLocation ? <span className="text-gray-800">{signingLocation}</span> : <span className="text-gray-400 italic">None</span>}
-                        </div>
-                      </div>
-
-                      {(() => {
-                        const statusLower = String(signingStatus || '').toLowerCase();
-                        const isHired = String(applicationData?.status || '').toLowerCase() === 'hired';
-                        const alreadyRequested = statusLower === 'rejected';
-                        const isConfirmed = statusLower === 'confirmed';
-
-                        if (isHired || alreadyRequested) return null;
-
-                        const canConfirm = !isConfirmed;
-                        const canRequest = true;
-
-                        return (
-                          <div className="px-4 pb-4 flex flex-wrap gap-2">
-                            {canConfirm && (
-                              <button
-                                type="button"
-                                className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700 text-sm"
-                                onClick={() => setShowAgreementConfirmDialog(true)}
-                              >
-                                Confirm Signing Schedule
-                              </button>
-                            )}
-                            {canRequest && (
-                              <button
-                                type="button"
-                                className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700 text-sm"
-                                onClick={() => setShowAgreementRescheduleDialog(true)}
-                              >
-                                Request for re-schedule
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  );
-                })()}
-
-                <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Document Name</div>
-                <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b">
-                  <div className="col-span-6">&nbsp;</div>
-                  <div className="col-span-3">File</div>
-                  <div className="col-span-3">&nbsp;</div>
+                  })()}
                 </div>
-
-                {/* Helper function to render agreement document row */}
-                {(() => {
-                  const renderAgreementRow = (documentName, fileKey) => {
-                    const filePath = applicationData?.[fileKey] || applicationData?.payload?.[fileKey];
-                    const hasFile = !!filePath;
-                    
-                    return (
-                      <div key={fileKey} className="border-b">
-                        <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                          <div className="col-span-12 md:col-span-6 text-sm text-gray-800">{documentName}</div>
-                          <div className="col-span-12 md:col-span-3 text-sm">
-                            {hasFile ? (
-                              <>
-                                <a 
-                                  href={supabase.storage.from('application-files').getPublicUrl(filePath)?.data?.publicUrl} 
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:underline"
-                                >
-                                  {filePath.split('/').pop() || documentName}
-                                </a>
-                                {applicationData.updated_at && (
-                                  <span className="ml-2 text-xs text-gray-500">
-                                    {new Date(applicationData.updated_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' })}
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <span className="text-gray-400 italic">No file uploaded yet</span>
-                            )}
-                          </div>
-                          <div className="col-span-12 md:col-span-3" />
-                        </div>
-                      </div>
-                    );
-                  };
-
-                  return (
-                    <>
-                      {renderAgreementRow("Employee Appointment Letter", "appointment_letter_file")}
-                      {renderAgreementRow("Undertaking", "undertaking_file")}
-                      {renderAgreementRow("Application Form", "application_form_file")}
-                      {renderAgreementRow("Undertaking of Duties and Responsibilities", "undertaking_duties_file")}
-                      {renderAgreementRow("Roadwise Pre Employment Requirements", "pre_employment_requirements_file")}
-                      {renderAgreementRow("ID Form", "id_form_file")}
-                    </>
-                  );
-                })()}
 
                 <div className="text-xs text-gray-600 italic mt-4">
                   Important: You have been successfully hired! Please see your email for your employee account details and you may login as an employee. Thank you.
@@ -2050,25 +1266,19 @@ function ApplicantApplications() {
 
                   try {
                     const confirmedAt = new Date().toISOString();
-                    
-                    // Get applicant and interview info for notification
-                    const payloadObj = typeof applicationData.payload === 'string' 
-                      ? JSON.parse(applicationData.payload) 
-                      : applicationData.payload || {};
-                    const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
-                    const applicantName = `${form.firstName || ''} ${form.middleName || ''} ${form.lastName || ''}`.trim() || 
-                                         applicationData.name || 
-                                         'Applicant';
-                    const position = jobData?.title || payloadObj.job?.title || form.position || 'Position';
-                    const interviewDate = applicationData.interview_date || payloadObj.interview?.date || null;
-                    const interviewTime = applicationData.interview_time || payloadObj.interview?.time || null;
-                    
-                    // Update with new text-based status
+                    const currentPayload = parsePayloadObject(applicationData.payload);
+                    const updatedPayload = {
+                      ...currentPayload,
+                      interview_confirmed: 'Confirmed',
+                      interview_confirmed_at: confirmedAt,
+                    };
+
                     const { error: updateError } = await supabase
                       .from('applications')
                       .update({
                         interview_confirmed: 'Confirmed',
-                        interview_confirmed_at: confirmedAt
+                        interview_confirmed_at: confirmedAt,
+                        payload: updatedPayload,
                       })
                       .eq('id', applicationData.id);
 
@@ -2078,27 +1288,34 @@ function ApplicantApplications() {
                       return;
                     }
 
-                    // Notify HR about interview confirmation
-                    await notifyHRAboutInterviewResponse({
-                      applicationId: applicationData.id,
-                      applicantName,
-                      position,
-                      responseType: 'confirmed',
-                      interviewDate,
-                      interviewTime
-                    });
-
-                    // Update local state
                     setApplicationData((prev) => ({
                       ...prev,
                       interview_confirmed: 'Confirmed',
-                      interview_confirmed_at: confirmedAt
+                      interview_confirmed_at: confirmedAt,
+                      payload: updatedPayload,
                     }));
 
-                    // Update UI state
-                  setShowConfirmDialog(false);
-                  setStepStatus((s) => ({ ...s, Assessment: "done", Agreements: "pending" }));
-                  setShowConfirmationModal(true);
+                    try {
+                      const p = parsePayloadObject(applicationData.payload);
+                      const applicantName = p?.form?.firstName && p?.form?.lastName
+                        ? `${p.form.firstName} ${p.form.lastName}`
+                        : 'Applicant';
+                      const position = p?.job?.title || 'Unknown Position';
+
+                      await notifyHRAboutInterviewResponse({
+                        applicationId: applicationData.id,
+                        applicantName,
+                        position,
+                        responseType: 'confirmed',
+                        interviewDate: applicationData.interview_date || null,
+                        interviewTime: applicationData.interview_time || null,
+                      });
+                    } catch (notifyError) {
+                      console.error('Error notifying HR about confirmation:', notifyError);
+                    }
+
+                    setShowConfirmDialog(false);
+                    setShowConfirmationModal(true);
                   } catch (err) {
                     console.error('Error confirming interview:', err);
                     alert('Failed to confirm interview. Please try again.');
@@ -2112,148 +1329,6 @@ function ApplicantApplications() {
         </div>
       )}
 
-      {/* Confirm Agreement Signing dialog */}
-      {showAgreementConfirmDialog && (
-        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowAgreementConfirmDialog(false)}>
-          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b">
-              <h3 className="text-lg font-semibold text-gray-800">Confirm Agreement Signing</h3>
-            </div>
-            <div className="p-4 text-sm text-gray-700">
-              Are you sure you want to confirm your agreement signing schedule?
-            </div>
-            <div className="p-4 border-t flex justify-end gap-2">
-              <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowAgreementConfirmDialog(false)}>Cancel</button>
-              <button
-                type="button"
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
-                onClick={async () => {
-                  if (!applicationData?.id) return;
-                  try {
-                    const confirmedAt = new Date().toISOString();
-                    const payloadObj = typeof applicationData.payload === 'string'
-                      ? JSON.parse(applicationData.payload)
-                      : applicationData.payload || {};
-                    const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
-                    const applicantName = `${form.firstName || ''} ${form.middleName || ''} ${form.lastName || ''}`.trim() || applicationData.name || 'Applicant';
-                    const position = jobData?.title || payloadObj.job?.title || form.position || 'Position';
-                    const signing = payloadObj.agreement_signing || payloadObj.agreementSigning || payloadObj.signing_interview || payloadObj.signingInterview || {};
-
-                    const updatedPayload = {
-                      ...payloadObj,
-                      agreement_signing_confirmed: 'Confirmed',
-                      agreement_signing_confirmed_at: confirmedAt,
-                    };
-
-                    const { error: updateError } = await supabase
-                      .from('applications')
-                      .update({ payload: updatedPayload })
-                      .eq('id', applicationData.id);
-
-                    if (updateError) {
-                      console.error('Error confirming agreement signing:', updateError);
-                      alert('Failed to confirm agreement signing. Please try again.');
-                      return;
-                    }
-
-                    await notifyHRAboutAgreementSigningResponse({
-                      applicationId: applicationData.id,
-                      applicantName,
-                      position,
-                      responseType: 'confirmed',
-                      signingDate: signing?.date || null,
-                      signingTime: signing?.time || null,
-                    });
-
-                    setApplicationData((prev) => ({
-                      ...prev,
-                      payload: updatedPayload,
-                    }));
-                    setShowAgreementConfirmDialog(false);
-                  } catch (err) {
-                    console.error('Error confirming agreement signing:', err);
-                    alert('Failed to confirm agreement signing. Please try again.');
-                  }
-                }}
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Request Agreement Signing Reschedule dialog */}
-      {showAgreementRescheduleDialog && (
-        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowAgreementRescheduleDialog(false)}>
-          <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
-            <div className="p-4 border-b">
-              <h3 className="text-lg font-semibold text-gray-800">Request for re-schedule</h3>
-            </div>
-            <div className="p-4 text-sm text-gray-700">
-              Are you sure you want to request for re-schedule of your agreement signing?
-            </div>
-            <div className="p-4 border-t flex justify-end gap-2">
-              <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowAgreementRescheduleDialog(false)}>Cancel</button>
-              <button
-                type="button"
-                className="px-4 py-2 rounded bg-orange-600 text-white hover:bg-orange-700"
-                onClick={async () => {
-                  if (!applicationData?.id) return;
-                  try {
-                    const requestedAt = new Date().toISOString();
-                    const payloadObj = typeof applicationData.payload === 'string'
-                      ? JSON.parse(applicationData.payload)
-                      : applicationData.payload || {};
-                    const form = payloadObj.form || payloadObj.applicant || payloadObj || {};
-                    const applicantName = `${form.firstName || ''} ${form.middleName || ''} ${form.lastName || ''}`.trim() || applicationData.name || 'Applicant';
-                    const position = jobData?.title || payloadObj.job?.title || form.position || 'Position';
-                    const signing = payloadObj.agreement_signing || payloadObj.agreementSigning || payloadObj.signing_interview || payloadObj.signingInterview || {};
-
-                    const updatedPayload = {
-                      ...payloadObj,
-                      agreement_signing_confirmed: 'Rejected',
-                      agreement_signing_confirmed_at: requestedAt,
-                    };
-
-                    const { error: updateError } = await supabase
-                      .from('applications')
-                      .update({ payload: updatedPayload })
-                      .eq('id', applicationData.id);
-
-                    if (updateError) {
-                      console.error('Error requesting reschedule:', updateError);
-                      alert('Failed to request reschedule. Please try again.');
-                      return;
-                    }
-
-                    await notifyHRAboutAgreementSigningResponse({
-                      applicationId: applicationData.id,
-                      applicantName,
-                      position,
-                      responseType: 'rejected',
-                      signingDate: signing?.date || null,
-                      signingTime: signing?.time || null,
-                    });
-
-                    setApplicationData((prev) => ({
-                      ...prev,
-                      payload: updatedPayload,
-                    }));
-                    setShowAgreementRescheduleDialog(false);
-                  } catch (err) {
-                    console.error('Error requesting reschedule:', err);
-                    alert('Failed to request reschedule. Please try again.');
-                  }
-                }}
-              >
-                Request for re-schedule
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Reject dialog */}
       {showRejectDialog && (
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowRejectDialog(false)}>
@@ -2261,8 +1336,52 @@ function ApplicantApplications() {
             <div className="p-4 border-b">
               <h3 className="text-lg font-semibold text-gray-800">Request for Reschedule</h3>
             </div>
-            <div className="p-4 text-sm text-gray-700">
-              Are you sure you want to request for a reschedule of this interview? HR will be notified and will reschedule your interview.
+            <div className="p-4 text-sm text-gray-700 space-y-3">
+              <div>
+                Provide a short reason and your preferred time window. HR will be notified and will set a new schedule.
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Note (required)</label>
+                <textarea
+                  rows={3}
+                  value={rescheduleNote}
+                  onChange={(e) => setRescheduleNote(e.target.value)}
+                  placeholder="e.g., I have a prior commitment at the scheduled time."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Preferred date (optional)</label>
+                  <input
+                    type="date"
+                    value={reschedulePreferredDate}
+                    onChange={(e) => setReschedulePreferredDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Preferred time window (optional)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="time"
+                      value={reschedulePreferredTimeFrom}
+                      onChange={(e) => setReschedulePreferredTimeFrom(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      aria-label="Preferred time from"
+                    />
+                    <input
+                      type="time"
+                      value={reschedulePreferredTimeTo}
+                      onChange={(e) => setReschedulePreferredTimeTo(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      aria-label="Preferred time to"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="p-4 border-t flex justify-end gap-2">
               <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowRejectDialog(false)}>Cancel</button>
@@ -2277,13 +1396,61 @@ function ApplicantApplications() {
 
                   try {
                     const rejectedAt = new Date().toISOString();
+
+                    const note = String(rescheduleNote || '').trim();
+                    if (!note) {
+                      alert('Please provide a note for the reschedule request.');
+                      return;
+                    }
+
+                    const currentPayload = parsePayloadObject(applicationData.payload);
+                    const existingReq = currentPayload?.interview_reschedule_request || currentPayload?.interviewRescheduleRequest || null;
+                    const existingEver = Boolean(
+                      existingReq &&
+                      (typeof existingReq !== 'object' ||
+                        existingReq.requested_at ||
+                        existingReq.requestedAt ||
+                        existingReq.note ||
+                        existingReq.preferred_date ||
+                        existingReq.preferredDate ||
+                        existingReq.preferred_time_from ||
+                        existingReq.preferredTimeFrom ||
+                        existingReq.preferred_time_to ||
+                        existingReq.preferredTimeTo ||
+                        existingReq.handled_at ||
+                        existingReq.handledAt)
+                    );
+                    if (existingEver) {
+                      alert('You can only request an assessment reschedule once for this interview.');
+                      return;
+                    }
+
+                    const req = {
+                      requested_at: rejectedAt,
+                      requestedAt: rejectedAt,
+                      source: 'applicant',
+                      note,
+                      preferred_date: reschedulePreferredDate || null,
+                      preferredDate: reschedulePreferredDate || null,
+                      preferred_time_from: reschedulePreferredTimeFrom || null,
+                      preferredTimeFrom: reschedulePreferredTimeFrom || null,
+                      preferred_time_to: reschedulePreferredTimeTo || null,
+                      preferredTimeTo: reschedulePreferredTimeTo || null,
+                    };
+
+                    const updatedPayload = {
+                      ...currentPayload,
+                      interview_reschedule_request: req,
+                      interviewRescheduleRequest: req,
+                    };
                     
                     // Update with new text-based status
                     const { error: updateError } = await supabase
                       .from('applications')
                       .update({
                         interview_confirmed: 'Rejected',
-                        interview_confirmed_at: rejectedAt
+                        interview_confirmed_at: rejectedAt,
+                        payload: updatedPayload,
                       })
                       .eq('id', applicationData.id);
 
@@ -2296,15 +1463,17 @@ function ApplicantApplications() {
                     setApplicationData((prev) => ({
                       ...prev,
                       interview_confirmed: 'Rejected',
-                      interview_confirmed_at: rejectedAt
+                      interview_confirmed_at: rejectedAt,
+                      payload: updatedPayload,
                     }));
 
                     // Notify HR about reschedule request
                     try {
-                      const applicantName = applicationData.payload?.form?.firstName && applicationData.payload?.form?.lastName
-                        ? `${applicationData.payload.form.firstName} ${applicationData.payload.form.lastName}`
+                      const p = parsePayloadObject(applicationData.payload);
+                      const applicantName = p?.form?.firstName && p?.form?.lastName
+                        ? `${p.form.firstName} ${p.form.lastName}`
                         : 'Applicant';
-                      const position = applicationData.payload?.job?.title || 'Unknown Position';
+                      const position = p?.job?.title || 'Unknown Position';
                       const interviewDate = applicationData.interview_date || null;
                       const interviewTime = applicationData.interview_time || null;
                       
@@ -2314,7 +1483,11 @@ function ApplicantApplications() {
                         position,
                         responseType: 'reschedule_requested',
                         interviewDate,
-                        interviewTime
+                        interviewTime,
+                        responseNote: note,
+                        preferredDate: reschedulePreferredDate || null,
+                        preferredTimeFrom: reschedulePreferredTimeFrom || null,
+                        preferredTimeTo: reschedulePreferredTimeTo || null,
                       });
                     } catch (notifyError) {
                       console.error('Error notifying HR about reschedule:', notifyError);

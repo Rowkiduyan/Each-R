@@ -4,6 +4,7 @@ import { useNavigate, Link, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
 import { notifyHRAboutInterviewResponse, notifyHRAboutApplicationRetraction } from './notifications';
+import { UploadedDocumentsSection } from './components/ApplicantArtifactsPanels';
 
 function AgencyEndorsements() {
   const navigate = useNavigate();
@@ -125,6 +126,10 @@ function AgencyEndorsements() {
   
   // Confirmation dialog state
   const [showRejectInterviewDialog, setShowRejectInterviewDialog] = useState(false);
+  const [rescheduleNote, setRescheduleNote] = useState('');
+  const [reschedulePreferredDate, setReschedulePreferredDate] = useState('');
+  const [reschedulePreferredTimeFrom, setReschedulePreferredTimeFrom] = useState('');
+  const [reschedulePreferredTimeTo, setReschedulePreferredTimeTo] = useState('');
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
@@ -1436,18 +1441,33 @@ function AgencyEndorsements() {
 
   // HR-style status label (mirrors HrRecruitment.jsx logic, adapted for agency endorsements)
   const getEndorsementStatus = (row) => {
-    const status = (row?.status || row?.raw?.status || '').toLowerCase() || 'submitted';
+    // `row.status` is used for the Agency UI tab grouping (pending/deployed).
+    // The real recruitment pipeline status lives on the application row (`row.raw.status`).
+    const derivedStatus = String(row?.status || '').toLowerCase();
+    const rawStatus = String(row?.raw?.status || '').toLowerCase();
+    const status = (rawStatus || (derivedStatus !== 'pending' && derivedStatus !== 'deployed' ? derivedStatus : '') || 'submitted').toLowerCase();
+
+    let payloadObj = row?.raw?.payload ?? row?.payload ?? {};
+    if (typeof payloadObj === 'string') {
+      try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+    }
 
     const hasInterview = !!(row?.interview_date || row?.raw?.interview_date);
     const interviewConfirmedRaw = row?.interview_confirmed ?? row?.raw?.interview_confirmed ?? null;
     const interviewConfirmedNorm = interviewConfirmedRaw ? String(interviewConfirmedRaw).trim().toLowerCase() : '';
-    const rescheduleRequested = interviewConfirmedNorm === 'rejected' && hasInterview;
+    const reqObj = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+    const reqHandled = Boolean(reqObj && (reqObj.handled_at || reqObj.handledAt));
+    const reqActive = Boolean(reqObj && typeof reqObj === 'object' && !reqHandled && (reqObj.requested_at || reqObj.requestedAt || reqObj.note));
+    const rescheduleRequested = (interviewConfirmedNorm === 'rejected' && hasInterview) || reqActive;
 
     if (status === 'hired') {
       return { label: 'HIRED', color: 'text-green-600', bg: 'bg-green-50' };
     }
     if (status === 'rejected') {
       return { label: 'REJECTED', color: 'text-red-600', bg: 'bg-red-50' };
+    }
+    if (status === 'waitlisted') {
+      return { label: 'WAITLISTED', color: 'text-slate-700', bg: 'bg-slate-50' };
     }
     if (['agreement', 'agreements', 'final_agreement'].includes(status)) {
       return { label: 'AGREEMENT', color: 'text-purple-600', bg: 'bg-purple-50' };
@@ -2150,9 +2170,22 @@ function AgencyEndorsements() {
                                         <p className="text-xs text-gray-500">{emp.depot}</p>
                                       </td>
                                       <td className="px-6 py-4">
-                                        <span className={`text-sm font-semibold ${emp.status === "deployed" ? "text-green-600" : "text-yellow-600"}`}>
-                                          {emp.status.toUpperCase()}
-                                        </span>
+                                        {(() => {
+                                          if (emp.status === 'deployed') {
+                                            return (
+                                              <span className="text-sm font-semibold text-green-600">
+                                                DEPLOYED
+                                              </span>
+                                            );
+                                          }
+
+                                          const info = getEndorsementStatus(emp);
+                                          return (
+                                            <span className={`text-sm font-semibold ${info.color}`}>
+                                              {info.label}
+                                            </span>
+                                          );
+                                        })()}
                                         {emp.status === "deployed" && (
                                           <p className="text-xs text-gray-400 mt-0.5">{deployedDate || "date unavailable"}</p>
                                         )}
@@ -3957,6 +3990,36 @@ function AgencyEndorsements() {
                               ? String(interviewConfirmedRaw).trim() 
                               : null;
                             const isRejected = interviewConfirmedNormalized && interviewConfirmedNormalized.toLowerCase() === 'rejected';
+
+                            let payloadObj = selectedEmployee?.raw?.payload ?? selectedEmployee?.payload ?? {};
+                            if (typeof payloadObj === 'string') {
+                              try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+                            }
+                            const reqObj = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+                            const reqHandled = Boolean(reqObj && (reqObj.handled_at || reqObj.handledAt));
+                            const reqActive = Boolean(
+                              reqObj &&
+                              typeof reqObj === 'object' &&
+                              !reqHandled &&
+                              (reqObj.requested_at || reqObj.requestedAt || reqObj.note || reqObj.preferred_date || reqObj.preferredDate)
+                            );
+                            const reqEver = Boolean(
+                              reqObj &&
+                              (typeof reqObj !== 'object' ||
+                                reqObj.requested_at ||
+                                reqObj.requestedAt ||
+                                reqObj.note ||
+                                reqObj.preferred_date ||
+                                reqObj.preferredDate ||
+                                reqObj.preferred_time_from ||
+                                reqObj.preferredTimeFrom ||
+                                reqObj.preferred_time_to ||
+                                reqObj.preferredTimeTo ||
+                                reqObj.handled_at ||
+                                reqObj.handledAt)
+                            );
+                            const isRescheduleRequested = Boolean(hasInterview && (isRejected || reqActive));
+                            const hasEverRescheduleRequest = Boolean(hasInterview && (isRejected || reqEver));
                             
                             return (
                             <div className="space-y-6">
@@ -3979,11 +4042,11 @@ function AgencyEndorsements() {
                                   </div>
                                   {hasInterview && (
                                     <span className={`text-xs px-2 py-1 rounded-full font-semibold border ${
-                                      isRejected
+                                      isRescheduleRequested
                                         ? 'bg-orange-50 text-orange-800 border-orange-200'
                                         : 'bg-cyan-50 text-cyan-800 border-cyan-200'
                                     }`}>
-                                      {isRejected ? 'Reschedule Requested' : 'Schedule Set'}
+                                      {isRescheduleRequested ? 'Reschedule Requested' : 'Schedule Set'}
                                     </span>
                                   )}
                                 </div>
@@ -4010,14 +4073,22 @@ function AgencyEndorsements() {
 
                                     <div className="mt-3 flex items-center justify-between">
                                       <div className="text-xs text-gray-500">
-                                        {isRejected
+                                        {isRescheduleRequested
                                           ? 'Reschedule has been requested. Please wait for HR to update the schedule.'
-                                          : 'If you need changes, request a reschedule.'}
+                                          : hasEverRescheduleRequest
+                                            ? 'A reschedule was already requested once for this interview.'
+                                            : 'If you need changes, request a reschedule.'}
                                       </div>
-                                      {!isRejected && (
+                                      {!hasEverRescheduleRequest && (
                                         <button
                                           type="button"
-                                          onClick={() => setShowRejectInterviewDialog(true)}
+                                          onClick={() => {
+                                            setRescheduleNote('');
+                                            setReschedulePreferredDate('');
+                                            setReschedulePreferredTimeFrom('');
+                                            setReschedulePreferredTimeTo('');
+                                            setShowRejectInterviewDialog(true);
+                                          }}
                                           className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 text-sm font-medium transition-colors"
                                         >
                                           Request Reschedule
@@ -4116,9 +4187,19 @@ function AgencyEndorsements() {
                                   selectedEmployee.interview_location
                                 );
 
-                                const agreementsUnlocked = hasAssessmentSchedule && !isRejected;
-
                                 const payloadObj = parsePayloadObject(selectedEmployee.payload ?? selectedEmployee.raw?.payload ?? {});
+
+                                const rescheduleReqObj = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+                                const rescheduleReqHandled = Boolean(rescheduleReqObj && (rescheduleReqObj.handled_at || rescheduleReqObj.handledAt));
+                                const rescheduleReqActive = Boolean(
+                                  rescheduleReqObj &&
+                                    typeof rescheduleReqObj === 'object' &&
+                                    !rescheduleReqHandled &&
+                                    (rescheduleReqObj.requested_at || rescheduleReqObj.requestedAt || rescheduleReqObj.note)
+                                );
+                                const reschedulePending = Boolean(hasAssessmentSchedule && (isRejected || rescheduleReqActive));
+                                const agreementsUnlocked = Boolean(hasAssessmentSchedule && !reschedulePending);
+
                                 const signing = getSigningScheduleFromApplication({ payload: payloadObj }) || null;
                                 const signingDate = signing?.date ? formatDate(signing.date) : null;
                                 const signingTime = signing?.time ? formatTime(signing.time) : null;
@@ -4183,50 +4264,28 @@ function AgencyEndorsements() {
                                       <div className="mt-3 text-xs text-gray-500">
                                         Stay posted for the agreement signing schedule. We will post as soon as possible.
                                       </div>
-                                      {!agreementsUnlocked && (
+                                      {reschedulePending ? (
                                         <div className="mt-3 text-xs text-gray-500">
                                           Agreements are locked while reschedule is pending.
                                         </div>
-                                      )}
+                                      ) : null}
                                     </div>
 
-                                    <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">
-                                      Uploaded Agreements
-                                    </div>
-                                    <div className="border border-t-0 rounded-b-md overflow-hidden">
-                                      {uploaded.length === 0 ? (
-                                        <div className="p-6 text-sm text-gray-600">No uploaded documents</div>
-                                      ) : (
-                                        <div className="divide-y">
-                                          {uploaded.map((doc) => {
-                                            const url = supabase.storage.from('application-files').getPublicUrl(doc.path)?.data?.publicUrl || null;
-                                            const fileName = String(doc.path).split('/').pop() || 'Document';
-                                            return (
-                                              <div key={doc.key} className="p-4 flex items-center justify-between gap-3">
-                                                <div className="min-w-0">
-                                                  <div className="text-sm font-semibold text-gray-800 truncate">{fileName}</div>
-                                                  <div className="text-xs text-gray-500 truncate">{doc.path}</div>
-                                                </div>
-                                                <div className="flex-shrink-0">
-                                                  {url ? (
-                                                    <a
-                                                      href={url}
-                                                      target="_blank"
-                                                      rel="noopener noreferrer"
-                                                      className="text-sm font-semibold text-blue-600 hover:underline"
-                                                    >
-                                                      View
-                                                    </a>
-                                                  ) : (
-                                                    <span className="text-sm text-gray-400">Unavailable</span>
-                                                  )}
-                                                </div>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </div>
+                                      <UploadedDocumentsSection
+                                        title="Uploaded Agreements"
+                                        emptyText="No uploaded documents"
+                                        documents={uploaded.map((d) => ({
+                                          path: d.path,
+                                          label: (String(d.key || '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || null),
+                                          originalName: String(d.path).split('/').pop() || null,
+                                        }))}
+                                        getPublicUrl={(path) =>
+                                          supabase.storage
+                                            .from('application-files')
+                                            .getPublicUrl(path)?.data?.publicUrl || null
+                                        }
+                                        variant="list"
+                                      />
                                   </>
                                 );
                               })()}
@@ -4257,8 +4316,52 @@ function AgencyEndorsements() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold mb-4">Request for Reschedule</h3>
-            <div className="text-sm text-gray-700 mb-6">
-              Are you sure you want to request for a reschedule of this interview? HR will be notified and will reschedule your interview.
+            <div className="text-sm text-gray-700 mb-4">
+              Provide a short reason and your preferred time window. HR will be notified and will set a new schedule.
+            </div>
+
+            <div className="space-y-3 mb-6">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Note (required)</label>
+                <textarea
+                  rows={3}
+                  value={rescheduleNote}
+                  onChange={(e) => setRescheduleNote(e.target.value)}
+                  placeholder="e.g., Candidate is unavailable at the scheduled time."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Preferred date (optional)</label>
+                  <input
+                    type="date"
+                    value={reschedulePreferredDate}
+                    onChange={(e) => setReschedulePreferredDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Preferred time window (optional)</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="time"
+                      value={reschedulePreferredTimeFrom}
+                      onChange={(e) => setReschedulePreferredTimeFrom(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      aria-label="Preferred time from"
+                    />
+                    <input
+                      type="time"
+                      value={reschedulePreferredTimeTo}
+                      onChange={(e) => setReschedulePreferredTimeTo(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                      aria-label="Preferred time to"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="flex justify-end gap-3">
               <button
@@ -4279,6 +4382,59 @@ function AgencyEndorsements() {
                   
                   try {
                     const rejectedAt = new Date().toISOString();
+
+                    const note = String(rescheduleNote || '').trim();
+                    if (!note) {
+                      setAlertMessage('Please provide a note for the reschedule request.');
+                      setShowErrorAlert(true);
+                      return;
+                    }
+
+                    let currentPayload = selectedEmployee?.raw?.payload ?? selectedEmployee?.payload ?? {};
+                    if (typeof currentPayload === 'string') {
+                      try { currentPayload = JSON.parse(currentPayload); } catch { currentPayload = {}; }
+                    }
+
+                    const existingReq = currentPayload?.interview_reschedule_request || currentPayload?.interviewRescheduleRequest || null;
+                    const existingEver = Boolean(
+                      existingReq &&
+                      (typeof existingReq !== 'object' ||
+                        existingReq.requested_at ||
+                        existingReq.requestedAt ||
+                        existingReq.note ||
+                        existingReq.preferred_date ||
+                        existingReq.preferredDate ||
+                        existingReq.preferred_time_from ||
+                        existingReq.preferredTimeFrom ||
+                        existingReq.preferred_time_to ||
+                        existingReq.preferredTimeTo ||
+                        existingReq.handled_at ||
+                        existingReq.handledAt)
+                    );
+                    if (existingEver) {
+                      setAlertMessage('You can only request an assessment reschedule once for this interview.');
+                      setShowErrorAlert(true);
+                      return;
+                    }
+
+                    const req = {
+                      requested_at: rejectedAt,
+                      requestedAt: rejectedAt,
+                      source: 'agency',
+                      note,
+                      preferred_date: reschedulePreferredDate || null,
+                      preferredDate: reschedulePreferredDate || null,
+                      preferred_time_from: reschedulePreferredTimeFrom || null,
+                      preferredTimeFrom: reschedulePreferredTimeFrom || null,
+                      preferred_time_to: reschedulePreferredTimeTo || null,
+                      preferredTimeTo: reschedulePreferredTimeTo || null,
+                    };
+
+                    const updatedPayload = {
+                      ...currentPayload,
+                      interview_reschedule_request: req,
+                      interviewRescheduleRequest: req,
+                    };
                     
                     // Get applicant and interview info for notification
                     const applicantName = selectedEmployee.name || 'Applicant';
@@ -4290,7 +4446,8 @@ function AgencyEndorsements() {
                       .from('applications')
                       .update({
                         interview_confirmed: 'Rejected',
-                        interview_confirmed_at: rejectedAt
+                        interview_confirmed_at: rejectedAt,
+                        payload: updatedPayload,
                       })
                       .eq('id', selectedEmployee.id);
                     
@@ -4307,7 +4464,11 @@ function AgencyEndorsements() {
                       position,
                       responseType: 'reschedule_requested',
                       interviewDate,
-                      interviewTime
+                      interviewTime,
+                      responseNote: note,
+                      preferredDate: reschedulePreferredDate || null,
+                      preferredTimeFrom: reschedulePreferredTimeFrom || null,
+                      preferredTimeTo: reschedulePreferredTimeTo || null,
                     });
                     
                     // Reload the endorsed employees to update the UI
@@ -4318,10 +4479,12 @@ function AgencyEndorsements() {
                       ...prev,
                       interview_confirmed: 'Rejected',
                       interview_confirmed_at: rejectedAt,
+                      payload: updatedPayload,
                       raw: {
                         ...prev.raw,
                         interview_confirmed: 'Rejected',
-                        interview_confirmed_at: rejectedAt
+                        interview_confirmed_at: rejectedAt,
+                        payload: updatedPayload,
                       }
                     }));
                     

@@ -318,7 +318,7 @@ function HrRecruitment() {
   // ---- UI state
   const [activeSubTab, setActiveSubTab] = useState("Applications"); // "Applications" | "JobPosts"
   const [searchTerm, setSearchTerm] = useState("");
-  const [listMode, setListMode] = useState('pending'); // 'pending' | 'rejected'
+  const [listMode, setListMode] = useState('pending'); // 'pending' | 'waitlisted' | 'rejected'
   const [currentPage, setCurrentPage] = useState(1);
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionType, setActionType] = useState(null);
@@ -799,12 +799,24 @@ function HrRecruitment() {
     const agencyApplicant = isAgency(selectedApplicant);
     const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
                               selectedApplicant?.interview_confirmed === 'confirmed';
-    const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterview;
 
     let payloadObj = selectedApplicant?.raw?.payload ?? selectedApplicant?.payload ?? {};
     if (typeof payloadObj === 'string') {
       try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
     }
+
+    const rescheduleReqObj = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+    const rescheduleReqHandled = Boolean(rescheduleReqObj && (rescheduleReqObj.handled_at || rescheduleReqObj.handledAt));
+    const rescheduleReqActive = Boolean(
+      rescheduleReqObj &&
+      typeof rescheduleReqObj === 'object' &&
+      !rescheduleReqHandled &&
+      (rescheduleReqObj.requested_at || rescheduleReqObj.requestedAt || rescheduleReqObj.note)
+    );
+    const rescheduleRequested = Boolean(
+      hasInterview &&
+      ((selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') || rescheduleReqActive)
+    );
     const assessmentFinalized = Boolean(payloadObj?.assessment_finalized || payloadObj?.assessmentFinalized);
     const agreementsStatusUnlocked = ['agreement', 'agreements', 'final_agreement', 'hired'].includes(applicantStatus);
     
@@ -2964,6 +2976,42 @@ function HrRecruitment() {
         setScheduling(false);
         return;
       }
+
+      // Best-effort: mark any pending reschedule request as handled.
+      // We re-read payload AFTER the edge function ran so we don't overwrite updated interview fields.
+      try {
+        const { data: latestRow, error: latestErr } = await supabase
+          .from('applications')
+          .select('payload')
+          .eq('id', selectedApplicationForInterview.id)
+          .single();
+        if (!latestErr) {
+          let latestPayload = latestRow?.payload ?? {};
+          if (typeof latestPayload === 'string') {
+            try { latestPayload = JSON.parse(latestPayload); } catch { latestPayload = {}; }
+          }
+
+          const req = latestPayload?.interview_reschedule_request || latestPayload?.interviewRescheduleRequest || null;
+          const handled = Boolean(req && (req.handled_at || req.handledAt));
+          const active = Boolean(req && typeof req === 'object' && !handled && (req.requested_at || req.requestedAt || req.note));
+
+          if (active) {
+            const handledAt = new Date().toISOString();
+            const nextReq = { ...req, handled_at: handledAt, handledAt };
+            const nextPayload = {
+              ...latestPayload,
+              interview_reschedule_request: nextReq,
+              interviewRescheduleRequest: nextReq,
+            };
+            await supabase
+              .from('applications')
+              .update({ payload: nextPayload })
+              .eq('id', selectedApplicationForInterview.id);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to mark reschedule request handled (non-fatal):', err);
+      }
       
       // Update selectedApplicant immediately with interview data
       if (selectedApplicant && selectedApplicant.id === selectedApplicationForInterview.id) {
@@ -3922,6 +3970,60 @@ function HrRecruitment() {
     }, 100);
   };
 
+  // ---- WAITLIST action: mark application as waitlisted (with confirmation)
+  const addToWaitlist = (applicant) => {
+    if (!applicant?.id) return;
+
+    if (isProcessingConfirm || isOpeningConfirmDialog || showConfirmDialog) return;
+
+    setIsOpeningConfirmDialog(true);
+    setShowSuccessAlert(false);
+    setShowErrorAlert(false);
+    setIsProcessingConfirm(false);
+    setConfirmCallback(null);
+
+    setConfirmMessage(`Add ${applicant.name}'s application to waitlist?`);
+
+    const callbackFunction = async () => {
+      try {
+        const { error } = await supabase
+          .from('applications')
+          .update({ status: 'waitlisted' })
+          .eq('id', applicant.id);
+
+        if (error) {
+          console.error('addToWaitlist update error:', error);
+          setErrorMessage('Failed to add to waitlist. See console.');
+          setShowErrorAlert(true);
+          return;
+        }
+
+        setSelectedApplicant((prev) => {
+          if (prev && prev.id === applicant.id) {
+            return { ...prev, status: 'waitlisted' };
+          }
+          return prev;
+        });
+
+        setActiveDetailTab('Application');
+        await loadApplications();
+        setSuccessMessage(`${applicant.name} has been moved to waitlist.`);
+        setShowSuccessAlert(true);
+      } catch (err) {
+        console.error('addToWaitlist unexpected error:', err);
+        setErrorMessage('Unexpected error while adding to waitlist. See console.');
+        setShowErrorAlert(true);
+      }
+    };
+
+    setConfirmCallback(() => callbackFunction);
+    setShowConfirmDialog(true);
+
+    setTimeout(() => {
+      setIsOpeningConfirmDialog(false);
+    }, 100);
+  };
+
   // ---- REJECT action: update DB row status -> 'rejected' and optionally save remarks
   const rejectApplication = async (applicationId, name, remarks = null) => {
     if (!applicationId) return;
@@ -4342,9 +4444,18 @@ function HrRecruitment() {
     const status = applicant.status?.toLowerCase() || 'submitted';
     
     // Check interview status
+    const payloadObj = getApplicantPayloadObject(applicant);
     const hasInterview = applicant.interview_date;
     const interviewConfirmed = applicant.interview_confirmed === 'Confirmed';
-    const rescheduleRequested = applicant.interview_confirmed === 'Rejected' && hasInterview;
+    const rescheduleReqObj = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+    const rescheduleReqHandled = Boolean(rescheduleReqObj && (rescheduleReqObj.handled_at || rescheduleReqObj.handledAt));
+    const rescheduleReqActive = Boolean(
+      rescheduleReqObj &&
+      typeof rescheduleReqObj === 'object' &&
+      !rescheduleReqHandled &&
+      (rescheduleReqObj.requested_at || rescheduleReqObj.requestedAt || rescheduleReqObj.note)
+    );
+    const rescheduleRequested = (applicant.interview_confirmed === 'Rejected' && hasInterview) || rescheduleReqActive;
     const agencyApplicant = isAgency(applicant);
     
     // Determine status based on workflow
@@ -4353,6 +4464,9 @@ function HrRecruitment() {
     }
     if (status === 'rejected') {
       return { label: 'REJECTED', color: 'text-red-600', bg: 'bg-red-50' };
+    }
+    if (status === 'waitlisted') {
+      return { label: 'WAITLISTED', color: 'text-slate-700', bg: 'bg-slate-50' };
     }
     if (['agreement', 'agreements', 'final_agreement'].includes(status)) {
       return { label: 'AGREEMENT', color: 'text-purple-600', bg: 'bg-purple-50' };
@@ -4441,15 +4555,25 @@ function HrRecruitment() {
 
   const recruitmentTypes = ["All", "Agency", "Direct"];
   
-  const statusOptions = ["All", "SUBMITTED", "IN REVIEW", "INTERVIEW SET", "INTERVIEW CONFIRMED", "RESCHEDULE REQUESTED", "REQUIREMENTS", "AGREEMENT", "HIRED", "REJECTED"];
+  const statusOptions = ["All", "SUBMITTED", "WAITLISTED", "IN REVIEW", "INTERVIEW SET", "INTERVIEW CONFIRMED", "RESCHEDULE REQUESTED", "REQUIREMENTS", "AGREEMENT", "HIRED", "REJECTED"];
 
   const isRejectedApplicant = useCallback(
     (applicant) => String(getApplicationStatus(applicant)?.label || '').trim().toUpperCase() === 'REJECTED',
     [getApplicationStatus]
   );
 
+  const isWaitlistedApplicant = useCallback(
+    (applicant) => String(applicant?.status || '').trim().toLowerCase() === 'waitlisted',
+    []
+  );
+
   useEffect(() => {
     if (listMode === 'rejected') {
+      if (statusFilter !== 'All') setStatusFilter('All');
+      return;
+    }
+
+    if (listMode === 'waitlisted') {
       if (statusFilter !== 'All') setStatusFilter('All');
       return;
     }
@@ -4502,19 +4626,24 @@ function HrRecruitment() {
 
   const listModeCounts = useMemo(() => {
     const rejected = (filteredApplicantsNoStatus || []).filter(isRejectedApplicant).length;
-    const pending = (filteredApplicantsNoStatus || []).length - rejected;
-    return { pending, rejected };
-  }, [filteredApplicantsNoStatus, isRejectedApplicant]);
+    const waitlisted = (filteredApplicantsNoStatus || []).filter(isWaitlistedApplicant).length;
+    const pending = (filteredApplicantsNoStatus || []).length - rejected - waitlisted;
+    return { pending, waitlisted, rejected };
+  }, [filteredApplicantsNoStatus, isRejectedApplicant, isWaitlistedApplicant]);
 
   // Filtered + sorted applicants based on search and filters
   const filteredAllApplicants = useMemo(() => {
     let list = filteredApplicantsNoStatus;
 
-    list = listMode === 'rejected'
-      ? list.filter(isRejectedApplicant)
-      : list.filter((a) => !isRejectedApplicant(a));
+    if (listMode === 'rejected') {
+      list = list.filter(isRejectedApplicant);
+    } else if (listMode === 'waitlisted') {
+      list = list.filter((a) => !isRejectedApplicant(a)).filter(isWaitlistedApplicant);
+    } else {
+      list = list.filter((a) => !isRejectedApplicant(a)).filter((a) => !isWaitlistedApplicant(a));
+    }
 
-    if (listMode !== 'rejected' && statusFilter !== "All") {
+    if (listMode === 'pending' && statusFilter !== "All") {
       list = list.filter((a) => String(getApplicationStatus(a).label || '').trim() === statusFilter);
     }
 
@@ -4526,7 +4655,7 @@ function HrRecruitment() {
     );
 
     return list;
-  }, [filteredApplicantsNoStatus, listMode, statusFilter, sortOrder, isRejectedApplicant]);
+  }, [filteredApplicantsNoStatus, listMode, statusFilter, sortOrder, isRejectedApplicant, isWaitlistedApplicant]);
 
 
   // Pagination for unified table
@@ -5058,6 +5187,20 @@ function HrRecruitment() {
                       <button
                         type="button"
                         onClick={() => {
+                          setListMode('waitlisted');
+                          setCurrentPage(1);
+                        }}
+                        className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
+                          listMode === 'waitlisted'
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        Waitlisted ({listModeCounts.waitlisted})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
                           setListMode('rejected');
                           setCurrentPage(1);
                         }}
@@ -5077,7 +5220,7 @@ function HrRecruitment() {
                 <div
                   className={[
                     'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 items-center',
-                    listMode === 'rejected'
+                    listMode !== 'pending'
                       ? 'xl:grid-cols-[repeat(6,minmax(0,1fr))]'
                       : 'xl:grid-cols-[repeat(7,minmax(0,1fr))]',
                   ].join(' ')}
@@ -5127,8 +5270,8 @@ function HrRecruitment() {
                     ))}
                   </select>
 
-                  {/* Status (hidden in Rejected mode) */}
-                  {listMode !== 'rejected' && (
+                  {/* Status (pending list only) */}
+                  {listMode === 'pending' && (
                     <select
                       value={statusFilter}
                       onChange={(e) => {
@@ -5141,6 +5284,7 @@ function HrRecruitment() {
                       {statusOptions
                         .filter((s) => s !== 'All')
                         .filter((s) => String(s).trim().toUpperCase() !== 'REJECTED')
+                        .filter((s) => String(s).trim().toUpperCase() !== 'WAITLISTED')
                         .map((s) => (
                           <option key={s} value={s}>{s}</option>
                         ))}
@@ -5445,8 +5589,19 @@ function HrRecruitment() {
                       const agencyApplicant = isAgency(selectedApplicant);
                       const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
                                                 selectedApplicant?.interview_confirmed === 'confirmed';
-                      const rescheduleRequested = (selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') && hasInterview;
                       const payloadObj = getApplicantPayloadObject(selectedApplicant);
+                      const rescheduleReqObj = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+                      const rescheduleReqHandled = Boolean(rescheduleReqObj && (rescheduleReqObj.handled_at || rescheduleReqObj.handledAt));
+                      const rescheduleReqActive = Boolean(
+                        rescheduleReqObj &&
+                        typeof rescheduleReqObj === 'object' &&
+                        !rescheduleReqHandled &&
+                        (rescheduleReqObj.requested_at || rescheduleReqObj.requestedAt || rescheduleReqObj.note)
+                      );
+                      const rescheduleRequested = Boolean(
+                        hasInterview &&
+                        ((selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') || rescheduleReqActive)
+                      );
                       const assessmentFinalized = Boolean(payloadObj?.assessment_finalized || payloadObj?.assessmentFinalized);
                       const agreementsStatusUnlocked = ['agreement', 'agreements', 'final_agreement', 'hired'].includes(applicantStatus);
                       
@@ -6301,14 +6456,28 @@ function HrRecruitment() {
                     {/* Action: Approve to proceed to Assessment - Only show if status is still submitted/pending */}
                     {(() => {
                       const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
-                      const isStillInApplicationStep = ['submitted', 'pending'].includes(applicantStatus);
+                      const canProceedFromApplication = ['submitted', 'pending', 'waitlisted'].includes(applicantStatus);
+                      const canWaitlist = ['submitted', 'pending'].includes(applicantStatus);
                       
-                      if (!isStillInApplicationStep) {
+                      if (!canProceedFromApplication) {
                         return null; // Don't show button if already moved to Assessment or beyond
                       }
                       
                       return (
-                        <div className="pt-2 flex justify-end">
+                        <div className="pt-2 flex justify-end gap-2">
+                          {canWaitlist && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                addToWaitlist(selectedApplicant);
+                              }}
+                              className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-800 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
+                            >
+                              <span>Add to Waitlist</span>
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -6368,6 +6537,17 @@ function HrRecruitment() {
                         payloadObj?.interview_confirmed ||
                         'Idle';
 
+                      const rescheduleReqObj = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+                      const rescheduleReqHandled = Boolean(rescheduleReqObj && (rescheduleReqObj.handled_at || rescheduleReqObj.handledAt));
+                      const rescheduleReqActive = Boolean(
+                        rescheduleReqObj &&
+                        typeof rescheduleReqObj === 'object' &&
+                        !rescheduleReqHandled &&
+                        (rescheduleReqObj.requested_at || rescheduleReqObj.requestedAt || rescheduleReqObj.note)
+                      );
+                      const legacyRejected = String(interviewStatus || '').trim().toLowerCase() === 'rejected';
+                      const rescheduleRequested = Boolean(hasSchedule && (legacyRejected || rescheduleReqActive));
+
                       const rawHistory = payloadObj?.interview_history || payloadObj?.interviewHistory;
                       const interviewHistory = Array.isArray(rawHistory) ? rawHistory : [];
                       const lastInterview = interviewHistory.length ? interviewHistory[interviewHistory.length - 1] : null;
@@ -6379,13 +6559,13 @@ function HrRecruitment() {
                         selectedApplicant?.interview_date,
                         selectedApplicant?.interview_time
                       );
-                      const canScheduleAnother = Boolean(hasSchedule && schedulePassed && !hrScheduledAnother);
+                      const canSetSchedule = Boolean(hasSchedule && !hrScheduledAnother && (rescheduleRequested || schedulePassed));
 
                       const agencyApplicant = isAgency(selectedApplicant);
                       const statusPill = (() => {
                         if (!hasSchedule) return null;
                         if (agencyApplicant) {
-                          if (interviewStatus === 'Rejected' || interviewStatus === 'rejected') {
+                          if (rescheduleRequested) {
                             return (
                               <span className="text-xs px-3 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-300 font-semibold">
                                 Reschedule Requested
@@ -6406,7 +6586,7 @@ function HrRecruitment() {
                             </span>
                           );
                         }
-                        if (interviewStatus === 'Rejected' || interviewStatus === 'rejected') {
+                        if (rescheduleRequested) {
                           return (
                             <span className="text-xs px-3 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-300 font-semibold">
                               Reschedule Requested
@@ -6460,7 +6640,7 @@ function HrRecruitment() {
                                   openInterviewModal(selectedApplicant, { reset: false, mode: 'initial' });
                                 }}
                               >
-                                Set Interview Schedule
+                                Set Schedule
                               </button>
                             </div>
                           ) : (
@@ -6471,6 +6651,34 @@ function HrRecruitment() {
                                 <div className="sm:col-span-2"><span className="font-medium text-gray-800">{interviewType === 'online' ? 'Meeting Link' : 'Location'}:</span> {selectedApplicant?.interview_location || <span className="text-gray-500 italic">None</span>}</div>
                                 <div className="sm:col-span-2"><span className="font-medium text-gray-800">Interviewer:</span> {selectedApplicant?.interviewer || <span className="text-gray-500 italic">None</span>}</div>
                               </div>
+
+                              {rescheduleRequested && (rescheduleReqObj?.note || rescheduleReqObj?.preferred_date || rescheduleReqObj?.preferredDate || rescheduleReqObj?.preferred_time_from || rescheduleReqObj?.preferredTimeFrom || rescheduleReqObj?.preferred_time_to || rescheduleReqObj?.preferredTimeTo) ? (
+                                <div className="mt-4 border-t pt-4">
+                                  <div className="text-xs font-semibold text-gray-600 mb-2">Reschedule Request</div>
+                                  <div className="bg-orange-50 border border-orange-200 rounded-md p-3 text-sm text-gray-800 space-y-1">
+                                    {(rescheduleReqObj?.preferred_date || rescheduleReqObj?.preferredDate) ? (
+                                      <div>
+                                        <span className="font-medium">Preferred Date:</span>{' '}
+                                        {rescheduleReqObj?.preferred_date || rescheduleReqObj?.preferredDate}
+                                      </div>
+                                    ) : null}
+                                    {(rescheduleReqObj?.preferred_time_from || rescheduleReqObj?.preferredTimeFrom || rescheduleReqObj?.preferred_time_to || rescheduleReqObj?.preferredTimeTo) ? (
+                                      <div>
+                                        <span className="font-medium">Preferred Time:</span>{' '}
+                                        {[rescheduleReqObj?.preferred_time_from || rescheduleReqObj?.preferredTimeFrom, rescheduleReqObj?.preferred_time_to || rescheduleReqObj?.preferredTimeTo]
+                                          .filter(Boolean)
+                                          .join(' - ') || '—'}
+                                      </div>
+                                    ) : null}
+                                    {rescheduleReqObj?.note ? (
+                                      <div className="whitespace-pre-wrap">
+                                        <span className="font-medium">Note:</span>{' '}
+                                        {String(rescheduleReqObj.note)}
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ) : null}
 
                               {lastInterview && (
                                 <div className="mt-4 border-t pt-4">
@@ -6485,12 +6693,14 @@ function HrRecruitment() {
                               )}
 
                               <div className="mt-4 border-t pt-4 flex items-center justify-end gap-3">
-                                {!canScheduleAnother ? (
+                                {!canSetSchedule ? (
                                   <div className="text-xs text-gray-500">
                                     {hrScheduledAnother
                                       ? 'HR can only schedule another interview once.'
-                                      : !schedulePassed
-                                        ? 'You can schedule another interview once the current interview schedule has passed.'
+                                      : rescheduleRequested
+                                        ? 'Reschedule requested. Set a new schedule when ready.'
+                                        : !schedulePassed
+                                          ? 'You can set a new schedule once the current interview schedule has passed or if reschedule is requested.'
                                         : null}
                                   </div>
                                 ) : null}
@@ -6501,9 +6711,9 @@ function HrRecruitment() {
                                     if (!selectedApplicant) return;
                                     openInterviewModal(selectedApplicant, { reset: true, mode: 'another' });
                                   }}
-                                  disabled={!canScheduleAnother}
+                                  disabled={!canSetSchedule}
                                 >
-                                  Schedule Another Interview
+                                  Set Schedule
                                 </button>
                               </div>
                             </>
@@ -6773,33 +6983,7 @@ function HrRecruitment() {
                           selectedApplicant?.agreement_signing_location
                       );
 
-                      const signingStatusRaw = selectedApplicant?.agreement_signing_confirmed || "Idle";
-                      const signingStatus = String(signingStatusRaw || "").toLowerCase();
-                      const canSchedule = !hasSigning;
-                      const canReschedule = hasSigning && signingStatus === "rejected";
-
-                      const statusPill = (() => {
-                        if (!hasSigning) return null;
-                        if (signingStatus === "confirmed") {
-                          return (
-                            <span className="text-xs px-3 py-1 rounded-full bg-green-100 text-green-800 border border-green-300 font-semibold">
-                              Confirmed
-                            </span>
-                          );
-                        }
-                        if (signingStatus === "rejected") {
-                          return (
-                            <span className="text-xs px-3 py-1 rounded-full bg-orange-100 text-orange-800 border border-orange-300 font-semibold">
-                              Reschedule Requested
-                            </span>
-                          );
-                        }
-                        return (
-                          <span className="text-xs px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 border border-yellow-300 font-semibold">
-                            Awaiting Response
-                          </span>
-                        );
-                      })();
+                      const actionLabel = hasSigning ? 'Update Signing Schedule' : 'Set Signing Schedule';
 
                       return (
                         <div className="bg-white border rounded-lg shadow-sm p-4">
@@ -6816,11 +7000,11 @@ function HrRecruitment() {
                               </div>
                               <div>
                                 <div className="text-sm font-semibold text-gray-800">Agreement Signing Schedule</div>
-                                <div className="text-xs text-gray-500">Schedule signing and track response status.</div>
+                                <div className="text-xs text-gray-500">Set or update signing schedule.</div>
                               </div>
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2 justify-end">{statusPill}</div>
+                              <div className="flex flex-wrap items-center gap-2 justify-end" />
                           </div>
 
                           {!hasSigning ? (
@@ -6834,7 +7018,7 @@ function HrRecruitment() {
                                   openAgreementSigningModal(selectedApplicant);
                                 }}
                               >
-                                Schedule Agreement Signing
+                                {actionLabel}
                               </button>
                             </div>
                           ) : (
@@ -6854,20 +7038,18 @@ function HrRecruitment() {
                                 </div>
                               </div>
 
-                              {canSchedule || canReschedule ? (
-                                <div className="mt-4 border-t pt-4 flex items-center justify-end">
-                                  <button
-                                    type="button"
-                                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
-                                    onClick={() => {
-                                      if (!selectedApplicant) return;
-                                      openAgreementSigningModal(selectedApplicant);
-                                    }}
-                                  >
-                                    {canReschedule ? "Reschedule Agreement Signing" : "Schedule Agreement Signing"}
-                                  </button>
-                                </div>
-                              ) : null}
+                              <div className="mt-4 border-t pt-4 flex items-center justify-end">
+                                <button
+                                  type="button"
+                                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
+                                  onClick={() => {
+                                    if (!selectedApplicant) return;
+                                    openAgreementSigningModal(selectedApplicant);
+                                  }}
+                                >
+                                  {actionLabel}
+                                </button>
+                              </div>
                             </>
                           )}
                         </div>
