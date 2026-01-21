@@ -12,6 +12,7 @@ import {
 function ApplicantApplications() {
   const navigate = useNavigate();
   const location = useLocation();
+  const deepLinkHandledRef = useRef(false);
   const splitJobDetails = (value) => {
     // job_posts.responsibilities is stored as an array, but handle string/null defensively
     const lines = Array.isArray(value)
@@ -251,6 +252,7 @@ function ApplicantApplications() {
 
     const params = new URLSearchParams(location.search || '');
     const requestedApplicationId = params.get('applicationId');
+    const requestedAction = (params.get('action') || params.get('openConfirm') || '').toString().trim();
 
     const fetchApplication = async () => {
       try {
@@ -387,6 +389,23 @@ function ApplicantApplications() {
           }
           
           setStepStatus(newStepStatus);
+
+          // Email deep-link UX: jump to Assessment and open Confirm modal once.
+          if (!deepLinkHandledRef.current && requestedAction === 'confirmInterview') {
+            deepLinkHandledRef.current = true;
+            setActiveStep('Assessment');
+
+            const statusLower = String(interviewStatus || '').toLowerCase();
+            const interviewObj2 = payloadObj?.interview || payloadObj?.form?.interview || {};
+            const interviewDate = application?.interview_date || interviewObj2?.date || payloadObj?.form?.interview_date || null;
+            const interviewTime = application?.interview_time || interviewObj2?.time || payloadObj?.form?.interview_time || null;
+            const interviewLocation = application?.interview_location || interviewObj2?.location || payloadObj?.form?.interview_location || null;
+            const canConfirm = statusLower === 'idle' && interviewDate && interviewTime && interviewLocation;
+
+            if (canConfirm) {
+              setShowConfirmDialog(true);
+            }
+          }
 
           if (requirements.id_numbers) {
             const idNums = requirements.id_numbers;
