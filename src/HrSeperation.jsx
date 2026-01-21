@@ -924,9 +924,9 @@ function HrSeperation() {
         terminationDocFilename = terminateFile.name;
       }
 
-      // Calculate account expiry (2 minutes from now for testing)
+      // Calculate account expiry (30 days from now)
       const accountExpiry = new Date();
-      accountExpiry.setMinutes(accountExpiry.getMinutes() + 2);
+      accountExpiry.setDate(accountExpiry.getDate() + 30);
 
       // Update employee_separations table
       const { error: updateError } = await supabase
@@ -1920,7 +1920,7 @@ function HrSeperation() {
           <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
             <h3 className="text-lg font-semibold text-red-600 mb-4">Confirm Termination?</h3>
             <p className="text-gray-600 mb-6">
-              Are you sure you want to terminate this employee? The employee will have access to their account for 2 minutes before it is closed.
+              Are you sure you want to terminate this employee? The employee will have access to their account for 30 days before it is closed.
             </p>
             <div className="flex justify-end gap-3">
               <button
@@ -2351,7 +2351,7 @@ function HrSeperation() {
               </h3>
             </div>
             <p className="text-gray-600 mb-6 ml-16">
-              The employee has been terminated. Their account will expire in 2 minutes and they will be notified.
+              The employee has been terminated. Their account will expire in 30 days and they will be notified.
             </p>
             <div className="flex justify-end">
               <button
