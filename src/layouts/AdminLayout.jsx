@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from "react";
 import { NavLink, useNavigate, Outlet } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import LogoCropped from "./photos/logo(cropped).png";
-import AdminNotificationBell from "../AdminNotificationBell";
 import { getStoredJson, removeStoredItem } from "../authStorage";
 
 export default function AdminLayout() {
@@ -153,9 +152,6 @@ export default function AdminLayout() {
             </nav>
                 
             <div className="flex items-center space-x-4">
-              {/* Notification Bell */}
-              <AdminNotificationBell />
-              
               {/* User Profile Picture/Initials with Dropdown */}
               <div className="relative" ref={profileDropdownRef}>
                 <div

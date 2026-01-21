@@ -112,9 +112,9 @@ function ApplicantLogin() {
     e.preventDefault();
     setResetLoading(true);
     setError("");
-
+    const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
     const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: `${siteUrl}/reset-password`,
     });
 
     setResetLoading(false);
@@ -131,34 +131,6 @@ function ApplicantLogin() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center py-12 px-4">
       <div className="w-full max-w-md">
-        {/* Login Type Selector */}
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-6">
-          <div className="flex border-b border-gray-200">
-            <button
-              className="flex-1 px-6 py-4 text-center font-semibold text-red-600 bg-red-50 border-b-2 border-red-600 transition-colors"
-              disabled
-            >
-              <div className="flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                Applicant Login
-              </div>
-            </button>
-            <button
-              onClick={() => navigate("/employee/login")}
-              className="flex-1 px-6 py-4 text-center font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                Employee Login
-              </div>
-            </button>
-          </div>
-        </div>
-
         {/* Login Form */}
         <div className="bg-white rounded-xl shadow-lg p-8">
           <div className="text-center mb-6">
@@ -233,12 +205,7 @@ function ApplicantLogin() {
                   Logging in...
                 </>
               ) : (
-                <>
-                  Login
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                  </svg>
-                </>
+                "Login"
               )}
             </button>
           </form>
