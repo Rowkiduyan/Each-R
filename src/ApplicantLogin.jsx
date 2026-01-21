@@ -43,9 +43,20 @@ function ApplicantLogin() {
     const userRole = applicantData.role?.toLowerCase() || "applicant";
 
     if (userRole === "applicant") {
-      const redirectTo = location.state?.redirectTo || "/applicantl/home";
+      const urlRedirectTo = new URLSearchParams(location.search || '').get('redirectTo');
+      let redirectTo = location.state?.redirectTo || urlRedirectTo || "/applicantl/home";
+
+      // Only allow internal relative redirects
+      if (typeof redirectTo !== 'string') redirectTo = "/applicantl/home";
+      if (redirectTo.startsWith('http://') || redirectTo.startsWith('https://')) {
+        redirectTo = "/applicantl/home";
+      }
+      if (!redirectTo.startsWith('/')) {
+        redirectTo = "/applicantl/home";
+      }
+
       const jobId = location.state?.jobId;
-      navigate(redirectTo, { state: { jobId } });
+      navigate(redirectTo, { state: { jobId }, replace: true });
     } else if (userRole === "hr") {
       navigate("/hr/recruitment");
     } else {

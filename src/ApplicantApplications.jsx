@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { notifyHRAboutInterviewResponse, notifyHRAboutApplicationRetraction } from './notifications';
@@ -11,6 +11,7 @@ import {
 
 function ApplicantApplications() {
   const navigate = useNavigate();
+  const location = useLocation();
   const splitJobDetails = (value) => {
     // job_posts.responsibilities is stored as an array, but handle string/null defensively
     const lines = Array.isArray(value)
@@ -248,6 +249,9 @@ function ApplicantApplications() {
   useEffect(() => {
     let userId = null;
 
+    const params = new URLSearchParams(location.search || '');
+    const requestedApplicationId = params.get('applicationId');
+
     const fetchApplication = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -257,14 +261,17 @@ function ApplicantApplications() {
         }
         userId = user.id;
 
-        // Fetch application for current user - include all file fields from both columns and payload
-        const { data: application, error: appError } = await supabase
+        // Fetch application for current user.
+        // If applicationId is provided via query string (from email deep-link), load that specific record.
+        // Otherwise, load the latest application.
+        const baseQuery = supabase
           .from('applications')
           .select('*, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, payload')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .eq('user_id', user.id);
+
+        const { data: application, error: appError } = requestedApplicationId
+          ? await baseQuery.eq('id', requestedApplicationId).maybeSingle()
+          : await baseQuery.order('created_at', { ascending: false }).limit(1).maybeSingle();
 
         if (appError) {
           console.error('Error fetching application:', appError);
@@ -481,7 +488,7 @@ function ApplicantApplications() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [location.search]);
 
 
 //   const getStepClasses = (step) => {

@@ -151,7 +151,7 @@ export default function HRLayout() {
                   }`
                 }
               >
-                Trainings/Seminars
+                Trainings/Orientation
               </NavLink>
 
               <NavLink
