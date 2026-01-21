@@ -15,6 +15,8 @@ const HR_REPLY_TO_EMAIL = Deno.env.get("HR_REPLY_TO_EMAIL") || "";
 const HR_REPLY_TO_NAME = Deno.env.get("HR_REPLY_TO_NAME") || "Roadwise HR";
 const HR_SUPPORT_EMAIL = Deno.env.get("HR_SUPPORT_EMAIL") || HR_REPLY_TO_EMAIL || "noreply@roadwise.com";
 
+const APP_PUBLIC_URL = (Deno.env.get('APP_PUBLIC_URL') || 'https://each-r.vercel.app').trim();
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -52,6 +54,10 @@ function extractFirstUrl(text: unknown): string | null {
   const raw = String(text ?? '');
   const match = raw.match(/https?:\/\/[^\s<>"]+/i);
   return match ? match[0] : null;
+}
+
+function normalizeBaseUrl(url: string): string {
+  return String(url || '').trim().replace(/\/+$/, '');
 }
 
 serve(async (req) => {
@@ -384,8 +390,19 @@ serve(async (req) => {
         const statusBorder = brandRose200;
         const statusBg = '#ffffff';
         const statusFg = brandRedDark;
-        const primaryCtaUrl = meetingUrl || '';
-        const primaryCtaLabel = meetingUrl
+        const basePublicUrl = normalizeBaseUrl(APP_PUBLIC_URL);
+
+        // Deep-link into the applicant portal so they can click the existing "Confirm Interview" button.
+        // Only include this if APP_PUBLIC_URL is configured; avoids sending broken links.
+        const confirmPortalUrl = (scheduleKind === 'interview' && basePublicUrl)
+          ? `${basePublicUrl}/applicant/applications?applicationId=${encodeURIComponent(String(applicationId))}&action=confirmInterview`
+          : '';
+
+        const primaryCtaUrl = confirmPortalUrl;
+        const primaryCtaLabel = scheduleKind === 'interview' ? 'Confirm Interview' : '';
+
+        const secondaryCtaUrl = meetingUrl || '';
+        const secondaryCtaLabel = meetingUrl
           ? (scheduleKind === 'agreement_signing' ? 'Open appointment link' : 'Open meeting link')
           : '';
 
@@ -488,16 +505,26 @@ serve(async (req) => {
                           </td>
                         </tr>
 
-                        ${primaryCtaUrl ? `
+                        ${primaryCtaUrl || secondaryCtaUrl ? `
                         <tr>
                           <td style="padding:0 14px 14px;">
                             <table role="presentation" cellpadding="0" cellspacing="0">
                               <tr>
+                                ${primaryCtaUrl ? `
                                 <td bgcolor="${brandRed}" style="border-radius:12px;">
-                                  <a href="${safeMeetingUrl}" style="display:inline-block; padding:12px 16px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:14px; font-weight:800; color:#ffffff; text-decoration:none; border-radius:12px;">
+                                  <a href="${escapeHtml(primaryCtaUrl)}" style="display:inline-block; padding:12px 16px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:14px; font-weight:800; color:#ffffff; text-decoration:none; border-radius:12px;">
                                     ${escapeHtml(primaryCtaLabel)}
                                   </a>
                                 </td>
+                                ` : ''}
+                                ${primaryCtaUrl && secondaryCtaUrl ? '<td style="width:10px;"></td>' : ''}
+                                ${secondaryCtaUrl ? `
+                                <td bgcolor="${brandRose50}" style="border-radius:12px; border:1px solid ${brandRose200};">
+                                  <a href="${safeMeetingUrl}" style="display:inline-block; padding:12px 16px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:14px; font-weight:800; color:${brandRedDark}; text-decoration:none; border-radius:12px;">
+                                    ${escapeHtml(secondaryCtaLabel)}
+                                  </a>
+                                </td>
+                                ` : ''}
                               </tr>
                             </table>
                             <div style="font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:12px; color:#64748b; margin-top:8px;">
@@ -585,6 +612,7 @@ ${meetingUrl ? `- Meeting link: ${meetingUrl}` : ''}
 
 What to do next
 - Confirm your availability in the Each-R applicant portal.
+${confirmPortalUrl ? `- Confirm link: ${confirmPortalUrl}` : ''}
 ${likelyOnline ? '- If online, join 5 minutes early and test your audio/video.' : '- If onsite, arrive 10–15 minutes early and bring a valid ID.'}
 
 If you need to reschedule, please request a change through the portal as soon as possible.

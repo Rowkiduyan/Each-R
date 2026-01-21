@@ -39,6 +39,35 @@ function AgencyTrainings() {
   const [currentCertificateUrl, setCurrentCertificateUrl] = useState(null);
   const [generatedCertificates, setGeneratedCertificates] = useState({});
 
+  // View certificate as PDF
+  const viewCertificateAsPdf = () => {
+    try {
+      console.log('Opening certificate URL:', currentCertificateUrl);
+      window.open(currentCertificateUrl, '_blank');
+      setShowCertificateModal(false);
+    } catch (error) {
+      console.error('Error viewing certificate:', error);
+      alert('Unable to view certificate.');
+    }
+  };
+
+  // Download certificate
+  const downloadCertificate = () => {
+    try {
+      const link = document.createElement('a');
+      link.href = currentCertificateUrl;
+      link.download = `Training_Certificate_${new Date().getTime()}.pdf`;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setShowCertificateModal(false);
+    } catch (error) {
+      console.error('Error downloading certificate:', error);
+      alert('Unable to download certificate.');
+    }
+  };
+
   // Fetch agency user ID and trainings
   useEffect(() => {
     const fetchData = async () => {
@@ -778,14 +807,6 @@ function AgencyTrainings() {
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
                 />
               </div>
-
-              {/* Export Button */}
-              <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export
-              </button>
             </div>
           </div>
 
@@ -1121,19 +1142,58 @@ function AgencyTrainings() {
                           const attendanceStatus = hasAttendance ? selectedTraining.attendance[attendeeName] : null;
                           const isPresent = attendanceStatus === true || (typeof attendanceStatus === 'object' && attendanceStatus?.status === true);
                           const isCompleted = selectedTraining.isCompleted || hasAttendance;
-                          const hasCertificate = generatedCertificates[selectedTraining.id]?.[attendeeName];
+                          
+                          // Try to find certificate with multiple name format attempts
+                          let certificate = null;
+                          const trainingCerts = generatedCertificates[selectedTraining.id] || {};
+                          
+                          // Try exact match first
+                          certificate = trainingCerts[attendeeName];
+                          
+                          // If not found, try normalized matching (case-insensitive, trimmed)
+                          if (!certificate) {
+                            const normalizedName = attendeeName.toLowerCase().trim();
+                            for (const [certName, certData] of Object.entries(trainingCerts)) {
+                              if (certName.toLowerCase().trim() === normalizedName) {
+                                certificate = certData;
+                                break;
+                              }
+                            }
+                          }
+                          
+                          const hasCertificate = !!certificate;
+                          const wasPresent = isPresent || hasCertificate;
                           
                           return (
-                            <div key={index} className="px-3 py-2.5 flex items-center justify-between hover:bg-gray-50">
+                            <div key={index} className={`px-3 py-2.5 flex items-center justify-between transition-colors ${
+                              isCompleted && hasAttendance
+                                ? wasPresent 
+                                  ? 'bg-green-50/50 hover:bg-green-50' 
+                                  : 'bg-red-50/50 hover:bg-red-50'
+                                : 'hover:bg-gray-50'
+                            }`}>
                               <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-900">{attendeeName}</span>
-                                {isCompleted && (hasAttendance || hasCertificate) && (
-                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    (isPresent || hasCertificate)
-                                      ? 'bg-green-100 text-green-700' 
-                                      : 'bg-red-100 text-red-700'
+                                {isCompleted && hasAttendance && (
+                                  <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+                                    wasPresent 
+                                      ? 'bg-green-500' 
+                                      : 'bg-red-500'
                                   }`}>
-                                    {(isPresent || hasCertificate) ? 'Present' : 'Absent'}
+                                    {wasPresent ? (
+                                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                )}
+                                <span className="text-sm text-gray-900 font-medium">{attendeeName}</span>
+                                {isCompleted && hasAttendance && !wasPresent && (
+                                  <span className="px-2.5 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1 bg-red-100 text-red-800 border border-red-200">
+                                    Absent
                                   </span>
                                 )}
                               </div>
@@ -1141,9 +1201,12 @@ function AgencyTrainings() {
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    const certificate = generatedCertificates[selectedTraining.id][attendeeName];
-                                    setCurrentCertificateUrl(certificate.certificate_url);
-                                    setShowCertificateModal(true);
+                                    try {
+                                      window.open(certificate.certificate_url, '_blank');
+                                    } catch (error) {
+                                      console.error('Error viewing certificate:', error);
+                                      alert('Unable to view certificate.');
+                                    }
                                   }}
                                   className="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
                                 >
@@ -1173,73 +1236,7 @@ function AgencyTrainings() {
         </div>
       )}
 
-      {/* Certificate Modal */}
-      {showCertificateModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowCertificateModal(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            {/* Header */}
-            <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-gray-50 to-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">Training Certificate</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">View your training certificate</p>
-                </div>
-                <button 
-                  onClick={() => setShowCertificateModal(false)} 
-                  className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full p-2 transition-all"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
 
-            {/* Content */}
-            <div className="p-6">
-              <div className="text-center">
-                <div className="w-20 h-20 bg-gradient-to-br from-[#800000] to-[#990000] rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <p className="text-sm text-gray-600 mb-6">
-                  Click the button below to view your certificate as a PDF.
-                </p>
-                <button
-                  onClick={() => {
-                    try {
-                      const googleDocsUrl = `https://docs.google.com/gview?url=${encodeURIComponent(currentCertificateUrl)}&embedded=true`;
-                      window.open(googleDocsUrl, '_blank');
-                      setShowCertificateModal(false);
-                    } catch (error) {
-                      console.error('Error viewing certificate:', error);
-                      alert('Unable to view certificate.');
-                    }
-                  }}
-                  className="w-full px-6 py-3 bg-gradient-to-r from-[#800000] to-[#990000] text-white rounded-lg hover:from-[#990000] hover:to-[#a00000] transition-all shadow-md font-semibold flex items-center justify-center gap-2"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                  </svg>
-                  View Certificate as PDF
-                </button>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="border-t border-gray-100 px-6 py-3 bg-gray-50 flex justify-end">
-              <button
-                onClick={() => setShowCertificateModal(false)}
-                className="px-5 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-semibold text-sm shadow-sm"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Logout Confirmation Modal */}
       {showLogoutConfirm && (

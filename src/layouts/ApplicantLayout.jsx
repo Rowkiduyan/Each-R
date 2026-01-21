@@ -1,12 +1,13 @@
 // src/layouts/ApplicantLayout.jsx
 import React, { useState, useRef, useEffect } from "react";
-import { Outlet, useNavigate, NavLink } from "react-router-dom";
+import { Outlet, useNavigate, NavLink, useLocation } from "react-router-dom";
 import { supabase } from "../supabaseClient";
 import LogoCropped from "./photos/logo(cropped).png";
 import NotificationBell from "../NotificationBell";
 
 function ApplicantLayout() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showProfileDropdown, setShowProfileDropdown] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const profileDropdownRef = useRef(null);
@@ -26,9 +27,17 @@ function ApplicantLayout() {
         
         if (authError || !user) {
           setLoading(false);
+<<<<<<< HEAD
           if (!isRedirecting.current) {
             navigate("/applicant/login", { replace: true });
           }
+=======
+          const redirectTarget = `${location.pathname}${location.search || ''}`;
+          navigate(`/applicant/login?redirectTo=${encodeURIComponent(redirectTarget)}`, {
+            state: { redirectTo: redirectTarget },
+            replace: true,
+          });
+>>>>>>> f0bc6efe0a5df67703dff446b3f430ecb043da1f
           return;
         }
 
@@ -102,11 +111,27 @@ function ApplicantLayout() {
         // If no applicant record and no profile record (or profile is applicant), redirect to login
         setLoading(false);
         await supabase.auth.signOut();
+<<<<<<< HEAD
         navigate("/applicant/login", { replace: true });
       } catch (error) {
         console.error('Error fetching applicant user:', error);
         setLoading(false);
         navigate("/applicant/login", { replace: true });
+=======
+        const redirectTarget = `${location.pathname}${location.search || ''}`;
+        navigate(`/applicant/login?redirectTo=${encodeURIComponent(redirectTarget)}`, {
+          state: { redirectTo: redirectTarget },
+          replace: true,
+        });
+      } catch (error) {
+        console.error('Error fetching applicant user:', error);
+        setLoading(false);
+        const redirectTarget = `${location.pathname}${location.search || ''}`;
+        navigate(`/applicant/login?redirectTo=${encodeURIComponent(redirectTarget)}`, {
+          state: { redirectTo: redirectTarget },
+          replace: true,
+        });
+>>>>>>> f0bc6efe0a5df67703dff446b3f430ecb043da1f
       }
     };
 
@@ -121,14 +146,22 @@ function ApplicantLayout() {
         hasCheckedAuth.current = false;
       } else {
         setApplicantUser(null);
+<<<<<<< HEAD
         hasCheckedAuth.current = false;
+=======
+        const redirectTarget = `${location.pathname}${location.search || ''}`;
+        navigate(`/applicant/login?redirectTo=${encodeURIComponent(redirectTarget)}`, {
+          state: { redirectTo: redirectTarget },
+          replace: true,
+        });
+>>>>>>> f0bc6efe0a5df67703dff446b3f430ecb043da1f
       }
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [navigate]);
+  }, [navigate, location.pathname, location.search]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {

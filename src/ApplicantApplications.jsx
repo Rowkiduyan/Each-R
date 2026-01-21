@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabaseClient';
 import { notifyHRAboutInterviewResponse, notifyHRAboutApplicationRetraction } from './notifications';
@@ -11,6 +11,8 @@ import {
 
 function ApplicantApplications() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const deepLinkHandledRef = useRef(false);
   const splitJobDetails = (value) => {
     // job_posts.responsibilities is stored as an array, but handle string/null defensively
     const lines = Array.isArray(value)
@@ -249,6 +251,10 @@ function ApplicantApplications() {
   useEffect(() => {
     let userId = null;
 
+    const params = new URLSearchParams(location.search || '');
+    const requestedApplicationId = params.get('applicationId');
+    const requestedAction = (params.get('action') || params.get('openConfirm') || '').toString().trim();
+
     const fetchApplication = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -258,14 +264,17 @@ function ApplicantApplications() {
         }
         userId = user.id;
 
-        // Fetch application for current user - include all file fields from both columns and payload
-        const { data: application, error: appError } = await supabase
+        // Fetch application for current user.
+        // If applicationId is provided via query string (from email deep-link), load that specific record.
+        // Otherwise, load the latest application.
+        const baseQuery = supabase
           .from('applications')
           .select('*, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, payload')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .eq('user_id', user.id);
+
+        const { data: application, error: appError } = requestedApplicationId
+          ? await baseQuery.eq('id', requestedApplicationId).maybeSingle()
+          : await baseQuery.order('created_at', { ascending: false }).limit(1).maybeSingle();
 
         if (appError) {
           console.error('Error fetching application:', appError);
@@ -382,6 +391,23 @@ function ApplicantApplications() {
           
           setStepStatus(newStepStatus);
 
+          // Email deep-link UX: jump to Assessment and open Confirm modal once.
+          if (!deepLinkHandledRef.current && requestedAction === 'confirmInterview') {
+            deepLinkHandledRef.current = true;
+            setActiveStep('Assessment');
+
+            const statusLower = String(interviewStatus || '').toLowerCase();
+            const interviewObj2 = payloadObj?.interview || payloadObj?.form?.interview || {};
+            const interviewDate = application?.interview_date || interviewObj2?.date || payloadObj?.form?.interview_date || null;
+            const interviewTime = application?.interview_time || interviewObj2?.time || payloadObj?.form?.interview_time || null;
+            const interviewLocation = application?.interview_location || interviewObj2?.location || payloadObj?.form?.interview_location || null;
+            const canConfirm = statusLower === 'idle' && interviewDate && interviewTime && interviewLocation;
+
+            if (canConfirm) {
+              setShowConfirmDialog(true);
+            }
+          }
+
           if (requirements.id_numbers) {
             const idNums = requirements.id_numbers;
             setIdFields({
@@ -482,7 +508,7 @@ function ApplicantApplications() {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [location.search]);
 
   // Generate signed URLs for certificates
   useEffect(() => {
