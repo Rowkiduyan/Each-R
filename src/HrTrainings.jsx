@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './supabaseClient';
 import emailjs from '@emailjs/browser';
-import { generateTrainingCertificates, checkTrainingCertificates } from './utils/trainingCertificateGenerator';
+import { generateTrainingCertificates, checkTrainingCertificates } from './utils/simpleCertificateGenerator';
 
 function HrTrainings() {
   const [loading, setLoading] = useState(true);
@@ -27,8 +27,6 @@ function HrTrainings() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const [showCertificateConfirmModal, setShowCertificateConfirmModal] = useState(false);
-  const [pendingAttendanceSave, setPendingAttendanceSave] = useState(null);
   
   // Certificate management state
   const [generatingCertificates, setGeneratingCertificates] = useState(null);
@@ -42,11 +40,6 @@ function HrTrainings() {
     successful: [],
     failed: []
   });
-  const [showEmployeeSelectionModal, setShowEmployeeSelectionModal] = useState(false);
-  const [selectedEmployeesForCerts, setSelectedEmployeesForCerts] = useState([]);
-  const [trainingForCertGeneration, setTrainingForCertGeneration] = useState(null);
-  const [showDuplicateWarningModal, setShowDuplicateWarningModal] = useState(false);
-  const [duplicateWarningData, setDuplicateWarningData] = useState(null);
   
   const [form, setForm] = useState({
     title: "",
@@ -57,23 +50,35 @@ function HrTrainings() {
     end_time: "",
     description: "",
     schedule_type: "onsite", // onsite or online
-    image_url: ""
+    image_url: "",
+    certificate_title: "Certificate of Completion",
+    // Signature fields
+    operations_manager_name: "",
+    operations_manager_signature: null,
+    safety_officer_name: "",
+    safety_officer_signature: null,
+    hr_manager_name: "",
+    hr_manager_signature: null,
+    general_manager_name: "",
+    general_manager_signature: null
   });
   
   const [imageFile, setImageFile] = useState(null);
   
-  // Certificate template state
-  const [certificateTemplates, setCertificateTemplates] = useState([]);
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [uploadNewTemplate, setUploadNewTemplate] = useState(false);
-  const [newTemplateName, setNewTemplateName] = useState("");
-  const [newTemplateFile, setNewTemplateFile] = useState(null);
+  // Signature file states
+  const [signatureFiles, setSignatureFiles] = useState({
+    operations_manager: null,
+    safety_officer: null,
+    hr_manager: null,
+    general_manager: null
+  });
   
-  // Certificate template state for edit form
-  const [selectedTemplateIdEdit, setSelectedTemplateIdEdit] = useState("");
-  const [uploadNewTemplateEdit, setUploadNewTemplateEdit] = useState(false);
-  const [newTemplateNameEdit, setNewTemplateNameEdit] = useState("");
-  const [newTemplateFileEdit, setNewTemplateFileEdit] = useState(null);
+  const [signatureFilesEdit, setSignatureFilesEdit] = useState({
+    operations_manager: null,
+    safety_officer: null,
+    hr_manager: null,
+    general_manager: null
+  });
   
   const [editForm, setEditForm] = useState({
     title: "",
@@ -83,7 +88,17 @@ function HrTrainings() {
     end_date: "",
     end_time: "",
     description: "",
-    schedule_type: "onsite"
+    schedule_type: "onsite",
+    certificate_title: "Certificate of Completion",
+    // Signature fields
+    operations_manager_name: "",
+    operations_manager_signature: null,
+    safety_officer_name: "",
+    safety_officer_signature: null,
+    hr_manager_name: "",
+    hr_manager_signature: null,
+    general_manager_name: "",
+    general_manager_signature: null
   });
   
   const [imageFileEdit, setImageFileEdit] = useState(null);
@@ -118,8 +133,105 @@ function HrTrainings() {
   // Fetch trainings from Supabase
   useEffect(() => {
     fetchTrainings();
-    fetchCertificateTemplates();
+    loadSignatureDefaults();
   }, []);
+  
+  // Load saved signature defaults from database
+  const loadSignatureDefaults = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('signature_defaults')
+        .select('*')
+        .maybeSingle();
+      
+      if (error) {
+        console.warn('Signature defaults table not ready:', error.message);
+        return;
+      }
+      
+      if (data) {
+        setForm(prev => ({
+          ...prev,
+          certificate_title: data.certificate_title || "Certificate of Completion",
+          operations_manager_name: data.operations_manager_name || "",
+          operations_manager_signature: data.operations_manager_signature || null,
+          safety_officer_name: data.safety_officer_name || "",
+          safety_officer_signature: data.safety_officer_signature || null,
+          hr_manager_name: data.hr_manager_name || "",
+          hr_manager_signature: data.hr_manager_signature || null,
+          general_manager_name: data.general_manager_name || "",
+          general_manager_signature: data.general_manager_signature || null,
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading signature defaults:', error);
+    }
+  };
+  
+  // Save signature values as defaults in database
+  const saveSignatureDefaults = async (signatureData) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Check if a record exists
+      const { data: existing, error: fetchError } = await supabase
+        .from('signature_defaults')
+        .select('id')
+        .maybeSingle();
+      
+      // If table doesn't exist or isn't accessible, log warning
+      if (fetchError) {
+        console.warn('⚠️ Signature defaults table not ready. Run the database migration: supabase/migrations/add_signature_system.sql');
+        return;
+      }
+      
+      if (existing) {
+        // Update existing record
+        const { error } = await supabase
+          .from('signature_defaults')
+          .update({
+            certificate_title: signatureData.certificate_title,
+            operations_manager_name: signatureData.operations_manager_name,
+            operations_manager_signature: signatureData.operations_manager_signature,
+            safety_officer_name: signatureData.safety_officer_name,
+            safety_officer_signature: signatureData.safety_officer_signature,
+            hr_manager_name: signatureData.hr_manager_name,
+            hr_manager_signature: signatureData.hr_manager_signature,
+            general_manager_name: signatureData.general_manager_name,
+            general_manager_signature: signatureData.general_manager_signature,
+            updated_by: user?.id
+          })
+          .eq('id', existing.id);
+        
+        if (error) {
+          console.error('❌ Failed to update signature defaults:', error.message);
+        }
+      } else {
+        // Insert new record if none exists
+        const { error } = await supabase
+          .from('signature_defaults')
+          .insert({
+            certificate_title: signatureData.certificate_title,
+            operations_manager_name: signatureData.operations_manager_name,
+            operations_manager_signature: signatureData.operations_manager_signature,
+            safety_officer_name: signatureData.safety_officer_name,
+            safety_officer_signature: signatureData.safety_officer_signature,
+            hr_manager_name: signatureData.hr_manager_name,
+            hr_manager_signature: signatureData.hr_manager_signature,
+            general_manager_name: signatureData.general_manager_name,
+            general_manager_signature: signatureData.general_manager_signature,
+            updated_by: user?.id
+          });
+        
+        if (error) {
+          console.error('❌ Failed to save signature defaults. RLS policy needed:', error.message);
+          console.warn('📋 Run this SQL in Supabase to fix:\n\nCREATE POLICY "Allow authenticated users to insert" ON signature_defaults FOR INSERT TO authenticated WITH CHECK (true);\nCREATE POLICY "Allow authenticated users to update" ON signature_defaults FOR UPDATE TO authenticated USING (true);');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error with signature defaults:', error.message);
+    }
+  };
   
   // Check certificate status for completed trainings
   // NOTE: Disabled until database setup is complete
@@ -406,22 +518,6 @@ function HrTrainings() {
     }
   };
 
-  // Fetch certificate templates
-  const fetchCertificateTemplates = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('certificate_templates')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
-      
-      if (error) throw error;
-      setCertificateTemplates(data || []);
-    } catch (err) {
-      console.error('Error fetching certificate templates:', err);
-    }
-  };
-
   // Filter employees based on search query (from employees table)
   const filteredEmployees = employeeSearchQuery
     ? employeeOptions.filter(emp =>
@@ -451,6 +547,20 @@ function HrTrainings() {
   const onEditChange = (e) => {
     const { name, value } = e.target;
     setEditForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleSignatureUpload = (role, file) => {
+    if (file) {
+      setSignatureFiles(prev => ({ ...prev, [role]: file }));
+      setForm(prev => ({ ...prev, [`${role}_signature`]: file }));
+    }
+  };
+
+  const handleSignatureUploadEdit = (role, file) => {
+    if (file) {
+      setSignatureFilesEdit(prev => ({ ...prev, [role]: file }));
+      setEditForm(prev => ({ ...prev, [`${role}_signature`]: file }));
+    }
   };
 
   const handleEmployeeSelect = (employee) => {
@@ -609,7 +719,6 @@ function HrTrainings() {
     if (!form.venue) errors.venue = true;
     if (!form.description) errors.description = true;
     if (!attendees || attendees.length === 0) errors.attendees = true;
-    if (!selectedTemplateId || selectedTemplateId === "") errors.certificateTemplate = true;
     
     // If there are validation errors, highlight fields and stop
     if (Object.keys(errors).length > 0) {
@@ -692,63 +801,56 @@ function HrTrainings() {
         uploadedImageUrl = publicUrl;
       }
 
-      // Handle certificate template upload if needed
-      let certificateTemplateId = selectedTemplateId || null;
-      
-      if (uploadNewTemplate && newTemplateFile && newTemplateName) {
-        try {
-          // Get current user
-          const { data: { user }, error: authError } = await supabase.auth.getUser();
-          if (authError || !user) throw new Error('Not authenticated');
+      // Upload signature files (only if new files selected, otherwise use existing URLs)
+      const signatureUrls = {
+        operations_manager: form.operations_manager_signature,
+        safety_officer: form.safety_officer_signature,
+        hr_manager: form.hr_manager_signature,
+        general_manager: form.general_manager_signature
+      };
 
-          // Generate unique file path
-          const timestamp = Date.now();
-          const fileName = `${timestamp}_${newTemplateFile.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
-          const filePath = `templates/${fileName}`;
+      for (const [role, file] of Object.entries(signatureFiles)) {
+        if (file) {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${role}_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+          const filePath = `signatures/${fileName}`;
 
-          // Upload template file to storage
           const { data: uploadData, error: uploadError } = await supabase.storage
-            .from('certificate-templates')
-            .upload(filePath, newTemplateFile, {
+            .from('schedule-trainings')
+            .upload(filePath, file, {
               cacheControl: '3600',
               upsert: false
             });
 
-          if (uploadError) throw uploadError;
+          if (uploadError) {
+            console.error(`Error uploading ${role} signature:`, uploadError);
+            setAlertMessage(`Failed to upload ${role.replace('_', ' ')} signature: ${uploadError.message}`);
+            setShowAlertModal(true);
+            setIsCreatingTraining(false);
+            return;
+          }
 
           // Get public URL
-          const { data: urlData } = supabase.storage
-            .from('certificate-templates')
+          const { data: { publicUrl } } = supabase.storage
+            .from('schedule-trainings')
             .getPublicUrl(filePath);
-
-          // Save template info to database
-          const { data: templateData, error: dbError } = await supabase
-            .from('certificate_templates')
-            .insert([
-              {
-                template_name: newTemplateName,
-                file_url: urlData.publicUrl,
-                file_path: filePath,
-                uploaded_by: user.id,
-                is_active: true
-              }
-            ])
-            .select()
-            .single();
-
-          if (dbError) throw dbError;
           
-          certificateTemplateId = templateData.id;
-          
-          // Refresh templates list
-          await fetchCertificateTemplates();
-        } catch (err) {
-          console.error('Error uploading certificate template:', err);
-          setAlertMessage(`Warning: Training will be created but certificate template upload failed: ${err.message}`);
-          setShowAlertModal(true);
-          // Continue with training creation even if template upload fails
+          signatureUrls[role] = publicUrl;
         }
       }
+
+      // Save signature values as defaults for future trainings
+      saveSignatureDefaults({
+        certificate_title: form.certificate_title,
+        operations_manager_name: form.operations_manager_name,
+        operations_manager_signature: signatureUrls.operations_manager || form.operations_manager_signature,
+        safety_officer_name: form.safety_officer_name,
+        safety_officer_signature: signatureUrls.safety_officer || form.safety_officer_signature,
+        hr_manager_name: form.hr_manager_name,
+        hr_manager_signature: signatureUrls.hr_manager || form.hr_manager_signature,
+        general_manager_name: form.general_manager_name,
+        general_manager_signature: signatureUrls.general_manager || form.general_manager_signature
+      });
 
       const { data, error } = await supabase
         .from('trainings')
@@ -766,7 +868,16 @@ function HrTrainings() {
             created_by: currentUserId || null,
             schedule_type: form.schedule_type || 'onsite',
             image_url: uploadedImageUrl,
-            certificate_template_id: certificateTemplateId
+            certificate_title: form.certificate_title || 'Certificate of Completion',
+            // Signature data
+            operations_manager_name: form.operations_manager_name || null,
+            operations_manager_signature: signatureUrls.operations_manager,
+            safety_officer_name: form.safety_officer_name || null,
+            safety_officer_signature: signatureUrls.safety_officer,
+            hr_manager_name: form.hr_manager_name || null,
+            hr_manager_signature: signatureUrls.hr_manager,
+            general_manager_name: form.general_manager_name || null,
+            general_manager_signature: signatureUrls.general_manager
           }
         ])
         .select()
@@ -785,13 +896,27 @@ function HrTrainings() {
         await sendTrainingEmails(data, attendees);
       }
 
-      // Reset form
-      setForm({ title: "", venue: "", duration_start_date: "", time: "", end_date: "", end_time: "", description: "", schedule_type: "onsite", image_url: "" });
+      // Reset form but reload signature defaults from database
+      await loadSignatureDefaults();
+      setForm(prev => ({ 
+        ...prev,
+        title: "", 
+        venue: "", 
+        duration_start_date: "", 
+        time: "", 
+        end_date: "", 
+        end_time: "", 
+        description: "", 
+        schedule_type: "onsite", 
+        image_url: ""
+      }));
       setImageFile(null);
-      setSelectedTemplateId("");
-      setUploadNewTemplate(false);
-      setNewTemplateName("");
-      setNewTemplateFile(null);
+      setSignatureFiles({
+        operations_manager: null,
+        safety_officer: null,
+        hr_manager: null,
+        general_manager: null
+      });
       setAttendees([]);
       setEmployeeSearchQuery("");
       setSelectedPositions([]);
@@ -904,47 +1029,55 @@ function HrTrainings() {
         uploadedImageUrl = publicUrl;
       }
 
-      // Handle certificate template upload if needed for edit
-      let certificateTemplateId = selectedTemplateIdEdit || selectedTraining.certificate_template_id || null;
-      
-      if (uploadNewTemplateEdit && newTemplateNameEdit && newTemplateFileEdit) {
-        try {
-          // Upload template file to storage
-          const templateFileName = `${Date.now()}_${newTemplateFileEdit.name}`;
-          const { data: templateUploadData, error: templateUploadError } = await supabase.storage
-            .from('certificate-templates')
-            .upload(templateFileName, newTemplateFileEdit, {
+      // Upload signature files for edit (only if new files selected, otherwise use existing URLs)
+      const signatureUrls = {
+        operations_manager: editForm.operations_manager_signature || selectedTraining.operations_manager_signature || null,
+        safety_officer: editForm.safety_officer_signature || selectedTraining.safety_officer_signature || null,
+        hr_manager: editForm.hr_manager_signature || selectedTraining.hr_manager_signature || null,
+        general_manager: editForm.general_manager_signature || selectedTraining.general_manager_signature || null
+      };
+
+      for (const [role, file] of Object.entries(signatureFilesEdit)) {
+        if (file) {
+          const fileExt = file.name.split('.').pop();
+          const fileName = `${role}_${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+          const filePath = `signatures/${fileName}`;
+
+          const { data: uploadData, error: uploadError } = await supabase.storage
+            .from('schedule-trainings')
+            .upload(filePath, file, {
               cacheControl: '3600',
               upsert: false
             });
 
-          if (templateUploadError) throw templateUploadError;
+          if (uploadError) {
+            console.error(`Error uploading ${role} signature:`, uploadError);
+            setAlertMessage(`Failed to upload ${role.replace('_', ' ')} signature: ${uploadError.message}`);
+            setShowAlertModal(true);
+            return;
+          }
 
-          // Get public URL for the template
-          const { data: { publicUrl: templatePublicUrl } } = supabase.storage
-            .from('certificate-templates')
-            .getPublicUrl(templateFileName);
-
-          // Insert template record into database
-          const { data: templateData, error: templateDbError } = await supabase
-            .from('certificate_templates')
-            .insert([{
-              template_name: newTemplateNameEdit,
-              file_url: templatePublicUrl,
-              is_active: true
-            }])
-            .select()
-            .single();
-
-          if (templateDbError) throw templateDbError;
+          // Get public URL
+          const { data: { publicUrl } } = supabase.storage
+            .from('schedule-trainings')
+            .getPublicUrl(filePath);
           
-          certificateTemplateId = templateData.id;
-        } catch (err) {
-          console.error('Error uploading certificate template:', err);
-          setAlertMessage(`Warning: Training will be updated but certificate template upload failed: ${err.message}`);
-          setShowAlertModal(true);
+          signatureUrls[role] = publicUrl;
         }
       }
+
+      // Save signature values as defaults for future trainings
+      saveSignatureDefaults({
+        certificate_title: editForm.certificate_title,
+        operations_manager_name: editForm.operations_manager_name,
+        operations_manager_signature: signatureUrls.operations_manager || editForm.operations_manager_signature,
+        safety_officer_name: editForm.safety_officer_name,
+        safety_officer_signature: signatureUrls.safety_officer || editForm.safety_officer_signature,
+        hr_manager_name: editForm.hr_manager_name,
+        hr_manager_signature: signatureUrls.hr_manager || editForm.hr_manager_signature,
+        general_manager_name: editForm.general_manager_name,
+        general_manager_signature: signatureUrls.general_manager || editForm.general_manager_signature
+      });
 
       const { data, error } = await supabase
         .from('trainings')
@@ -960,7 +1093,16 @@ function HrTrainings() {
           is_active: isActiveFlag,
           schedule_type: editForm.schedule_type || 'onsite',
           image_url: uploadedImageUrl,
-          certificate_template_id: certificateTemplateId
+          certificate_title: editForm.certificate_title || 'Certificate of Completion',
+          // Signature data
+          operations_manager_name: editForm.operations_manager_name || null,
+          operations_manager_signature: signatureUrls.operations_manager,
+          safety_officer_name: editForm.safety_officer_name || null,
+          safety_officer_signature: signatureUrls.safety_officer,
+          hr_manager_name: editForm.hr_manager_name || null,
+          hr_manager_signature: signatureUrls.hr_manager,
+          general_manager_name: editForm.general_manager_name || null,
+          general_manager_signature: signatureUrls.general_manager
         })
         .eq('id', selectedTraining.id)
         .select()
@@ -1064,7 +1206,16 @@ function HrTrainings() {
       end_date: isSameDay ? "" : endDateStr,
       end_time: endTime,
       description: training.description || "",
-      schedule_type: training.schedule_type || "onsite"
+      schedule_type: training.schedule_type || "onsite",
+      certificate_title: training.certificate_title || "Certificate of Completion",
+      operations_manager_name: training.operations_manager_name || "",
+      operations_manager_signature: training.operations_manager_signature || null,
+      safety_officer_name: training.safety_officer_name || "",
+      safety_officer_signature: training.safety_officer_signature || null,
+      hr_manager_name: training.hr_manager_name || "",
+      hr_manager_signature: training.hr_manager_signature || null,
+      general_manager_name: training.general_manager_name || "",
+      general_manager_signature: training.general_manager_signature || null
     });
     setAttendeesEdit(
       (training.attendees || []).map((a) =>
@@ -1075,11 +1226,13 @@ function HrTrainings() {
     setSelectedPositionsEdit([]);
     setEmployeesByPositionMapEdit({});
     
-    // Reset certificate template fields
-    setSelectedTemplateIdEdit(training.certificate_template_id || "");
-    setUploadNewTemplateEdit(false);
-    setNewTemplateNameEdit("");
-    setNewTemplateFileEdit(null);
+    // Reset signature files
+    setSignatureFilesEdit({
+      operations_manager: null,
+      safety_officer: null,
+      hr_manager: null,
+      general_manager: null
+    });
     
     setActionMenuOpen(null);
     setShowEdit(true);
@@ -1183,28 +1336,15 @@ function HrTrainings() {
   const saveAttendance = async () => {
     if (!selectedTraining) return;
     
-    // Store the attendance data and show confirmation modal
-    setPendingAttendanceSave({ training: selectedTraining, attendance: attendance });
-    setShowCertificateConfirmModal(true);
-  };
-  
-  // Confirm attendance save with optional certificate generation
-  const confirmAttendanceSave = async (generateCertificates) => {
-    setShowCertificateConfirmModal(false);
-    
-    if (!pendingAttendanceSave) return;
-    
-    const { training, attendance: attendanceData } = pendingAttendanceSave;
-
     try {
-      // Save attendance
+      // Save attendance and mark as completed
       const { error } = await supabase
         .from('trainings')
         .update({
-          attendance: attendanceData,
+          attendance: attendance,
           is_active: false
         })
-        .eq('id', training.id);
+        .eq('id', selectedTraining.id);
 
       if (error) {
         console.error('Error saving attendance:', error);
@@ -1214,36 +1354,25 @@ function HrTrainings() {
       }
 
       setShowAttendance(false);
-      setSelectedTraining(null);
-      setPendingAttendanceSave(null);
       
-      // Generate and send certificates if confirmed
-      if (generateCertificates) {
-        // Refresh the training data first
-        await fetchTrainings();
-        
-        // Get updated training data
-        const { data: updatedTraining, error: fetchError } = await supabase
-          .from('trainings')
-          .select('*')
-          .eq('id', training.id)
-          .single();
-        
-        if (!fetchError && updatedTraining) {
-          // Trigger certificate generation
-          await handleSendCertificates(updatedTraining);
-        }
-      } else {
-        // Just refresh without generating certificates
-        fetchTrainings();
-        setSuccessMessage('Attendance saved and training marked as completed!');
-        setShowSuccessModal(true);
+      // Get updated training data with attendance
+      const { data: updatedTraining, error: fetchError } = await supabase
+        .from('trainings')
+        .select('*')
+        .eq('id', selectedTraining.id)
+        .single();
+      
+      if (!fetchError && updatedTraining) {
+        // Automatically generate and send certificates for attendees marked as present
+        await handleSendCertificates(updatedTraining);
       }
+      
+      setSelectedTraining(null);
+      fetchTrainings();
     } catch (error) {
       console.error('Error saving attendance:', error);
       setAlertMessage('Failed to save attendance');
       setShowAlertModal(true);
-      setPendingAttendanceSave(null);
     }
   };
   
@@ -1275,64 +1404,12 @@ function HrTrainings() {
       return;
     }
     
-    // Check if certificates already exist
-    const certCheck = certificateStatus[training.id];
-    if (certCheck && certCheck.hasCertificates && certCheck.count > 0) {
-      // Show duplicate warning modal
-      setDuplicateWarningData({
-        training,
-        presentAttendees,
-        certCount: certCheck.count
-      });
-      setShowDuplicateWarningModal(true);
-      return;
-    }
-    
-    // Show employee selection modal
-    setTrainingForCertGeneration(training);
-    setSelectedEmployeesForCerts(presentAttendees.map(emp => emp.name));
-    setShowEmployeeSelectionModal(true);
-    setActionMenuOpen(null);
-  };
-  
-  // Proceed with certificate generation after duplicate confirmation
-  const proceedWithCertificateGeneration = () => {
-    setShowDuplicateWarningModal(false);
-    if (duplicateWarningData) {
-      setTrainingForCertGeneration(duplicateWarningData.training);
-      setSelectedEmployeesForCerts(duplicateWarningData.presentAttendees.map(emp => emp.name));
-      setShowEmployeeSelectionModal(true);
-      setDuplicateWarningData(null);
-    }
-  };
-  
-  // Generate certificates for selected employees
-  const generateSelectedCertificates = async () => {
-    if (!trainingForCertGeneration || selectedEmployeesForCerts.length === 0) {
-      setAlertMessage('Please select at least one employee');
-      setShowAlertModal(true);
-      return;
-    }
-    
-    setShowEmployeeSelectionModal(false);
-    
-    // Get full attendee data for selected employees
-    const training = trainingForCertGeneration;
-    const selectedAttendees = [];
-    for (const name of selectedEmployeesForCerts) {
-      const matchingEmployee = employeeOptions.find(emp => emp.name === name);
-      selectedAttendees.push({
-        name: name,
-        userId: matchingEmployee?.id || null,
-        email: matchingEmployee?.email || null
-      });
-    }
-    
+    // Automatically generate certificates for all present employees
     try {
       // Show modal and initialize progress
       setShowCertificateModal(true);
       setCertificateProgress({
-        total: selectedAttendees.length,
+        total: presentAttendees.length,
         current: 0,
         status: 'preparing',
         message: 'Preparing certificate template...',
@@ -1346,17 +1423,17 @@ function HrTrainings() {
       setCertificateProgress(prev => ({
         ...prev,
         status: 'generating',
-        message: `Generating certificate 1 of ${selectedAttendees.length}...`
+        message: `Generating certificate 1 of ${presentAttendees.length}...`
       }));
       
-      const result = await generateTrainingCertificates(training, selectedAttendees);
+      const result = await generateTrainingCertificates(training, presentAttendees);
       
       if (result.success) {
         const { successful, failed } = result.results;
         
         setCertificateProgress({
-          total: selectedAttendees.length,
-          current: selectedAttendees.length,
+          total: presentAttendees.length,
+          current: presentAttendees.length,
           status: 'complete',
           message: `Successfully generated ${successful.length} certificate(s)${failed.length > 0 ? ` (${failed.length} failed)` : ''}`,
           successful,
@@ -1385,8 +1462,6 @@ function HrTrainings() {
       }));
     } finally {
       setGeneratingCertificates(null);
-      setTrainingForCertGeneration(null);
-      setSelectedEmployeesForCerts([]);
     }
   };
 
@@ -1887,42 +1962,13 @@ function HrTrainings() {
                         </svg>
                       </button>
                       {actionMenuOpen === training.id && (
-                        <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSendCertificates(training);
-                            }}
-                            disabled={generatingCertificates === training.id}
-                            className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed border-b border-gray-100"
-                          >
-                            {generatingCertificates === training.id ? (
-                              <>
-                                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Generating...
-                              </>
-                            ) : (
-                              <>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                Send Certificates
-                                {certificateStatus[training.id]?.hasCertificates && (
-                                  <span className="ml-auto text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">
-                                    {certificateStatus[training.id].count}
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </button>
+                        <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               onDelete(training);
                             }}
-                            className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                            className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors rounded-lg"
                           >
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -2113,7 +2159,7 @@ function HrTrainings() {
                                       if (existingCerts?.certificate_url) {
                                         window.open(existingCerts.certificate_url, '_blank');
                                       } else {
-                                        alert('Certificate not yet generated. Please use "Send Certificates" from the menu.');
+                                        alert('Certificate not yet generated. Certificates are automatically generated when attendance is marked.');
                                       }
                                     } catch (error) {
                                       console.error('Error:', error);
@@ -2345,180 +2391,166 @@ function HrTrainings() {
                       />
                     </div>
                     
-                    {/* Certificate Template Section */}
-                    <div className={`pt-4 mt-4 ${fieldErrors.certificateTemplate ? 'border-t-2 border-red-500' : 'border-t border-gray-200'}`}>
+                    {/* Certificate Title Field */}
+                    <div className="pt-4 mt-4 border-t border-gray-200">
+                      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                        Certificate Title <span className="text-gray-500 font-normal">(e.g., Certificate of Completion, Certificate of Participation)</span>
+                      </label>
+                      <input
+                        type="text"
+                        name="certificate_title"
+                        value={form.certificate_title}
+                        onChange={onChange}
+                        placeholder="Certificate of Completion"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                    
+                    {/* Signature Fields Section */}
+                    <div className="pt-4 mt-4 border-t border-gray-200">
                       <div className="flex items-center gap-2 mb-3">
-                        <label className={`text-sm font-semibold ${fieldErrors.certificateTemplate ? 'text-red-600' : 'text-gray-800'}`}>
-                          Certificate Template
+                        <label className="text-sm font-semibold text-gray-800">
+                          Certificate Signatures <span className="text-gray-500 font-normal">(Optional)</span>
                         </label>
                         <div className="group relative">
                           <svg className="w-4 h-4 text-blue-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                           <div className="absolute left-0 top-6 w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                            Upload a Word (.docx) template with placeholders to generate certificates for attendees automatically after the training.
+                            Add names and signature images for the four signatories that will appear on the training certificates.
                           </div>
                         </div>
                       </div>
                       
-                      {/* Toggle between existing and new template */}
-                      <div className="flex gap-2 mb-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadNewTemplate(false);
-                            // Clear upload fields when switching to existing
-                            setNewTemplateName("");
-                            setNewTemplateFile(null);
-                          }}
-                          disabled={newTemplateName || newTemplateFile}
-                          className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                            !uploadNewTemplate
-                              ? 'bg-blue-600 text-white shadow-md'
-                              : (newTemplateName || newTemplateFile)
-                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          Choose Existing
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadNewTemplate(true);
-                            // Clear selected template when switching to upload
-                            setSelectedTemplateId("");
-                          }}
-                          disabled={selectedTemplateId !== ""}
-                          className={`flex-1 px-4 py-2 text-sm font-medium rounded-lg transition-all ${
-                            uploadNewTemplate
-                              ? 'bg-blue-600 text-white shadow-md'
-                              : selectedTemplateId !== ""
-                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          Upload New
-                        </button>
-                      </div>
-                      
-                      {!uploadNewTemplate ? (
-                        /* Select from existing templates */
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Operations Manager */}
                         <div className="space-y-2">
-                          <select
-                            value={selectedTemplateId}
-                            onChange={(e) => {
-                              setSelectedTemplateId(e.target.value);
-                              if (fieldErrors.certificateTemplate) {
-                                setFieldErrors((prev) => {
-                                  const newErrors = { ...prev };
-                                  delete newErrors.certificateTemplate;
-                                  return newErrors;
-                                });
-                              }
-                            }}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-colors"
-                          >
-                            <option value="">Select a template...</option>
-                            {certificateTemplates.map(template => (
-                              <option key={template.id} value={template.id}>
-                                {template.template_name}
-                              </option>
-                            ))}
-                          </select>
-                          {certificateTemplates.length === 0 && (
-                            <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                              </svg>
-                              <span>No templates available. Switch to "Upload New" to create one.</span>
-                            </div>
-                          )}
-                          {selectedTemplateId && (
-                            <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
-                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <label className="block text-xs font-medium text-gray-700">Operations Manager Name</label>
+                          <input
+                            type="text"
+                            name="operations_manager_name"
+                            value={form.operations_manager_name}
+                            onChange={onChange}
+                            placeholder="Full name"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <label className="block text-xs font-medium text-gray-700 mt-2">Signature Image</label>
+                          {form.operations_manager_signature && !signatureFiles.operations_manager && (
+                            <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
-                              <span>Template selected. Upload option is now disabled.</span>
+                              <span className="text-xs text-green-700">Using saved signature</span>
+                              <a href={form.operations_manager_signature} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline ml-auto">View</a>
                             </div>
                           )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSignatureUpload('operations_manager', e.target.files?.[0])}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {signatureFiles.operations_manager && (
+                            <p className="text-xs text-blue-600 mt-1">New file selected: {signatureFiles.operations_manager.name}</p>
+                          )}
                         </div>
-                      ) : (
-                        /* Upload new template */
-                        <div className="space-y-3">
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1.5">Template Name</label>
-                            <input
-                              type="text"
-                              value={newTemplateName}
-                              onChange={(e) => setNewTemplateName(e.target.value)}
-                              placeholder="e.g., Training Certificate 2024"
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1.5">Upload Template (.docx)</label>
-                            <input
-                              type="file"
-                              accept=".docx"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
-                                if (file) {
-                                  if (!file.name.endsWith('.docx')) {
-                                    setAlertMessage('Please select a Word document (.docx) file');
-                                    setShowAlertModal(true);
-                                    e.target.value = '';
-                                    return;
-                                  }
-                                  setNewTemplateFile(file);
-                                }
-                              }}
-                              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                            />
-                            {newTemplateFile && (
-                              <div className="mt-2 flex items-center gap-2 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg p-2">
-                                <svg className="w-4 h-4 text-blue-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                <span className="truncate flex-1">{newTemplateFile.name}</span>
-                              </div>
-                            )}
-                          </div>
-                          {(newTemplateName || newTemplateFile) && (
-                            <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg p-2">
-                              <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+
+                        {/* Safety Officer */}
+                        <div className="space-y-2">
+                          <label className="block text-xs font-medium text-gray-700">Safety Officer Name</label>
+                          <input
+                            type="text"
+                            name="safety_officer_name"
+                            value={form.safety_officer_name}
+                            onChange={onChange}
+                            placeholder="Full name"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <label className="block text-xs font-medium text-gray-700 mt-2">Signature Image</label>
+                          {form.safety_officer_signature && !signatureFiles.safety_officer && (
+                            <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
-                              <span>Uploading new template. Choose existing option is now disabled.</span>
+                              <span className="text-xs text-green-700">Using saved signature</span>
+                              <a href={form.safety_officer_signature} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline ml-auto">View</a>
                             </div>
                           )}
-                          <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3">
-                            <div className="flex items-start gap-2 mb-2">
-                              <svg className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <div>
-                                <p className="font-semibold text-sm text-blue-900 mb-1">Template Placeholders</p>
-                                <p className="text-xs text-blue-800 mb-2">Use these in your Word document. They'll be replaced automatically:</p>
-                                <div className="grid grid-cols-2 gap-2 text-xs">
-                                  <div className="bg-white rounded px-2 py-1 border border-blue-200">
-                                    <code className="text-blue-700 font-mono">{'{employee_name}'}</code>
-                                  </div>
-                                  <div className="bg-white rounded px-2 py-1 border border-blue-200">
-                                    <code className="text-blue-700 font-mono">{'{training_title}'}</code>
-                                  </div>
-                                  <div className="bg-white rounded px-2 py-1 border border-blue-200">
-                                    <code className="text-blue-700 font-mono">{'{venue}'}</code>
-                                  </div>
-                                  <div className="bg-white rounded px-2 py-1 border border-blue-200">
-                                    <code className="text-blue-700 font-mono">{'{completion_date}'}</code>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSignatureUpload('safety_officer', e.target.files?.[0])}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {signatureFiles.safety_officer && (
+                            <p className="text-xs text-blue-600 mt-1">New file selected: {signatureFiles.safety_officer.name}</p>
+                          )}
                         </div>
-                      )}
+
+                        {/* HR Manager */}
+                        <div className="space-y-2">
+                          <label className="block text-xs font-medium text-gray-700">HR Manager Name</label>
+                          <input
+                            type="text"
+                            name="hr_manager_name"
+                            value={form.hr_manager_name}
+                            onChange={onChange}
+                            placeholder="Full name"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <label className="block text-xs font-medium text-gray-700 mt-2">Signature Image</label>
+                          {form.hr_manager_signature && !signatureFiles.hr_manager && (
+                            <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span className="text-xs text-green-700">Using saved signature</span>
+                              <a href={form.hr_manager_signature} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline ml-auto">View</a>
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSignatureUpload('hr_manager', e.target.files?.[0])}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {signatureFiles.hr_manager && (
+                            <p className="text-xs text-blue-600 mt-1">New file selected: {signatureFiles.hr_manager.name}</p>
+                          )}
+                        </div>
+
+                        {/* General Manager */}
+                        <div className="space-y-2">
+                          <label className="block text-xs font-medium text-gray-700">General Manager Name</label>
+                          <input
+                            type="text"
+                            name="general_manager_name"
+                            value={form.general_manager_name}
+                            onChange={onChange}
+                            placeholder="Full name"
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <label className="block text-xs font-medium text-gray-700 mt-2">Signature Image</label>
+                          {form.general_manager_signature && !signatureFiles.general_manager && (
+                            <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
+                              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <span className="text-xs text-green-700">Using saved signature</span>
+                              <a href={form.general_manager_signature} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline ml-auto">View</a>
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSignatureUpload('general_manager', e.target.files?.[0])}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {signatureFiles.general_manager && (
+                            <p className="text-xs text-blue-600 mt-1">New file selected: {signatureFiles.general_manager.name}</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     
                     {/* Attendees Section */}
@@ -2726,14 +2758,16 @@ function HrTrainings() {
                 type="button"
                 onClick={() => {
                   setShowAdd(false);
-                  setSelectedTemplateId("");
-                  setUploadNewTemplate(false);
-                  setNewTemplateName("");
-                  setNewTemplateFile(null);
                   setEmployeeSearchQuery("");
                   setSelectedPositions([]);
                   setEmployeesByPositionMap({});
                   setShowEmployeeSuggestions(false);
+                  setSignatureFiles({
+                    operations_manager: null,
+                    safety_officer: null,
+                    hr_manager: null,
+                    general_manager: null
+                  });
                 }}
                 className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors font-medium text-sm border border-gray-300"
               >
@@ -2943,119 +2977,120 @@ function HrTrainings() {
                       />
                     </div>
                     
-                    {/* Certificate Template Section */}
+                    {/* Certificate Title Field */}
+                    <div className="border-t border-gray-200 pt-3">
+                      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                        Certificate Title <span className="text-gray-500 font-normal">(e.g., Certificate of Completion, Certificate of Participation)</span>
+                      </label>
+                      <input
+                        type="text"
+                        name="certificate_title"
+                        value={editForm.certificate_title}
+                        onChange={onEditChange}
+                        placeholder="Certificate of Completion"
+                        className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                    
+                    {/* Signature Fields Section */}
                     <div className="border-t border-gray-200 pt-3">
                       <label className="block text-xs font-medium text-gray-700 mb-2">
-                        Certificate Template <span className="text-gray-500 font-normal">(Optional)</span>
+                        Certificate Signatures <span className="text-gray-500 font-normal">(Optional)</span>
                       </label>
                       
-                      {/* Toggle between existing and new template */}
-                      <div className="flex gap-3 mb-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadNewTemplateEdit(false);
-                            // Clear upload fields when switching to existing
-                            setNewTemplateNameEdit("");
-                            setNewTemplateFileEdit(null);
-                          }}
-                          disabled={newTemplateNameEdit || newTemplateFileEdit}
-                          className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
-                            !uploadNewTemplateEdit
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : (newTemplateNameEdit || newTemplateFileEdit)
-                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          Choose Existing
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadNewTemplateEdit(true);
-                            // Clear selected template when switching to upload
-                            setSelectedTemplateIdEdit("");
-                          }}
-                          disabled={selectedTemplateIdEdit !== ""}
-                          className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-all ${
-                            uploadNewTemplateEdit
-                              ? 'bg-blue-600 text-white shadow-sm'
-                              : selectedTemplateIdEdit !== ""
-                              ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
-                        >
-                          Upload New
-                        </button>
-                      </div>
-                      
-                      {!uploadNewTemplateEdit ? (
-                        /* Select from existing templates */
-                        <div>
-                          <select
-                            value={selectedTemplateIdEdit}
-                            onChange={(e) => setSelectedTemplateIdEdit(e.target.value)}
-                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white transition-colors"
-                          >
-                            <option value="">No template</option>
-                            {certificateTemplates.map(template => (
-                              <option key={template.id} value={template.id}>
-                                {template.template_name}
-                              </option>
-                            ))}
-                          </select>
-                          {certificateTemplates.length === 0 && (
-                            <p className="text-xs text-gray-500 mt-1">No templates available. Upload a new one.</p>
-                          )}
-                          {selectedTemplateIdEdit && (
-                            <p className="text-xs text-green-700 mt-1 font-medium">✓ Template selected. Upload option is now disabled.</p>
-                          )}
-                        </div>
-                      ) : (
-                        /* Upload new template */
-                        <div className="space-y-2">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {/* Operations Manager */}
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-medium text-gray-600">Operations Manager Name</label>
                           <input
                             type="text"
-                            value={newTemplateNameEdit}
-                            onChange={(e) => setNewTemplateNameEdit(e.target.value)}
-                            placeholder="Template name (e.g., Training Certificate 2024)"
+                            name="operations_manager_name"
+                            value={editForm.operations_manager_name}
+                            onChange={onEditChange}
+                            placeholder="Full name"
                             className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           />
+                          <label className="block text-xs font-medium text-gray-600 mt-1">Signature Image</label>
                           <input
                             type="file"
-                            accept=".docx"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                if (!file.name.endsWith('.docx')) {
-                                  setAlertMessage('Please select a Word document (.docx) file');
-                                  setShowAlertModal(true);
-                                  e.target.value = '';
-                                  return;
-                                }
-                                setNewTemplateFileEdit(file);
-                              }
-                            }}
-                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                            accept="image/*"
+                            onChange={(e) => handleSignatureUploadEdit('operations_manager', e.target.files?.[0])}
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                           />
-                          {newTemplateFileEdit && (
-                            <p className="text-xs text-gray-500 truncate">{newTemplateFileEdit.name}</p>
+                          {editForm.operations_manager_signature && (
+                            <p className="text-xs text-gray-500">Current signature saved</p>
                           )}
-                          {(newTemplateNameEdit || newTemplateFileEdit) && (
-                            <p className="text-xs text-green-700 font-medium">✓ Uploading new template. Choose existing option is now disabled.</p>
-                          )}
-                          <div className="bg-blue-50 border border-blue-200 p-2 rounded text-xs">
-                            <p className="font-semibold text-blue-900 mb-1">📝 Placeholders:</p>
-                            <p className="text-blue-800">
-                              <code className="bg-white px-1 rounded">{'{employee_name}'}</code>,{' '}
-                              <code className="bg-white px-1 rounded">{'{training_title}'}</code>,{' '}
-                              <code className="bg-white px-1 rounded">{'{venue}'}</code>,{' '}
-                              <code className="bg-white px-1 rounded">{'{completion_date}'}</code>
-                            </p>
-                          </div>
                         </div>
-                      )}
+
+                        {/* Safety Officer */}
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-medium text-gray-600">Safety Officer Name</label>
+                          <input
+                            type="text"
+                            name="safety_officer_name"
+                            value={editForm.safety_officer_name}
+                            onChange={onEditChange}
+                            placeholder="Full name"
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <label className="block text-xs font-medium text-gray-600 mt-1">Signature Image</label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSignatureUploadEdit('safety_officer', e.target.files?.[0])}
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {editForm.safety_officer_signature && (
+                            <p className="text-xs text-gray-500">Current signature saved</p>
+                          )}
+                        </div>
+
+                        {/* HR Manager */}
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-medium text-gray-600">HR Manager Name</label>
+                          <input
+                            type="text"
+                            name="hr_manager_name"
+                            value={editForm.hr_manager_name}
+                            onChange={onEditChange}
+                            placeholder="Full name"
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <label className="block text-xs font-medium text-gray-600 mt-1">Signature Image</label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSignatureUploadEdit('hr_manager', e.target.files?.[0])}
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {editForm.hr_manager_signature && (
+                            <p className="text-xs text-gray-500">Current signature saved</p>
+                          )}
+                        </div>
+
+                        {/* General Manager */}
+                        <div className="space-y-1.5">
+                          <label className="block text-xs font-medium text-gray-600">General Manager Name</label>
+                          <input
+                            type="text"
+                            name="general_manager_name"
+                            value={editForm.general_manager_name}
+                            onChange={onEditChange}
+                            placeholder="Full name"
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          />
+                          <label className="block text-xs font-medium text-gray-600 mt-1">Signature Image</label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSignatureUploadEdit('general_manager', e.target.files?.[0])}
+                            className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                          />
+                          {editForm.general_manager_signature && (
+                            <p className="text-xs text-gray-500">Current signature saved</p>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     
                     {/* Attendees Section */}
@@ -3268,6 +3303,12 @@ function HrTrainings() {
                   setEmployeesByPositionMapEdit({});
                   setShowEmployeeSuggestionsEdit(false);
                   setImageFileEdit(null);
+                  setSignatureFilesEdit({
+                    operations_manager: null,
+                    safety_officer: null,
+                    hr_manager: null,
+                    general_manager: null
+                  });
                 }}
                 className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors font-medium text-sm border border-gray-300"
               >
@@ -3564,17 +3605,10 @@ function HrTrainings() {
                   <p className="text-sm text-gray-900 mt-1">{form.venue}</p>
                 </div>
                 
-                {(selectedTemplateId || (uploadNewTemplate && newTemplateName)) && (
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase font-semibold">Certificate Template</p>
-                    <p className="text-sm text-gray-900 mt-1 inline-flex items-center gap-1.5">
-                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      {selectedTemplateId ? certificateTemplates.find(t => t.id === selectedTemplateId)?.template_name : newTemplateName}
-                    </p>
-                  </div>
-                )}
+                <div>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Certificate Title</p>
+                  <p className="text-sm text-gray-900 mt-1">{form.certificate_title || 'Certificate of Completion'}</p>
+                </div>
                 
                 <div>
                   <p className="text-xs text-gray-500 uppercase font-semibold">Attendees ({attendees.length})</p>
@@ -3613,286 +3647,6 @@ function HrTrainings() {
                   </svg>
                 )}
                 {isCreatingTraining ? 'Creating...' : 'Confirm & Create'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Certificate Generation Confirmation Modal */}
-      {showCertificateConfirmModal && pendingAttendanceSave && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowCertificateConfirmModal(false)}>
-          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-blue-50">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">Generate Certificates?</h2>
-                  <p className="text-sm text-gray-600 mt-0.5">Attendance will be saved</p>
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-5">
-              <div className="mb-4">
-                <p className="text-sm text-gray-700 leading-relaxed">
-                  Would you like to automatically generate and send certificates to employees who attended this training?
-                </p>
-              </div>
-              
-              <div className="space-y-3">
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-sm font-semibold text-green-900 mb-1">Generate Now</h4>
-                      <p className="text-xs text-green-800">
-                        Certificates will be generated and sent immediately to employees who were marked as present. 
-                        {pendingAttendanceSave.training.certificate_template_id ? (
-                          <span className="font-medium"> Template is configured for this training.</span>
-                        ) : (
-                          <span className="font-medium text-orange-700"> Note: No template assigned to this training.</span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-sm font-semibold text-gray-900 mb-1">Skip for Now</h4>
-                      <p className="text-xs text-gray-700">
-                        Just save the attendance. You can generate certificates later from the History tab.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {Object.values(pendingAttendanceSave.attendance || {}).filter(Boolean).length > 0 && (
-                <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-xs text-blue-900">
-                    <span className="font-semibold">
-                      {Object.values(pendingAttendanceSave.attendance || {}).filter(Boolean).length}
-                    </span> employee(s) marked as present will receive certificates if you choose to generate now.
-                  </p>
-                </div>
-              )}
-            </div>
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowCertificateConfirmModal(false);
-                  setPendingAttendanceSave(null);
-                }}
-                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => confirmAttendanceSave(false)}
-                className="px-4 py-2 rounded-lg bg-gray-600 text-white hover:bg-gray-700 transition-colors font-medium text-sm"
-              >
-                Skip Certificates
-              </button>
-              <button
-                onClick={() => confirmAttendanceSave(true)}
-                className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700 transition-colors font-medium text-sm shadow-md"
-              >
-                Generate & Send
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Duplicate Certificate Warning Modal */}
-      {showDuplicateWarningModal && duplicateWarningData && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowDuplicateWarningModal(false)}>
-          <div className="bg-white rounded-xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-orange-50 to-red-50">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-gray-900">Duplicate Certificates</h2>
-                  <p className="text-sm text-gray-600 mt-0.5">Certificates already exist</p>
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-5">
-              <div className="mb-4">
-                <p className="text-sm text-gray-700 leading-relaxed">
-                  Certificates have already been generated for this training session. 
-                  <span className="font-semibold text-orange-700"> {duplicateWarningData.certCount} certificate(s)</span> exist.
-                </p>
-                <p className="text-sm text-gray-700 mt-2">
-                  Proceeding will create duplicate certificates. Do you want to continue?
-                </p>
-              </div>
-              
-              <div className="p-4 bg-orange-50 border border-orange-200 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <svg className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <div className="flex-1">
-                    <p className="text-xs text-orange-900">
-                      <span className="font-semibold">Note:</span> This will generate new certificates for the employees you select in the next step. 
-                      Existing certificates will not be deleted.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowDuplicateWarningModal(false);
-                  setDuplicateWarningData(null);
-                }}
-                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={proceedWithCertificateGeneration}
-                className="px-4 py-2 rounded-lg bg-gradient-to-r from-orange-600 to-red-600 text-white hover:from-orange-700 hover:to-red-700 transition-colors font-medium text-sm shadow-md"
-              >
-                Continue Anyway
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Employee Selection Modal for Certificate Generation */}
-      {showEmployeeSelectionModal && trainingForCertGeneration && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowEmployeeSelectionModal(false)}>
-          <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0 shadow-md">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-lg font-bold text-gray-900">Select Employees</h2>
-                  <p className="text-sm text-gray-600 mt-0.5">Choose who will receive certificates</p>
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-5">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-700">
-                  Employees Present ({(() => {
-                    const presentCount = Object.values(trainingForCertGeneration.attendance || {}).filter(Boolean).length;
-                    return presentCount;
-                  })()})
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const presentEmployees = [];
-                    for (const [name, status] of Object.entries(trainingForCertGeneration.attendance || {})) {
-                      if (status === true) {
-                        presentEmployees.push(name);
-                      }
-                    }
-                    if (selectedEmployeesForCerts.length === presentEmployees.length) {
-                      setSelectedEmployeesForCerts([]);
-                    } else {
-                      setSelectedEmployeesForCerts(presentEmployees);
-                    }
-                  }}
-                  className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm"
-                >
-                  {(() => {
-                    const presentEmployees = [];
-                    for (const [name, status] of Object.entries(trainingForCertGeneration.attendance || {})) {
-                      if (status === true) {
-                        presentEmployees.push(name);
-                      }
-                    }
-                    return selectedEmployeesForCerts.length === presentEmployees.length ? 'Deselect All' : 'Select All';
-                  })()}
-                </button>
-              </div>
-              
-              <div className="border border-gray-200 rounded-lg max-h-80 overflow-y-auto">
-                {Object.entries(trainingForCertGeneration.attendance || {})
-                  .filter(([_, status]) => status === true)
-                  .map(([name, _], idx) => (
-                    <label
-                      key={idx}
-                      className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors border-b last:border-b-0 ${
-                        selectedEmployeesForCerts.includes(name)
-                          ? 'bg-blue-50 hover:bg-blue-100'
-                          : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedEmployeesForCerts.includes(name)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedEmployeesForCerts([...selectedEmployeesForCerts, name]);
-                          } else {
-                            setSelectedEmployeesForCerts(selectedEmployeesForCerts.filter(n => n !== name));
-                          }
-                        }}
-                        className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                      />
-                      <div className="flex-1 flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 flex items-center justify-center text-white text-xs font-semibold shadow-sm flex-shrink-0">
-                          {getInitials(name)}
-                        </div>
-                        <span className="text-sm font-medium text-gray-900">{name}</span>
-                      </div>
-                    </label>
-                  ))}
-              </div>
-              
-              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                <p className="text-xs text-blue-900">
-                  <span className="font-semibold">{selectedEmployeesForCerts.length}</span> employee(s) selected to receive certificates
-                </p>
-              </div>
-            </div>
-            <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowEmployeeSelectionModal(false);
-                  setTrainingForCertGeneration(null);
-                  setSelectedEmployeesForCerts([]);
-                }}
-                className="px-4 py-2 rounded-lg bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={generateSelectedCertificates}
-                disabled={selectedEmployeesForCerts.length === 0}
-                className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 transition-colors font-medium text-sm shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Generate Certificates ({selectedEmployeesForCerts.length})
               </button>
             </div>
           </div>

@@ -755,22 +755,45 @@ function EmployeeTrainings() {
         }
     };
 
-    // View certificate - open modal to view as PDF
+    // View certificate - open PDF directly
     const handleViewCertificate = (certificateUrl, e) => {
         if (e) e.stopPropagation();
-        setCurrentCertificateUrl(certificateUrl);
-        setShowCertificateModal(true);
+        try {
+            console.log('Opening certificate URL:', certificateUrl);
+            window.open(certificateUrl, '_blank');
+        } catch (error) {
+            console.error('Error viewing certificate:', error);
+            alert('Unable to view certificate.');
+        }
     };
     
-    // View as PDF using Google Docs Viewer
+    // View as PDF - open directly or download
     const viewCertificateAsPdf = () => {
         try {
-            const googleDocsUrl = `https://docs.google.com/gview?url=${encodeURIComponent(currentCertificateUrl)}&embedded=true`;
-            window.open(googleDocsUrl, '_blank');
+            console.log('Opening certificate URL:', currentCertificateUrl);
+            // Open the PDF directly in a new tab
+            window.open(currentCertificateUrl, '_blank');
             setShowCertificateModal(false);
         } catch (error) {
             console.error('Error viewing certificate:', error);
             alert('Unable to view certificate.');
+        }
+    };
+    
+    // Download certificate
+    const downloadCertificate = () => {
+        try {
+            const link = document.createElement('a');
+            link.href = currentCertificateUrl;
+            link.download = `Training_Certificate_${new Date().getTime()}.pdf`;
+            link.target = '_blank';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setShowCertificateModal(false);
+        } catch (error) {
+            console.error('Error downloading certificate:', error);
+            alert('Unable to download certificate.');
         }
     };
 
@@ -1834,63 +1857,7 @@ function EmployeeTrainings() {
                 </div>
             )}
             
-            {/* Certificate View Modal */}
-            {showCertificateModal && currentCertificateUrl && (
-                <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center px-4 z-50" onClick={() => setShowCertificateModal(false)}>
-                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                        {/* Header */}
-                        <div className="px-6 py-5 border-b border-gray-200">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center">
-                                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                                        </svg>
-                                    </div>
-                                    <div>
-                                        <h3 className="text-xl font-bold text-gray-900">Your Certificate</h3>
-                                        <p className="text-sm text-gray-500">View as PDF</p>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => setShowCertificateModal(false)}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors"
-                                >
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
 
-                        {/* Body */}
-                        <div className="p-6 space-y-4">
-                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                <div className="flex items-start gap-3">
-                                    <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <div>
-                                        <p className="text-sm font-medium text-blue-900 mb-1">View as PDF</p>
-                                        <p className="text-xs text-blue-700">Opens in Google Docs viewer for easy viewing and printing</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button
-                                onClick={viewCertificateAsPdf}
-                                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-lg hover:from-red-700 hover:to-red-800 transition-all font-medium shadow-md hover:shadow-lg"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
-                                View Certificate as PDF
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
         </>
     );
 }
