@@ -183,34 +183,6 @@ function EmployeeLogin() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center py-12 px-4">
       <div className="w-full max-w-md">
-        {/* Login Type Selector */}
-        <div className="bg-white rounded-xl shadow-lg overflow-hidden mb-6">
-          <div className="flex border-b border-gray-200">
-            <button
-              onClick={() => navigate("/applicant/login")}
-              className="flex-1 px-6 py-4 text-center font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-                Applicant Login
-              </div>
-            </button>
-            <button
-              className="flex-1 px-6 py-4 text-center font-semibold text-red-600 bg-red-50 border-b-2 border-red-600 transition-colors"
-              disabled
-            >
-              <div className="flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                Employee Login
-              </div>
-            </button>
-          </div>
-        </div>
-
         {/* Login Form */}
         <div className="bg-white rounded-xl shadow-lg p-8">
           <div className="text-center mb-6">
@@ -226,7 +198,7 @@ function EmployeeLogin() {
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 required
               />
             </div>
@@ -239,7 +211,7 @@ function EmployeeLogin() {
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all pr-12"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all pr-12"
                   required
                 />
                 <button
@@ -264,7 +236,7 @@ function EmployeeLogin() {
             <div className="flex justify-end text-sm">
               <button
                 type="button"
-                className="text-red-600 hover:text-red-700 font-medium"
+                className="text-blue-600 hover:text-blue-700 font-medium"
               >
                 Forgot Password?
               </button>
@@ -273,7 +245,7 @@ function EmployeeLogin() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              className="w-full py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
@@ -284,12 +256,7 @@ function EmployeeLogin() {
                   Logging in...
                 </>
               ) : (
-                <>
-                  Login
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-                  </svg>
-                </>
+                "Login"
               )}
             </button>
           </form>
@@ -306,8 +273,8 @@ function EmployeeLogin() {
             className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border border-black"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-red-50 p-4 border-b border-red-200">
-              <h3 className="text-lg font-semibold text-red-800 flex items-center gap-2">
+            <div className="bg-blue-50 p-4 border-b border-blue-200">
+              <h3 className="text-lg font-semibold text-blue-800 flex items-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
                   <path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clipRule="evenodd" />
                 </svg>
@@ -320,7 +287,7 @@ function EmployeeLogin() {
             <div className="p-4 border-t flex justify-end">
               <button
                 onClick={() => setShowErrorModal(false)}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
               >
                 Close
               </button>
