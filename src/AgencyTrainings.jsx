@@ -807,14 +807,6 @@ function AgencyTrainings() {
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
                 />
               </div>
-
-              {/* Export Button */}
-              <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export
-              </button>
             </div>
           </div>
 
@@ -1170,18 +1162,38 @@ function AgencyTrainings() {
                           }
                           
                           const hasCertificate = !!certificate;
+                          const wasPresent = isPresent || hasCertificate;
                           
                           return (
-                            <div key={index} className="px-3 py-2.5 flex items-center justify-between hover:bg-gray-50">
+                            <div key={index} className={`px-3 py-2.5 flex items-center justify-between transition-colors ${
+                              isCompleted && hasAttendance
+                                ? wasPresent 
+                                  ? 'bg-green-50/50 hover:bg-green-50' 
+                                  : 'bg-red-50/50 hover:bg-red-50'
+                                : 'hover:bg-gray-50'
+                            }`}>
                               <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-900">{attendeeName}</span>
-                                {isCompleted && (hasAttendance || hasCertificate) && (
-                                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                                    (isPresent || hasCertificate)
-                                      ? 'bg-green-100 text-green-700' 
-                                      : 'bg-red-100 text-red-700'
+                                {isCompleted && hasAttendance && (
+                                  <div className={`flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center ${
+                                    wasPresent 
+                                      ? 'bg-green-500' 
+                                      : 'bg-red-500'
                                   }`}>
-                                    {(isPresent || hasCertificate) ? 'Present' : 'Absent'}
+                                    {wasPresent ? (
+                                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                    ) : (
+                                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    )}
+                                  </div>
+                                )}
+                                <span className="text-sm text-gray-900 font-medium">{attendeeName}</span>
+                                {isCompleted && hasAttendance && !wasPresent && (
+                                  <span className="px-2.5 py-1 rounded-full text-xs font-semibold inline-flex items-center gap-1 bg-red-100 text-red-800 border border-red-200">
+                                    Absent
                                   </span>
                                 )}
                               </div>
