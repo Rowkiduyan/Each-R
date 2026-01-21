@@ -1721,7 +1721,11 @@ function HrTrainings() {
             </div>
             {activeTab === 'upcoming' && (
               <button
-                onClick={() => setShowAdd(true)}
+                onClick={async () => {
+                  setShowAdd(true);
+                  // Reload signature defaults when opening modal
+                  await loadSignatureDefaults();
+                }}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2 text-sm font-medium self-start sm:self-auto"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2417,166 +2421,263 @@ function HrTrainings() {
                       />
                     </div>
                     
-                    {/* Certificate Title Field */}
-                    <div className="pt-4 mt-4 border-t border-gray-200">
-                      <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                        Certificate Title <span className="text-gray-500 font-normal">(e.g., Certificate of Completion, Certificate of Participation)</span>
-                      </label>
-                      <input
-                        type="text"
-                        name="certificate_title"
-                        value={form.certificate_title}
-                        onChange={onChange}
-                        placeholder="Certificate of Completion"
-                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                    </div>
-                    
-                    {/* Signature Fields Section */}
-                    <div className="pt-4 mt-4 border-t border-gray-200">
-                      <div className="flex items-center gap-2 mb-3">
-                        <label className="text-sm font-semibold text-gray-800">
-                          Certificate Signatures <span className="text-gray-500 font-normal">(Optional)</span>
-                        </label>
-                        <div className="group relative">
-                          <svg className="w-4 h-4 text-blue-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    {/* Certificate Template Section */}
+                    <div className="pt-4 mt-4 border-t-2 border-blue-100">
+                      <div className="mb-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                           </svg>
-                          <div className="absolute left-0 top-6 w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
-                            Add names and signature images for the four signatories that will appear on the training certificates.
+                          <h3 className="text-sm font-bold text-gray-800">Certificate Template</h3>
+                          <span className="text-xs text-gray-500 font-normal">(Optional)</span>
+                        </div>
+                        <p className="text-xs text-gray-600 ml-7">Configure the certificate that will be generated for attendees upon completion</p>
+                      </div>
+
+                      {/* Certificate Title */}
+                      <div className="bg-blue-50/50 rounded-lg p-4 mb-4">
+                        <label className="block text-xs font-semibold text-gray-700 mb-2">
+                          Certificate Title
+                        </label>
+                        <input
+                          type="text"
+                          name="certificate_title"
+                          value={form.certificate_title}
+                          onChange={onChange}
+                          placeholder="e.g., Certificate of Completion, Certificate of Participation"
+                          className="w-full border border-blue-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        />
+                      </div>
+
+                      {/* Certificate Signatures */}
+                      <div className="bg-gray-50 rounded-lg p-4">
+                        <div className="flex items-start gap-2 mb-3">
+                          <div className="flex items-center gap-2 flex-1">
+                            <label className="text-xs font-semibold text-gray-700">
+                              Certificate Signatories
+                            </label>
+                            <div className="group relative">
+                              <svg className="w-3.5 h-3.5 text-blue-500 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <div className="absolute left-0 top-5 w-64 bg-gray-900 text-white text-xs rounded-lg p-2 shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                                Add names and signature images that will appear on certificates. These will be saved as defaults for future trainings.
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <p className="text-xs text-gray-600 mb-4">Add up to 4 signatories for the certificate</p>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Operations Manager */}
-                        <div className="space-y-2">
-                          <label className="block text-xs font-medium text-gray-700">Operations Manager Name</label>
+                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">Operations Manager</label>
                           <input
                             type="text"
                             name="operations_manager_name"
                             value={form.operations_manager_name}
                             onChange={onChange}
                             placeholder="Full name"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 mb-1.5"
                           />
-                          <label className="block text-xs font-medium text-gray-700 mt-2">Signature Image</label>
-                          {form.operations_manager_signature && !signatureFiles.operations_manager && (
-                            <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <span className="text-xs text-green-700">Using saved signature</span>
-                              <a href={form.operations_manager_signature} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline ml-auto">View</a>
-                            </div>
-                          )}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleSignatureUpload('operations_manager', e.target.files?.[0])}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                          />
-                          {signatureFiles.operations_manager && (
-                            <p className="text-xs text-blue-600 mt-1">New file selected: {signatureFiles.operations_manager.name}</p>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {!signatureFiles.operations_manager ? (
+                              <>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => handleSignatureUpload('operations_manager', e.target.files?.[0])}
+                                  className="flex-1 text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                                />
+                                {form.operations_manager_signature && (
+                                  <a 
+                                    href={form.operations_manager_signature} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-xs text-blue-600 hover:underline whitespace-nowrap font-medium"
+                                  >
+                                    View current
+                                  </a>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <p className="text-xs text-blue-600 flex-1">✓ {signatureFiles.operations_manager.name}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSignatureFiles(prev => ({ ...prev, operations_manager: null }));
+                                    loadSignatureDefaults();
+                                  }}
+                                  className="text-xs text-red-600 hover:text-red-700 font-medium whitespace-nowrap flex items-center gap-1"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                  Remove
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
 
                         {/* Safety Officer */}
-                        <div className="space-y-2">
-                          <label className="block text-xs font-medium text-gray-700">Safety Officer Name</label>
+                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">Safety Officer</label>
                           <input
                             type="text"
                             name="safety_officer_name"
                             value={form.safety_officer_name}
                             onChange={onChange}
                             placeholder="Full name"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 mb-1.5"
                           />
-                          <label className="block text-xs font-medium text-gray-700 mt-2">Signature Image</label>
-                          {form.safety_officer_signature && !signatureFiles.safety_officer && (
-                            <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <span className="text-xs text-green-700">Using saved signature</span>
-                              <a href={form.safety_officer_signature} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline ml-auto">View</a>
-                            </div>
-                          )}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleSignatureUpload('safety_officer', e.target.files?.[0])}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                          />
-                          {signatureFiles.safety_officer && (
-                            <p className="text-xs text-blue-600 mt-1">New file selected: {signatureFiles.safety_officer.name}</p>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {!signatureFiles.safety_officer ? (
+                              <>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => handleSignatureUpload('safety_officer', e.target.files?.[0])}
+                                  className="flex-1 text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                                />
+                                {form.safety_officer_signature && (
+                                  <a 
+                                    href={form.safety_officer_signature} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-xs text-blue-600 hover:underline whitespace-nowrap font-medium"
+                                  >
+                                    View current
+                                  </a>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <p className="text-xs text-blue-600 flex-1">✓ {signatureFiles.safety_officer.name}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSignatureFiles(prev => ({ ...prev, safety_officer: null }));
+                                    loadSignatureDefaults();
+                                  }}
+                                  className="text-xs text-red-600 hover:text-red-700 font-medium whitespace-nowrap flex items-center gap-1"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                  Remove
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
 
                         {/* HR Manager */}
-                        <div className="space-y-2">
-                          <label className="block text-xs font-medium text-gray-700">HR Manager Name</label>
+                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">HR Manager</label>
                           <input
                             type="text"
                             name="hr_manager_name"
                             value={form.hr_manager_name}
                             onChange={onChange}
                             placeholder="Full name"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 mb-1.5"
                           />
-                          <label className="block text-xs font-medium text-gray-700 mt-2">Signature Image</label>
-                          {form.hr_manager_signature && !signatureFiles.hr_manager && (
-                            <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <span className="text-xs text-green-700">Using saved signature</span>
-                              <a href={form.hr_manager_signature} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline ml-auto">View</a>
-                            </div>
-                          )}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleSignatureUpload('hr_manager', e.target.files?.[0])}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                          />
-                          {signatureFiles.hr_manager && (
-                            <p className="text-xs text-blue-600 mt-1">New file selected: {signatureFiles.hr_manager.name}</p>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {!signatureFiles.hr_manager ? (
+                              <>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => handleSignatureUpload('hr_manager', e.target.files?.[0])}
+                                  className="flex-1 text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                                />
+                                {form.hr_manager_signature && (
+                                  <a 
+                                    href={form.hr_manager_signature} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-xs text-blue-600 hover:underline whitespace-nowrap font-medium"
+                                  >
+                                    View current
+                                  </a>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <p className="text-xs text-blue-600 flex-1">✓ {signatureFiles.hr_manager.name}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSignatureFiles(prev => ({ ...prev, hr_manager: null }));
+                                    loadSignatureDefaults();
+                                  }}
+                                  className="text-xs text-red-600 hover:text-red-700 font-medium whitespace-nowrap flex items-center gap-1"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                  Remove
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
 
                         {/* General Manager */}
-                        <div className="space-y-2">
-                          <label className="block text-xs font-medium text-gray-700">General Manager Name</label>
+                        <div className="bg-white rounded-lg p-3 border border-gray-200">
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">General Manager</label>
                           <input
                             type="text"
                             name="general_manager_name"
                             value={form.general_manager_name}
                             onChange={onChange}
                             placeholder="Full name"
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 mb-1.5"
                           />
-                          <label className="block text-xs font-medium text-gray-700 mt-2">Signature Image</label>
-                          {form.general_manager_signature && !signatureFiles.general_manager && (
-                            <div className="mb-2 p-2 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2">
-                              <svg className="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <span className="text-xs text-green-700">Using saved signature</span>
-                              <a href={form.general_manager_signature} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline ml-auto">View</a>
-                            </div>
-                          )}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) => handleSignatureUpload('general_manager', e.target.files?.[0])}
-                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-                          />
-                          {signatureFiles.general_manager && (
-                            <p className="text-xs text-blue-600 mt-1">New file selected: {signatureFiles.general_manager.name}</p>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {!signatureFiles.general_manager ? (
+                              <>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  onChange={(e) => handleSignatureUpload('general_manager', e.target.files?.[0])}
+                                  className="flex-1 text-xs file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer"
+                                />
+                                {form.general_manager_signature && (
+                                  <a 
+                                    href={form.general_manager_signature} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-xs text-blue-600 hover:underline whitespace-nowrap font-medium"
+                                  >
+                                    View current
+                                  </a>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <p className="text-xs text-blue-600 flex-1">✓ {signatureFiles.general_manager.name}</p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSignatureFiles(prev => ({ ...prev, general_manager: null }));
+                                    loadSignatureDefaults();
+                                  }}
+                                  className="text-xs text-red-600 hover:text-red-700 font-medium whitespace-nowrap flex items-center gap-1"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                  Remove
+                                </button>
+                              </>
+                            )}
+                          </div>
                         </div>
                       </div>
+                    </div>
                     </div>
                     
                     {/* Attendees Section */}
@@ -2788,12 +2889,15 @@ function HrTrainings() {
                   setSelectedPositions([]);
                   setEmployeesByPositionMap({});
                   setShowEmployeeSuggestions(false);
+                  // Reset signature files to clear any uploaded but not saved files
                   setSignatureFiles({
                     operations_manager: null,
                     safety_officer: null,
                     hr_manager: null,
                     general_manager: null
                   });
+                  // Reload defaults to restore saved signatures
+                  loadSignatureDefaults();
                 }}
                 className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors font-medium text-sm border border-gray-300"
               >
