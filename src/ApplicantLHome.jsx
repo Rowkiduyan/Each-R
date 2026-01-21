@@ -175,6 +175,7 @@ import {
     const [characterReferences, setCharacterReferences] = useState([{}]);
     const [resumeFile, setResumeFile] = useState(null);
     const [profileResumeFile, setProfileResumeFile] = useState(null);
+    const [certificateFiles, setCertificateFiles] = useState([]);
     const [userApplication, setUserApplication] = useState(null);
     const [userApplications, setUserApplications] = useState([]);
     const [myApplicationsStep, setMyApplicationsStep] = useState('Application');
@@ -1274,6 +1275,48 @@ const getApplicationFilesPublicUrl = (path) => {
       setResumeFile(file);
     };
 
+    const handleCertificateChange = (e) => {
+      const files = Array.from(e.target.files || []);
+      if (files.length === 0) return;
+
+      const validFiles = [];
+      for (const file of files) {
+        const isValidType = 
+          file.type === 'application/pdf' || 
+          file.type.startsWith('image/') ||
+          file.name.toLowerCase().match(/\.(pdf|png|jpg|jpeg)$/);
+        
+        if (!isValidType) {
+          setErrorMessage('Please upload only PDF or image files (PNG, JPG, JPEG).');
+          e.target.value = '';
+          return;
+        }
+
+        if (file.size > 10 * 1024 * 1024) {
+          setErrorMessage(`File ${file.name} exceeds 10MB limit.`);
+          e.target.value = '';
+          return;
+        }
+
+        validFiles.push(file);
+      }
+
+      setCertificateFiles(prev => [...prev, ...validFiles]);
+      e.target.value = '';
+    };
+
+    const removeCertificateFile = (index) => {
+      setCertificateFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const formatFileSize = (bytes) => {
+      if (bytes === 0) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+    };
+
     const fetchUserApplication = async (userId) => {
       const { data, error } = await supabase
         .from('applications')
@@ -1424,6 +1467,11 @@ const getApplicationFilesPublicUrl = (path) => {
       // Resume is required, but file input is hidden when a profile resume exists.
       if (!form.resumePath && !resumeFile) {
         return 'Please upload your resume (PDF) before proceeding.';
+      }
+
+      // Certificates are required
+      if (certificateFiles.length === 0) {
+        return 'Please upload at least one certificate before proceeding.';
       }
 
       // Do not block on non-editable (read-only) fields.
@@ -1666,12 +1714,41 @@ const getApplicationFilesPublicUrl = (path) => {
         setForm((prev) => ({ ...prev, resumePath: resumeStoragePath }));
       }
 
+      // Upload certificates
+      const certificatesPaths = [];
+      for (let i = 0; i < certificateFiles.length; i++) {
+        const certFile = certificateFiles[i];
+        const sanitizedFileName = certFile.name.replace(/\s+/g, '_');
+        const filePath = `${userId}/certificates/${Date.now()}-${i}-${sanitizedFileName}`;
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('external_certificates')
+          .upload(filePath, certFile, {
+            upsert: true,
+          });
+
+        if (uploadError) {
+          console.error(uploadError);
+          setErrorMessage(`Failed to upload certificate ${certFile.name}: ` + uploadError.message);
+          return;
+        }
+
+        certificatesPaths.push({
+          path: uploadData.path,
+          name: certFile.name,
+          size: certFile.size
+        });
+      }
+
+      setCertificateFiles([]);
+
       const skillsArray = normalizeSkills(form.skills);
       const formPayload = {
         ...form,
         skills: skillsArray,
         skills_text: skillsArray.join(', '),
         department: job?.department || null, // Add department from job post
+        certificates: certificatesPaths, // Add certificates to payload
       };
       if (resumeStoragePath) {
         formPayload.resumePath = resumeStoragePath;
@@ -1988,14 +2065,7 @@ const getApplicationFilesPublicUrl = (path) => {
 
     // Fetch cities when province is selected (for profile form)
     useEffect(() => {
-      console.log('🔥🔥🔥 City fetch useEffect triggered!');
-      console.log('🔥 Province value:', profileForm.province);
-      console.log('🔥 Provinces array length:', provinces.length);
-      console.log('🔥 Provinces loaded:', provinces.length > 0);
-      console.log('🔥 Condition check - province exists:', !!profileForm.province, 'provinces loaded:', provinces.length > 0);
-      
       if (profileForm.province && provinces.length > 0) {
-        console.log('🔥 Fetching cities for province:', profileForm.province, 'provinces array length:', provinces.length);
         const fetchProfileCities = async () => {
           setLoadingProfileCities(true);
           try {
@@ -2003,7 +2073,6 @@ const getApplicationFilesPublicUrl = (path) => {
             const selectedProvince = provinces.find(p => 
               p.name && p.name.toLowerCase().trim() === profileForm.province.toLowerCase().trim()
             );
-            console.log('🔥 Selected province object:', selectedProvince);
             
             // Special handling for Metro Manila - fetch from NCR endpoint
             if (selectedProvince && selectedProvince.name === 'Metro Manila') {
@@ -2029,28 +2098,21 @@ const getApplicationFilesPublicUrl = (path) => {
             if (selectedProvince && selectedProvince.code) {
               // Check cache first
               if (cityCache.current[selectedProvince.code]) {
-                console.log('🔥 Using cached cities for:', selectedProvince.code);
                 setProfileCities(cityCache.current[selectedProvince.code]);
                 setLoadingProfileCities(false);
                 return;
               }
 
-              console.log('🔥 Fetching cities from API for province code:', selectedProvince.code);
               const response = await fetch(`https://psgc.gitlab.io/api/provinces/${selectedProvince.code}/cities-municipalities/`);
               if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
               }
               const data = await response.json();
-              console.log('🔥 Cities fetched:', data.length, 'cities');
               cityCache.current[selectedProvince.code] = data;
               setProfileCities(Array.isArray(data) ? data : []);
-              console.log('🔥 profileCities state updated with', Array.isArray(data) ? data.length : 0, 'cities');
-            } else {
-              console.warn('🔥 Province not found in provinces array. Looking for:', profileForm.province);
-              console.warn('🔥 Available provinces (first 10):', provinces.map(p => p.name).slice(0, 10));
             }
           } catch (error) {
-            console.error('🔥 Error fetching profile cities:', error);
+            console.error('Error fetching profile cities:', error);
             setProfileCities([]);
           } finally {
             setLoadingProfileCities(false);
@@ -2058,13 +2120,10 @@ const getApplicationFilesPublicUrl = (path) => {
         };
         fetchProfileCities();
       } else if (!profileForm.province) {
-        console.log('🔥 No province selected, clearing cities');
         setProfileCities([]);
         setProfileBarangays([]);
-      } else if (provinces.length === 0) {
-        console.log('🔥 Provinces array not loaded yet');
       }
-    }, [profileForm.province, provinces]);
+    }, [profileForm.province, provinces.length]);
 
     // Fetch barangays when city is selected (for profile form)
     useEffect(() => {
@@ -2097,7 +2156,7 @@ const getApplicationFilesPublicUrl = (path) => {
       } else {
         setProfileBarangays([]);
       }
-    }, [profileForm.city, profileCities]);
+    }, [profileForm.city, profileCities.length]);
 
     // Fetch cities when province is selected (for application form)
     useEffect(() => {
@@ -2159,7 +2218,7 @@ const getApplicationFilesPublicUrl = (path) => {
         setApplicationCities([]);
         setApplicationBarangays([]);
       }
-    }, [form.province, provinces]);
+    }, [form.province, provinces.length]);
 
     // Fetch barangays when city is selected (for application form)
     useEffect(() => {
@@ -2196,7 +2255,7 @@ const getApplicationFilesPublicUrl = (path) => {
       } else {
         setApplicationBarangays([]);
       }
-    }, [form.city, applicationCities]);
+    }, [form.city, applicationCities.length]);
 
     // Fetch barangays when profile city is selected
     useEffect(() => {
@@ -4761,6 +4820,65 @@ const getApplicationFilesPublicUrl = (path) => {
                           )}
                           <p className="text-xs text-gray-500 mt-1">
                             PDF file. Max 10MB {form.resumePath && !resumeFile && '(Leave empty to use profile resume)'}
+                          </p>
+                        </div>
+
+                        {/* Certificates */}
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Upload Certificates <span className="text-red-600">*</span>
+                          </label>
+                          <div className="flex items-center gap-2 mb-2">
+                            <label className="cursor-pointer px-4 py-2 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors text-sm font-medium border border-blue-200">
+                              Choose Files
+                              <input
+                                type="file"
+                                multiple
+                                accept=".pdf,.png,.jpg,.jpeg,image/*,application/pdf"
+                                onChange={handleCertificateChange}
+                                className="hidden"
+                              />
+                            </label>
+                            {certificateFiles.length > 0 && (
+                              <span className="text-xs text-gray-600">
+                                {certificateFiles.map(f => f.name).join(', ')}
+                              </span>
+                            )}
+                          </div>
+                          
+                          {certificateFiles.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-sm font-medium text-gray-700 mb-2">
+                                Selected Files ({certificateFiles.length})
+                              </p>
+                              <div className="space-y-2">
+                                {certificateFiles.map((file, index) => (
+                                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-md border border-gray-200">
+                                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                                      <svg className="w-8 h-8 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                      </svg>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm text-gray-900 truncate">{file.name}</p>
+                                        <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
+                                      </div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeCertificateFile(index)}
+                                      className="ml-2 text-red-600 hover:text-red-800 flex-shrink-0"
+                                    >
+                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          <p className="text-xs text-gray-500 mt-1">
+                            Upload certificates, licenses, or credentials (PDF, PNG, JPG). Max 10MB per file.
                           </p>
                         </div>
 

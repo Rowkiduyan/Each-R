@@ -351,6 +351,9 @@ function HrRecruitment() {
   const [uploadingAgreementDocs, setUploadingAgreementDocs] = useState(false);
   const [removingAgreementDoc, setRemovingAgreementDoc] = useState(false);
   
+  // External certificates state
+  const [certificateUrls, setCertificateUrls] = useState({});
+  
   // Interview calendar state
   const [interviews, setInterviews] = useState([]);
   const [signingSchedules, setSigningSchedules] = useState([]);
@@ -1159,6 +1162,44 @@ function HrRecruitment() {
     setInterviewNotesText(String(notes || ''));
     lastInterviewNotesApplicantIdRef.current = idKey;
   }, [activeDetailTab, selectedApplicant?.id]);
+
+  // Generate signed URLs for external certificates from application form
+  useEffect(() => {
+    const generateCertificateUrls = async () => {
+      if (!selectedApplicant || activeDetailTab !== 'Application') {
+        setCertificateUrls({});
+        return;
+      }
+      
+      const payloadObj = getApplicantPayloadObject(selectedApplicant);
+      const certificates = payloadObj?.form?.certificates || payloadObj?.certificates || [];
+      
+      if (!Array.isArray(certificates) || certificates.length === 0) {
+        setCertificateUrls({});
+        return;
+      }
+      
+      const urlMap = {};
+      for (const cert of certificates) {
+        if (cert?.path) {
+          try {
+            const { data, error } = await supabase.storage
+              .from('external_certificates')
+              .createSignedUrl(cert.path, 604800); // 7 days
+            if (!error && data?.signedUrl) {
+              urlMap[cert.path] = data.signedUrl;
+            }
+          } catch (err) {
+            console.error('Error generating signed URL for certificate:', err);
+          }
+        }
+      }
+      setCertificateUrls(urlMap);
+    };
+    
+    generateCertificateUrls();
+  }, [selectedApplicant, activeDetailTab]);
+
 
   const formatNameLastFirstMiddle = ({ last, first, middle }) => {
     const l = normalizeWs(last);
@@ -5902,8 +5943,8 @@ function HrRecruitment() {
                             </div>
                           </div>
 
-                          {/* Specialized Training (Certificate) */}
-                          {(() => {
+                          {/* Specialized Training (Certificate) - Only show for agency applicants */}
+                          {isAgency(selectedApplicant) && (() => {
                             const trainingName = form.specializedTraining || form.specialized_training || null;
                             const trainingYear = form.specializedYear || form.specialized_year || null;
 
@@ -6409,6 +6450,75 @@ function HrRecruitment() {
                                         </div>
                                       </div>
                                     ))
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Certificates - Only show for non-agency applicants */}
+                          {!isAgency(selectedApplicant) && (() => {
+                            const certificates = payloadObj?.form?.certificates || payloadObj?.certificates || [];
+                            const hasCertificates = Array.isArray(certificates) && certificates.length > 0;
+
+                            return (
+                              <div className="mb-6">
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded flex items-center justify-between">
+                                  <span>Certificates</span>
+                                  {!hasCertificates && <span className="text-xs text-gray-500 italic">None</span>}
+                                </h5>
+                                <div className="border border-gray-200 rounded-lg p-4">
+                                  {!hasCertificates ? (
+                                    <div className="text-center py-8">
+                                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-gray-600 font-medium">No certificates submitted</p>
+                                      <p className="text-xs text-gray-500 mt-1">Applicant certifications will appear here</p>
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-1 gap-3">
+                                      {certificates.map((cert, idx) => {
+                                        const certUrl = certificateUrls[cert?.path] || null;
+                                        const fileSize = cert?.size ? (
+                                          cert.size < 1024 * 1024
+                                            ? `${(cert.size / 1024).toFixed(1)} KB`
+                                            : `${(cert.size / (1024 * 1024)).toFixed(1)} MB`
+                                        ) : null;
+                                        
+                                        return (
+                                          <div 
+                                            key={idx} 
+                                            className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-all"
+                                          >
+                                            <svg className="w-5 h-5 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            <div className="flex-1 min-w-0">
+                                              {certUrl ? (
+                                                <a
+                                                  href={certUrl}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline truncate block"
+                                                >
+                                                  {cert?.name || `Certificate ${idx + 1}`}
+                                                </a>
+                                              ) : (
+                                                <p className="text-sm font-medium text-gray-800 truncate">
+                                                  {cert?.name || `Certificate ${idx + 1}`}
+                                                </p>
+                                              )}
+                                              {fileSize && (
+                                                <p className="text-xs text-gray-500">{fileSize}</p>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
                                   )}
                                 </div>
                               </div>

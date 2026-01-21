@@ -821,7 +821,41 @@ function Employees() {
         console.error('Error fetching certificates:', error);
         setExternalCertificates([]);
       } else {
-        setExternalCertificates(data || []);
+        let allCertificates = data || [];
+        
+        // Also fetch certificates from application form if applicationData is available
+        if (applicationData?.payload?.form?.certificates) {
+          const appCertificates = applicationData.payload.form.certificates;
+          
+          // Generate signed URLs for each application certificate
+          const appCertsWithUrls = await Promise.all(
+            appCertificates.map(async (cert) => {
+              if (cert?.path) {
+                const { data: signedData, error: signedError } = await supabase.storage
+                  .from('external_certificates')
+                  .createSignedUrl(cert.path, 604800); // 7 days
+                
+                if (!signedError && signedData?.signedUrl) {
+                  return {
+                    id: `app-cert-${cert.path}`,
+                    name: cert.name,
+                    title: cert.name,
+                    certificate_url: signedData.signedUrl,
+                    uploaded_at: applicationData.submitted_at || applicationData.created_at,
+                    source: 'application_form'
+                  };
+                }
+              }
+              return null;
+            })
+          );
+          
+          // Filter out null values and add to the certificates list
+          const validAppCerts = appCertsWithUrls.filter(cert => cert !== null);
+          allCertificates = [...allCertificates, ...validAppCerts];
+        }
+        
+        setExternalCertificates(allCertificates);
       }
     } catch (error) {
       console.error('Error fetching external certificates:', error);
@@ -928,10 +962,89 @@ function Employees() {
 
   // Fetch certificates when employee is selected or profiling tab is active
   useEffect(() => {
-    if (selectedEmployee && activeTab === 'profiling') {
-      fetchExternalCertificates(selectedEmployee);
-    }
-  }, [selectedEmployee, activeTab]);
+    const fetchCertificates = async () => {
+      if (!selectedEmployee || activeTab !== 'profiling') {
+        setExternalCertificates([]);
+        return;
+      }
+      
+      const employeeEmail = selectedEmployee.email || selectedEmployee.personal_email;
+      if (!employeeEmail) {
+        setExternalCertificates([]);
+        return;
+      }
+      
+      console.log('🔍 Fetching certificates for employee:', selectedEmployee.name);
+      console.log('📊 Application data:', applicationData);
+      console.log('📋 Payload:', applicationData?.payload);
+      console.log('📄 Form:', applicationData?.form);
+      console.log('🎓 Certificates (direct):', applicationData?.certificates);
+      console.log('🎓 Certificates (form.certificates):', applicationData?.form?.certificates);
+      console.log('🎓 Certificates (payload.form.certificates):', applicationData?.payload?.form?.certificates);
+      
+      setLoadingCertificates(true);
+      try {
+        let allCertificates = [];
+        
+        // Try multiple possible paths where certificates might be stored
+        const appCertificates = 
+          applicationData?.payload?.form?.certificates || 
+          applicationData?.form?.certificates || 
+          applicationData?.certificates;
+        
+        // Fetch certificates from application form if applicationData is available
+        if (appCertificates && Array.isArray(appCertificates) && appCertificates.length > 0) {
+          console.log('✅ Found certificates:', appCertificates);
+          
+          // Generate signed URLs for each application certificate
+          const appCertsWithUrls = await Promise.all(
+            appCertificates.map(async (cert, index) => {
+              console.log(`🔑 Processing certificate ${index}:`, cert);
+              if (cert?.path) {
+                const { data: signedData, error: signedError } = await supabase.storage
+                  .from('external_certificates')
+                  .createSignedUrl(cert.path, 604800); // 7 days
+                
+                if (signedError) {
+                  console.error(`❌ Error generating signed URL for ${cert.name}:`, signedError);
+                }
+                
+                if (!signedError && signedData?.signedUrl) {
+                  console.log(`✅ Generated signed URL for ${cert.name}:`, signedData.signedUrl);
+                  return {
+                    id: `app-cert-${index}-${cert.path}`,
+                    name: cert.name,
+                    title: cert.name,
+                    certificate_url: signedData.signedUrl,
+                    uploaded_at: applicationData.submitted_at || applicationData.created_at,
+                    source: 'application_form'
+                  };
+                }
+              }
+              return null;
+            })
+          );
+          
+          // Filter out null values and add to the certificates list
+          const validAppCerts = appCertsWithUrls.filter(cert => cert !== null);
+          console.log('📦 Valid certificates:', validAppCerts);
+          allCertificates = [...allCertificates, ...validAppCerts];
+        } else {
+          console.log('⚠️ No certificates found in applicationData');
+        }
+        
+        console.log('🎯 Setting certificates:', allCertificates);
+        setExternalCertificates(allCertificates);
+      } catch (error) {
+        console.error('Error fetching external certificates:', error);
+        setExternalCertificates([]);
+      } finally {
+        setLoadingCertificates(false);
+      }
+    };
+    
+    fetchCertificates();
+  }, [selectedEmployee, activeTab, applicationData]);
 
   // Fetch employee documents when employee is selected and documents tab is active
   useEffect(() => {
