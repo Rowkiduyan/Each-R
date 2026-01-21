@@ -101,9 +101,9 @@ function ApplicantLogin() {
     e.preventDefault();
     setResetLoading(true);
     setError("");
-
+    const siteUrl = import.meta.env.VITE_SITE_URL || window.location.origin;
     const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-      redirectTo: `${window.location.origin}/reset-password`,
+      redirectTo: `${siteUrl}/reset-password`,
     });
 
     setResetLoading(false);
