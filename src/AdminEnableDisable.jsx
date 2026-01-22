@@ -13,6 +13,11 @@ function AdminEnableDisable() {
   const [actionType, setActionType] = useState(''); // 'enable' or 'disable'
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [resetPasswordAccount, setResetPasswordAccount] = useState(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
 
   useEffect(() => {
     fetchAccounts();
@@ -165,6 +170,82 @@ function AdminEnableDisable() {
     setSelectedAccount(account);
     setActionType(action);
     setShowConfirmModal(true);
+  };
+
+  const handleResetPassword = (account) => {
+    setResetPasswordAccount(account);
+    setNewPassword('');
+    setConfirmPassword('');
+    setShowResetPasswordModal(true);
+  };
+
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
+    let password = '';
+    for (let i = 0; i < 12; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setNewPassword(password);
+    setConfirmPassword(password);
+  };
+
+  const confirmResetPassword = async () => {
+    if (!newPassword || newPassword.length < 8) {
+      alert('Password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert('Passwords do not match.');
+      return;
+    }
+
+    try {
+      setResetPasswordLoading(true);
+
+      // Get employee data to find personal_email
+      const { data: empData } = await supabase
+        .from('employees')
+        .select('id, email, personal_email')
+        .eq('email', resetPasswordAccount.email)
+        .maybeSingle();
+
+      if (!empData) {
+        alert('Employee account not found.');
+        setResetPasswordLoading(false);
+        return;
+      }
+
+      // Call edge function to reset password using work email (not auth_user_id)
+      const { data, error } = await supabase.functions.invoke('admin-reset-password', {
+        body: {
+          email: empData.email, // Work email (croque@roadwise.com)
+          new_password: newPassword,
+          personal_email: empData.personal_email
+        }
+      });
+
+      if (error) {
+        console.error('Password reset error:', error);
+        alert('Failed to reset password: ' + (error.message || 'Unknown error'));
+        setResetPasswordLoading(false);
+        return;
+      }
+
+      setSuccessMessage(
+        `Password reset successfully for ${resetPasswordAccount.first_name} ${resetPasswordAccount.last_name}. ` +
+        `Temporary password: ${newPassword} (send this to ${empData.personal_email})`
+      );
+      setShowSuccessModal(true);
+      setShowResetPasswordModal(false);
+      setResetPasswordAccount(null);
+      setNewPassword('');
+      setConfirmPassword('');
+      setResetPasswordLoading(false);
+    } catch (error) {
+      console.error('Error resetting password:', error);
+      alert('Failed to reset password. Please try again.');
+      setResetPasswordLoading(false);
+    }
   };
 
   const confirmToggleAccount = async () => {
@@ -398,12 +479,15 @@ function AdminEnableDisable() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Password
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {filteredAccounts.length === 0 ? (
               <tr>
-                <td colSpan="7" className="px-6 py-8 text-center text-gray-500">
+                <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
                   No accounts found
                 </td>
               </tr>
@@ -465,6 +549,20 @@ function AdminEnableDisable() {
                       </button>
                     )}
                   </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    {account.role === 'Admin' ? (
+                      <span className="text-gray-400 italic">-</span>
+                    ) : account.role === 'Employee' ? (
+                      <button
+                        onClick={() => handleResetPassword(account)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        Reset Password
+                      </button>
+                    ) : (
+                      <span className="text-gray-400 italic">-</span>
+                    )}
+                  </td>
                 </tr>
               ))
             )}
@@ -509,6 +607,75 @@ function AdminEnableDisable() {
                 }`}
               >
                 {actionType === 'disable' ? 'Disable Account' : 'Enable Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Password Modal */}
+      {showResetPasswordModal && (
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Reset Password</h3>
+            <p className="text-gray-600 mb-4">
+              Set new password for {resetPasswordAccount?.first_name} {resetPasswordAccount?.last_name}
+            </p>
+            
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  New Password (min 8 characters)
+                </label>
+                <input
+                  type="text"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Enter new password"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Confirm Password
+                </label>
+                <input
+                  type="text"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm password"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              
+              <button
+                onClick={generateRandomPassword}
+                className="w-full px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-300 flex items-center justify-center gap-2"
+              >
+                🎲 Generate Random Password
+              </button>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowResetPasswordModal(false);
+                  setResetPasswordAccount(null);
+                  setNewPassword('');
+                  setConfirmPassword('');
+                }}
+                className="flex-1 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md border border-gray-300"
+                disabled={resetPasswordLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmResetPassword}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md disabled:opacity-50"
+                disabled={resetPasswordLoading}
+              >
+                {resetPasswordLoading ? 'Resetting...' : 'Reset Password'}
               </button>
             </div>
           </div>

@@ -107,6 +107,7 @@ function ApplicantApplications() {
   const [retracting, setRetracting] = useState(false);
   const [showRetractSuccess, setShowRetractSuccess] = useState(false);
   const [retractError, setRetractError] = useState('');
+  const [certificateUrls, setCertificateUrls] = useState({});
 
   const parsePayloadObject = (payload) => {
     if (!payload) return {};
@@ -508,6 +509,36 @@ function ApplicantApplications() {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [location.search]);
+
+  // Generate signed URLs for certificates
+  useEffect(() => {
+    const generateCertificateUrls = async () => {
+      if (!applicationData) return;
+      
+      const certificates = applicationData.payload?.form?.certificates || applicationData.payload?.certificates || [];
+      if (!Array.isArray(certificates) || certificates.length === 0) return;
+
+      const urlMap = {};
+      for (const cert of certificates) {
+        if (cert?.path) {
+          try {
+            const { data, error } = await supabase.storage
+              .from('external_certificates')
+              .createSignedUrl(cert.path, 604800); // 7 days
+            
+            if (!error && data?.signedUrl) {
+              urlMap[cert.path] = data.signedUrl;
+            }
+          } catch (err) {
+            console.error('Error generating signed URL:', err);
+          }
+        }
+      }
+      setCertificateUrls(urlMap);
+    };
+
+    generateCertificateUrls();
+  }, [applicationData]);
 
 
 //   const getStepClasses = (step) => {
@@ -979,6 +1010,47 @@ function ApplicantApplications() {
                           if (applicationData.payload?.form?.philhealth) ids.push(`PhilHealth: ${applicationData.payload.form.philhealth}`);
                           if (applicationData.payload?.form?.pagibig) ids.push(`Pag-IBIG: ${applicationData.payload.form.pagibig}`);
                           return ids.length > 0 ? <span className="text-gray-800">{ids.join(', ')}</span> : <span className="text-gray-400 italic">None</span>;
+                        })()}
+                      </div>
+                      <div className="col-span-1 md:col-span-2">
+                        <span className="font-semibold text-gray-600">External Certificates:</span>{' '}
+                        {(() => {
+                          const certificates = applicationData.payload?.form?.certificates || applicationData.payload?.certificates || [];
+                          if (!Array.isArray(certificates) || certificates.length === 0) {
+                            return <span className="text-gray-400 italic">None</span>;
+                          }
+                          return (
+                            <div className="mt-2 space-y-2">
+                              {certificates.map((cert, idx) => {
+                                const certUrl = certificateUrls[cert?.path] || null;
+                                const fileSize = cert?.size 
+                                  ? cert.size < 1024 * 1024 
+                                    ? `${(cert.size / 1024).toFixed(1)} KB`
+                                    : `${(cert.size / (1024 * 1024)).toFixed(1)} MB`
+                                  : '';
+                                return (
+                                  <div key={idx} className="flex items-center gap-2 text-sm">
+                                    <svg className="w-4 h-4 text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                    </svg>
+                                    {certUrl ? (
+                                      <a 
+                                        href={certUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:text-blue-700 hover:underline font-medium flex-1"
+                                      >
+                                        {cert.name || `Certificate ${idx + 1}`}
+                                      </a>
+                                    ) : (
+                                      <span className="text-gray-800 flex-1">{cert.name || `Certificate ${idx + 1}`}</span>
+                                    )}
+                                    {fileSize && <span className="text-gray-500 text-xs">({fileSize})</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
                         })()}
                       </div>
                     </div>

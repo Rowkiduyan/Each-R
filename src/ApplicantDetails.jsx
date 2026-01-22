@@ -23,6 +23,67 @@ async function scheduleInterviewClient(applicationId, interview) {
   }
 }
 
+/**
+ * createEmployeeAuthAccount
+ * Creates or updates auth account for new employee
+ */
+async function createEmployeeAuthAccount({ employeeEmail, employeePassword, firstName, lastName }) {
+  try {
+    const functionName = "create-employee-auth";
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: { email: employeeEmail, password: employeePassword, firstName, lastName },
+    });
+
+    if (error) throw error;
+    return { ok: true, data };
+  } catch (err) {
+    console.error("createEmployeeAuthAccount error:", err);
+    return { ok: false, error: err };
+  }
+}
+
+/**
+ * sendEmployeeAccountEmail
+ * Sends credentials email to newly hired employee
+ */
+async function sendEmployeeAccountEmail(employeeData) {
+  try {
+    const functionName = "send-employee-credentials";
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: employeeData,
+    });
+
+    if (error) throw error;
+    return { ok: true, data };
+  } catch (err) {
+    console.error("sendEmployeeAccountEmail error:", err);
+    return { ok: false, error: err };
+  }
+}
+
+/**
+ * generateEmployeePassword
+ * Creates password in format: FirstInitialLastName + YYYYMMDD
+ * Example: Charles Roque, birthday 2006-02-04 → CRoque20060204
+ */
+function generateEmployeePassword(firstName, lastName, birthday) {
+  const firstInitial = firstName ? firstName.charAt(0).toUpperCase() : "E";
+  const lastPart = lastName ? lastName.charAt(0).toUpperCase() + lastName.slice(1).toLowerCase() : "Employee";
+  let birthdayPart = "";
+
+  if (birthday) {
+    const date = new Date(birthday);
+    if (!isNaN(date.getTime())) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      birthdayPart = `${year}${month}${day}`;
+    }
+  }
+
+  return `${firstInitial}${lastPart}${birthdayPart}`;
+}
+
 function ApplicantDetails() {
   const display = (v) => {
     if (v === null || v === undefined) return "None";
@@ -422,6 +483,56 @@ function ApplicantDetails() {
         return;
       }
 
+      // Extract data from RPC response
+      const workEmail = rpcData?.email; // croque@roadwise.com
+      const firstName = rpcData?.fname || applicant?.name?.split(' ')[0];
+      const lastName = rpcData?.lname || applicant?.name?.split(' ').slice(1).join(' ');
+      const personalEmail = applicant?.email; // charlesroque0114@gmail.com
+      const birthday = applicant?.birthday;
+
+      // Generate employee password
+      const employeePassword = generateEmployeePassword(firstName, lastName, birthday);
+
+      // Create auth account for employee
+      try {
+        const authResult = await createEmployeeAuthAccount({
+          employeeEmail: workEmail,
+          employeePassword: employeePassword,
+          firstName: firstName,
+          lastName: lastName,
+        });
+
+        if (!authResult.ok) {
+          console.error("Failed to create auth account:", authResult.error);
+          // Continue anyway - employee record was created
+        } else {
+          console.log("Auth account created successfully");
+
+          // Send credentials email to personal email
+          try {
+            const emailResult = await sendEmployeeAccountEmail({
+              toEmail: personalEmail,
+              employeeEmail: workEmail,
+              employeePassword: employeePassword,
+              firstName: firstName,
+              lastName: lastName,
+              fullName: `${firstName} ${lastName}`,
+            });
+
+            if (!emailResult.ok) {
+              console.warn("Failed to send credentials email:", emailResult.error);
+            } else {
+              console.log("Credentials email sent to:", personalEmail);
+            }
+          } catch (emailErr) {
+            console.error("Error sending email:", emailErr);
+          }
+        }
+      } catch (authErr) {
+        console.error("Error creating auth account:", authErr);
+        // Continue anyway
+      }
+
       // Success path - still update applications.status = 'hired' to keep canonical state
       const { error: updErr } = await supabase
         .from("applications")
@@ -433,7 +544,7 @@ function ApplicantDetails() {
       }
 
       // reflect UI changes
-      alert("✅ Marked as employee!");
+      alert("✅ Marked as employee! Credentials sent to " + personalEmail);
       setAgreementsResult("hire");
       setHired(true);
       setIsRejected(false);

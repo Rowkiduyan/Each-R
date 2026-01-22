@@ -13,20 +13,23 @@ function ApplicantLayout() {
   const profileDropdownRef = useRef(null);
   const [applicantUser, setApplicantUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const hasCheckedAuth = useRef(false);
+  const isRedirecting = useRef(false);
 
   // Check authentication and fetch applicant profile
   useEffect(() => {
     const fetchApplicantProfile = async () => {
+      if (hasCheckedAuth.current || isRedirecting.current) return;
+      hasCheckedAuth.current = true;
+
       try {
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         
         if (authError || !user) {
           setLoading(false);
-          const redirectTarget = `${location.pathname}${location.search || ''}`;
-          navigate(`/applicant/login?redirectTo=${encodeURIComponent(redirectTarget)}`, {
-            state: { redirectTo: redirectTarget },
-            replace: true,
-          });
+          if (!isRedirecting.current) {
+            navigate("/applicant/login", { replace: true });
+          }
           return;
         }
 
@@ -37,10 +40,40 @@ function ApplicantLayout() {
           .eq('email', user.email)
           .maybeSingle();
 
-        // If user is in applicants table, they're an applicant - allow access
-        if (applicant) {
-          setApplicantUser(applicant);
-          setLoading(false);
+        console.log('🔍 Applicant check:', { email: user.email, applicant, applicantError });
+
+        // If user is in applicants table, check if they've been hired
+        if (applicant && !isRedirecting.current) {
+          // Check if this email exists in the employees table (means they've been hired)
+          const { data: employee, error: empError } = await supabase
+            .from('employees')
+            .select('id, email, personal_email')
+            .or(`email.eq."${user.email}",personal_email.eq."${user.email}"`)
+            .maybeSingle();
+
+          console.log('👤 Employee check:', { employee, empError });
+
+          if (employee && !isRedirecting.current) {
+            console.log('🚫 Blocking access - applicant was hired and is now an employee');
+            // Applicant has been hired - deny access to applicant portal
+            isRedirecting.current = true;
+            setLoading(false);
+            // Navigate first with the message, then sign out
+            navigate("/applicant/login", { 
+              replace: true,
+              state: { message: "Your application has been accepted and you are now an employee." }
+            });
+            // Sign out after navigation to preserve the state message
+            await supabase.auth.signOut();
+            return;
+          }
+
+          if (!isRedirecting.current) {
+            console.log('✅ Allowing access - applicant not hired yet');
+            // Allow access for applicants who haven't been hired
+            setApplicantUser(applicant);
+            setLoading(false);
+          }
           return;
         }
 
@@ -62,7 +95,7 @@ function ApplicantLayout() {
             setLoading(false);
             // Sign them out and redirect to appropriate login
             await supabase.auth.signOut();
-            navigate("/employee/login");
+            navigate("/employee/login", { replace: true });
             return;
           }
         }
@@ -70,19 +103,11 @@ function ApplicantLayout() {
         // If no applicant record and no profile record (or profile is applicant), redirect to login
         setLoading(false);
         await supabase.auth.signOut();
-        const redirectTarget = `${location.pathname}${location.search || ''}`;
-        navigate(`/applicant/login?redirectTo=${encodeURIComponent(redirectTarget)}`, {
-          state: { redirectTo: redirectTarget },
-          replace: true,
-        });
+        navigate("/applicant/login", { replace: true });
       } catch (error) {
         console.error('Error fetching applicant user:', error);
         setLoading(false);
-        const redirectTarget = `${location.pathname}${location.search || ''}`;
-        navigate(`/applicant/login?redirectTo=${encodeURIComponent(redirectTarget)}`, {
-          state: { redirectTo: redirectTarget },
-          replace: true,
-        });
+        navigate("/applicant/login", { replace: true });
       }
     };
 
@@ -90,15 +115,14 @@ function ApplicantLayout() {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      // Don't reset if we're in the middle of a redirect
+      if (isRedirecting.current) return;
+      
       if (session) {
-        fetchApplicantProfile();
+        hasCheckedAuth.current = false;
       } else {
         setApplicantUser(null);
-        const redirectTarget = `${location.pathname}${location.search || ''}`;
-        navigate(`/applicant/login?redirectTo=${encodeURIComponent(redirectTarget)}`, {
-          state: { redirectTo: redirectTarget },
-          replace: true,
-        });
+        hasCheckedAuth.current = false;
       }
     });
 

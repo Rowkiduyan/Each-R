@@ -351,6 +351,9 @@ function HrRecruitment() {
   const [uploadingAgreementDocs, setUploadingAgreementDocs] = useState(false);
   const [removingAgreementDoc, setRemovingAgreementDoc] = useState(false);
   
+  // External certificates state
+  const [certificateUrls, setCertificateUrls] = useState({});
+  
   // Interview calendar state
   const [interviews, setInterviews] = useState([]);
   const [signingSchedules, setSigningSchedules] = useState([]);
@@ -1160,6 +1163,44 @@ function HrRecruitment() {
     lastInterviewNotesApplicantIdRef.current = idKey;
   }, [activeDetailTab, selectedApplicant?.id]);
 
+  // Generate signed URLs for external certificates from application form
+  useEffect(() => {
+    const generateCertificateUrls = async () => {
+      if (!selectedApplicant || activeDetailTab !== 'Application') {
+        setCertificateUrls({});
+        return;
+      }
+      
+      const payloadObj = getApplicantPayloadObject(selectedApplicant);
+      const certificates = payloadObj?.form?.certificates || payloadObj?.certificates || [];
+      
+      if (!Array.isArray(certificates) || certificates.length === 0) {
+        setCertificateUrls({});
+        return;
+      }
+      
+      const urlMap = {};
+      for (const cert of certificates) {
+        if (cert?.path) {
+          try {
+            const { data, error } = await supabase.storage
+              .from('external_certificates')
+              .createSignedUrl(cert.path, 604800); // 7 days
+            if (!error && data?.signedUrl) {
+              urlMap[cert.path] = data.signedUrl;
+            }
+          } catch (err) {
+            console.error('Error generating signed URL for certificate:', err);
+          }
+        }
+      }
+      setCertificateUrls(urlMap);
+    };
+    
+    generateCertificateUrls();
+  }, [selectedApplicant, activeDetailTab]);
+
+
   const formatNameLastFirstMiddle = ({ last, first, middle }) => {
     const l = normalizeWs(last);
     const f = normalizeWs(first);
@@ -1280,6 +1321,40 @@ function HrRecruitment() {
         }
       }
 
+      // Extract endorsed_by_auth_user_id from payloads and fetch agency names
+      const agencyUserIds = [];
+      const agencyUserIdMap = new Map(); // Map application id to agency user id
+      
+      (data || []).forEach((row) => {
+        let payloadObj = row.payload;
+        if (typeof payloadObj === "string") {
+          try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+        }
+        const endorsedByUserId = payloadObj.meta?.endorsed_by_auth_user_id || payloadObj.endorsed_by_auth_user_id || payloadObj.endorsedByAuthUserId;
+        if (endorsedByUserId) {
+          agencyUserIds.push(endorsedByUserId);
+          agencyUserIdMap.set(row.id, endorsedByUserId);
+        }
+      });
+
+      // Fetch agency names from profiles table
+      const agencyNamesMap = {};
+      if (agencyUserIds.length > 0) {
+        const uniqueAgencyIds = [...new Set(agencyUserIds)];
+        const { data: agencyProfiles } = await supabase
+          .from('profiles')
+          .select('id, agency_name')
+          .in('id', uniqueAgencyIds);
+        
+        if (agencyProfiles) {
+          agencyProfiles.forEach(profile => {
+            if (profile.agency_name) {
+              agencyNamesMap[profile.id] = profile.agency_name;
+            }
+          });
+        }
+      }
+
       const mapped = (data || []).map((row) => {
         // normalize payload (jsonb or string)
         let payloadObj = row.payload;
@@ -1318,6 +1393,10 @@ function HrRecruitment() {
 
         const agencyFlag = isAgency({ raw: { payload: payloadObj }, payload: payloadObj, agency: payloadObj?.agency });
 
+        // Get agency name from the map
+        const agencyUserId = agencyUserIdMap.get(row.id);
+        const agencyName = agencyUserId ? agencyNamesMap[agencyUserId] : null;
+
         const email = pickFirstEmail(
           source.email,
           source.personal_email,
@@ -1349,6 +1428,7 @@ function HrRecruitment() {
           phone,
           resume_path: resumePath,
           agency: agencyFlag,
+          agency_name: agencyName,
           raw: row,
           // surface interview fields if present (helpful in table later)
           interview_date: row.interview_date || row.payload?.interview?.date || null,
@@ -3099,10 +3179,15 @@ function HrRecruitment() {
         const notes = String(interviewNotesText || '');
         const nowIso = new Date().toISOString();
         
-        // Update application status - try with interview_notes column first, fall back if column doesn't exist
+        // Get current payload safely
         const currentPayload = getApplicantPayloadObject(selectedApplicant);
+        
+        // Create updated payload object (shallow copy to avoid circular refs)
         const updatedPayload = {
-          ...currentPayload,
+          form: currentPayload.form || {},
+          job: currentPayload.job || {},
+          workExperiences: currentPayload.workExperiences || [],
+          characterReferences: currentPayload.characterReferences || [],
           interview_notes: notes,
           assessment_finalized: true,
           assessment_finalized_at: nowIso,
@@ -3113,50 +3198,22 @@ function HrRecruitment() {
           .from('applications')
           .update({
             status: 'agreement',
-            interview_notes: notes,
             payload: updatedPayload,
           })
           .eq('id', selectedApplicant.id);
 
-        // If column doesn't exist (error code 42703 or PGRST204), retry without interview_notes
         if (updateError) {
-          // PostgreSQL error code 42703 = undefined_column
-          // PostgREST error code PGRST204 = column not found
-          if (updateError.code === 'PGRST204' || updateError.code === '42703' || 
-              (updateError.message && updateError.message.includes('column')) ||
-              (updateError.details && updateError.details.includes('interview_notes'))) {
-            
-            const { error: retryError } = await supabase
-              .from('applications')
-              .update({ 
-                status: 'agreement', 
-                payload: updatedPayload 
-              })
-              .eq('id', selectedApplicant.id);
-            
-            if (retryError) throw retryError;
-          } else {
-            throw updateError;
-          }
+          console.error('Update error:', updateError);
+          throw updateError;
         }
 
         setSelectedApplicant((prev) => {
           if (!prev) return prev;
-          const prevPayload = getApplicantPayloadObject(prev);
-          const mergedPayload = {
-            ...prevPayload,
-            interview_notes: notes,
-            assessment_finalized: true,
-            assessment_finalized_at: nowIso,
-          };
           return {
             ...prev,
             status: 'agreement',
             interview_notes: notes,
-            raw: {
-              ...(prev.raw || {}),
-              payload: mergedPayload,
-            },
+            payload: updatedPayload,
           };
         });
 
@@ -4203,7 +4260,21 @@ function HrRecruitment() {
   const setEditJobField = (k, v) => {
     if (k === 'title') {
       const dept = getDepartmentForPosition(v);
-      const inferredJobType = dept === 'Operations Department' ? 'delivery_crew' : 'office_employee';
+      
+      // Operations Department office positions (not delivery crew)
+      const operationsOfficePositions = [
+        "Base Dispatcher",
+        "Site Coordinator",
+        "Transport Coordinator",
+        "Customer Service Representative"
+      ];
+      
+      // Determine job type based on position
+      let inferredJobType = "office_employee";
+      if (dept === "Operations Department" && !operationsOfficePositions.includes(v)) {
+        inferredJobType = "delivery_crew";
+      }
+      
       setEditJobForm((prev) => ({
         ...prev,
         title: v,
@@ -5367,7 +5438,9 @@ function HrRecruitment() {
                                     <div className="flex items-center gap-2">
                                       <p className="text-sm font-medium text-gray-800">{a.name}</p>
                                       {isAgency(a) && (
-                                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">AGENCY</span>
+                                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">
+                                          {a.agency_name || "AGENCY"}
+                                        </span>
                                       )}
                                     </div>
                                     <p className="text-xs text-gray-500">{a.email || `#${a.id.slice(0, 8)}`}</p>
@@ -5482,7 +5555,9 @@ function HrRecruitment() {
                         <div className="flex items-center gap-2">
                           <h4 className="font-semibold text-gray-800 text-lg">{selectedApplicant.name}</h4>
                           {isAgency(selectedApplicant) && (
-                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">AGENCY</span>
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                              {selectedApplicant.agency_name || "AGENCY"}
+                            </span>
                           )}
                         </div>
                         <p className="text-xs text-gray-500">#{selectedApplicant.id.slice(0, 8)}</p>
@@ -5902,8 +5977,8 @@ function HrRecruitment() {
                             </div>
                           </div>
 
-                          {/* Specialized Training (Certificate) */}
-                          {(() => {
+                          {/* Specialized Training (Certificate) - Only show for agency applicants */}
+                          {isAgency(selectedApplicant) && (() => {
                             const trainingName = form.specializedTraining || form.specialized_training || null;
                             const trainingYear = form.specializedYear || form.specialized_year || null;
 
@@ -6409,6 +6484,75 @@ function HrRecruitment() {
                                         </div>
                                       </div>
                                     ))
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
+                          {/* Certificates - Only show for non-agency applicants */}
+                          {!isAgency(selectedApplicant) && (() => {
+                            const certificates = payloadObj?.form?.certificates || payloadObj?.certificates || [];
+                            const hasCertificates = Array.isArray(certificates) && certificates.length > 0;
+
+                            return (
+                              <div className="mb-6">
+                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded flex items-center justify-between">
+                                  <span>Certificates</span>
+                                  {!hasCertificates && <span className="text-xs text-gray-500 italic">None</span>}
+                                </h5>
+                                <div className="border border-gray-200 rounded-lg p-4">
+                                  {!hasCertificates ? (
+                                    <div className="text-center py-8">
+                                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                      </div>
+                                      <p className="text-sm text-gray-600 font-medium">No certificates submitted</p>
+                                      <p className="text-xs text-gray-500 mt-1">Applicant certifications will appear here</p>
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-1 gap-3">
+                                      {certificates.map((cert, idx) => {
+                                        const certUrl = certificateUrls[cert?.path] || null;
+                                        const fileSize = cert?.size ? (
+                                          cert.size < 1024 * 1024
+                                            ? `${(cert.size / 1024).toFixed(1)} KB`
+                                            : `${(cert.size / (1024 * 1024)).toFixed(1)} MB`
+                                        ) : null;
+                                        
+                                        return (
+                                          <div 
+                                            key={idx} 
+                                            className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-all"
+                                          >
+                                            <svg className="w-5 h-5 text-gray-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                            </svg>
+                                            <div className="flex-1 min-w-0">
+                                              {certUrl ? (
+                                                <a
+                                                  href={certUrl}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline truncate block"
+                                                >
+                                                  {cert?.name || `Certificate ${idx + 1}`}
+                                                </a>
+                                              ) : (
+                                                <p className="text-sm font-medium text-gray-800 truncate">
+                                                  {cert?.name || `Certificate ${idx + 1}`}
+                                                </p>
+                                              )}
+                                              {fileSize && (
+                                                <p className="text-xs text-gray-500">{fileSize}</p>
+                                              )}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
                                   )}
                                 </div>
                               </div>
@@ -8057,37 +8201,6 @@ function HrRecruitment() {
               )}
 
               <div className="space-y-4">
-                {/* Job Type Toggle */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Job Type</label>
-                  <div className="flex gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setEditJobField("jobType", "delivery_crew")}
-                      className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
-                        editJobForm.jobType === "delivery_crew"
-                          ? "border-red-600 bg-red-50 text-red-700 font-semibold"
-                          : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
-                      }`}
-                    >
-                      <div className="text-lg mb-1">🚚</div>
-                      <div className="text-sm font-medium">Drivers/Delivery Crew</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditJobField("jobType", "office_employee")}
-                      className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
-                        editJobForm.jobType === "office_employee"
-                          ? "border-red-600 bg-red-50 text-red-700 font-semibold"
-                          : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
-                      }`}
-                    >
-                      <div className="text-lg mb-1">💼</div>
-                      <div className="text-sm font-medium">Office Employee</div>
-                    </button>
-                  </div>
-                </div>
-
                 <div>
                   <button
                     type="button"

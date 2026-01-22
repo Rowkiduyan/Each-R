@@ -233,15 +233,6 @@ function EmployeeLogin() {
               </div>
             </div>
 
-            <div className="flex justify-end text-sm">
-              <button
-                type="button"
-                className="text-blue-600 hover:text-blue-700 font-medium"
-              >
-                Forgot Password?
-              </button>
-            </div>
-
             <button
               type="submit"
               disabled={loading}

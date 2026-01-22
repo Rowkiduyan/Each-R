@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { supabase } from "./supabaseClient";
 import { useLocation, useNavigate } from "react-router-dom";
+import emailjs from '@emailjs/browser';
 
 function VerifyEmail() {
   const location = useLocation();
@@ -8,9 +9,67 @@ function VerifyEmail() {
   const [email] = useState(emailFromRegister);
   const [code, setCode] = useState("");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const navigate = useNavigate();
+
+  const handleResendCode = async () => {
+    if (!email) {
+      setErrorMessage('Email address is missing. Please register again.');
+      return;
+    }
+
+    setIsResending(true);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      // Get pending user data
+      const { data: pendingUser, error: pendingError } = await supabase
+        .from("pending_applicants")
+        .select("*")
+        .eq("email", email)
+        .maybeSingle();
+
+      if (pendingError || !pendingUser) {
+        setErrorMessage('Registration not found. Please register again.');
+        setIsResending(false);
+        return;
+      }
+
+      // Generate new 6-digit verification code
+      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // Send verification email using EmailJS
+      await emailjs.send(
+        "service_nc4wt9g",
+        "template_x50nz3r",
+        {
+          user_name: pendingUser.fname,
+          email: email,
+          verification_code: verificationCode,
+        },
+        "m2yll-ASVS8jsxvcM"
+      );
+
+      // Update verification code in database
+      const { error: updateError } = await supabase
+        .from("pending_applicants")
+        .update({ verification_code: verificationCode })
+        .eq("email", email);
+
+      if (updateError) throw updateError;
+
+      setSuccessMessage('✅ New verification code sent! Please check your email.');
+      setCode(''); // Clear the input field
+    } catch (err) {
+      console.error("Resend error:", err);
+      setErrorMessage('Failed to resend code. Please try again.');
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   const handleVerify = async (e) => {
     e.preventDefault();
@@ -68,7 +127,7 @@ function VerifyEmail() {
             // User exists in Auth but not in profiles table yet
             console.log("User exists in Auth, attempting to sign in to get user ID...");
             
-            // Try to sign in to get the user ID
+            // Try to sign in to get the user ID and stay signed in for profile creation
             const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
               email: pendingUser.email,
               password: pendingUser.password,
@@ -77,41 +136,12 @@ function VerifyEmail() {
             if (signInError) {
               // If sign-in fails, the password might be wrong or user was created differently
               console.error("Auth signin error:", signInError);
-              
-              // Check if there's a profile with this email (user might have been created via different flow)
-              const { data: profileCheck } = await supabase
-                .from("profiles")
-                .select("id")
-                .eq("email", pendingUser.email)
-                .maybeSingle();
-              
-              if (profileCheck) {
-                authUserId = profileCheck.id;
-                console.log("Found user via profiles table");
-              } else {
-                // User exists in Auth but password doesn't match and no profile exists
-                // This could happen if:
-                // 1. User registered before but didn't complete verification
-                // 2. User changed password
-                // 3. User was created through a different flow
-                
-                // Try to reset password using the password from pending_applicants
-                // But first, let's check if we can proceed by creating the profile/applicant records
-                // We'll use a workaround: try to get user by attempting password reset
-                
-                // Actually, if user exists in Auth but password doesn't match, we should
-                // still allow verification to proceed, but they'll need to reset password to log in
-                // For now, let's try to find the user ID another way or create a new account
-                
-                // Since we can't get the user ID without password, we'll need to inform the user
-                setErrorMessage("An account with this email already exists, but the password doesn't match. Please use 'Forgot Password' to reset your password, then try verifying again. If you believe this is an error, please contact support.");
-                setIsVerifying(false);
-                return;
-              }
+              setErrorMessage("An account with this email already exists, but the password doesn't match. Please use 'Forgot Password' to reset your password, then try verifying again.");
+              setIsVerifying(false);
+              return;
             } else {
               authUserId = signInData.user.id;
-              // Sign out immediately after getting the ID (we don't want to stay signed in)
-              await supabase.auth.signOut();
+              // Keep user signed in for profile/applicant creation
             }
           } else {
             console.error("Auth signup error:", signUpError);
@@ -120,7 +150,7 @@ function VerifyEmail() {
             return;
           }
         } else {
-          // Sign up was successful
+          // Sign up was successful, user is now signed in
           authUserId = signUpData.user?.id;
           if (!authUserId) {
             setErrorMessage("Account creation failed. Please try again.");
@@ -131,6 +161,7 @@ function VerifyEmail() {
       }
 
       // 3️⃣ Check if profile already exists, if not create it
+      // User should be signed in at this point for RLS policies to work
       const { data: existingProfile } = await supabase
         .from("profiles")
         .select("id")
@@ -204,6 +235,10 @@ function VerifyEmail() {
         setIsVerifying(false);
         return;
       }
+
+      // Sign out the user after successful verification
+      // They should log in normally after this
+      await supabase.auth.signOut();
 
       setSuccessMessage("✅ Email verified successfully! You can now log in.");
       setTimeout(() => {
@@ -316,10 +351,11 @@ function VerifyEmail() {
               Didn't receive the code?{" "}
               <button
                 type="button"
-                className="text-red-600 font-semibold underline cursor-not-allowed"
-                disabled
+                onClick={handleResendCode}
+                disabled={isResending}
+                className="text-red-600 font-semibold hover:text-red-700 underline disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Resend Code
+                {isResending ? 'Sending...' : 'Resend Code'}
               </button>
             </p>
             <p className="text-center text-sm text-gray-600 mt-2">

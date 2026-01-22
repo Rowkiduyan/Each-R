@@ -1,0 +1,7 @@
+name: each-r
+static_sites:
+  - name: web
+    build_command: npm run build
+    output_dir: dist
+    environment_slug: node-js
+    catchall_document: index.html
