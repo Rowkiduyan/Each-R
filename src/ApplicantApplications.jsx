@@ -853,7 +853,7 @@ function ApplicantApplications() {
                   {/* Applied Job Card */}
                   <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                     <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200 flex items-center justify-between gap-3">
-                      <span>Applied Job</span>
+                      <span>Applied Job!!!</span>
                       {applicationData?.job_id ? (
                         <Link
                           to="/applicantl/home"
