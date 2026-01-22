@@ -1486,11 +1486,6 @@ const getApplicationFilesPublicUrl = (path) => {
         return 'Please upload your resume (PDF) before proceeding.';
       }
 
-      // Certificates are required
-      if (certificateFiles.length === 0) {
-        return 'Please upload at least one certificate before proceeding.';
-      }
-
       // Do not block on non-editable (read-only) fields.
       if (!nonEditableKeys.has('birthday') && form.birthday && !validateFormBirthday(form.birthday)) {
         return 'Please fix the birthday field before proceeding.';
@@ -4861,7 +4856,7 @@ const getApplicationFilesPublicUrl = (path) => {
                         {/* Certificates */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-1">
-                            Upload Certificates <span className="text-red-600">*</span>
+                            Upload Certificates
                           </label>
                           <div className="flex items-center gap-2 mb-2">
                             <label className="cursor-pointer px-4 py-2 bg-blue-50 text-blue-700 rounded-md hover:bg-blue-100 transition-colors text-sm font-medium border border-blue-200">

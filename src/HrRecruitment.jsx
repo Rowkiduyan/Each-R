@@ -2814,7 +2814,7 @@ function HrRecruitment() {
   };
 
   // ---- OPEN agreement signing modal
-  const openAgreementSigningModal = (application) => {
+  const _openAgreementSigningModal = (application) => {
     setSelectedApplicationForSigning(application);
 
     let payloadObj = application?.raw?.payload || {};
@@ -7092,8 +7092,6 @@ function HrRecruitment() {
                           selectedApplicant?.agreement_signing_location
                       );
 
-                      const actionLabel = hasSigning ? 'Update Signing Schedule' : 'Set Signing Schedule';
-
                       return (
                         <div className="bg-white border rounded-lg shadow-sm p-4">
                           <div className="flex items-start justify-between gap-3">
@@ -7109,7 +7107,7 @@ function HrRecruitment() {
                               </div>
                               <div>
                                 <div className="text-sm font-semibold text-gray-800">Agreement Signing Schedule</div>
-                                <div className="text-xs text-gray-500">Set or update signing schedule.</div>
+                                <div className="text-xs text-gray-500">Signing schedule details.</div>
                               </div>
                             </div>
 
@@ -7117,19 +7115,7 @@ function HrRecruitment() {
                           </div>
 
                           {!hasSigning ? (
-                            <div className="mt-3 flex items-center justify-between gap-3">
-                              <div className="text-sm text-gray-600 italic">No agreement signing appointment yet.</div>
-                              <button
-                                type="button"
-                                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
-                                onClick={() => {
-                                  if (!selectedApplicant) return;
-                                  openAgreementSigningModal(selectedApplicant);
-                                }}
-                              >
-                                {actionLabel}
-                              </button>
-                            </div>
+                            <div className="mt-3 text-sm text-gray-600 italic">No agreement signing appointment yet.</div>
                           ) : (
                             <>
                               <div className="mt-4 grid grid-cols-1 gap-2 text-sm text-gray-700">
@@ -7145,19 +7131,6 @@ function HrRecruitment() {
                                   <span className="font-medium text-gray-800">Time:</span>{" "}
                                   {selectedApplicant?.agreement_signing_time || <span className="text-gray-500 italic">None</span>}
                                 </div>
-                              </div>
-
-                              <div className="mt-4 border-t pt-4 flex items-center justify-end">
-                                <button
-                                  type="button"
-                                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium"
-                                  onClick={() => {
-                                    if (!selectedApplicant) return;
-                                    openAgreementSigningModal(selectedApplicant);
-                                  }}
-                                >
-                                  {actionLabel}
-                                </button>
                               </div>
                             </>
                           )}
