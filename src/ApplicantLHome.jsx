@@ -93,6 +93,9 @@ import {
     const [emailError, setEmailError] = useState('');
     const [showAllResponsibilities, setShowAllResponsibilities] = useState(false);
     const [profileForm, setProfileForm] = useState({
+      fname: '',
+      mname: '',
+      lname: '',
         address: '',
         unit_house_number: '',
         street: '',
@@ -246,6 +249,9 @@ import {
 
             setProfileData(mergedWithBirthday);
             setProfileForm({
+              fname: mergedWithBirthday.fname || '',
+              mname: mergedWithBirthday.mname || '',
+              lname: mergedWithBirthday.lname || '',
               address: mergedWithBirthday.address || '',
               unit_house_number: mergedWithBirthday.unit_house_number || '',
               street: mergedWithBirthday.street || '',
@@ -609,6 +615,8 @@ const handleSave = async () => {
     }
 
     const requiredFields = [
+      { key: 'lname', label: 'Last Name' },
+      { key: 'fname', label: 'First Name' },
       { key: 'street', label: 'Street Name' },
       { key: 'barangay', label: 'Barangay' },
       { key: 'city', label: 'City' },
@@ -765,6 +773,9 @@ const handleSave = async () => {
     }
 
     const baseUpdatePayload = {
+      fname: String(profileForm.fname || '').trim(),
+      mname: String(profileForm.mname || '').trim() || null,
+      lname: String(profileForm.lname || '').trim(),
         address: combinedAddress,
         unit_house_number: profileForm.unit_house_number,
         street: profileForm.street,
@@ -834,6 +845,9 @@ const handleSave = async () => {
 
       setProfileData(mergedWithBirthday);
       setProfileForm({
+        fname: mergedWithBirthday.fname || '',
+        mname: mergedWithBirthday.mname || '',
+        lname: mergedWithBirthday.lname || '',
         address: mergedWithBirthday.address || '',
         unit_house_number: mergedWithBirthday.unit_house_number || '',
         street: mergedWithBirthday.street || '',
@@ -880,6 +894,9 @@ const handleSave = async () => {
 const handleCancel = () => {
   if (profileData) {
       setProfileForm({
+        fname: profileData.fname || '',
+        mname: profileData.mname || '',
+        lname: profileData.lname || '',
         address: profileData.address || '',
         unit_house_number: profileData.unit_house_number || '',
         street: profileData.street || '',
@@ -3583,7 +3600,33 @@ const getApplicationFilesPublicUrl = (path) => {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                              <div className="text-gray-900 font-medium">{getFullName()}</div>
+                              {isEditMode ? (
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  <input
+                                    type="text"
+                                    value={profileForm.lname}
+                                    onChange={(e) => handleFormChange('lname', e.target.value)}
+                                    placeholder="Last name"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={profileForm.fname}
+                                    onChange={(e) => handleFormChange('fname', e.target.value)}
+                                    placeholder="First name"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                  />
+                                  <input
+                                    type="text"
+                                    value={profileForm.mname}
+                                    onChange={(e) => handleFormChange('mname', e.target.value)}
+                                    placeholder="Middle name (optional)"
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                  />
+                                </div>
+                              ) : (
+                                <div className="text-gray-900 font-medium">{getFullName()}</div>
+                              )}
                             </div>
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
