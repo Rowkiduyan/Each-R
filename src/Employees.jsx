@@ -378,6 +378,7 @@ function Employees() {
         source: row.source || null,
         endorsed_by_agency_id: row.endorsed_by_agency_id || row.agency_profile_id || null,
         endorsed_at: row.endorsed_at || null,
+        agency_name: null, // Will be populated after fetching from profiles
       };
     };
 
@@ -393,6 +394,34 @@ function Employees() {
         if (empErr) throw empErr;
 
         const normalized = (empRows || []).map(normalize);
+
+        // Fetch agency names for employees endorsed by agencies
+        const agencyIds = Array.from(new Set(
+          normalized.filter(e => e.endorsed_by_agency_id).map(e => e.endorsed_by_agency_id)
+        ));
+
+        const agencyNamesMap = {};
+        if (agencyIds.length > 0) {
+          const { data: agencyProfiles } = await supabase
+            .from('profiles')
+            .select('id, agency_name')
+            .in('id', agencyIds);
+          
+          if (agencyProfiles) {
+            agencyProfiles.forEach(profile => {
+              if (profile.agency_name) {
+                agencyNamesMap[profile.id] = profile.agency_name;
+              }
+            });
+          }
+        }
+
+        // Populate agency_name field
+        normalized.forEach(emp => {
+          if (emp.endorsed_by_agency_id && agencyNamesMap[emp.endorsed_by_agency_id]) {
+            emp.agency_name = agencyNamesMap[emp.endorsed_by_agency_id];
+          }
+        });
 
         const emailsToFill = Array.from(new Set(
           normalized.filter(e => (!e.position || !e.depot) && e.email).map(e => e.email)
@@ -2050,6 +2079,14 @@ function Employees() {
 
   // State to trigger onboarding items refresh
   const [onboardingRefreshTrigger, setOnboardingRefreshTrigger] = useState(0);
+  const [showConfirmSaveOnboarding, setShowConfirmSaveOnboarding] = useState(false);
+  const [showConfirmDeleteOnboarding, setShowConfirmDeleteOnboarding] = useState(false);
+  const [onboardingItemToDelete, setOnboardingItemToDelete] = useState(null);
+  const [isSavingOnboarding, setIsSavingOnboarding] = useState(false);
+  const [isDeletingOnboarding, setIsDeletingOnboarding] = useState(false);
+  const [showAddOnboardingModal, setShowAddOnboardingModal] = useState(false);
+  const [newOnboardingItem, setNewOnboardingItem] = useState({ item: '', description: '', date: '', file: null });
+  const [isSavingNewOnboarding, setIsSavingNewOnboarding] = useState(false);
 
   // Fetch onboarding items when employee is selected and onboarding tab is active
   useEffect(() => {
@@ -2464,7 +2501,9 @@ function Employees() {
                                       <div className="flex items-center gap-2">
                                         <p className="text-sm font-medium text-gray-800">{emp.name}</p>
                                         {emp.agency && (
-                                          <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">AGENCY</span>
+                                          <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">
+                                            {emp.agency_name || "AGENCY"}
+                                          </span>
                                         )}
                                       </div>
                                       <p className="text-xs text-gray-500">{emp.email || `#${emp.id.slice(0, 8)}`}</p>
@@ -2521,7 +2560,9 @@ function Employees() {
                               <div className="flex items-center gap-2">
                                 <h4 className="font-semibold text-gray-800 text-lg">{selectedEmployee.name}</h4>
                                 {selectedEmployee.agency && (
-                                  <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">AGENCY</span>
+                                  <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                                    {selectedEmployee.agency_name || "AGENCY"}
+                                  </span>
                                 )}
                               </div>
                               <p className="text-xs text-gray-500">#{selectedEmployee.id.slice(0, 8)}</p>
@@ -3725,386 +3766,102 @@ function Employees() {
                           {activeTab === 'onboarding' && (
                             <div className="space-y-6">
                               <div className="flex items-center justify-between mb-4">
-                                <div>
-                                  <h5 className="font-semibold text-gray-800">Onboarding Items</h5>
-                                  <p className="text-xs text-gray-500 mt-1">Add and manage onboarding documents for this employee</p>
-                                </div>
+                                <h5 className="text-lg font-semibold text-gray-800">Onboarding Records</h5>
                                 <button
-                                  onClick={() => setOnboardingItems((prev) => [
-                                    ...prev,
-                                    { id: Date.now(), item: "", description: "", date: new Date().toISOString().substring(0, 10), file: null, fileUrl: null, filePath: null, isNew: true }
-                                  ])}
+                                  onClick={() => {
+                                    setNewOnboardingItem({ item: '', description: '', date: new Date().toISOString().substring(0, 10), file: null });
+                                    setShowAddOnboardingModal(true);
+                                  }}
                                   className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2"
                                 >
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                                   </svg>
-                                  Add Item
+                                  Add Record
                                 </button>
                               </div>
 
                               {onboardingItems.length === 0 ? (
-                                <div className="border-2 border-dashed border-gray-200 rounded-lg p-12 text-center">
-                                  <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                  </svg>
-                                  <p className="text-gray-500 mb-2">No onboarding items yet</p>
-                                  <p className="text-xs text-gray-400">Click "Add Item" to create a new onboarding document</p>
+                                <div className="bg-white rounded-lg border border-gray-200">
+                                  {/* Table Header */}
+                                  <div className="flex px-6 py-3 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    <div className="flex-1 text-center">Item Name</div>
+                                    <div className="flex-1 text-center">Description</div>
+                                    <div className="flex-1 text-center">Date Issued</div>
+                                    <div className="flex-1 text-center">Attachment</div>
+                                    <div className="flex-1 text-center">Actions</div>
+                                  </div>
+                                  {/* Empty State */}
+                                  <div className="p-16 text-center">
+                                    <svg className="w-16 h-16 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <p className="text-gray-400 text-sm">No onboarding records yet</p>
+                                  </div>
                                 </div>
                               ) : (
-                                <>
-                                  <div className="space-y-4">
-                                    {onboardingItems.map((ob) => {
-                                      if (!onboardingFileRefs.current[ob.id]) {
-                                        onboardingFileRefs.current[ob.id] = React.createRef();
-                                      }
-                                      const fileInputRef = onboardingFileRefs.current[ob.id];
-                                      return (
-                                        <div key={ob.id} className="border border-gray-200 rounded-lg p-4 bg-white hover:shadow-sm transition-shadow">
-                                          <div className="grid grid-cols-12 gap-4">
-                                            {/* Item Name */}
-                                            <div className="col-span-12 md:col-span-3">
-                                              <label className="block text-xs font-medium text-gray-700 mb-1">Item Name *</label>
-                                              <input
-                                                type="text"
-                                                value={ob.item}
-                                                onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, item: e.target.value } : item))}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                placeholder="e.g., Employee ID"
-                                              />
-                                            </div>
-                                            {/* Description */}
-                                            <div className="col-span-12 md:col-span-4">
-                                              <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
-                                              <input
-                                                type="text"
-                                                value={ob.description}
-                                                onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, description: e.target.value } : item))}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                                placeholder="Brief description"
-                                              />
-                                            </div>
-                                            {/* Date Issued */}
-                                            <div className="col-span-12 md:col-span-2">
-                                              <label className="block text-xs font-medium text-gray-700 mb-1">Date Issued</label>
-                                              <input
-                                                type="date"
-                                                value={ob.date ? new Date(ob.date).toISOString().substring(0, 10) : ""}
-                                                onChange={(e) => setOnboardingItems((prev) => prev.map((item) => item.id === ob.id ? { ...item, date: e.target.value } : item))}
-                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                              />
-                                            </div>
-                                            {/* File Upload */}
-                                            <div className="col-span-12 md:col-span-2">
-                                              <label className="block text-xs font-medium text-gray-700 mb-1">File</label>
-                                              <input
-                                                ref={fileInputRef}
-                                                type="file"
-                                                className="hidden"
-                                                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                                                onChange={(e) => {
-                                                  const file = e.target.files[0];
-                                                  if (file) {
-                                                    if (file.size > 10 * 1024 * 1024) {
-                                                      alert('File size must be less than 10MB');
-                                                      return;
-                                                    }
-                                                    setOnboardingItems((prev) => prev.map((item) => 
-                                                      item.id === ob.id 
-                                                        ? { ...item, file: file, fileUrl: URL.createObjectURL(file) }
-                                                        : item
-                                                    ));
-                                                  }
-                                                }}
-                                              />
-                                              {ob.fileUrl ? (
-                                                <div className="flex items-center gap-2">
-                                                  <a 
-                                                    href={ob.fileUrl} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer"
-                                                    className="text-xs text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
-                                                  >
-                                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                                    </svg>
-                                                    {ob.file?.name || 'View File'}
-                                                  </a>
-                                                  <button
-                                                    onClick={() => {
-                                                      setOnboardingItems((prev) => prev.map((item) => 
-                                                        item.id === ob.id 
-                                                          ? { ...item, file: null, fileUrl: null, filePath: null }
-                                                          : item
-                                                      ));
-                                                      if (fileInputRef.current) fileInputRef.current.value = '';
-                                                    }}
-                                                    className="text-red-600 hover:text-red-800"
-                                                    title="Remove file"
-                                                  >
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                    </svg>
-                                                  </button>
-                                                </div>
-                                              ) : (
-                                                <button
-                                                  onClick={() => fileInputRef.current?.click()}
-                                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1"
-                                                >
-                                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                                  </svg>
-                                                  Upload
-                                                </button>
-                                              )}
-                                            </div>
-                                            {/* Delete Button */}
-                                            <div className="col-span-12 md:col-span-1 flex items-end">
-                                              <button
-                                                onClick={() => {
-                                                  if (window.confirm("Delete this onboarding item?")) {
-                                                    setOnboardingItems((prev) => prev.filter((item) => item.id !== ob.id));
-                                                    delete onboardingFileRefs.current[ob.id];
-                                                  }
-                                                }}
-                                                className="w-full px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg text-xs font-medium transition-colors flex items-center justify-center gap-1"
-                                              >
-                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                                Delete
-                                              </button>
-                                            </div>
-                                          </div>
+                                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                  {/* Table Header */}
+                                  <div className="flex px-6 py-3 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    <div className="flex-1 text-center">Item Name</div>
+                                    <div className="flex-1 text-center">Description</div>
+                                    <div className="flex-1 text-center">Date Issued</div>
+                                    <div className="flex-1 text-center">Attachment</div>
+                                    <div className="flex-1 text-center">Actions</div>
+                                  </div>
+                                  {/* Table Body */}
+                                  <div className="divide-y divide-gray-200">
+                                    {onboardingItems.map((ob) => (
+                                      <div key={ob.id} className="flex px-6 py-4 hover:bg-gray-50 transition-colors">
+                                        {/* Item Name */}
+                                        <div className="flex-1 text-sm text-gray-800 font-medium text-center">
+                                          {ob.item || '—'}
                                         </div>
-                                      );
-                                    })}
+                                        {/* Description */}
+                                        <div className="flex-1 text-sm text-gray-600 text-center">
+                                          {ob.description || '—'}
+                                        </div>
+                                        {/* Date Issued */}
+                                        <div className="flex-1 text-sm text-gray-600 text-center">
+                                          {ob.date ? new Date(ob.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                                        </div>
+                                        {/* Attachment */}
+                                        <div className="flex-1 text-sm flex justify-center">
+                                          {ob.fileUrl ? (
+                                            <a 
+                                              href={ob.fileUrl} 
+                                              target="_blank" 
+                                              rel="noopener noreferrer"
+                                              className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                              </svg>
+                                              View
+                                            </a>
+                                          ) : (
+                                            <span className="text-gray-400">—</span>
+                                          )}
+                                        </div>
+                                        {/* Actions */}
+                                        <div className="flex-1 text-center">
+                                          <button
+                                            onClick={() => {
+                                              setOnboardingItemToDelete(ob);
+                                              setShowConfirmDeleteOnboarding(true);
+                                            }}
+                                            className="text-red-600 hover:text-red-800 transition-colors"
+                                            title="Delete"
+                                          >
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
-
-                                  {/* Save Button */}
-                                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
-                                    <button
-                                      onClick={async () => {
-                                        if (!selectedEmployee?.id) {
-                                          alert('Please select an employee first');
-                                          return;
-                                        }
-
-                                        // Validate items
-                                        const invalidItems = onboardingItems.filter(item => !item.item.trim());
-                                        if (invalidItems.length > 0) {
-                                          setErrorMessage('Please fill in the Item Name for all items');
-                                          setShowErrorAlert(true);
-                                          return;
-                                        }
-
-                                        try {
-                                          console.log('Starting to save onboarding items:', onboardingItems);
-                                          console.log('Selected employee ID:', selectedEmployee.id);
-                                          
-                                          // Track newly inserted item IDs
-                                          const newlyInsertedIds = [];
-                                          
-                                          // Process each item
-                                          for (const item of onboardingItems) {
-                                            console.log('Processing item:', item);
-                                            
-                                            // Upload file if it's a new file (has file object but no filePath)
-                                            let filePath = item.filePath;
-                                            if (item.file && !item.filePath && item.isNew) {
-                                              console.log('Uploading file for item:', item.item);
-                                              const fileExt = item.file.name.split('.').pop();
-                                              const uploadPath = `onboarding/${selectedEmployee.id}/${item.id}_${Date.now()}.${fileExt}`;
-                                              
-                                              const { data: uploadData, error: uploadError } = await supabase.storage
-                                                .from('application-files')
-                                                .upload(uploadPath, item.file, { upsert: false });
-                                              
-                                              if (uploadError) {
-                                                console.error('File upload error:', uploadError);
-                                                throw new Error(`Failed to upload file for ${item.item}: ${uploadError.message}`);
-                                              }
-                                              
-                                              console.log('File uploaded successfully:', uploadPath);
-                                              filePath = uploadPath;
-                                            }
-
-                                            // Prepare item data
-                                            const itemData = {
-                                              employee_id: selectedEmployee.id,
-                                              item: item.item.trim(),
-                                              description: item.description?.trim() || null,
-                                              date_issued: item.date || null,
-                                              file_path: filePath || null,
-                                            };
-
-                                            console.log('Item data to save:', itemData);
-
-                                            // Check if item is new (temporary ID from Date.now() or isNew flag)
-                                            const isNewItem = item.isNew || (item.id && typeof item.id === 'number');
-                                            
-                                            console.log('Is new item?', isNewItem, 'Item ID:', item.id, 'Type:', typeof item.id);
-                                            
-                                            if (isNewItem) {
-                                              // New item - insert
-                                              console.log('Inserting new item...');
-                                              console.log('Insert data:', JSON.stringify(itemData, null, 2));
-                                              const { data: insertData, error: insertError } = await supabase
-                                                .from('onboarding')
-                                                .insert(itemData)
-                                                .select();
-                                              
-                                              if (insertError) {
-                                                console.error('Insert error:', insertError);
-                                                console.error('Insert error details:', JSON.stringify(insertError, null, 2));
-                                                throw new Error(`Failed to save ${item.item}: ${insertError.message}`);
-                                              }
-                                              
-                                              if (!insertData || insertData.length === 0) {
-                                                console.error('Insert returned no data!');
-                                                throw new Error(`Failed to save ${item.item}: Insert returned no data`);
-                                              }
-                                              
-                                              console.log('Item inserted successfully:', insertData);
-                                              console.log('Inserted item ID:', insertData[0]?.id);
-                                              
-                                              // Track the newly inserted ID
-                                              if (insertData[0]?.id) {
-                                                newlyInsertedIds.push(insertData[0].id);
-                                              }
-                                            } else if (item.id) {
-                                              // Existing item - update
-                                              console.log('Updating existing item with ID:', item.id);
-                                              const { data: updateData, error: updateError } = await supabase
-                                                .from('onboarding')
-                                                .update({
-                                                  item: itemData.item,
-                                                  description: itemData.description,
-                                                  date_issued: itemData.date_issued,
-                                                  file_path: itemData.file_path,
-                                                })
-                                                .eq('id', item.id)
-                                                .select();
-                                              
-                                              if (updateError) {
-                                                console.error('Update error:', updateError);
-                                                throw new Error(`Failed to update ${item.item}: ${updateError.message}`);
-                                              }
-                                              
-                                              console.log('Item updated successfully:', updateData);
-                                            }
-                                          }
-
-                                          // Wait a moment for database to sync
-                                          await new Promise(resolve => setTimeout(resolve, 300));
-                                          
-                                          // Get all current items from DB to determine what to delete
-                                          const { data: allItems } = await supabase
-                                            .from('onboarding')
-                                            .select('id')
-                                            .eq('employee_id', selectedEmployee.id);
-                                          
-                                          console.log('All items in DB:', allItems);
-                                          console.log('Newly inserted IDs:', newlyInsertedIds);
-                                          
-                                          if (allItems) {
-                                            // Get IDs of items that should exist:
-                                            // 1. Items from current list that have non-number IDs (already in DB)
-                                            // 2. Newly inserted items (from the insert responses)
-                                            const currentDbIds = [
-                                              ...onboardingItems
-                                                .filter(item => item.id && typeof item.id !== 'number' && !item.isNew)
-                                                .map(item => item.id),
-                                              ...newlyInsertedIds
-                                            ];
-                                            
-                                            console.log('Current DB IDs to keep:', currentDbIds);
-                                            
-                                            // Only delete items that are in DB but NOT in the current list or newly inserted
-                                            const toDelete = allItems.filter(dbItem => !currentDbIds.includes(dbItem.id));
-                                            console.log('Items to delete:', toDelete);
-                                            
-                                            if (toDelete.length > 0) {
-                                              for (const deleteItem of toDelete) {
-                                                console.log('Deleting item:', deleteItem.id);
-                                                const { error: deleteError } = await supabase
-                                                  .from('onboarding')
-                                                  .delete()
-                                                  .eq('id', deleteItem.id);
-                                                
-                                                if (deleteError) {
-                                                  console.error('Error deleting item:', deleteError);
-                                                }
-                                              }
-                                            }
-                                          }
-
-                                          // Wait a moment for database to sync
-                                          await new Promise(resolve => setTimeout(resolve, 500));
-                                          
-                                          // Reload items immediately after save
-                                          console.log('Reloading items for employee:', selectedEmployee.id);
-                                          const { data: refreshedItems, error: refreshError } = await supabase
-                                            .from('onboarding')
-                                            .select('*')
-                                            .eq('employee_id', selectedEmployee.id)
-                                            .order('date_issued', { ascending: false });
-
-                                          if (refreshError) {
-                                            console.error('Error refreshing items:', refreshError);
-                                            console.error('Refresh error details:', JSON.stringify(refreshError, null, 2));
-                                            setErrorMessage(`Items may have been saved but failed to reload: ${refreshError.message}. Please refresh the page.`);
-                                            setShowErrorAlert(true);
-                                          } else {
-                                            console.log('Refreshed items count:', refreshedItems?.length || 0);
-                                            console.log('Refreshed items:', refreshedItems);
-                                            if (refreshedItems && refreshedItems.length > 0) {
-                                              const items = refreshedItems.map(item => ({
-                                                id: item.id,
-                                                item: item.item || item.name || '',
-                                                description: item.description || '',
-                                                date: item.date_issued || item.date || '',
-                                                file: item.file_path || item.filePath || null,
-                                                filePath: item.file_path || item.filePath || null,
-                                                fileUrl: item.file_path || item.filePath ? (() => {
-                                                  const { data } = supabase.storage
-                                                    .from('application-files')
-                                                    .getPublicUrl(item.file_path || item.filePath);
-                                                  return data?.publicUrl || null;
-                                                })() : null,
-                                                isNew: false
-                                              }));
-                                              console.log('Setting onboarding items:', items);
-                                              setOnboardingItems(items);
-                                              // Trigger refresh of the useEffect
-                                              setOnboardingRefreshTrigger(Date.now());
-                                              setSuccessMessage(`Onboarding items saved successfully! ${items.length} item(s) loaded.`);
-                                            } else {
-                                              console.warn('No items found after save. Items may not have been saved or RLS is blocking the query.');
-                                              setOnboardingItems([]);
-                                              // Still trigger refresh in case items appear
-                                              setOnboardingRefreshTrigger(Date.now());
-                                              setSuccessMessage('Onboarding items saved successfully! If items don\'t appear, please refresh the page or check if RLS is enabled.');
-                                            }
-                                            setShowSuccessAlert(true);
-                                          }
-                                        } catch (err) {
-                                          console.error('Error saving onboarding items:', err);
-                                          setErrorMessage(`Error saving onboarding items: ${err.message}`);
-                                          setShowErrorAlert(true);
-                                        }
-                                      }}
-                                      className="px-6 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-sm"
-                                    >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                      Save All Items
-                                    </button>
-                                  </div>
-                                </>
+                                </div>
                               )}
                             </div>
                           )}
@@ -4442,6 +4199,465 @@ function Employees() {
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium"
               >
                 Confirm Termination
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Save Onboarding Modal */}
+      {showConfirmSaveOnboarding && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Confirm Save</h3>
+            <p className="text-sm text-gray-600 mb-6">Are you sure you want to save all onboarding items? This will update the database with all changes.</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setShowConfirmSaveOnboarding(false)}
+                disabled={isSavingOnboarding}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (isSavingOnboarding) return;
+                  setIsSavingOnboarding(true);
+                  try {
+                          console.log('Starting save of onboarding items...');
+                          console.log('Onboarding items to save:', onboardingItems);
+                          console.log('Employee ID:', selectedEmployee?.id);
+                          
+                          // Track newly inserted item IDs
+                          const newlyInsertedIds = [];
+                          
+                          for (const item of onboardingItems) {
+                            console.log('Processing item:', item);
+                            
+                            // Handle file upload if present
+                            let filePath = item.filePath || null;
+                            if (item.file && typeof item.file !== 'string') {
+                              console.log('Uploading file for item:', item.item);
+                              const fileExt = item.file.name.split('.').pop();
+                              const uploadPath = `onboarding/${selectedEmployee.id}/${item.id}_${Date.now()}.${fileExt}`;
+                              
+                              const { data: uploadData, error: uploadError } = await supabase.storage
+                                .from('application-files')
+                                .upload(uploadPath, item.file, { upsert: false });
+                              
+                              if (uploadError) {
+                                console.error('File upload error:', uploadError);
+                                throw new Error(`Failed to upload file for ${item.item}: ${uploadError.message}`);
+                              }
+                              
+                              console.log('File uploaded successfully:', uploadPath);
+                              filePath = uploadPath;
+                            }
+
+                            // Prepare item data
+                            const itemData = {
+                              employee_id: selectedEmployee.id,
+                              item: item.item.trim(),
+                              description: item.description?.trim() || null,
+                              date_issued: item.date || null,
+                              file_path: filePath || null,
+                            };
+
+                            console.log('Item data to save:', itemData);
+
+                            // Check if item is new (temporary ID from Date.now() or isNew flag)
+                            const isNewItem = item.isNew || (item.id && typeof item.id === 'number');
+                            
+                            console.log('Is new item?', isNewItem, 'Item ID:', item.id, 'Type:', typeof item.id);
+                            
+                            if (isNewItem) {
+                              // New item - insert
+                              console.log('Inserting new item...');
+                              console.log('Insert data:', JSON.stringify(itemData, null, 2));
+                              const { data: insertData, error: insertError } = await supabase
+                                .from('onboarding')
+                                .insert(itemData)
+                                .select();
+                              
+                              if (insertError) {
+                                console.error('Insert error:', insertError);
+                                console.error('Insert error details:', JSON.stringify(insertError, null, 2));
+                                throw new Error(`Failed to save ${item.item}: ${insertError.message}`);
+                              }
+                              
+                              if (!insertData || insertData.length === 0) {
+                                console.error('Insert returned no data!');
+                                throw new Error(`Failed to save ${item.item}: Insert returned no data`);
+                              }
+                              
+                              console.log('Item inserted successfully:', insertData);
+                              console.log('Inserted item ID:', insertData[0]?.id);
+                              
+                              // Track the newly inserted ID
+                              if (insertData[0]?.id) {
+                                newlyInsertedIds.push(insertData[0].id);
+                              }
+                            } else if (item.id) {
+                              // Existing item - update
+                              console.log('Updating existing item with ID:', item.id);
+                              const { data: updateData, error: updateError } = await supabase
+                                .from('onboarding')
+                                .update({
+                                  item: itemData.item,
+                                  description: itemData.description,
+                                  date_issued: itemData.date_issued,
+                                  file_path: itemData.file_path,
+                                })
+                                .eq('id', item.id)
+                                .select();
+                              
+                              if (updateError) {
+                                console.error('Update error:', updateError);
+                                throw new Error(`Failed to update ${item.item}: ${updateError.message}`);
+                              }
+                              
+                              console.log('Item updated successfully:', updateData);
+                            }
+                          }
+
+                          // Wait a moment for database to sync
+                          await new Promise(resolve => setTimeout(resolve, 300));
+                          
+                          // Get all current items from DB to determine what to delete
+                          const { data: allItems } = await supabase
+                            .from('onboarding')
+                            .select('id')
+                            .eq('employee_id', selectedEmployee.id);
+                          
+                          console.log('All items in DB:', allItems);
+                          console.log('Newly inserted IDs:', newlyInsertedIds);
+                          
+                          if (allItems) {
+                            // Get IDs of items that should exist:
+                            // 1. Items from current list that have non-number IDs (already in DB)
+                            // 2. Newly inserted items (from the insert responses)
+                            const currentDbIds = [
+                              ...onboardingItems
+                                .filter(item => item.id && typeof item.id !== 'number' && !item.isNew)
+                                .map(item => item.id),
+                              ...newlyInsertedIds
+                            ];
+                            
+                            console.log('Current DB IDs to keep:', currentDbIds);
+                            
+                            // Only delete items that are in DB but NOT in the current list or newly inserted
+                            const toDelete = allItems.filter(dbItem => !currentDbIds.includes(dbItem.id));
+                            console.log('Items to delete:', toDelete);
+                            
+                            if (toDelete.length > 0) {
+                              for (const deleteItem of toDelete) {
+                                console.log('Deleting item:', deleteItem.id);
+                                const { error: deleteError } = await supabase
+                                  .from('onboarding')
+                                  .delete()
+                                  .eq('id', deleteItem.id);
+                                
+                                if (deleteError) {
+                                  console.error('Error deleting item:', deleteError);
+                                }
+                              }
+                            }
+                          }
+
+                          // Wait a moment for database to sync
+                          await new Promise(resolve => setTimeout(resolve, 500));
+                          
+                          // Reload items immediately after save
+                          console.log('Reloading items for employee:', selectedEmployee.id);
+                          const { data: refreshedItems, error: refreshError } = await supabase
+                            .from('onboarding')
+                            .select('*')
+                            .eq('employee_id', selectedEmployee.id)
+                            .order('date_issued', { ascending: false });
+
+                          if (refreshError) {
+                            console.error('Error refreshing items:', refreshError);
+                            console.error('Refresh error details:', JSON.stringify(refreshError, null, 2));
+                            setErrorMessage(`Items may have been saved but failed to reload: ${refreshError.message}. Please refresh the page.`);
+                            setShowErrorAlert(true);
+                          } else {
+                            console.log('Refreshed items count:', refreshedItems?.length || 0);
+                            console.log('Refreshed items:', refreshedItems);
+                            if (refreshedItems && refreshedItems.length > 0) {
+                              const items = refreshedItems.map(item => ({
+                                id: item.id,
+                                item: item.item || item.name || '',
+                                description: item.description || '',
+                                date: item.date_issued || item.date || '',
+                                file: item.file_path || item.filePath || null,
+                                filePath: item.file_path || item.filePath || null,
+                                fileUrl: item.file_path || item.filePath ? (() => {
+                                  const { data } = supabase.storage
+                                    .from('application-files')
+                                    .getPublicUrl(item.file_path || item.filePath);
+                                  return data?.publicUrl || null;
+                                })() : null,
+                                isNew: false
+                              }));
+                              console.log('Setting onboarding items:', items);
+                              setOnboardingItems(items);
+                              // Trigger refresh of the useEffect
+                              setOnboardingRefreshTrigger(Date.now());
+                              setSuccessMessage(`Onboarding items saved successfully! ${items.length} item(s) loaded.`);
+                            } else {
+                              console.warn('No items found after save. Items may not have been saved or RLS is blocking the query.');
+                              setOnboardingItems([]);
+                              // Still trigger refresh in case items appear
+                              setOnboardingRefreshTrigger(Date.now());
+                              setSuccessMessage('Onboarding items saved successfully! If items don\'t appear, please refresh the page or check if RLS is enabled.');
+                            }
+                            setShowSuccessAlert(true);
+                          }
+                        } catch (err) {
+                          console.error('Error saving onboarding items:', err);
+                          setErrorMessage(`Error saving onboarding items: ${err.message}`);
+                          setShowErrorAlert(true);
+                        } finally {
+                          setIsSavingOnboarding(false);
+                          setShowConfirmSaveOnboarding(false);
+                        }
+                }}
+                disabled={isSavingOnboarding}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isSavingOnboarding && (
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {isSavingOnboarding ? 'Saving...' : 'Save All Items'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Onboarding Record Modal */}
+      {showAddOnboardingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Add Onboarding Record</h3>
+            
+            <div className="space-y-4">
+              {/* Item Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Item Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={newOnboardingItem.item}
+                  onChange={(e) => setNewOnboardingItem(prev => ({ ...prev, item: e.target.value }))}
+                  placeholder="e.g., ID Card, Uniform, Laptop"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={newOnboardingItem.description}
+                  onChange={(e) => setNewOnboardingItem(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Enter description"
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+              </div>
+
+              {/* Date Issued */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date Issued <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={newOnboardingItem.date}
+                  onChange={(e) => setNewOnboardingItem(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              {/* Attachment */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Attachment <span className="text-gray-400 text-xs">(Optional - PDF, JPG, PNG)</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(e) => setNewOnboardingItem(prev => ({ ...prev, file: e.target.files?.[0] || null }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => {
+                  setShowAddOnboardingModal(false);
+                  setNewOnboardingItem({ item: '', description: '', date: '', file: null });
+                }}
+                disabled={isSavingNewOnboarding}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (!newOnboardingItem.item.trim() || !newOnboardingItem.description.trim() || !newOnboardingItem.date) {
+                    setErrorMessage('Please fill in all required fields (Item Name, Description, and Date Issued)');
+                    setShowErrorAlert(true);
+                    return;
+                  }
+
+                  if (isSavingNewOnboarding) return;
+                  setIsSavingNewOnboarding(true);
+
+                  try {
+                    // Upload file if present
+                    let filePath = null;
+                    if (newOnboardingItem.file) {
+                      const fileExt = newOnboardingItem.file.name.split('.').pop();
+                      const uploadPath = `onboarding/${selectedEmployee.id}/${Date.now()}.${fileExt}`;
+                      
+                      const { error: uploadError } = await supabase.storage
+                        .from('application-files')
+                        .upload(uploadPath, newOnboardingItem.file, { upsert: false });
+                      
+                      if (uploadError) {
+                        throw new Error(`Failed to upload file: ${uploadError.message}`);
+                      }
+                      
+                      filePath = uploadPath;
+                    }
+
+                    // Insert into database
+                    const { error: insertError } = await supabase
+                      .from('onboarding')
+                      .insert({
+                        employee_id: selectedEmployee.id,
+                        item: newOnboardingItem.item.trim(),
+                        description: newOnboardingItem.description.trim(),
+                        date_issued: newOnboardingItem.date,
+                        file_path: filePath,
+                      });
+
+                    if (insertError) {
+                      throw new Error(`Failed to save onboarding item: ${insertError.message}`);
+                    }
+
+                    // Refresh the list
+                    setOnboardingRefreshTrigger(Date.now());
+                    setSuccessMessage('Onboarding item added successfully!');
+                    setShowSuccessAlert(true);
+                    setShowAddOnboardingModal(false);
+                    setNewOnboardingItem({ item: '', description: '', date: '', file: null });
+                  } catch (err) {
+                    console.error('Error adding onboarding item:', err);
+                    setErrorMessage(`Error: ${err.message}`);
+                    setShowErrorAlert(true);
+                  } finally {
+                    setIsSavingNewOnboarding(false);
+                  }
+                }}
+                disabled={isSavingNewOnboarding}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isSavingNewOnboarding && (
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {isSavingNewOnboarding ? 'Saving...' : 'Save Record'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Delete Onboarding Item Modal */}
+      {showConfirmDeleteOnboarding && onboardingItemToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800 mb-4">Confirm Delete</h3>
+            <div className="border border-gray-200 rounded-lg p-4 mb-4 bg-gray-50">
+              <p className="text-gray-700 text-sm">
+                <span className="font-semibold">Item:</span> {onboardingItemToDelete.item || 'Untitled'}
+              </p>
+              {onboardingItemToDelete.description && (
+                <p className="text-gray-700 mt-2 text-sm">
+                  <span className="font-semibold">Description:</span> {onboardingItemToDelete.description}
+                </p>
+              )}
+            </div>
+            <p className="text-sm text-gray-600 mb-6">Are you sure you want to delete this onboarding item?</p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowConfirmDeleteOnboarding(false);
+                  setOnboardingItemToDelete(null);
+                }}
+                disabled={isDeletingOnboarding}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={async () => {
+                  if (isDeletingOnboarding) return;
+                  setIsDeletingOnboarding(true);
+                  try {
+                    // Delete from database if it has an ID and is not a newly added item (before save)
+                    if (onboardingItemToDelete.id && !onboardingItemToDelete.isNew) {
+                      console.log('Deleting onboarding item from database:', onboardingItemToDelete.id);
+                      const { error: deleteError } = await supabase
+                        .from('onboarding')
+                        .delete()
+                        .eq('id', onboardingItemToDelete.id);
+                      
+                      if (deleteError) {
+                        console.error('Error deleting from database:', deleteError);
+                        setErrorMessage(`Failed to delete item: ${deleteError.message}`);
+                        setShowErrorAlert(true);
+                        setIsDeletingOnboarding(false);
+                        return;
+                      }
+                      console.log('Successfully deleted from database');
+                    }
+                    
+                    // Remove from local state
+                    setOnboardingItems((prev) => prev.filter((item) => item.id !== onboardingItemToDelete.id));
+                    delete onboardingFileRefs.current[onboardingItemToDelete.id];
+                    setShowConfirmDeleteOnboarding(false);
+                    setOnboardingItemToDelete(null);
+                  } catch (err) {
+                    console.error('Error deleting onboarding item:', err);
+                    setErrorMessage(`Error deleting item: ${err.message}`);
+                    setShowErrorAlert(true);
+                  } finally {
+                    setIsDeletingOnboarding(false);
+                  }
+                }}
+                disabled={isDeletingOnboarding}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {isDeletingOnboarding && (
+                  <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                )}
+                {isDeletingOnboarding ? 'Deleting...' : 'Delete Item'}
               </button>
             </div>
           </div>

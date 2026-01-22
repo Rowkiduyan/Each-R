@@ -1321,6 +1321,40 @@ function HrRecruitment() {
         }
       }
 
+      // Extract endorsed_by_auth_user_id from payloads and fetch agency names
+      const agencyUserIds = [];
+      const agencyUserIdMap = new Map(); // Map application id to agency user id
+      
+      (data || []).forEach((row) => {
+        let payloadObj = row.payload;
+        if (typeof payloadObj === "string") {
+          try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+        }
+        const endorsedByUserId = payloadObj.meta?.endorsed_by_auth_user_id || payloadObj.endorsed_by_auth_user_id || payloadObj.endorsedByAuthUserId;
+        if (endorsedByUserId) {
+          agencyUserIds.push(endorsedByUserId);
+          agencyUserIdMap.set(row.id, endorsedByUserId);
+        }
+      });
+
+      // Fetch agency names from profiles table
+      const agencyNamesMap = {};
+      if (agencyUserIds.length > 0) {
+        const uniqueAgencyIds = [...new Set(agencyUserIds)];
+        const { data: agencyProfiles } = await supabase
+          .from('profiles')
+          .select('id, agency_name')
+          .in('id', uniqueAgencyIds);
+        
+        if (agencyProfiles) {
+          agencyProfiles.forEach(profile => {
+            if (profile.agency_name) {
+              agencyNamesMap[profile.id] = profile.agency_name;
+            }
+          });
+        }
+      }
+
       const mapped = (data || []).map((row) => {
         // normalize payload (jsonb or string)
         let payloadObj = row.payload;
@@ -1359,6 +1393,10 @@ function HrRecruitment() {
 
         const agencyFlag = isAgency({ raw: { payload: payloadObj }, payload: payloadObj, agency: payloadObj?.agency });
 
+        // Get agency name from the map
+        const agencyUserId = agencyUserIdMap.get(row.id);
+        const agencyName = agencyUserId ? agencyNamesMap[agencyUserId] : null;
+
         const email = pickFirstEmail(
           source.email,
           source.personal_email,
@@ -1390,6 +1428,7 @@ function HrRecruitment() {
           phone,
           resume_path: resumePath,
           agency: agencyFlag,
+          agency_name: agencyName,
           raw: row,
           // surface interview fields if present (helpful in table later)
           interview_date: row.interview_date || row.payload?.interview?.date || null,
@@ -5408,7 +5447,9 @@ function HrRecruitment() {
                                     <div className="flex items-center gap-2">
                                       <p className="text-sm font-medium text-gray-800">{a.name}</p>
                                       {isAgency(a) && (
-                                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">AGENCY</span>
+                                        <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-medium">
+                                          {a.agency_name || "AGENCY"}
+                                        </span>
                                       )}
                                     </div>
                                     <p className="text-xs text-gray-500">{a.email || `#${a.id.slice(0, 8)}`}</p>
@@ -5523,7 +5564,9 @@ function HrRecruitment() {
                         <div className="flex items-center gap-2">
                           <h4 className="font-semibold text-gray-800 text-lg">{selectedApplicant.name}</h4>
                           {isAgency(selectedApplicant) && (
-                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">AGENCY</span>
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                              {selectedApplicant.agency_name || "AGENCY"}
+                            </span>
                           )}
                         </div>
                         <p className="text-xs text-gray-500">#{selectedApplicant.id.slice(0, 8)}</p>
