@@ -39,6 +39,22 @@ function ApplicantLogin() {
     return next;
   };
 
+  const getStoredRedirectTo = () => {
+    try {
+      return sessionStorage.getItem('applicant:redirectTo');
+    } catch {
+      return null;
+    }
+  };
+
+  const clearStoredRedirectTo = () => {
+    try {
+      sessionStorage.removeItem('applicant:redirectTo');
+    } catch {
+      // ignore
+    }
+  };
+
   const redirectAfterLogin = async (user) => {
     // 2️⃣ Fetch the user's record from applicants table by email (case-insensitive)
     const { data: applicantData, error: applicantError } = await supabase
@@ -66,8 +82,11 @@ function ApplicantLogin() {
 
     if (userRole === "applicant") {
       const urlRedirectTo = new URLSearchParams(location.search || '').get('redirectTo');
-      const candidateRedirectTo = location.state?.redirectTo || urlRedirectTo;
+      const candidateRedirectTo = location.state?.redirectTo || urlRedirectTo || getStoredRedirectTo();
       const redirectTo = normalizeRedirectTo(candidateRedirectTo) || "/applicantl/home";
+
+      // Consume the stored redirect once we decide where to go.
+      clearStoredRedirectTo();
 
       const jobId = location.state?.jobId;
       navigate(redirectTo, { state: { jobId }, replace: true });

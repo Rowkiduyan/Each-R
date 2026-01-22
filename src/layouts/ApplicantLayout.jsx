@@ -16,6 +16,20 @@ function ApplicantLayout() {
   const hasCheckedAuth = useRef(false);
   const isRedirecting = useRef(false);
 
+  const redirectToLogin = (extraState = {}) => {
+    const redirectTarget = `${location.pathname}${location.search || ''}`;
+    try {
+      sessionStorage.setItem('applicant:redirectTo', redirectTarget);
+    } catch {
+      // ignore storage issues
+    }
+
+    navigate(`/applicant/login?redirectTo=${encodeURIComponent(redirectTarget)}`, {
+      replace: true,
+      state: { redirectTo: redirectTarget, ...extraState },
+    });
+  };
+
   // Check authentication and fetch applicant profile
   useEffect(() => {
     const fetchApplicantProfile = async () => {
@@ -27,9 +41,7 @@ function ApplicantLayout() {
         
         if (authError || !user) {
           setLoading(false);
-          if (!isRedirecting.current) {
-            navigate("/applicant/login", { replace: true });
-          }
+          if (!isRedirecting.current) redirectToLogin();
           return;
         }
 
@@ -103,11 +115,11 @@ function ApplicantLayout() {
         // If no applicant record and no profile record (or profile is applicant), redirect to login
         setLoading(false);
         await supabase.auth.signOut();
-        navigate("/applicant/login", { replace: true });
+        if (!isRedirecting.current) redirectToLogin();
       } catch (error) {
         console.error('Error fetching applicant user:', error);
         setLoading(false);
-        navigate("/applicant/login", { replace: true });
+        if (!isRedirecting.current) redirectToLogin();
       }
     };
 
@@ -123,6 +135,9 @@ function ApplicantLayout() {
       } else {
         setApplicantUser(null);
         hasCheckedAuth.current = false;
+        // If they were logged out while on a protected applicant page,
+        // send them to login but preserve the deep-link.
+        redirectToLogin();
       }
     });
 
