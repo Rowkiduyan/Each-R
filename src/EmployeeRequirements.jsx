@@ -167,6 +167,8 @@ function EmployeeRequirements() {
     const licenseInfo = {
       licenseNumber: "",
       licenseExpiry: "",
+      file: null,
+      filePath: null,
       frontFile: null,
       frontFilePath: null,
       backFile: null,
@@ -538,8 +540,15 @@ function EmployeeRequirements() {
           if (requirementsData.license) {
             const licenseData = requirementsData.license;
             // Filter out placeholder paths
+            const photocopyPath =
+              licenseData.filePath ||
+              licenseData.file_path ||
+              licenseData.licenseFilePath ||
+              licenseData.license_file_path ||
+              null;
             const frontPath = licenseData.frontFilePath || licenseData.front_file_path;
             const backPath = licenseData.backFilePath || licenseData.back_file_path;
+            const validPhotocopyPath = photocopyPath && !photocopyPath.includes('local-file-path') && !photocopyPath.startsWith('local-') && photocopyPath.includes('/') ? photocopyPath : null;
             const validFrontPath = frontPath && !frontPath.includes('local-file-path') && !frontPath.startsWith('local-') && frontPath.includes('/') ? frontPath : null;
             const validBackPath = backPath && !backPath.includes('local-file-path') && !backPath.startsWith('local-') && backPath.includes('/') ? backPath : null;
             
@@ -557,9 +566,10 @@ function EmployeeRequirements() {
               ...updated.license,
               licenseNumber: licenseData.licenseNumber || licenseData.license_number || '',
               licenseExpiry: licenseData.licenseExpiry || licenseData.license_expiry || '',
+              filePath: validPhotocopyPath,
               frontFilePath: validFrontPath,
               backFilePath: validBackPath,
-              hasFile: !!(validFrontPath && validBackPath),
+              hasFile: !!(validPhotocopyPath || (validFrontPath && validBackPath)),
               status: licenseStatus,
               submittedDate: licenseData.submitted_at || licenseData.validated_at || null,
               remarks: licenseData.remarks || null,
@@ -1160,8 +1170,8 @@ function EmployeeRequirements() {
       return;
     }
     if (uploadTarget?.type === "license") {
-      if (!uploadForm.frontFile || !uploadForm.backFile) {
-        setAlertMessage("Please upload both front and back photos of the license");
+      if (!uploadForm.file) {
+        setAlertMessage("Please select a license photocopy file to upload");
         setShowErrorAlert(true);
         return;
       }
@@ -1477,6 +1487,8 @@ function EmployeeRequirements() {
           const currentLicense = updated.license || {
             licenseNumber: "",
             licenseExpiry: "",
+            file: null,
+            filePath: null,
             frontFile: null,
             frontFilePath: null,
             backFile: null,
@@ -1489,10 +1501,11 @@ function EmployeeRequirements() {
           };
 
           // If this is a renewal, save current version to history
-          if (uploadTarget.isRenewal && (currentLicense.frontFilePath || currentLicense.backFilePath)) {
+          if (uploadTarget.isRenewal && (currentLicense.filePath || currentLicense.file_path || currentLicense.frontFilePath || currentLicense.backFilePath)) {
             const versionToSave = {
               licenseNumber: currentLicense.licenseNumber,
               licenseExpiry: currentLicense.licenseExpiry,
+              filePath: currentLicense.filePath || currentLicense.file_path || null,
               frontFilePath: currentLicense.frontFilePath,
               backFilePath: currentLicense.backFilePath,
               submittedDate: currentLicense.submittedDate,
@@ -1502,38 +1515,28 @@ function EmployeeRequirements() {
             currentLicense.versions = [...(currentLicense.versions || []), versionToSave];
           }
 
-          // Upload front file if provided
-          let frontFilePath = currentLicense.frontFilePath;
-          if (uploadForm.frontFile) {
-            frontFilePath = await uploadFileToStorage(
-              uploadForm.frontFile,
-              'employee-requirements',
-              'license_front'
-            );
-          }
-
-          // Upload back file if provided
-          let backFilePath = currentLicense.backFilePath;
-          if (uploadForm.backFile) {
-            backFilePath = await uploadFileToStorage(
-              uploadForm.backFile,
-              'employee-requirements',
-              'license_back'
-            );
-          }
+          // Upload a single photocopy file
+          const licenseFilePath = await uploadFileToStorage(
+            uploadForm.file,
+            'employee-requirements',
+            'license_photocopy'
+          );
 
           updated.license = {
             ...currentLicense,
             licenseNumber: uploadForm.licenseNumber.trim(),
             licenseExpiry: uploadForm.licenseExpiry.trim(),
-            frontFile: uploadForm.frontFile,
-            frontFilePath: frontFilePath,
-            backFile: uploadForm.backFile,
-            backFilePath: backFilePath,
+            file: uploadForm.file,
+            filePath: licenseFilePath,
+            file_path: licenseFilePath,
+            frontFile: null,
+            frontFilePath: null,
+            backFile: null,
+            backFilePath: null,
             status: "Submitted", // Set to Submitted for HR to validate
             submitted_at: new Date().toISOString(),
             submittedDate: new Date().toISOString(),
-            hasFile: !!(frontFilePath && backFilePath),
+            hasFile: true,
             currentVersion: uploadTarget.isRenewal ? (currentLicense.versions?.length || 0) : currentLicense.currentVersion,
             remarks: null, // Clear any previous remarks when submitting a renewal
           };
@@ -2004,6 +2007,8 @@ function EmployeeRequirements() {
               const licenseData = employee.license || {
                 licenseNumber: "",
                 licenseExpiry: "",
+                file: null,
+                filePath: null,
                 frontFile: null,
                 frontFilePath: null,
                 backFile: null,
@@ -2014,7 +2019,7 @@ function EmployeeRequirements() {
               };
               const style = getStatusStyle(licenseData.status);
               const needsAction = licenseData.status === "missing" || licenseData.status === "resubmit";
-              const hasBothFiles = licenseData.frontFilePath && licenseData.backFilePath;
+              const hasLicenseFile = !!(licenseData.filePath || (licenseData.frontFilePath && licenseData.backFilePath));
               const isExpiredDoc = licenseData.licenseExpiry && isExpired(licenseData.licenseExpiry);
               const canRenew = licenseData.status === "approved" && licenseData.licenseExpiry && isExpiredDoc;
 
@@ -2080,51 +2085,50 @@ function EmployeeRequirements() {
                       </div>
                     )}
 
-                    {/* Front and Back Photos Display */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Front Photo */}
-                      <div className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-sm font-semibold text-gray-800">Front Photo</p>
-                          {licenseData.frontFilePath && (
-                            <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">Uploaded</span>
-                          )}
-                        </div>
-                        {licenseData.frontFilePath && getFileUrl(licenseData.frontFilePath) ? (
-                          <div className="flex items-center gap-2 text-sm text-blue-600">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                            </svg>
-                            <a href={getFileUrl(licenseData.frontFilePath)} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                              View Front Photo
-                            </a>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-400 italic">Not uploaded</p>
+                    {/* License Photocopy Display (single field; supports legacy front/back) */}
+                    <div className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-sm font-semibold text-gray-800">License Photocopy</p>
+                        {hasLicenseFile && (
+                          <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">Uploaded</span>
                         )}
                       </div>
 
-                      {/* Back Photo */}
-                      <div className="border border-gray-200 rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <p className="text-sm font-semibold text-gray-800">Back Photo</p>
-                          {licenseData.backFilePath && (
-                            <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full">Uploaded</span>
+                      {licenseData.filePath && getFileUrl(licenseData.filePath) ? (
+                        <div className="flex items-center gap-2 text-sm text-blue-600">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                          </svg>
+                          <a href={getFileUrl(licenseData.filePath)} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                            View File
+                          </a>
+                        </div>
+                      ) : (licenseData.frontFilePath || licenseData.backFilePath) ? (
+                        <div className="flex flex-col gap-2 text-sm text-blue-600">
+                          {licenseData.frontFilePath && getFileUrl(licenseData.frontFilePath) && (
+                            <div className="flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                              </svg>
+                              <a href={getFileUrl(licenseData.frontFilePath)} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                View Front
+                              </a>
+                            </div>
+                          )}
+                          {licenseData.backFilePath && getFileUrl(licenseData.backFilePath) && (
+                            <div className="flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                              </svg>
+                              <a href={getFileUrl(licenseData.backFilePath)} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                View Back
+                              </a>
+                            </div>
                           )}
                         </div>
-                        {licenseData.backFilePath && getFileUrl(licenseData.backFilePath) ? (
-                          <div className="flex items-center gap-2 text-sm text-blue-600">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                            </svg>
-                            <a href={getFileUrl(licenseData.backFilePath)} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                              View Back Photo
-                            </a>
-                          </div>
-                        ) : (
-                          <p className="text-xs text-gray-400 italic">Not uploaded</p>
-                        )}
-                      </div>
+                      ) : (
+                        <p className="text-xs text-gray-400 italic">Not uploaded</p>
+                      )}
                     </div>
 
                     {/* Status and Remarks */}
@@ -2145,7 +2149,7 @@ function EmployeeRequirements() {
                           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                             licenseData.status === "resubmit"
                               ? "bg-red-600 text-white hover:bg-red-700"
-                              : hasBothFiles && licenseData.status !== "approved"
+                              : hasLicenseFile && licenseData.status !== "approved"
                                 ? "bg-blue-600 text-white hover:bg-blue-700"
                                 : "bg-blue-600 text-white hover:bg-blue-700"
                           }`}
@@ -2153,7 +2157,7 @@ function EmployeeRequirements() {
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                           </svg>
-                          {hasBothFiles && licenseData.status !== "approved" ? "Re-upload" : licenseData.status === "resubmit" ? "Re-upload" : "Upload"}
+                          {hasLicenseFile && licenseData.status !== "approved" ? "Re-upload" : licenseData.status === "resubmit" ? "Re-upload" : "Upload"}
                         </button>
                       )}
                       {licenseData.status === "approved" && !canRenew && (
@@ -3696,126 +3700,63 @@ function EmployeeRequirements() {
 
               {/* File Upload Area */}
               {uploadTarget.type === 'license' ? (
-                <div className="space-y-4">
-                  {/* Front Photo Upload */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Front Photo <span className="text-gray-500 font-normal">(Photocopy)</span> <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      ref={frontFileInputRef}
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={(e) => handleFrontFileSelect(e.target.files[0])}
-                    />
-                    {!uploadForm.frontFile ? (
-                      <div
-                        onDragOver={handleFrontDragOver}
-                        onDragLeave={handleFrontDragLeave}
-                        onDrop={handleFrontDrop}
-                        onClick={() => frontFileInputRef.current?.click()}
-                        className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
-                          isDraggingFront 
-                            ? 'border-blue-500 bg-blue-50' 
-                            : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-2 ${isDraggingFront ? 'bg-blue-100' : 'bg-gray-100'}`}>
-                          <svg className={`w-6 h-6 ${isDraggingFront ? 'text-blue-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">
+                    License Photocopy <span className="text-gray-500 font-normal">(Photocopy)</span> <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={(e) => handleFileSelect(e.target.files[0])}
+                  />
+                  {!uploadForm.file ? (
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+                        isDragging 
+                          ? 'border-blue-500 bg-blue-50' 
+                          : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-2 ${isDragging ? 'bg-blue-100' : 'bg-gray-100'}`}>
+                        <svg className={`w-6 h-6 ${isDragging ? 'text-blue-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                      </div>
+                      <p className="text-sm font-medium text-gray-700">
+                        {isDragging ? 'Drop file here' : 'Drag & drop file'}
+                      </p>
+                      <p className="text-sm text-gray-500 mt-1">or <span className="text-blue-600 font-medium">browse</span> to choose</p>
+                      <p className="text-xs text-gray-400 mt-2">Supports: PDF, JPG, PNG (Max 10MB)</p>
+                    </div>
+                  ) : (
+                    <div className="border-2 border-green-200 bg-green-50 rounded-xl p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                          <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
                         </div>
-                        <p className="text-sm font-medium text-gray-700">
-                          {isDraggingFront ? 'Drop front photo here' : 'Drag & drop front photo'}
-                        </p>
-                        <p className="text-sm text-gray-500 mt-1">or <span className="text-blue-600 font-medium">browse</span> to choose</p>
-                        <p className="text-xs text-gray-400 mt-2">Supports: PDF, JPG, PNG (Max 10MB)</p>
-                      </div>
-                    ) : (
-                      <div className="border-2 border-green-200 bg-green-50 rounded-xl p-3">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-800 truncate">{uploadForm.frontFile.name}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">{formatFileSize(uploadForm.frontFile.size)}</p>
-                          </div>
-                          <button
-                            onClick={() => setUploadForm(prev => ({ ...prev, frontFile: null }))}
-                            className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 truncate">{uploadForm.file.name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{formatFileSize(uploadForm.file.size)}</p>
                         </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Back Photo Upload */}
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Back Photo <span className="text-gray-500 font-normal">(Photocopy)</span> <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      ref={backFileInputRef}
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={(e) => handleBackFileSelect(e.target.files[0])}
-                    />
-                    {!uploadForm.backFile ? (
-                      <div
-                        onDragOver={handleBackDragOver}
-                        onDragLeave={handleBackDragLeave}
-                        onDrop={handleBackDrop}
-                        onClick={() => backFileInputRef.current?.click()}
-                        className={`relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
-                          isDraggingBack 
-                            ? 'border-blue-500 bg-blue-50' 
-                            : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
-                        }`}
-                      >
-                        <div className={`w-12 h-12 mx-auto rounded-xl flex items-center justify-center mb-2 ${isDraggingBack ? 'bg-blue-100' : 'bg-gray-100'}`}>
-                          <svg className={`w-6 h-6 ${isDraggingBack ? 'text-blue-600' : 'text-gray-400'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        <button
+                          onClick={() => setUploadForm(prev => ({ ...prev, file: null }))}
+                          className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                           </svg>
-                        </div>
-                        <p className="text-sm font-medium text-gray-700">
-                          {isDraggingBack ? 'Drop back photo here' : 'Drag & drop back photo'}
-                        </p>
-                        <p className="text-sm text-gray-500 mt-1">or <span className="text-blue-600 font-medium">browse</span> to choose</p>
-                        <p className="text-xs text-gray-400 mt-2">Supports: PDF, JPG, PNG (Max 10MB)</p>
+                        </button>
                       </div>
-                    ) : (
-                      <div className="border-2 border-green-200 bg-green-50 rounded-xl p-3">
-                        <div className="flex items-start gap-3">
-                          <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-800 truncate">{uploadForm.backFile.name}</p>
-                            <p className="text-xs text-gray-500 mt-0.5">{formatFileSize(uploadForm.backFile.size)}</p>
-                          </div>
-                          <button
-                            onClick={() => setUploadForm(prev => ({ ...prev, backFile: null }))}
-                            className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>

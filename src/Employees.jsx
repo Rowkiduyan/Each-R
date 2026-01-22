@@ -1157,9 +1157,15 @@ function Employees() {
           // 2. Extract Driver's License
           const license = requirementsData?.license || {};
           if (license && typeof license === 'object') {
+            const photocopyPath =
+              license.filePath ||
+              license.file_path ||
+              license.licenseFilePath ||
+              license.license_file_path ||
+              null;
             const frontPath = license.frontFilePath || license.front_file_path;
             const backPath = license.backFilePath || license.back_file_path;
-            const hasFile = !!(frontPath || backPath);
+            const hasFile = !!(photocopyPath || frontPath || backPath);
             const status = license.status || 'Missing';
             const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
                                  status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
@@ -1167,15 +1173,15 @@ function Employees() {
             
             documents.push({
               id: 'drivers_license',
-              name: 'Photocopy of Drivers License (Front and Back)',
-              file: hasFile ? { name: frontPath ? getFilename(frontPath) : 'Driver\'s License' } : null,
-              previewUrl: frontPath ? getDocumentUrl(frontPath) : (backPath ? getDocumentUrl(backPath) : null),
+              name: 'Photocopy of Drivers License',
+              file: hasFile ? { name: getFilename(photocopyPath || frontPath || backPath || 'drivers_license') } : null,
+              previewUrl: photocopyPath ? getDocumentUrl(photocopyPath) : (frontPath ? getDocumentUrl(frontPath) : (backPath ? getDocumentUrl(backPath) : null)),
               status: displayStatus,
             });
           } else {
             documents.push({
               id: 'drivers_license',
-              name: 'Photocopy of Drivers License (Front and Back)',
+              name: 'Photocopy of Drivers License',
               file: null,
               previewUrl: null,
               status: 'Missing',
