@@ -3179,10 +3179,15 @@ function HrRecruitment() {
         const notes = String(interviewNotesText || '');
         const nowIso = new Date().toISOString();
         
-        // Update application status - try with interview_notes column first, fall back if column doesn't exist
+        // Get current payload safely
         const currentPayload = getApplicantPayloadObject(selectedApplicant);
+        
+        // Create updated payload object (shallow copy to avoid circular refs)
         const updatedPayload = {
-          ...currentPayload,
+          form: currentPayload.form || {},
+          job: currentPayload.job || {},
+          workExperiences: currentPayload.workExperiences || [],
+          characterReferences: currentPayload.characterReferences || [],
           interview_notes: notes,
           assessment_finalized: true,
           assessment_finalized_at: nowIso,
@@ -3193,50 +3198,22 @@ function HrRecruitment() {
           .from('applications')
           .update({
             status: 'agreement',
-            interview_notes: notes,
             payload: updatedPayload,
           })
           .eq('id', selectedApplicant.id);
 
-        // If column doesn't exist (error code 42703 or PGRST204), retry without interview_notes
         if (updateError) {
-          // PostgreSQL error code 42703 = undefined_column
-          // PostgREST error code PGRST204 = column not found
-          if (updateError.code === 'PGRST204' || updateError.code === '42703' || 
-              (updateError.message && updateError.message.includes('column')) ||
-              (updateError.details && updateError.details.includes('interview_notes'))) {
-            
-            const { error: retryError } = await supabase
-              .from('applications')
-              .update({ 
-                status: 'agreement', 
-                payload: updatedPayload 
-              })
-              .eq('id', selectedApplicant.id);
-            
-            if (retryError) throw retryError;
-          } else {
-            throw updateError;
-          }
+          console.error('Update error:', updateError);
+          throw updateError;
         }
 
         setSelectedApplicant((prev) => {
           if (!prev) return prev;
-          const prevPayload = getApplicantPayloadObject(prev);
-          const mergedPayload = {
-            ...prevPayload,
-            interview_notes: notes,
-            assessment_finalized: true,
-            assessment_finalized_at: nowIso,
-          };
           return {
             ...prev,
             status: 'agreement',
             interview_notes: notes,
-            raw: {
-              ...(prev.raw || {}),
-              payload: mergedPayload,
-            },
+            payload: updatedPayload,
           };
         });
 
@@ -4283,7 +4260,21 @@ function HrRecruitment() {
   const setEditJobField = (k, v) => {
     if (k === 'title') {
       const dept = getDepartmentForPosition(v);
-      const inferredJobType = dept === 'Operations Department' ? 'delivery_crew' : 'office_employee';
+      
+      // Operations Department office positions (not delivery crew)
+      const operationsOfficePositions = [
+        "Base Dispatcher",
+        "Site Coordinator",
+        "Transport Coordinator",
+        "Customer Service Representative"
+      ];
+      
+      // Determine job type based on position
+      let inferredJobType = "office_employee";
+      if (dept === "Operations Department" && !operationsOfficePositions.includes(v)) {
+        inferredJobType = "delivery_crew";
+      }
+      
       setEditJobForm((prev) => ({
         ...prev,
         title: v,
@@ -8210,37 +8201,6 @@ function HrRecruitment() {
               )}
 
               <div className="space-y-4">
-                {/* Job Type Toggle */}
-                <div>
-                  <label className="block text-sm font-medium mb-2">Job Type</label>
-                  <div className="flex gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setEditJobField("jobType", "delivery_crew")}
-                      className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
-                        editJobForm.jobType === "delivery_crew"
-                          ? "border-red-600 bg-red-50 text-red-700 font-semibold"
-                          : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
-                      }`}
-                    >
-                      <div className="text-lg mb-1">🚚</div>
-                      <div className="text-sm font-medium">Drivers/Delivery Crew</div>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditJobField("jobType", "office_employee")}
-                      className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
-                        editJobForm.jobType === "office_employee"
-                          ? "border-red-600 bg-red-50 text-red-700 font-semibold"
-                          : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
-                      }`}
-                    >
-                      <div className="text-lg mb-1">💼</div>
-                      <div className="text-sm font-medium">Office Employee</div>
-                    </button>
-                  </div>
-                </div>
-
                 <div>
                   <button
                     type="button"

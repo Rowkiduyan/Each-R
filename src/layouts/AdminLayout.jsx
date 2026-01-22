@@ -147,7 +147,7 @@ export default function AdminLayout() {
                   }`
                 }
               >
-                Enable/Disable Accounts
+                Manage Accounts
               </NavLink>
             </nav>
                 

@@ -118,7 +118,21 @@ function HrCreateJob() {
     // Auto-fill department when job title matches a known position
     if (k === "title") {
       const dept = getDepartmentForPosition(v);
-      const inferredJobType = dept === "Operations Department" ? "delivery_crew" : "office_employee";
+      
+      // Operations Department office positions (not delivery crew)
+      const operationsOfficePositions = [
+        "Base Dispatcher",
+        "Site Coordinator",
+        "Transport Coordinator",
+        "Customer Service Representative"
+      ];
+      
+      // Determine job type based on position
+      let inferredJobType = "office_employee";
+      if (dept === "Operations Department" && !operationsOfficePositions.includes(v)) {
+        inferredJobType = "delivery_crew";
+      }
+      
       setForm((prev) => ({
         ...prev,
         title: v,
@@ -404,37 +418,6 @@ function HrCreateJob() {
           )}
 
           <div className="space-y-4">
-            {/* Job Type Toggle */}
-            <div>
-              <label className="block text-sm font-medium mb-2">Job Type</label>
-              <div className="flex gap-4">
-                <button
-                  type="button"
-                  onClick={() => setField("jobType", "delivery_crew")}
-                  className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
-                    form.jobType === "delivery_crew"
-                      ? "border-red-600 bg-red-50 text-red-700 font-semibold"
-                      : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
-                  }`}
-                >
-                  <div className="text-lg mb-1">🚚</div>
-                  <div className="text-sm font-medium">Drivers/Delivery Crew</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setField("jobType", "office_employee")}
-                  className={`flex-1 px-4 py-3 rounded-lg border-2 transition-all ${
-                    form.jobType === "office_employee"
-                      ? "border-red-600 bg-red-50 text-red-700 font-semibold"
-                      : "border-gray-300 bg-white text-gray-700 hover:border-gray-400"
-                  }`}
-                >
-                  <div className="text-lg mb-1">💼</div>
-                  <div className="text-sm font-medium">Office Employee</div>
-                </button>
-              </div>
-            </div>
-
             <div>
               <button
                 type="button"
