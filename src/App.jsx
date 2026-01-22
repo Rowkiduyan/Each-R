@@ -48,6 +48,7 @@ import Privacy from "./Privacy";
 import About from "./About";
 import AccountSettings from "./AccountSettings";
 import AgencyProfile from "./AgencyProfile";
+import ApplicantDeepLink from "./ApplicantDeepLink";
 
 
 
@@ -131,6 +132,7 @@ function App() {
         <Route path="applicantg/home" element={<ApplicantGHome />} />
         <Route path="about" element={<About />} />
         <Route path="applicant/login" element={<ApplicantLogin />} />
+        <Route path="applicant/deeplink" element={<ApplicantDeepLink />} />
         <Route path="applicant/register" element={<ApplicantRegister />} />
         <Route path="applicant/verify" element={<VerifyEmail />} />
         <Route path="reset-password" element={<ResetPassword />} />

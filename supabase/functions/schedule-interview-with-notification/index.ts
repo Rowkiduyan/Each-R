@@ -403,7 +403,7 @@ serve(async (req) => {
         // Deep-link into the applicant portal so they can click the existing "Confirm Interview" button.
         // Only include this if APP_PUBLIC_URL is configured; avoids sending broken links.
         const confirmPortalUrl = (scheduleKind === 'interview' && basePublicUrl)
-          ? `${basePublicUrl}/applicant/applications?applicationId=${encodeURIComponent(String(applicationId))}&action=confirmInterview`
+          ? `${basePublicUrl}/applicant/deeplink?applicationId=${encodeURIComponent(String(applicationId))}&action=confirmInterview`
           : '';
 
         const primaryCtaUrl = confirmPortalUrl;
