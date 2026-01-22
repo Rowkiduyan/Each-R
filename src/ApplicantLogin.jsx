@@ -17,6 +17,28 @@ function ApplicantLogin() {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetSuccess, setResetSuccess] = useState(false);
 
+  const normalizeRedirectTo = (value) => {
+    if (typeof value !== 'string') return null;
+    let next = value.trim();
+
+    // Some hosting/proxy setups can double-encode query params.
+    // Example: %252Fapplicant%252Fapplications... -> first decode yields %2Fapplicant%2F...
+    for (let i = 0; i < 2; i++) {
+      if (next.startsWith('/')) break;
+      if (!/%[0-9A-Fa-f]{2}/.test(next)) break;
+      try {
+        next = decodeURIComponent(next);
+      } catch {
+        break;
+      }
+    }
+
+    // Only allow internal relative redirects
+    if (!next.startsWith('/')) return null;
+    if (next.startsWith('http://') || next.startsWith('https://')) return null;
+    return next;
+  };
+
   const redirectAfterLogin = async (user) => {
     // 2️⃣ Fetch the user's record from applicants table by email (case-insensitive)
     const { data: applicantData, error: applicantError } = await supabase
@@ -44,16 +66,8 @@ function ApplicantLogin() {
 
     if (userRole === "applicant") {
       const urlRedirectTo = new URLSearchParams(location.search || '').get('redirectTo');
-      let redirectTo = location.state?.redirectTo || urlRedirectTo || "/applicantl/home";
-
-      // Only allow internal relative redirects
-      if (typeof redirectTo !== 'string') redirectTo = "/applicantl/home";
-      if (redirectTo.startsWith('http://') || redirectTo.startsWith('https://')) {
-        redirectTo = "/applicantl/home";
-      }
-      if (!redirectTo.startsWith('/')) {
-        redirectTo = "/applicantl/home";
-      }
+      const candidateRedirectTo = location.state?.redirectTo || urlRedirectTo;
+      const redirectTo = normalizeRedirectTo(candidateRedirectTo) || "/applicantl/home";
 
       const jobId = location.state?.jobId;
       navigate(redirectTo, { state: { jobId }, replace: true });
