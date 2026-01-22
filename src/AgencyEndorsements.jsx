@@ -242,7 +242,9 @@ function AgencyEndorsements() {
       payloadObj?.signingDate ??
       payloadObj?.signing?.date ??
       payloadObj?.agreements?.signing?.date ??
+      payloadObj?.agreement_signing?.date ??
       payloadObj?.agreementSigning?.date ??
+      payloadObj?.agreement_signing_date ??
       null;
 
     if (signingDate && selectedEmployee.id) {
@@ -623,21 +625,27 @@ function AgencyEndorsements() {
       payloadObj?.signingDate ??
       payloadObj?.signing?.date ??
       payloadObj?.agreements?.signing?.date ??
+      payloadObj?.agreement_signing?.date ??
       payloadObj?.agreementSigning?.date ??
+      payloadObj?.agreement_signing_date ??
       null;
     const signingTime =
       payloadObj?.signing_time ??
       payloadObj?.signingTime ??
       payloadObj?.signing?.time ??
       payloadObj?.agreements?.signing?.time ??
+      payloadObj?.agreement_signing?.time ??
       payloadObj?.agreementSigning?.time ??
+      payloadObj?.agreement_signing_time ??
       null;
     const signingLocation =
       payloadObj?.signing_location ??
       payloadObj?.signingLocation ??
       payloadObj?.signing?.location ??
       payloadObj?.agreements?.signing?.location ??
+      payloadObj?.agreement_signing?.location ??
       payloadObj?.agreementSigning?.location ??
+      payloadObj?.agreement_signing_location ??
       null;
 
     if (!signingDate && !signingTime) return null;

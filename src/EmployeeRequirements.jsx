@@ -238,6 +238,20 @@ function EmployeeRequirements() {
     return daysUntilExpiry <= 30; // Expired or expiring within 30 days
   };
 
+  // Medical Examination Results: expiry starts from hire time (for testing: 1 day; later: 365 days)
+  const MEDICAL_EXAMS_VALIDITY_DAYS = 1;
+  const getMedicalExamsExpiryDate = (deployedDate) => {
+    if (!deployedDate) return null;
+    const base = new Date(deployedDate);
+    if (Number.isNaN(base.getTime())) return null;
+    return new Date(base.getTime() + MEDICAL_EXAMS_VALIDITY_DAYS * 24 * 60 * 60 * 1000);
+  };
+  const isMedicalExamsExpired = (deployedDate) => {
+    const exp = getMedicalExamsExpiryDate(deployedDate);
+    if (!exp) return false;
+    return Date.now() > exp.getTime();
+  };
+
   // Check if a document is expired
   const isExpired = (expiryDate) => {
     if (!expiryDate) return false;
@@ -920,7 +934,8 @@ function EmployeeRequirements() {
     let expiredCount = 0;
     // Check medical exams
     medicalReqs.forEach(req => {
-      if (req.validUntil && isExpired(req.validUntil) && req.status === 'approved') {
+      // Medical exams expire based on hire date, not submission date
+      if (req.hasFile && req.status === 'approved' && isMedicalExamsExpired(employee?.deployedDate)) {
         expiredCount++;
       }
     });
@@ -970,12 +985,11 @@ function EmployeeRequirements() {
         backFile: null
       });
     } else if (type === 'medical') {
-      const medicalData = employee?.medicalExams?.[key] || {};
       setUploadForm({ 
         idNumber: '', 
         licenseNumber: '', 
         licenseExpiry: '',
-        validUntil: currentValue || medicalData.validUntil || '',
+        validUntil: '',
         file: null,
         frontFile: null,
         backFile: null
@@ -1132,16 +1146,6 @@ function EmployeeRequirements() {
     }
     if (uploadTarget?.type === "license" && uploadForm.licenseExpiry.trim() && isDateInPast(uploadForm.licenseExpiry)) {
       setAlertMessage("License expiry date cannot be in the past. Please select today's date or later.");
-      setShowErrorAlert(true);
-      return;
-    }
-    if (uploadTarget?.type === "medical" && !uploadForm.validUntil.trim()) {
-      setAlertMessage("Please enter the valid until date");
-      setShowErrorAlert(true);
-      return;
-    }
-    if (uploadTarget?.type === "medical" && uploadForm.validUntil.trim() && isDateInPast(uploadForm.validUntil)) {
-      setAlertMessage("Valid until date cannot be in the past. Please select today's date or later.");
       setShowErrorAlert(true);
       return;
     }
@@ -1339,7 +1343,7 @@ function EmployeeRequirements() {
             status: "Submitted", // Set to Submitted for HR to validate
             submitted_at: new Date().toISOString(),
             submittedDate: new Date().toISOString(),
-            validUntil: uploadForm.validUntil.trim(),
+            validUntil: null,
             currentVersion: uploadTarget.isRenewal ? (currentMedical.versions?.length || 0) : currentMedical.currentVersion,
             remarks: null, // Clear any previous remarks when submitting a renewal
           };
@@ -2201,7 +2205,10 @@ function EmployeeRequirements() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
               </div>
-              <p className="text-sm font-semibold text-gray-800">Medical Examination Results</p>
+              <div>
+                <p className="text-sm font-semibold text-gray-800">Medical Examination Results</p>
+                <p className="text-xs text-gray-500">Medical examination results are done annually; you will be required to submit again after a year.</p>
+              </div>
             </div>
           </div>
           <div className="p-6">
@@ -2217,8 +2224,9 @@ function EmployeeRequirements() {
                 };
                 const style = getStatusStyle(data.status);
                 const needsAction = data.status === "missing" || data.status === "resubmit";
-                const canRenew = data.status === "approved" && data.validUntil && isExpiredOrExpiring(data.validUntil);
-                const isExpiredDoc = data.validUntil && isExpired(data.validUntil);
+                const computedExpiry = getMedicalExamsExpiryDate(employee?.deployedDate);
+                const isExpiredDoc = Boolean(computedExpiry) && data.status === 'approved' && Date.now() > computedExpiry.getTime();
+                const canRenew = data.status === 'approved' && Boolean(computedExpiry) && isExpiredOrExpiring(computedExpiry.toISOString());
 
                 return (
                   <div
@@ -2243,16 +2251,6 @@ function EmployeeRequirements() {
                             </span>
                           )}
                         </div>
-                        {data.validUntil && (
-                          <div className="flex items-center gap-1.5 mt-1">
-                            <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <p className={`text-xs ${isExpiredDoc ? 'text-red-600 font-semibold' : 'text-gray-500'}`}>
-                              Valid until: <span className="font-medium">{formatDate(data.validUntil)}</span>
-                            </p>
-                          </div>
-                        )}
                         {data.versions && data.versions.length > 0 && (
                           <div className="flex items-center gap-1.5 mt-1">
                             <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2313,7 +2311,7 @@ function EmployeeRequirements() {
                                 exam.key,
                                 exam.name,
                                 data.status === "resubmit",
-                                data.validUntil
+                                ''
                               )
                             }
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
@@ -2365,7 +2363,7 @@ function EmployeeRequirements() {
                                 exam.key,
                                 exam.name,
                                 false,
-                                data.validUntil,
+                                '',
                                 true
                               )
                             }
@@ -3423,7 +3421,7 @@ function EmployeeRequirements() {
                   <ul className="list-disc list-inside space-y-1 ml-2">
                     <li><strong>Government ID Numbers:</strong> SSS, TIN, PAG-IBIG, PhilHealth identification numbers</li>
                     <li><strong>License Information:</strong> Driver's license number, classification, expiry date, and license photocopies</li>
-                    <li><strong>Medical Records:</strong> Medical examination results (X-ray, Stool, Urine, HEPA, CBC, Drug Test) with validity dates</li>
+                    <li><strong>Medical Records:</strong> Medical examination results (X-ray, Stool, Urine, HEPA, CBC, Drug Test)</li>
                     <li><strong>Personal Documents:</strong> PSA Birth Certificate, Marriage Contract, Dependents' Birth Certificates, Residence Sketch, and photographs</li>
                     <li><strong>Clearances:</strong> NBI Clearance, Police Clearance, Barangay Clearance with validity dates</li>
                     <li><strong>Educational Documents:</strong> Diploma and Transcript of Records</li>
@@ -3669,30 +3667,6 @@ function EmployeeRequirements() {
                     </div>
                     <p className="text-xs text-gray-500 mt-1.5">License expiry date must be today or later</p>
                   </div>
-                </div>
-              )}
-
-              {/* Valid Until Date Input (for medical exams) */}
-              {uploadTarget.type === 'medical' && (
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    Valid Until Date <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                      <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                    </div>
-                    <input
-                      type="date"
-                      value={uploadForm.validUntil}
-                      onChange={(e) => setUploadForm(prev => ({ ...prev, validUntil: e.target.value }))}
-                      min={getTodayDate()}
-                      className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
-                    />
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1.5">Enter the date when this test result expires (must be today or later)</p>
                 </div>
               )}
 
@@ -3951,7 +3925,7 @@ function EmployeeRequirements() {
                 disabled={uploading || 
                   (uploadTarget.type === 'default' && (!uploadForm.idNumber.trim() || !uploadForm.file)) ||
                   (uploadTarget.type === 'license' && (!uploadForm.licenseNumber.trim() || !uploadForm.licenseExpiry.trim() || !uploadForm.frontFile || !uploadForm.backFile)) ||
-                  (uploadTarget.type === 'medical' && (!uploadForm.validUntil.trim() || !uploadForm.file)) ||
+                  (uploadTarget.type === 'medical' && (!uploadForm.file)) ||
                   (uploadTarget.type === 'clearance' && (!uploadForm.validUntil.trim() || !uploadForm.file)) ||
                   (uploadTarget.type === 'personal' && !uploadForm.file) ||
                   (uploadTarget.type === 'educational' && !uploadForm.file) ||

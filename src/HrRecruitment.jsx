@@ -1470,10 +1470,18 @@ function HrRecruitment() {
         };
       });
 
+      // Hide known broken applications from the recruitment list.
+      // These are records whose payload was previously overwritten and now render as "Unnamed Applicant".
+      const hiddenApplicationIdPrefixes = new Set(['e5d58a92', 'dc696567']);
+      const filteredMapped = mapped.filter((app) => {
+        const idPrefix = String(app?.id || '').slice(0, 8);
+        return !hiddenApplicationIdPrefixes.has(idPrefix);
+      });
+
       // Previously we tried to de‑duplicate by user_id + job_id, but this could
       // incorrectly hide distinct applicants that happen to share those fields.
       // Use the raw mapped list instead so every application row is visible.
-      setApplicants(mapped);
+      setApplicants(filteredMapped);
     } catch (err) {
       console.error("loadApplications unexpected error:", err);
       setApplicants([]);
@@ -2339,6 +2347,17 @@ function HrRecruitment() {
           return;
         }
 
+        // Require at least one agreement document before marking as hired.
+        {
+          const docs = getAgreementDocumentsFromApplicant(applicationData);
+          const activeDocs = Array.isArray(docs) ? docs.filter((d) => d && !d.isRemoved) : [];
+          if (activeDocs.length === 0) {
+            setErrorMessage("Please upload at least one agreement document before marking this applicant as hired.");
+            setShowErrorAlert(true);
+            return;
+          }
+        }
+
         // Check if application is already marked as hired to prevent duplicate processing
         if (applicationData.status === "hired") {
           setErrorMessage("This applicant has already been marked as hired.");
@@ -2814,7 +2833,7 @@ function HrRecruitment() {
   };
 
   // ---- OPEN agreement signing modal
-  const _openAgreementSigningModal = (application) => {
+  const openAgreementSigningModal = (application) => {
     setSelectedApplicationForSigning(application);
 
     let payloadObj = application?.raw?.payload || {};
@@ -2840,6 +2859,17 @@ function HrRecruitment() {
   // ---- SCHEDULE agreement signing appointment
   const scheduleAgreementSigning = async () => {
     if (!selectedApplicationForSigning) return;
+
+    const signingAlreadySet = Boolean(
+      selectedApplicationForSigning?.agreement_signing_date ||
+        selectedApplicationForSigning?.agreement_signing_time ||
+        selectedApplicationForSigning?.agreement_signing_location
+    );
+    if (signingAlreadySet) {
+      setErrorMessage("Signing schedule is already set and cannot be changed.");
+      setShowErrorAlert(true);
+      return;
+    }
     if (!agreementSigningForm.date || !agreementSigningForm.time || !agreementSigningForm.location) {
       setErrorMessage("Please fill date, time and location.");
       setShowErrorAlert(true);
@@ -3182,25 +3212,44 @@ function HrRecruitment() {
         // Get current payload safely
         const currentPayload = getApplicantPayloadObject(selectedApplicant);
         
-        // Create updated payload object (shallow copy to avoid circular refs)
+        // IMPORTANT: Do not overwrite the payload.
+        // Endorsed/agency applicants store their identity + agency stamp under payload.meta and payload.applicant.
+        // Replacing payload here causes the UI to show "Unnamed Applicant" and removes them from the agency endorsements list.
         const updatedPayload = {
-          form: currentPayload.form || {},
-          job: currentPayload.job || {},
-          workExperiences: currentPayload.workExperiences || [],
-          characterReferences: currentPayload.characterReferences || [],
+          ...currentPayload,
           interview_notes: notes,
           assessment_finalized: true,
           assessment_finalized_at: nowIso,
+          // Backward compatible aliases (some views read camelCase)
+          assessmentFinalized: true,
+          assessmentFinalizedAt: nowIso,
         };
 
-        // First attempt: try updating with interview_notes column
-        const { error: updateError } = await supabase
-          .from('applications')
-          .update({
-            status: 'agreement',
-            payload: updatedPayload,
-          })
-          .eq('id', selectedApplicant.id);
+        // Update application status and payload.
+        // Some deployments may not have an interview_notes column; fall back to payload-only update.
+        let updateError = null;
+        {
+          const res = await supabase
+            .from('applications')
+            .update({
+              status: 'agreement',
+              interview_notes: notes,
+              payload: updatedPayload,
+            })
+            .eq('id', selectedApplicant.id);
+          updateError = res?.error || null;
+        }
+
+        if (updateError && updateError.code === 'PGRST204') {
+          const res2 = await supabase
+            .from('applications')
+            .update({
+              status: 'agreement',
+              payload: updatedPayload,
+            })
+            .eq('id', selectedApplicant.id);
+          updateError = res2?.error || null;
+        }
 
         if (updateError) {
           console.error('Update error:', updateError);
@@ -3209,11 +3258,23 @@ function HrRecruitment() {
 
         setSelectedApplicant((prev) => {
           if (!prev) return prev;
+          const prevPayload = getApplicantPayloadObject(prev);
+          const mergedPayload = {
+            ...prevPayload,
+            interview_notes: notes,
+            assessment_finalized: true,
+            assessment_finalized_at: nowIso,
+            assessmentFinalized: true,
+            assessmentFinalizedAt: nowIso,
+          };
           return {
             ...prev,
             status: 'agreement',
             interview_notes: notes,
-            payload: updatedPayload,
+            raw: {
+              ...(prev.raw || {}),
+              payload: mergedPayload,
+            },
           };
         });
 
@@ -7111,7 +7172,17 @@ function HrRecruitment() {
                               </div>
                             </div>
 
-                              <div className="flex flex-wrap items-center gap-2 justify-end" />
+                            {!hasSigning && (
+                              <div className="flex flex-wrap items-center gap-2 justify-end">
+                                <button
+                                  type="button"
+                                  className="px-3 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-xs font-medium"
+                                  onClick={() => openAgreementSigningModal(selectedApplicant)}
+                                >
+                                  Set Signing Schedule
+                                </button>
+                              </div>
+                            )}
                           </div>
 
                           {!hasSigning ? (
@@ -7299,9 +7370,15 @@ function HrRecruitment() {
                     )}
 
                     <div className="flex justify-end mt-2">
+                      {(() => {
+                        const docs = getAgreementDocumentsFromApplicant(selectedApplicant);
+                        const activeDocs = Array.isArray(docs) ? docs.filter((d) => d && !d.isRemoved) : [];
+                        const canMarkAsHired = activeDocs.length > 0;
+
+                        return (
                       <button
                         type="button"
-                        className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                        className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
                         onClick={async (e) => {
                           e.preventDefault();
                           e.stopPropagation();
@@ -7310,9 +7387,17 @@ function HrRecruitment() {
                         onMouseDown={(e) => {
                           e.preventDefault();
                         }}
+                        disabled={!canMarkAsHired}
+                        title={
+                          canMarkAsHired
+                            ? 'Mark applicant as hired'
+                            : 'Upload at least one agreement document to enable hiring'
+                        }
                       >
                         Mark as Hired
                       </button>
+                        );
+                      })()}
                     </div>
                   </section>
                 )}
