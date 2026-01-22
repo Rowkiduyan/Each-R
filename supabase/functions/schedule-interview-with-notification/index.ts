@@ -15,7 +15,15 @@ const HR_REPLY_TO_EMAIL = Deno.env.get("HR_REPLY_TO_EMAIL") || "";
 const HR_REPLY_TO_NAME = Deno.env.get("HR_REPLY_TO_NAME") || "Roadwise HR";
 const HR_SUPPORT_EMAIL = Deno.env.get("HR_SUPPORT_EMAIL") || HR_REPLY_TO_EMAIL || "noreply@roadwise.com";
 
-const APP_PUBLIC_URL = (Deno.env.get('APP_PUBLIC_URL') || 'https://each-r.vercel.app').trim();
+// Public base URL used for deep-links in outgoing emails (e.g. Confirm Interview).
+// Prefer configuring this per-environment via the `APP_PUBLIC_URL` env var.
+// Note: if the env var is accidentally still set to the old Vercel domain, we auto-fallback.
+const DEFAULT_APP_PUBLIC_URL = 'https://each-r-m4qap.ondigitalocean.app/';
+const APP_PUBLIC_URL = (() => {
+  const raw = String(Deno.env.get('APP_PUBLIC_URL') || DEFAULT_APP_PUBLIC_URL).trim();
+  if (raw.includes('each-r.vercel.app')) return DEFAULT_APP_PUBLIC_URL;
+  return raw;
+})();
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
