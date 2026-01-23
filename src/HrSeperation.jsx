@@ -101,14 +101,22 @@ function HrSeperation() {
       
       // Auto-fill Stage 2 fields if templates exist
       if (data?.exit_clearance_form_url && data?.exit_clearance_form_filename) {
-        // Create a pseudo-File object for display purposes
-        const clearanceFile = new File([], data.exit_clearance_form_filename, { type: 'application/pdf' });
+        // Create a template reference object for display and upload purposes
+        const clearanceFile = {
+          name: data.exit_clearance_form_filename,
+          url: data.exit_clearance_form_url,
+          isTemplate: true
+        };
         setHrExitClearanceFile(clearanceFile);
         setStagedClearanceTemplate(clearanceFile);
       }
       
       if (data?.exit_interview_form_url && data?.exit_interview_form_filename) {
-        const interviewFile = new File([], data.exit_interview_form_filename, { type: 'application/pdf' });
+        const interviewFile = {
+          name: data.exit_interview_form_filename,
+          url: data.exit_interview_form_url,
+          isTemplate: true
+        };
         setHrExitInterviewFile(interviewFile);
         setStagedInterviewTemplate(interviewFile);
       }
@@ -1010,6 +1018,12 @@ function HrSeperation() {
   const handleUploadTemplate = async (templateType) => {
     const file = templateType === 'clearance' ? stagedClearanceTemplate : stagedInterviewTemplate;
     if (!file) return;
+    
+    // If this is already a template reference (after refresh), skip re-uploading
+    if (file.isTemplate) {
+      console.log('Template already saved, skipping re-upload');
+      return;
+    }
 
     try {
       setError(null);
@@ -1037,21 +1051,19 @@ function HrSeperation() {
 
       if (uploadError) throw uploadError;
 
-      // Update database
-      const updateData = templateType === 'clearance' 
-        ? { 
-            exit_clearance_form_url: fileName,
-            exit_clearance_form_filename: file.name
-          }
-        : {
-            exit_interview_form_url: fileName,
-            exit_interview_form_filename: file.name
-          };
+      // Update database using upsert to create row if it doesn't exist
+      // Include all fields to preserve existing data
+      const updateData = {
+        id: '00000000-0000-0000-0000-000000000001',
+        exit_clearance_form_url: templateType === 'clearance' ? fileName : (templates?.exit_clearance_form_url || null),
+        exit_clearance_form_filename: templateType === 'clearance' ? file.name : (templates?.exit_clearance_form_filename || null),
+        exit_interview_form_url: templateType === 'interview' ? fileName : (templates?.exit_interview_form_url || null),
+        exit_interview_form_filename: templateType === 'interview' ? file.name : (templates?.exit_interview_form_filename || null)
+      };
 
       const { error: dbError } = await supabase
         .from('separation_form_templates')
-        .update(updateData)
-        .eq('id', '00000000-0000-0000-0000-000000000001');
+        .upsert(updateData, { onConflict: 'id' });
 
       if (dbError) throw dbError;
 
@@ -1059,11 +1071,19 @@ function HrSeperation() {
       const updatedTemplates = { ...templates, ...updateData };
       setTemplates(updatedTemplates);
       
-      // Auto-fill only the specific Stage 2 field that was just saved
+      // Auto-fill only the specific Stage 2 field that was just saved with template reference
+      const templateRef = {
+        name: file.name,
+        url: fileName,
+        isTemplate: true
+      };
+      
       if (templateType === 'clearance') {
-        setHrExitClearanceFile(file);
+        setHrExitClearanceFile(templateRef);
+        setStagedClearanceTemplate(templateRef);
       } else {
-        setHrExitInterviewFile(file);
+        setHrExitInterviewFile(templateRef);
+        setStagedInterviewTemplate(templateRef);
       }
 
     } catch (err) {
@@ -1847,7 +1867,11 @@ function HrSeperation() {
 
             {!selectedEmployee.isResignationApproved && selectedEmployee.resignationLetterRequired && (
               <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500">
-                <p>Approve the resignation letter to unlock Stage 2</p>
+                <p>
+                  {selectedEmployee.resignationFile 
+                    ? 'Approve the resignation letter to unlock Stage 2' 
+                    : 'Waiting for employee to submit resignation letter'}
+                </p>
               </div>
             )}
 
