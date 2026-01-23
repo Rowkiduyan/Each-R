@@ -565,14 +565,6 @@ function AgencyHome() {
                       </button>
                     </div>
                   </div>
-                  <div className="flex justify-end pr-4">
-                    <button
-                      type="button"
-                      className="text-white text-sm font-medium hover:underline"
-                    >
-                      More options
-                    </button>
-                  </div>
                 </div>
               </form>
             </div>

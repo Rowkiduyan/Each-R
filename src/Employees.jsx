@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { getStoredJson } from "./authStorage";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
@@ -111,6 +112,12 @@ function Employees() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const exportMenuRef = useRef(null);
 
+  // Get current user info from localStorage
+  const [currentUser, setCurrentUser] = useState(null);
+  useEffect(() => {
+    const userData = getStoredJson("loggedInHR");
+    if (userData) setCurrentUser(userData);
+  }, []);
 
   // data
   const [employees, setEmployees] = useState([]);
@@ -536,6 +543,11 @@ function Employees() {
       })
       .filter((e) => positionFilter === "All" || e.position === positionFilter)
       .filter((e) => {
+        // Auto-filter by depot for HRC users (HRC can only see their depot's employees)
+        if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+          return (e.depot || "") === currentUser.depot;
+        }
+        // Manual depot filter for non-HRC users
         if (depotFilter === "All") return true;
         return (e.depot || "") === depotFilter;
       })
@@ -554,7 +566,7 @@ function Employees() {
 
         return isAsc ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name);
       });
-  }, [employees, search, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
+  }, [employees, search, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption, currentUser]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -567,13 +579,22 @@ function Employees() {
   }, [showExportMenu]);
 
 
-  // Stats
-  const stats = {
-    total: employees.length,
-    regular: employees.filter(e => e.employmentStatus === "Regular").length,
-    probation: employees.filter(e => e.employmentStatus === "Under Probation").length,
-    agency: employees.filter(e => e.agency).length,
-  };
+  // Stats - for HRC users, count only employees from their depot
+  const stats = useMemo(() => {
+    let baseList = employees;
+    
+    // If HRC, filter by their depot for stats
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      baseList = employees.filter(e => (e.depot || "") === currentUser.depot);
+    }
+    
+    return {
+      total: baseList.length,
+      regular: baseList.filter(e => e.employmentStatus === "Regular").length,
+      probation: baseList.filter(e => e.employmentStatus === "Under Probation").length,
+      agency: baseList.filter(e => e.agency).length,
+    };
+  }, [employees, currentUser]);
 
   // Helpers
   const formatDate = (d) => {
@@ -2296,18 +2317,20 @@ function Employees() {
                 </div>
 
                 {/* Filters row (below search, uniform with HrRecruitment) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))_auto] gap-2 items-center">
-                  {/* Depot Filter */}
-                  <select
-                    value={depotFilter}
-                    onChange={(e) => setDepotFilter(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
-                  >
-                    <option value="All">All Depots</option>
-                    {depotOptions.filter(d => d !== "All").map((d) => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
+                <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${currentUser?.role?.toUpperCase() === 'HRC' ? 'xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]' : 'xl:grid-cols-[repeat(6,minmax(0,1fr))_auto]'} gap-2 items-center`}>
+                  {/* Depot Filter - Hidden for HRC users */}
+                  {currentUser?.role?.toUpperCase() !== 'HRC' && (
+                    <select
+                      value={depotFilter}
+                      onChange={(e) => setDepotFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 bg-white"
+                    >
+                      <option value="All">All Depots</option>
+                      {depotOptions.filter(d => d !== "All").map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                  )}
 
                   {/* Department Filter */}
                   <select
