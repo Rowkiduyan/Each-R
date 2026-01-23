@@ -785,10 +785,10 @@ function HrRecruitment() {
       ((selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') || rescheduleReqActive)
     );
     const assessmentFinalized = Boolean(payloadObj?.assessment_finalized || payloadObj?.assessmentFinalized);
-    const agreementsStatusUnlocked = ['agreement', 'agreements', 'final_agreement', 'hired'].includes(applicantStatus);
+    const agreementsStatusUnlocked = ['agreement', 'agreements', 'final_agreement', 'hired', 'waitlisted'].includes(applicantStatus);
     
     // Check which steps are unlocked
-    const step2Unlocked = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
+    const step2Unlocked = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired", "waitlisted"].includes(applicantStatus);
     // Step 3 (Agreements) is locked until the assessment is finalized (or applicant is already in an agreements-related status)
     const step3Unlocked = agreementsStatusUnlocked || assessmentFinalized;
     
@@ -2378,9 +2378,38 @@ function HrRecruitment() {
         }
 
         const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
-        const firstName = source.firstName || source.fname || source.first_name || "";
-        const lastName = source.lastName || source.lname || source.last_name || "";
-        const middleName = source.middleName || source.mname || source.middle_name || "";
+
+        const resolveNameFromText = (text) => {
+          if (!text) return { first: "", last: "", middle: "" };
+          const raw = String(text).trim().replace(/\s+/g, " ");
+          if (!raw) return { first: "", last: "", middle: "" };
+          const parts = raw.split(" ");
+          if (parts.length === 1) return { first: parts[0], last: "", middle: "" };
+          const first = parts[0];
+          const last = parts[parts.length - 1];
+          const middle = parts.slice(1, -1).join(" ");
+          return { first, last, middle };
+        };
+
+        const fallbackNameText =
+          source.fullName ||
+          source.full_name ||
+          source.name ||
+          payloadObj.fullName ||
+          payloadObj.full_name ||
+          payloadObj.name ||
+          applicationData.name ||
+          applicationData.applicant_name ||
+          applicationData.full_name ||
+          applicantName ||
+          selectedApplicant?.name ||
+          null;
+
+        const resolved = resolveNameFromText(fallbackNameText);
+
+        const firstName = source.firstName || source.fname || source.first_name || resolved.first || "";
+        const lastName = source.lastName || source.lname || source.last_name || resolved.last || "";
+        const middleName = source.middleName || source.mname || source.middle_name || resolved.middle || "";
         const applicantEmail = pickFirstEmail(
           source.email,
           source.personal_email,
@@ -2404,6 +2433,32 @@ function HrRecruitment() {
           setErrorMessage("Cannot mark as employee: missing name information.");
           setShowErrorAlert(true);
           return;
+        }
+
+        // Backfill payload name fields so RPC functions that rely on payload don't fail
+        try {
+          const needsFirst = !source.firstName && !source.fname && !source.first_name;
+          const needsLast = !source.lastName && !source.lname && !source.last_name;
+          const needsMiddle = !source.middleName && !source.mname && !source.middle_name;
+
+          if (needsFirst || needsLast || needsMiddle) {
+            const updatedPayload = { ...payloadObj };
+            const targetKey = updatedPayload.form ? 'form' : (updatedPayload.applicant ? 'applicant' : 'form');
+            const target = { ...(updatedPayload[targetKey] || {}) };
+
+            if (needsFirst && firstName) target.firstName = firstName;
+            if (needsLast && lastName) target.lastName = lastName;
+            if (needsMiddle && middleName) target.middleName = middleName;
+
+            updatedPayload[targetKey] = target;
+
+            await supabase
+              .from('applications')
+              .update({ payload: updatedPayload })
+              .eq('id', applicationId);
+          }
+        } catch (payloadUpdateError) {
+          console.warn('Failed to backfill name fields in payload:', payloadUpdateError);
         }
 
         // Detect if this applicant is agency/endorsed
@@ -5699,8 +5754,9 @@ function HrRecruitment() {
                       const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
                       const hasInterview = !!selectedApplicant?.interview_date;
                       const agencyApplicant = isAgency(selectedApplicant);
-                      const interviewConfirmed = selectedApplicant?.interview_confirmed === 'Confirmed' || 
-                                                selectedApplicant?.interview_confirmed === 'confirmed';
+                      const interviewConfirmed = ['confirmed', 'confirm', 'yes', 'true'].includes(
+                        String(selectedApplicant?.interview_confirmed || '').trim().toLowerCase()
+                      );
                       const payloadObj = getApplicantPayloadObject(selectedApplicant);
                       const rescheduleReqObj = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
                       const rescheduleReqHandled = Boolean(rescheduleReqObj && (rescheduleReqObj.handled_at || rescheduleReqObj.handledAt));
@@ -5715,7 +5771,7 @@ function HrRecruitment() {
                         ((selectedApplicant?.interview_confirmed === 'Rejected' || selectedApplicant?.interview_confirmed === 'rejected') || rescheduleReqActive)
                       );
                       const assessmentFinalized = Boolean(payloadObj?.assessment_finalized || payloadObj?.assessmentFinalized);
-                      const agreementsStatusUnlocked = ['agreement', 'agreements', 'final_agreement', 'hired'].includes(applicantStatus);
+                      const agreementsStatusUnlocked = ['agreement', 'agreements', 'final_agreement', 'hired', 'waitlisted'].includes(applicantStatus);
                       
                       // Determine step completion and unlock status
                       let isCompleted = false;
@@ -5725,18 +5781,21 @@ function HrRecruitment() {
                         // Step 1 is always unlocked (it's the first step)
                         // Step 1 is completed when status is "screening" or higher
                         isUnlocked = true;
-                        isCompleted = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
+                        isCompleted = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired", "waitlisted"].includes(applicantStatus);
                       } else if (step.key === "Assessment") {
                         // Step 2 is unlocked when Step 1 is completed
-                        const step1Completed = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
+                        const step1Completed = ["screening", "interview", "scheduled", "onsite", "requirements", "docs_needed", "awaiting_documents", "agreement", "agreements", "final_agreement", "hired", "waitlisted"].includes(applicantStatus);
                         isUnlocked = step1Completed;
-                        // For agency endorsements: no schedule confirmation; complete once scheduled (unless reschedule requested)
-                        isCompleted = hasInterview && (agencyApplicant ? !rescheduleRequested : interviewConfirmed);
+                        // Assessment is completed only after finalization.
+                        // For non-agency applicants, a confirmed interview also counts as completed.
+                        isCompleted =
+                          assessmentFinalized ||
+                          (!agencyApplicant && interviewConfirmed && !rescheduleRequested);
                       } else if (step.key === "Agreements") {
                         // Locked until assessment is finalized (or applicant is already in an agreements-related status)
                         isUnlocked = agreementsStatusUnlocked || assessmentFinalized;
-                        // Step 3 is completed when status is agreement or hired
-                        isCompleted = ["agreement", "agreements", "final_agreement", "hired"].includes(applicantStatus);
+                        // Step 3 is completed only after the applicant is hired
+                        isCompleted = applicantStatus === 'hired';
                       }
 
                       const isLocked = !isUnlocked;
@@ -6638,7 +6697,6 @@ function HrRecruitment() {
                     {(() => {
                       const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
                       const canProceedFromApplication = ['submitted', 'pending', 'waitlisted'].includes(applicantStatus);
-                      const canWaitlist = ['submitted', 'pending'].includes(applicantStatus);
                       
                       if (!canProceedFromApplication) {
                         return null; // Don't show button if already moved to Assessment or beyond
@@ -6646,19 +6704,6 @@ function HrRecruitment() {
                       
                       return (
                         <div className="pt-2 flex justify-end gap-2">
-                          {canWaitlist && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                addToWaitlist(selectedApplicant);
-                              }}
-                              className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 text-slate-800 rounded-md text-sm font-medium hover:bg-slate-50 transition-colors"
-                            >
-                              <span>Add to Waitlist</span>
-                            </button>
-                          )}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -7380,33 +7425,59 @@ function HrRecruitment() {
                       </div>
                     )}
 
-                    <div className="flex justify-end mt-2">
+                    <div className="flex justify-end mt-2 gap-2">
                       {(() => {
+                        const applicantStatus = selectedApplicant?.status?.toLowerCase() || '';
+                        const canWaitlist = !['hired', 'rejected', 'waitlisted'].includes(applicantStatus);
                         const docs = getAgreementDocumentsFromApplicant(selectedApplicant);
                         const activeDocs = Array.isArray(docs) ? docs.filter((d) => d && !d.isRemoved) : [];
                         const canMarkAsHired = activeDocs.length > 0;
 
                         return (
-                      <button
-                        type="button"
-                        className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          await handleMarkAsEmployee(selectedApplicant.id, selectedApplicant.name);
-                        }}
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                        }}
-                        disabled={!canMarkAsHired}
-                        title={
-                          canMarkAsHired
-                            ? 'Mark applicant as hired'
-                            : 'Upload at least one agreement document to enable hiring'
-                        }
-                      >
-                        Mark as Hired
-                      </button>
+                          <>
+                            <button
+                              type="button"
+                              className="px-6 py-2 bg-white border border-slate-300 text-slate-800 rounded-md text-sm font-medium hover:bg-slate-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                addToWaitlist(selectedApplicant);
+                              }}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                              }}
+                              disabled={!canWaitlist}
+                              title={
+                                canWaitlist
+                                  ? 'Add applicant to waitlist'
+                                  : applicantStatus === 'waitlisted'
+                                    ? 'Applicant is already waitlisted'
+                                    : 'Cannot waitlist (already hired or rejected)'
+                              }
+                            >
+                              Add to Waitlist
+                            </button>
+                            <button
+                              type="button"
+                              className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                              onClick={async (e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                await handleMarkAsEmployee(selectedApplicant.id, selectedApplicant.name);
+                              }}
+                              onMouseDown={(e) => {
+                                e.preventDefault();
+                              }}
+                              disabled={!canMarkAsHired}
+                              title={
+                                canMarkAsHired
+                                  ? 'Mark applicant as hired'
+                                  : 'Upload at least one agreement document to enable hiring'
+                              }
+                            >
+                              Mark as Hired
+                            </button>
+                          </>
                         );
                       })()}
                     </div>
