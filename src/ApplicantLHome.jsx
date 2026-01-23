@@ -89,6 +89,8 @@ import {
     const [referenceContactErrors, setReferenceContactErrors] = useState([]);
     const [referenceNameErrors, setReferenceNameErrors] = useState([]);
     const [referenceEmailErrors, setReferenceEmailErrors] = useState([]);
+    const [profileReferenceContactErrors, setProfileReferenceContactErrors] = useState([]);
+    const [profileReferenceEmailErrors, setProfileReferenceEmailErrors] = useState([]);
     const [contactError, setContactError] = useState('');
     const [emailError, setEmailError] = useState('');
     const [showAllResponsibilities, setShowAllResponsibilities] = useState(false);
@@ -693,6 +695,30 @@ const handleSave = async () => {
         }
         if (!Number.isNaN(endDate.getTime()) && endDate > today) {
           setErrorMessage(`Work Experience #${i + 1}: End date cannot be in the future`);
+          setSaving(false);
+          return;
+        }
+      }
+    }
+
+    // Validate character references
+    const profileRefs = Array.isArray(profileForm.character_references) ? profileForm.character_references : [];
+    for (let i = 0; i < profileRefs.length; i++) {
+      const ref = profileRefs[i] || {};
+      // Validate phone number if provided
+      if (ref.phone && String(ref.phone).trim() !== '') {
+        const phoneError = validatePhoneNumber(ref.phone);
+        if (phoneError) {
+          setErrorMessage(`Character Reference #${i + 1}: ${phoneError}`);
+          setSaving(false);
+          return;
+        }
+      }
+      // Validate email if provided
+      if (ref.email && String(ref.email).trim() !== '') {
+        const emailError = validateEmail(ref.email);
+        if (emailError) {
+          setErrorMessage(`Character Reference #${i + 1}: ${emailError}`);
           setSaving(false);
           return;
         }
@@ -1401,6 +1427,26 @@ const getApplicationFilesPublicUrl = (path) => {
     };
 
     const updateProfileReference = (idx, key, value) => {
+      // Validate phone number
+      if (key === 'phone') {
+        const phoneError = validatePhoneNumber(value);
+        setProfileReferenceContactErrors((prev) => {
+          const updated = [...prev];
+          updated[idx] = phoneError;
+          return updated;
+        });
+      }
+      
+      // Validate email
+      if (key === 'email') {
+        const emailError = validateEmail(value);
+        setProfileReferenceEmailErrors((prev) => {
+          const updated = [...prev];
+          updated[idx] = emailError;
+          return updated;
+        });
+      }
+      
       setProfileForm((prev) => {
         const current = Array.isArray(prev.character_references) ? prev.character_references : [];
         const copy = [...current];
@@ -3964,7 +4010,7 @@ const getApplicationFilesPublicUrl = (path) => {
                       </div>
 
                       {/* Education & Skills Card */}
-                      <div className="bg-white rounded-xl shadow-sm border border-gray-200" style={{ overflowX: 'hidden', overflowY: 'visible' }}>
+                      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-visible">
                         <div className="bg-gradient-to-r from-green-50 to-emerald-50 px-6 py-4 border-b border-gray-200">
                           <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                             <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3973,11 +4019,11 @@ const getApplicationFilesPublicUrl = (path) => {
                             Education & Skills
                           </h3>
                         </div>
-                        <div className="p-6" style={{ overflow: 'visible' }}>
+                        <div className="p-6 overflow-visible">
                           <div className="mb-4">
                             <p className="text-sm text-gray-600 italic">If not applicable, select N/A</p>
                           </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 overflow-visible">
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Educational Level <span className="text-red-600">*</span></label>
                               {isEditMode ? (
@@ -4089,7 +4135,7 @@ const getApplicationFilesPublicUrl = (path) => {
                                 <div className="text-gray-900">{profileForm.year_graduated || 'Not provided'}</div>
                               )}
                             </div>
-                            <div className="md:col-span-2 relative" style={{ zIndex: 1 }}>
+                            <div className="md:col-span-2 relative" style={{ zIndex: 10 }}>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Skills (optional)</label>
                               {isEditMode ? (
                                 <div className="relative" style={{ zIndex: 50 }}>
@@ -4362,8 +4408,13 @@ const getApplicationFilesPublicUrl = (path) => {
                                             updateProfileReference(index, 'phone', numeric);
                                           }}
                                           maxLength={11}
-                                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                                            profileReferenceContactErrors[index] ? 'border-red-500' : 'border-gray-300'
+                                          }`}
                                         />
+                                        {profileReferenceContactErrors[index] && (
+                                          <p className="mt-1 text-sm text-red-600">{profileReferenceContactErrors[index]}</p>
+                                        )}
                                       </div>
                                       <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
@@ -4371,8 +4422,13 @@ const getApplicationFilesPublicUrl = (path) => {
                                           type="email"
                                           value={ref.email || ''}
                                           onChange={(e) => updateProfileReference(index, 'email', e.target.value)}
-                                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-red-500"
+                                          className={`w-full px-3 py-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-red-500 ${
+                                            profileReferenceEmailErrors[index] ? 'border-red-500' : 'border-gray-300'
+                                          }`}
                                         />
+                                        {profileReferenceEmailErrors[index] && (
+                                          <p className="mt-1 text-sm text-red-600">{profileReferenceEmailErrors[index]}</p>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
@@ -4429,12 +4485,10 @@ const getApplicationFilesPublicUrl = (path) => {
             {/* Submit Application Modal (now controlled inputs) */}
             {showModal && (
               <div
-                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
-                onClick={() => setShowModal(false)}
+                className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
               >
                 <div
-                  className="bg-white rounded-lg max-w-2xl w-full mx-4 h-[90vh] border-2 border-black flex flex-col"
-                  onClick={(e) => e.stopPropagation()}
+                  className="bg-white rounded-lg max-w-3xl w-full mx-4 h-[90vh] flex flex-col"
                 >
                   <div className="flex justify-between items-center p-4 border-b flex-shrink-0">
                     <h2 className="text-xl font-bold text-gray-800">
@@ -5430,7 +5484,7 @@ const getApplicationFilesPublicUrl = (path) => {
             {/* Summary (now shows user input) */}
             {showSummary && (
               <div
-                className="fixed inset-0 bg-transparent flex items-center justify-center z-50"
+                className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
                 onClick={() => setShowSummary(false)}
               >
                 <div

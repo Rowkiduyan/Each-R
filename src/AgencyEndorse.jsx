@@ -237,6 +237,7 @@ function AgencyEndorse() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Pre-submit summary modal (shown before Confirm Endorsement)
   const [showSummaryModal, setShowSummaryModal] = useState(false);
@@ -1779,29 +1780,31 @@ function AgencyEndorse() {
   };
 
   const handleEndorseAll = async () => {
-    const results = [];
-    let attempted = 0;
-    for (const applicant of applicants) {
-      const vals = formValues[applicant.id] || makeEmptyValues();
-      if (isApplicantBlank(vals)) continue;
-      attempted += 1;
-      try {
-        await endorseOneApplicant(applicant.id);
-        results.push({ applicantId: applicant.id, ok: true });
-      } catch (e) {
-        results.push({
-          applicantId: applicant.id,
-          ok: false,
-          error: e instanceof Error ? e.message : String(e),
-        });
+    setIsSubmitting(true);
+    try {
+      const results = [];
+      let attempted = 0;
+      for (const applicant of applicants) {
+        const vals = formValues[applicant.id] || makeEmptyValues();
+        if (isApplicantBlank(vals)) continue;
+        attempted += 1;
+        try {
+          await endorseOneApplicant(applicant.id);
+          results.push({ applicantId: applicant.id, ok: true });
+        } catch (e) {
+          results.push({
+            applicantId: applicant.id,
+            ok: false,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
       }
-    }
 
-    if (attempted === 0) {
-      setErrorMessage("No employees to endorse. Please add or import at least one employee.");
-      setShowErrorAlert(true);
-      return;
-    }
+      if (attempted === 0) {
+        setErrorMessage("No employees to endorse. Please add or import at least one employee.");
+        setShowErrorAlert(true);
+        return;
+      }
 
     const failed = results.filter((r) => !r.ok);
     const succeeded = results.filter((r) => r.ok);
@@ -1821,9 +1824,12 @@ function AgencyEndorse() {
       return;
     }
 
-    setSuccessMessage(`Successfully endorsed ${succeeded.length} employee(s). ✅`);
-    setSuccessNavigatePath("/agency/endorsements");
-    setShowSuccessAlert(true);
+      setSuccessMessage(`Successfully endorsed ${succeeded.length} employee(s). ✅`);
+      setSuccessNavigatePath("/agency/endorsements");
+      setShowSuccessAlert(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
 
@@ -2478,11 +2484,11 @@ function AgencyEndorse() {
             </div>
 
               {/* Skills & Proficiency */}
-              <div className="bg-white rounded-xl shadow-sm border border-gray-100" style={{ overflowX: 'hidden', overflowY: 'visible' }}>
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible">
                 <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
                   <h2 className="text-base font-semibold text-gray-800">Skills & Proficiency</h2>
                 </div>
-                <div className="p-6" style={{ overflow: 'visible' }}>
+                <div className="p-6 overflow-visible">
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">Areas of Expertise</label>
                   {(() => {
                     // Helper function to normalize skills (string or array to array)
@@ -2500,7 +2506,7 @@ function AgencyEndorse() {
                     const skillsArray = normalizeSkills(fv.skills);
 
                     return (
-                      <div className="relative" style={{ zIndex: 50 }}>
+                      <div className="relative overflow-visible" style={{ zIndex: 50 }}>
                         <SkillsInput
                           skills={skillsArray}
                           onChange={(skillsArray) => {
@@ -3265,7 +3271,7 @@ function AgencyEndorse() {
               </button>
               <button 
                 onClick={() => {
-                  if (termsAccepted && privacyAccepted) {
+                  if (termsAccepted && privacyAccepted && !isSubmitting) {
                     const count = applicants.length;
 
                     setShowConfirmModal(false);
@@ -3279,17 +3285,29 @@ function AgencyEndorse() {
                     setShowConfirmDialog(true);
                   }
                 }}
-                disabled={!termsAccepted || !privacyAccepted}
+                disabled={!termsAccepted || !privacyAccepted || isSubmitting}
                 className={`flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all ${
-                  termsAccepted && privacyAccepted
+                  termsAccepted && privacyAccepted && !isSubmitting
                     ? 'bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-600/25'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Confirm & Submit
+                {isSubmitting ? (
+                  <>
+                    <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Confirm & Submit
+                  </>
+                )}
               </button>
             </div>
           </div>

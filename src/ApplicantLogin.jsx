@@ -98,19 +98,17 @@ function ApplicantLogin() {
     }
   };
 
-  // If a valid session is already present, redirect without asking for credentials.
+  // Clear any existing session to prevent auto-login from other portals
   useEffect(() => {
     let cancelled = false;
 
-    const checkExistingSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+    const clearAndCheckSession = async () => {
+      // Always sign out first to ensure clean state
+      await supabase.auth.signOut();
       if (cancelled) return;
-      if (session?.user) {
-        await redirectAfterLogin(session.user);
-      }
     };
 
-    checkExistingSession();
+    clearAndCheckSession();
 
     return () => {
       cancelled = true;

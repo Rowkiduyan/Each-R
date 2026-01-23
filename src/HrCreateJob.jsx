@@ -233,8 +233,11 @@ function HrCreateJob() {
       throw new Error("Depot is required.");
     }
     
-    // Validate depot is from the allowed list
-    if (!depotOptions.includes(String(depot).trim())) {
+    // Validate depot is from the allowed list (case-insensitive)
+    // Skip validation for HRC users since their depot is auto-set from their profile
+    const depotTrimmed = String(depot).trim();
+    const isValidDepot = depotOptions.some(option => option.toLowerCase() === depotTrimmed.toLowerCase());
+    if (!isValidDepot && created_by_role?.toUpperCase() !== 'HRC') {
       throw new Error("Invalid depot selected. Please choose from the dropdown list.");
     }
 
@@ -271,10 +274,9 @@ function HrCreateJob() {
     // VERY IMPORTANT: log the payload so you can see what is being sent
     console.log("JOB_POST PAYLOAD ->", payload);
 
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("job_posts")
-      .insert([payload])
-      .select(); // helpful for debugging (may be affected by RLS for read-after-write)
+      .insert([payload]);
 
     if (error) {
       // show everything useful in console
@@ -285,8 +287,8 @@ function HrCreateJob() {
       throw error;
     }
 
-    console.log("job_posts inserted:", data);
-    return data;
+    console.log("job_posts inserted successfully");
+    return true;
   };
 
   const handleSaveDraft = async () => {
