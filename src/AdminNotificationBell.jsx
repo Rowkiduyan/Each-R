@@ -37,7 +37,10 @@ function AdminNotificationBell() {
             },
             (payload) => {
               console.log('New notification received:', payload);
-              if (payload.new && payload.new.user_id === currentUserId) {
+              // Only add password reset notifications
+              if (payload.new && 
+                  payload.new.user_id === currentUserId && 
+                  payload.new.type === 'password_reset_request') {
                 const newNotification = createNotificationFromData(payload.new);
                 setNotifications(prev => [newNotification, ...prev.slice(0, 19)]);
                 setUnreadCount(prev => prev + 1);
@@ -56,8 +59,13 @@ function AdminNotificationBell() {
       try {
         const directNotifications = await getNotifications(userId, 20);
         
-        setNotifications(directNotifications);
-        setUnreadCount(directNotifications.filter(n => !n.read).length);
+        // Filter to only show password reset requests
+        const filteredNotifications = directNotifications.filter(n => 
+          n.type === 'password_reset_request'
+        );
+        
+        setNotifications(filteredNotifications);
+        setUnreadCount(filteredNotifications.filter(n => !n.read).length);
 
       } catch (error) {
         console.error('Error fetching notifications:', error);

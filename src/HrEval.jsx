@@ -52,6 +52,33 @@ function HrEval() {
   const [alertType, setAlertType] = useState("info"); // 'success', 'error', 'info', 'warning'
   const [employeeInSeparation, setEmployeeInSeparation] = useState(false);
   const [separationDetails, setSeparationDetails] = useState(null);
+  const [currentUserRole, setCurrentUserRole] = useState(null);
+  const [currentUserDepot, setCurrentUserDepot] = useState(null);
+
+  // Get current user's role and depot
+  useEffect(() => {
+    const loadCurrentUser = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role, depot')
+            .eq('id', user.id)
+            .single();
+          
+          if (profile) {
+            setCurrentUserRole(profile.role);
+            setCurrentUserDepot(profile.depot);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading current user:', err);
+      }
+    };
+    
+    loadCurrentUser();
+  }, []);
 
   // Fetch employees from database (HR sees all employees)
   useEffect(() => {
@@ -68,7 +95,14 @@ function HrEval() {
           return;
         }
 
-        const mapped = (data || []).map((emp) => {
+        let filteredData = data || [];
+        
+        // Filter by depot for HRC users
+        if (currentUserRole === 'HRC' && currentUserDepot) {
+          filteredData = filteredData.filter(emp => emp.depot === currentUserDepot);
+        }
+
+        const mapped = filteredData.map((emp) => {
           const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
           const fullName = [lastFirst, emp.mname].filter(Boolean).join(" ");
 
@@ -105,8 +139,10 @@ function HrEval() {
       }
     };
 
-    fetchEmployees();
-  }, []);
+    if (currentUserRole !== null) {
+      fetchEmployees();
+    }
+  }, [currentUserRole, currentUserDepot]);
 
   // Helper function to show alert modal
   const showAlert = (message, type = "info") => {

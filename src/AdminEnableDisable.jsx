@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { getStoredJson } from './authStorage';
+import emailjs from '@emailjs/browser';
 
 function AdminEnableDisable() {
   const [accounts, setAccounts] = useState([]);
@@ -202,25 +203,59 @@ function AdminEnableDisable() {
     try {
       setResetPasswordLoading(true);
 
-      // Get employee data to find personal_email
-      const { data: empData } = await supabase
-        .from('employees')
-        .select('id, email, personal_email')
-        .eq('email', resetPasswordAccount.email)
-        .maybeSingle();
+      // Initialize userData
+      let userData = {
+        email: resetPasswordAccount.email,
+        fname: resetPasswordAccount.first_name,
+        lname: resetPasswordAccount.last_name,
+        position: resetPasswordAccount.position || resetPasswordAccount.role,
+        personal_email: null
+      };
 
-      if (!empData) {
-        alert('Employee account not found.');
+      if (resetPasswordAccount.role === 'Employee') {
+        // Get employee-specific data including personal_email from employees table
+        const { data: empData } = await supabase
+          .from('employees')
+          .select('id, email, personal_email, fname, lname, position')
+          .eq('email', resetPasswordAccount.email)
+          .maybeSingle();
+
+        if (empData) {
+          userData.personal_email = empData.personal_email;
+          userData.fname = empData.fname || userData.fname;
+          userData.lname = empData.lname || userData.lname;
+          userData.position = empData.position || userData.position;
+        }
+      } else {
+        // For Agency/HR/HRC users, get personal_email from profiles table
+        const { data: profileData } = await supabase
+          .from('profiles')
+          .select('personal_email')
+          .eq('email', resetPasswordAccount.email)
+          .maybeSingle();
+
+        console.log('Profile data for non-Employee:', profileData);
+        
+        if (profileData) {
+          userData.personal_email = profileData.personal_email;
+        }
+      }
+
+      console.log('Final userData:', userData);
+
+      // If no personal_email found, alert and stop
+      if (!userData.personal_email) {
+        alert(`No personal email found for this ${resetPasswordAccount.role} account. Please add a personal email first.`);
         setResetPasswordLoading(false);
         return;
       }
 
-      // Call edge function to reset password using work email (not auth_user_id)
+      // Call edge function to reset password using work email
       const { data, error } = await supabase.functions.invoke('admin-reset-password', {
         body: {
-          email: empData.email, // Work email (croque@roadwise.com)
+          email: userData.email, // Work email
           new_password: newPassword,
-          personal_email: empData.personal_email
+          personal_email: userData.personal_email
         }
       });
 
@@ -231,10 +266,39 @@ function AdminEnableDisable() {
         return;
       }
 
-      setSuccessMessage(
-        `Password reset successfully for ${resetPasswordAccount.first_name} ${resetPasswordAccount.last_name}. ` +
-        `Temporary password: ${newPassword} (send this to ${empData.personal_email})`
-      );
+      // Send email using Email.js
+      try {
+        await emailjs.send(
+          'service_ig5n2rj', // Service ID
+          'template_gyptu3p', // Template ID
+          {
+            to_email: userData.personal_email,
+            to_name: `${userData.fname} ${userData.lname}`,
+            employee_name: `${userData.fname} ${userData.lname}`,
+            work_email: userData.email,
+            position: userData.position || resetPasswordAccount.role,
+            new_password: newPassword,
+            reset_date: new Date().toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            })
+          },
+          'oHk27FGa4-HFKIfdX' // Public Key
+        );
+
+        setSuccessMessage(
+          `Password reset successfully for ${resetPasswordAccount.first_name} ${resetPasswordAccount.last_name}. ` +
+          `Email sent to ${userData.personal_email}`
+        );
+      } catch (emailError) {
+        console.error('Email sending error:', emailError);
+        setSuccessMessage(
+          `Password reset successfully for ${resetPasswordAccount.first_name} ${resetPasswordAccount.last_name}. ` +
+          `However, failed to send email. Temporary password: ${newPassword} (send this to ${userData.personal_email})`
+        );
+      }
+
       setShowSuccessModal(true);
       setShowResetPasswordModal(false);
       setResetPasswordAccount(null);
@@ -552,7 +616,7 @@ function AdminEnableDisable() {
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     {account.role === 'Admin' ? (
                       <span className="text-gray-400 italic">-</span>
-                    ) : account.role === 'Employee' ? (
+                    ) : (account.role === 'Employee' || account.role === 'HR' || account.role === 'HRC' || account.role === 'Agency') ? (
                       <button
                         onClick={() => handleResetPassword(account)}
                         className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"

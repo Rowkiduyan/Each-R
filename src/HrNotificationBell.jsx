@@ -77,10 +77,24 @@ function HrNotificationBell() {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
-        // Get all employees with their most recent evaluations
-        const { data: employees, error: empError } = await supabase
+        // Get current user's role and depot for filtering
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, depot')
+          .eq('id', hrUserId)
+          .single();
+        
+        // Get all employees (filtered by depot for HRC users)
+        let employeesQuery = supabase
           .from('employees')
-          .select('id, fname, lname, mname');
+          .select('id, fname, lname, mname, depot');
+        
+        // Filter by depot for HRC users
+        if (profile && profile.role === 'HRC' && profile.depot) {
+          employeesQuery = employeesQuery.eq('depot', profile.depot);
+        }
+        
+        const { data: employees, error: empError } = await employeesQuery;
 
         if (empError) {
           console.error('Error fetching employees:', empError);

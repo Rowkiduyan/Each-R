@@ -16,6 +16,8 @@ function HrSeperation() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hrUserId, setHrUserId] = useState(null);
+  const [currentUserRole, setCurrentUserRole] = useState(null);
+  const [currentUserDepot, setCurrentUserDepot] = useState(null);
 
   // Employee data with separation stages
   const [employees, setEmployees] = useState([]);
@@ -24,18 +26,43 @@ function HrSeperation() {
   useEffect(() => {
     const getHrUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (user) setHrUserId(user.id);
+      if (user) {
+        setHrUserId(user.id);
+        
+        // Get user's role and depot
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, depot')
+          .eq('id', user.id)
+          .single();
+        
+        if (profile) {
+          setCurrentUserRole(profile.role);
+          setCurrentUserDepot(profile.depot);
+        }
+      }
     };
     getHrUser();
-    fetchEmployeeSeparations();
     fetchTemplates();
-
-    // Poll every 30 seconds
-    const interval = setInterval(fetchEmployeeSeparations, 30000);
+  }, []);
+  
+  // Fetch separations when role is loaded
+  useEffect(() => {
+    if (currentUserRole !== null) {
+      fetchEmployeeSeparations();
+      
+      // Poll every 30 seconds
+      const interval = setInterval(fetchEmployeeSeparations, 30000);
+      
+      return () => clearInterval(interval);
+    }
+  }, [currentUserRole, currentUserDepot]);
     
+  // Handle visibility and scroll position
+  useEffect(() => {
     // Refetch when HR comes back to the tab
     const handleVisibilityChange = () => {
-      if (!document.hidden) fetchEmployeeSeparations();
+      if (!document.hidden && currentUserRole !== null) fetchEmployeeSeparations();
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     
@@ -56,11 +83,10 @@ function HrSeperation() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     
     return () => {
-      clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('beforeunload', handleBeforeUnload);
     };
-  }, []);
+  }, [currentUserRole]);
 
   const fetchTemplates = async () => {
     try {
@@ -115,16 +141,24 @@ function HrSeperation() {
         console.error('Error fetching employees:', empError);
       }
 
+      // Filter by depot for HRC users
+      let filteredEmployeesData = employeesData || [];
+      if (currentUserRole === 'HRC' && currentUserDepot) {
+        filteredEmployeesData = filteredEmployeesData.filter(emp => emp.depot === currentUserDepot);
+      }
+
       // Create a map of employee data
       const employeeMap = {};
-      if (employeesData && employeesData.length > 0) {
-        employeesData.forEach(emp => {
+      if (filteredEmployeesData && filteredEmployeesData.length > 0) {
+        filteredEmployeesData.forEach(emp => {
           employeeMap[emp.id] = emp;
         });
       }
 
       // Transform data to match UI format
-      const transformedEmployees = separations.map(sep => {
+      const transformedEmployees = separations
+        .filter(sep => employeeMap[sep.employee_id]) // Only include separations with employees in the filtered list
+        .map(sep => {
         const employee = employeeMap[sep.employee_id];
         
         // Determine stage based on status

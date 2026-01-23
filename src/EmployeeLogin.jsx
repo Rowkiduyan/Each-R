@@ -11,6 +11,8 @@ function EmployeeLogin() {
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const navigate = useNavigate();
 
   const redirectAfterLogin = async (user) => {
@@ -231,6 +233,16 @@ function EmployeeLogin() {
               </div>
             </div>
 
+            <div className="flex justify-end text-sm">
+              <button
+                type="button"
+                onClick={() => setShowForgotPassword(true)}
+                className="text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Forgot Password?
+              </button>
+            </div>
+
             <button
               type="submit"
               disabled={loading}
@@ -281,6 +293,97 @@ function EmployeeLogin() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Forgot Password Modal */}
+      {showForgotPassword && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={() => {
+            setShowForgotPassword(false);
+            setForgotPasswordEmail("");
+          }}
+        >
+          <div
+            className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-blue-50 p-4 border-b border-blue-200">
+              <h3 className="text-lg font-semibold text-blue-800 flex items-center gap-2">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                </svg>
+                Reset Password
+              </h3>
+            </div>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                // Call edge function to handle password reset request
+                const { data, error } = await supabase.functions.invoke('request-password-reset', {
+                  body: { work_email: forgotPasswordEmail },
+                  headers: {
+                    'Authorization': `Bearer ${supabase.supabaseKey}`
+                  }
+                });
+
+                console.log('Function response:', { data, error });
+
+                if (error) {
+                  console.error('Error requesting password reset:', error);
+                  alert(`Error: ${error.message || 'Failed to notify admin. Please try again or contact HR.'}`);
+                  return;
+                }
+
+                if (data && data.error) {
+                  console.error('Function returned error:', data.error);
+                  alert(`Error: ${data.error}`);
+                  return;
+                }
+
+                alert('Admin has been notified of your password reset request.');
+                setShowForgotPassword(false);
+                setForgotPasswordEmail('');
+              } catch (err) {
+                console.error('Unexpected error:', err);
+                alert('An error occurred. Please try again.');
+              }
+            }} className="p-6">
+              <p className="text-gray-700 mb-4">
+                Enter your work email address and we'll notify the admin to reset your password.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Work Email Address</label>
+                <input
+                  type="email"
+                  value={forgotPasswordEmail}
+                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                  placeholder="Enter your work email"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowForgotPassword(false);
+                    setForgotPasswordEmail("");
+                  }}
+                  className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  Notify Admin
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

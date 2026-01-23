@@ -16,6 +16,8 @@ function HrTrainings() {
   const [showAttendance, setShowAttendance] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(null);
   const [currentUserId, setCurrentUserId] = useState(null);
+  const [currentUserRole, setCurrentUserRole] = useState(null);
+  const [currentUserDepot, setCurrentUserDepot] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [trainingToDelete, setTrainingToDelete] = useState(null);
   
@@ -132,9 +134,11 @@ function HrTrainings() {
 
   // Fetch trainings from Supabase
   useEffect(() => {
-    fetchTrainings();
-    loadSignatureDefaults();
-  }, []);
+    if (currentUserRole !== null) {
+      fetchTrainings();
+      loadSignatureDefaults();
+    }
+  }, [currentUserRole, currentUserDepot]);
   
   // Load saved signature defaults from database
   const loadSignatureDefaults = async () => {
@@ -263,6 +267,18 @@ function HrTrainings() {
         const { data, error } = await supabase.auth.getUser();
         if (!error && data?.user) {
           setCurrentUserId(data.user.id);
+          
+          // Get user's role and depot from profiles table
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role, depot')
+            .eq('id', data.user.id)
+            .single();
+          
+          if (profile) {
+            setCurrentUserRole(profile.role);
+            setCurrentUserDepot(profile.depot);
+          }
         }
       } catch (err) {
         console.error("Error fetching current user for trainings:", err);
@@ -439,13 +455,46 @@ function HrTrainings() {
         return;
       }
 
+      // Filter trainings for HRC users
+      let filteredData = data || [];
+      if (currentUserRole === 'HRC') {
+        // Get all user profiles to check depots and roles
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, role, depot');
+
+        if (profiles) {
+          // Create a map of user_id -> {role, depot}
+          const userMap = {};
+          profiles.forEach(p => {
+            userMap[p.id] = { role: p.role, depot: p.depot };
+          });
+
+          // Filter trainings: show only if created by current HRC OR by HR with same depot
+          filteredData = filteredData.filter(training => {
+            // Show if created by current user
+            if (training.created_by === currentUserId) {
+              return true;
+            }
+            
+            // Show if created by HR user with same depot
+            const creator = userMap[training.created_by];
+            if (creator && creator.role === 'HR' && creator.depot === currentUserDepot) {
+              return true;
+            }
+            
+            return false;
+          });
+        }
+      }
+
       // Normalize and separate upcoming, pending attendance, and completed trainings
       const now = new Date();
       const upcomingTrainings = [];
       const pendingAttendanceTrainings = [];
       const completedTrainings = [];
 
-      (data || []).forEach((training) => {
+      filteredData.forEach((training) => {
         const start = training.start_at ? new Date(training.start_at) : null;
         const end = training.end_at ? new Date(training.end_at) : null;
         const normalized = {
