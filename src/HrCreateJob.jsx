@@ -65,6 +65,7 @@ function HrCreateJob() {
     depot: "",
     department: "",
     posted: "Just now",
+    salary_range: "",
     description: "",
     mainResponsibilities: "",
     keyRequirements: "",
@@ -175,9 +176,10 @@ function HrCreateJob() {
   const isFormComplete = () => {
     const hasTitle = form.title && form.title.trim() !== "";
     const hasDepot = form.depot && form.depot.trim() !== "";
+    const hasSalaryRange = form.salary_range && form.salary_range.trim() !== "";
     const hasDescription = form.description && form.description.trim() !== "";
     const hasResponsibilities = splitLines(form.mainResponsibilities).length > 0;
-    return hasTitle && hasDepot && hasDescription && hasResponsibilities;
+    return hasTitle && hasDepot && hasSalaryRange && hasDescription && hasResponsibilities;
   };
 
   const withBulletAutoContinue = (fieldKey) => (e) => {
@@ -222,7 +224,7 @@ function HrCreateJob() {
   };
   // safe create + debug function
   // call: await createJobPost({ title, depot, department, description, responsibilities, urgent, job_type, expires_at, created_by_uuid, created_by_role, positions_needed })
-  const createJobPost = async ({ title, depot, department = null, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", expires_at = null, created_by_uuid = null, created_by_role = null, positions_needed = 1 }) => {
+  const createJobPost = async ({ title, depot, department = null, salary_range = null, description = null, responsibilities = [], urgent = false, is_active = true, job_type = "delivery_crew", expires_at = null, created_by_uuid = null, created_by_role = null, positions_needed = 1 }) => {
     // client-side validation (title & depot are NOT NULL in your DB)
     if (!title || String(title).trim() === "") {
       throw new Error("Job title is required.");
@@ -251,6 +253,7 @@ function HrCreateJob() {
       title: String(title).trim(),
       depot: String(depot).trim(),
       department: department ?? null,
+      salary_range: salary_range == null ? null : String(salary_range).trim(),
       description: description ?? null,
       // ensure array and remove empty lines
       responsibilities: Array.isArray(responsibilities)
@@ -316,6 +319,7 @@ function HrCreateJob() {
         title: form.title,
         depot: form.depot,
         department: form.department || null,
+        salary_range: form.salary_range || null,
         description: form.description || null,
         responsibilities: combinedResponsibilities,
         urgent: form.urgent,
@@ -360,6 +364,7 @@ function HrCreateJob() {
         title: form.title,
         depot: form.depot,
         department: form.department || null,
+        salary_range: form.salary_range || null,
         description: form.description || null,
         responsibilities: combinedResponsibilities,
         urgent: form.urgent,
@@ -379,6 +384,7 @@ function HrCreateJob() {
         depot: "",
         department: "",
         posted: "Just now",
+        salary_range: "",
         description: "",
         mainResponsibilities: "",
         keyRequirements: "",
@@ -525,6 +531,21 @@ function HrCreateJob() {
               />
               No limit
             </label>
+          </div>
+
+          {/* Salary Range */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Salary Range <span className="text-red-600">*</span>
+            </label>
+            <input
+              type="text"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+              value={form.salary_range}
+              onChange={(e) => setField("salary_range", e.target.value)}
+              placeholder="e.g., ₱15,000 - ₱25,000"
+            />
+            <p className="text-xs text-gray-500 mt-1">Tip: include the peso sign and range, like “₱18,000 - ₱22,000”.</p>
           </div>
 
           <div>

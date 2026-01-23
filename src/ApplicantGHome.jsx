@@ -121,7 +121,8 @@ function ApplicantGHome() {
     const fetchJobs = async () => {
       const { data, error } = await supabase
         .from('job_posts')
-        .select('id, title, depot, department, description, responsibilities, urgent, created_at, expires_at, job_type, positions_needed, duration')
+        // Use '*' to avoid select-list mismatches when the table schema changes
+        .select('*')
         .eq('is_active', true)
         .order('created_at', { ascending: false });
 
@@ -267,6 +268,7 @@ function ApplicantGHome() {
           <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
             <div className="flex flex-col gap-1">
               <span>{job.depot}</span>
+              <span className="text-xs text-gray-500">Salary: {job.salary_range || '₱15,000 - ₱25,000'}</span>
               {job.department && (
                 <span className="text-xs text-gray-500">{job.department}</span>
               )}
@@ -463,6 +465,10 @@ function ApplicantGHome() {
                             {selectedJob.expires_at ? `Closes on ${new Date(selectedJob.expires_at).toLocaleDateString('en-US')}` : (selectedJob.duration || "Closes when headcount is reached")}
                           </div>
                         </div>
+                      </div>
+                      <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2 mt-2">
+                        <div className="text-[11px] text-gray-500">Salary Range</div>
+                        <div className="text-sm font-semibold text-gray-800">{selectedJob.salary_range || '₱15,000 - ₱25,000'}</div>
                       </div>
                     </div>
                   </div>

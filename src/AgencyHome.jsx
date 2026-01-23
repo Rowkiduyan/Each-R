@@ -177,7 +177,8 @@ function AgencyHome() {
     try {
       const { data, error } = await supabase
         .from("job_posts")
-        .select("id, title, department, depot, description, created_at, responsibilities, job_type, urgent, expires_at, positions_needed")
+        // Use '*' to avoid select-list mismatches when the table schema changes
+        .select("*")
         .eq("is_active", true)
         .order("created_at", { ascending: false });
 
@@ -202,6 +203,7 @@ function AgencyHome() {
             title: row.title || "Untitled",
             department: row.department || "",
             depot: row.depot || "—",
+            salary_range: row.salary_range || "",
             description: row.description || "",
             responsibilities,
             posted,
@@ -624,6 +626,7 @@ function AgencyHome() {
                                   <span>{job.depot}</span>
                                   <span>Posted {job.posted}</span>
                                 </div>
+                                <div className="text-xs text-gray-500 mb-2">Salary: {job.salary_range || '₱15,000 - ₱25,000'}</div>
                                 <p className="text-gray-700 line-clamp-3">{job.description}</p>
                                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
                                   <span className="px-2 py-1 bg-gray-100 rounded">
@@ -686,6 +689,10 @@ function AgencyHome() {
                                 </div>
                               </div>
                             </div>
+                            <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2 mt-2">
+                              <div className="text-[11px] text-gray-500">Salary Range</div>
+                              <div className="text-sm font-semibold text-gray-800">{selectedJob.salary_range || '₱15,000 - ₱25,000'}</div>
+                            </div>
                           </div>
                         </div>
                         <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
@@ -745,6 +752,7 @@ function AgencyHome() {
                           <span>{job.depot}</span>
                           <span>Posted {job.posted}</span>
                         </div>
+                        <div className="text-xs text-gray-500 mb-2">Salary: {job.salary_range || '₱15,000 - ₱25,000'}</div>
                         <p className="text-gray-700 line-clamp-3">{job.description}</p>
                         <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
                           <span className="px-2 py-1 bg-gray-100 rounded">
@@ -836,6 +844,11 @@ function AgencyHome() {
                     {selectedJob.expires_at ? `Closes on ${formatDate(selectedJob.expires_at)}` : 'Closes when headcount is reached'}
                   </div>
                 </div>
+              </div>
+
+              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                <div className="text-[11px] text-gray-500">Salary Range</div>
+                <div className="text-sm font-semibold text-gray-800">{selectedJob.salary_range || '₱15,000 - ₱25,000'}</div>
               </div>
 
               <div>

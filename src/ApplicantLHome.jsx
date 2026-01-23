@@ -2398,7 +2398,8 @@ const getApplicationFilesPublicUrl = (path) => {
         const activeIds = new Set();
         const { data, error } = await supabase
           .from('job_posts')
-          .select('id, title, depot, department, description, responsibilities, urgent, created_at, job_type, expires_at, positions_needed, duration, is_active')
+          // Use '*' to avoid select-list mismatches when the table schema changes
+          .select('*')
           .eq('is_active', true)
           .order('created_at', { ascending: false });
 
@@ -2425,7 +2426,8 @@ const getApplicationFilesPublicUrl = (path) => {
           try {
             const { data: appliedJobRow, error: appliedJobErr } = await supabase
               .from('job_posts')
-              .select('id, title, depot, department, description, responsibilities, urgent, created_at, job_type, expires_at, positions_needed, duration, is_active')
+              // Use '*' to avoid select-list mismatches when the table schema changes
+              .select('*')
               .eq('id', appliedJobId)
               .maybeSingle();
 
@@ -2641,6 +2643,7 @@ const getApplicationFilesPublicUrl = (path) => {
             <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
               <div className="flex flex-col">
                 <span className={isPreferredDepot ? 'font-semibold text-blue-600' : ''}>{job.depot}</span>
+                <span className="text-xs text-gray-500">Salary: {job.salary_range || '₱15,000 - ₱25,000'}</span>
                 {job.department && <span className="text-xs text-gray-500">{job.department}</span>}
               </div>
               <span>Posted {postedLabel}</span>
@@ -2929,6 +2932,10 @@ const getApplicationFilesPublicUrl = (path) => {
                                   </div>
                                 </div>
                               </div>
+                              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2 mt-2">
+                                <div className="text-[11px] text-gray-500">Salary Range</div>
+                                <div className="text-sm font-semibold text-gray-800">{selectedJob.salary_range || '₱15,000 - ₱25,000'}</div>
+                              </div>
                             </div>
                           </div>
                           <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
@@ -2994,6 +3001,7 @@ const getApplicationFilesPublicUrl = (path) => {
                                   </svg>
                                   <span className="font-semibold">{filteredJobs[0].depot}</span>
                                 </div>
+                                <div className="text-sm text-gray-600 mb-3">Salary: {filteredJobs[0].salary_range || '₱15,000 - ₱25,000'}</div>
                                 {filteredJobs[0].job_type && (
                                   <>
                                     <span>•</span>

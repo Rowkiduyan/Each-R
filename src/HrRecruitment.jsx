@@ -324,6 +324,7 @@ function HrRecruitment() {
     title: "",
     depot: "",
     department: "",
+    salary_range: "",
     description: "",
     mainResponsibilities: "",
     keyRequirements: "",
@@ -1496,7 +1497,8 @@ function HrRecruitment() {
     try {
       let query = supabase
         .from("job_posts")
-        .select("id, title, depot, description, created_at, urgent, is_active, job_type, duration, expires_at, approval_status, created_by, positions_needed")
+        // Use '*' to avoid select-list mismatches when the table schema changes
+        .select("*")
         .order("created_at", { ascending: false });
 
       // Filter by depot if user is HRC
@@ -4300,6 +4302,7 @@ function HrRecruitment() {
         title: data.title || "",
         depot: data.depot || "",
         department: dept || "",
+        salary_range: data.salary_range || "₱15,000 - ₱25,000",
         description: data.description || "",
         mainResponsibilities: responsibilities.join('\n'),
         keyRequirements: others.join('\n'),
@@ -4431,6 +4434,12 @@ function HrRecruitment() {
       return;
     }
 
+    if (!editJobForm.salary_range || !String(editJobForm.salary_range).trim()) {
+      setErrorMessage("Salary range is required.");
+      setShowErrorAlert(true);
+      return;
+    }
+
     if (!editJobForm.description || !editJobForm.description.trim()) {
       setErrorMessage("Job title description is required.");
       setShowErrorAlert(true);
@@ -4458,6 +4467,7 @@ function HrRecruitment() {
         title: String(editJobForm.title).trim(),
         depot: String(editJobForm.depot).trim(),
         department: editJobForm.department || null,
+        salary_range: String(editJobForm.salary_range).trim(),
         description: editJobForm.description || null,
         responsibilities: combinedResponsibilities,
         urgent: Boolean(editJobForm.urgent),
@@ -4488,6 +4498,7 @@ function HrRecruitment() {
         title: "",
         depot: "",
         department: "",
+        salary_range: "",
         description: "",
         mainResponsibilities: "",
         keyRequirements: "",
@@ -8223,6 +8234,7 @@ function HrRecruitment() {
                     title: "",
                     depot: "",
                     department: "",
+                    salary_range: "",
                     description: "",
                     mainResponsibilities: "",
                     keyRequirements: "",
@@ -8362,6 +8374,20 @@ function HrRecruitment() {
                     />
                     No limit
                   </label>
+                </div>
+
+                {/* Salary Range */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Salary Range <span className="text-red-600">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+                    value={editJobForm.salary_range}
+                    onChange={(e) => setEditJobField("salary_range", e.target.value)}
+                    placeholder="e.g., ₱15,000 - ₱25,000"
+                  />
                 </div>
 
                 <div>

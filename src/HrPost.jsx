@@ -23,6 +23,7 @@ function HrPost() {
   const [editForm, setEditForm] = useState({
     title: '',
     depot: '',
+    salary_range: '',
     description: '',
     responsibilities: [],
     urgent: false
@@ -238,6 +239,7 @@ function HrPost() {
     setEditForm({
       title: job.title || '',
       depot: job.depot || '',
+      salary_range: job.salary_range || '₱15,000 - ₱25,000',
       description: job.description || '',
       responsibilities: Array.isArray(job.responsibilities) ? job.responsibilities : [],
       urgent: job.urgent || false
@@ -287,6 +289,7 @@ function HrPost() {
         .update({
           title: editForm.title,
           depot: editForm.depot,
+          salary_range: editForm.salary_range,
           description: editForm.description,
           responsibilities: editForm.responsibilities.filter(r => r.trim()),
           urgent: editForm.urgent
@@ -531,6 +534,7 @@ function HrPost() {
           <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
             <div className="flex flex-col gap-1">
               <span>{job.depot}</span>
+              <span className="text-xs text-gray-500">Salary: {job.salary_range || '₱15,000 - ₱25,000'}</span>
               {job.department && (
                 <span className="text-xs text-gray-500">{job.department}</span>
               )}
@@ -713,6 +717,10 @@ function HrPost() {
                             </div>
                           </div>
                         </div>
+                        <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2 mt-2">
+                          <div className="text-[11px] text-gray-500">Salary Range</div>
+                          <div className="text-sm font-semibold text-gray-800">{selectedJob.salary_range || '₱15,000 - ₱25,000'}</div>
+                        </div>
                       </div>
                     </div>
                     <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
@@ -805,6 +813,21 @@ function HrPost() {
                   />
                 </div>
 
+                {/* Salary Range */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Salary Range *
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.salary_range}
+                    onChange={(e) => handleEditFormChange('salary_range', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="e.g., ₱15,000 - ₱25,000"
+                    required
+                  />
+                </div>
+
                 {/* Description */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -877,7 +900,7 @@ function HrPost() {
               </button>
               <button
                 onClick={handleSaveEdit}
-                disabled={saving || !editForm.title || !editForm.depot || !editForm.description}
+                disabled={saving || !editForm.title || !editForm.depot || !editForm.salary_range || !editForm.description}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
                 {saving ? 'Saving...' : 'Save Changes'}
