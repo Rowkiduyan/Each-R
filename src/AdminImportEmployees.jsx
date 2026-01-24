@@ -33,7 +33,7 @@ function AdminImportEmployees() {
   }, []);
 
   // Employee columns
-  const employeeRequiredColumns = ['email', 'fname', 'lname', 'mname', 'contact_number', 'position', 'depot', 'department', 'source', 'status', 'personal_email'];
+  const employeeRequiredColumns = ['email', 'fname', 'lname', 'mname', 'contact_number', 'position', 'depot', 'department', 'source', 'status', 'personal_email', 'birthday'];
   const allowedSources = ['Internal', 'Agency'];
   const allowedStatuses = ['Regular', 'Probationary'];
 
@@ -146,6 +146,9 @@ function AdminImportEmployees() {
           }
           if (row.status && !allowedStatuses.includes(row.status)) {
             validationErrors.push(`Row ${rowNum}: Invalid status. Must be: ${allowedStatuses.join(', ')}`);
+          }
+          if (row.birthday && !row.birthday.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            validationErrors.push(`Row ${rowNum}: Invalid birthday format. Must be yyyy-mm-dd`);
           }
         });
 
@@ -290,7 +293,8 @@ function AdminImportEmployees() {
               department: emp.department || '',
               source: emp.source || 'Internal',
               status: emp.status || 'Regular',
-              personal_email: emp.personal_email || ''
+              personal_email: emp.personal_email || '',
+              birthday: emp.birthday || null
             });
 
           if (employeeError) {
@@ -686,7 +690,7 @@ function AdminImportEmployees() {
   // Download Employee template
   const downloadEmployeeTemplate = () => {
     const headers = employeeRequiredColumns.join(',');
-    const example = 'john.doe@roadwise.com,John,Doe,Smith,09171234567,Driver,Manila,Operations,Internal,Regular,john.doe@gmail.com';
+    const example = 'john.doe@roadwise.com,John,Doe,Smith,09171234567,Driver,Manila,Operations,Internal,Regular,john.doe@gmail.com,1990-01-15';
     const csv = `${headers}\n${example}`;
     
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -771,7 +775,8 @@ function AdminImportEmployees() {
           <h3 className="font-semibold text-blue-800 mb-2">📋 Instructions:</h3>
           <ol className="list-decimal list-inside space-y-1 text-sm text-blue-900">
             <li>Download the Employee CSV template below</li>
-            <li>Fill in employee data with columns: email, fname, lname, mname, contact_number, position, depot, department, source, status, personal_email</li>
+            <li>Fill in employee data with columns: email, fname, lname, mname, contact_number, position, depot, department, source, status, personal_email, birthday</li>
+            <li>Birthday format: yyyy-mm-dd (e.g., 1990-01-15)</li>
             <li>Valid sources: {allowedSources.join(', ')}</li>
             <li>Valid statuses: {allowedStatuses.join(', ')}</li>
             <li>Upload the completed CSV file</li>
