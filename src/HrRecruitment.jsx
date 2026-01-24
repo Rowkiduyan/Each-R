@@ -2643,7 +2643,7 @@ function HrRecruitment() {
           
           // Build employee data with only fields that exist in the employees table
           // Based on Employees.jsx, the table has: id, email, fname, lname, mname, contact_number, 
-          // position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, personal_email
+          // position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, personal_email, birthday
           const employeeData = {
             id: rpcData?.employee_id || applicationData.user_id, // Use the ID from RPC or application
             email: employeeEmail,
@@ -2659,6 +2659,7 @@ function HrRecruitment() {
             source: employeeSource,
             status: "Probationary", // Set new employees as Probationary
             personal_email: applicantEmail || null, // Carry over applicant's personal email
+            birthday: birthday || null, // Carry over birthday from applicant profile payload
             // For agency applicants, preserve agency metadata
             ...(isAgencyApplicant && {
               is_agency: true,
@@ -2704,6 +2705,7 @@ function HrRecruitment() {
               source: employeeSource,
               status: "Probationary", // Set new employees as Probationary
               personal_email: applicantEmail || null, // Carry over applicant's personal email
+              birthday: birthday || null, // Carry over birthday from applicant profile payload
             };
 
             const { data: retryData, error: retryError } = await supabase

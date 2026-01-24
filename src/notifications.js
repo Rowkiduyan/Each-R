@@ -530,6 +530,20 @@ export async function createAccountTerminationNotification({
   });
 }
 
+// Separation Rejection Notification
+export async function createSeparationRejectedNotification({
+  employeeUserId
+}) {
+  return await createNotification({
+    userId: employeeUserId,
+    applicationId: null,
+    type: 'separation_rejected',
+    title: 'Separation Request Rejected',
+    message: 'Your separation request has been rejected by HR. Please contact HR for more information.',
+    userType: 'employee'
+  });
+}
+
 // Helper function to notify HR when an applicant retracts their application
 export async function notifyHRAboutApplicationRetraction({
   applicationId,
