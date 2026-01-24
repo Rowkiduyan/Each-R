@@ -647,7 +647,8 @@ function Employees() {
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
-        return s.length ? s : "None";
+        if (!s || s === "—" || s === "--") return "None";
+        return s;
       };
 
       const hiredDateText = (v) => {
@@ -752,7 +753,8 @@ function Employees() {
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
-        return s.length ? s : "None";
+        if (!s || s === "—" || s === "--") return "None";
+        return s;
       };
 
       const hiredDateText = (v) => {

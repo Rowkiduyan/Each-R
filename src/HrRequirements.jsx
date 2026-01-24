@@ -1076,7 +1076,8 @@ function HrRequirements() {
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
-        return s.length ? s : "—";
+        if (!s || s === "—" || s === "--") return "None";
+        return s;
       };
 
       const doc = new jsPDF({
@@ -1162,7 +1163,8 @@ function HrRequirements() {
 
     const safeText = (v) => {
       const s = String(v ?? '').trim();
-      return s.length ? s : '—';
+      if (!s || s === '—' || s === '--') return 'None';
+      return s;
     };
 
     const statusLabel = (raw) => {
@@ -1203,7 +1205,7 @@ function HrRequirements() {
           if (data.column.index !== linkColIndex) return;
           const url = linkUrlsByRowIndex?.[data.row.index];
           if (!url) {
-            data.cell.text = ['—'];
+            data.cell.text = ['None'];
             return;
           }
           data.cell.text = ['Open'];
@@ -1282,7 +1284,7 @@ function HrRequirements() {
             safeText(r?.idNumber),
             statusLabel(r?.status),
             safeText(formatDate(r?.submittedDate || r?.submitted_at || r?.validated_at)),
-            url ? 'Open' : '—',
+            url ? 'Open' : 'None',
           ]);
         } else {
           const r = employee?.requirements?.id_numbers?.[def.key] || {};
@@ -1294,7 +1296,7 @@ function HrRequirements() {
             safeText(r?.value),
             statusLabel(r?.status),
             safeText(formatDate(r?.submitted_at || r?.validated_at)),
-            url ? 'Open' : '—',
+            url ? 'Open' : 'None',
           ]);
         }
       }
@@ -1318,28 +1320,28 @@ function HrRequirements() {
             safeText(license?.licenseNumber || license?.license_number),
             statusLabel(status),
             safeText(formatDate(submittedAt)),
-            '—',
+            'None',
           ],
           [
             'Expiry',
-            safeText(expiry ? formatDate(expiry) : '—'),
+            safeText(expiry ? formatDate(expiry) : 'None'),
             statusLabel(status),
             safeText(formatDate(submittedAt)),
-            '—',
+            'None',
           ],
           [
             'Front',
-            '—',
+            'None',
             statusLabel(status),
             safeText(formatDate(submittedAt)),
-            getUrlSafe(front) ? 'Open' : '—',
+            getUrlSafe(front) ? 'Open' : 'None',
           ],
           [
             'Back',
-            '—',
+            'None',
             statusLabel(status),
             safeText(formatDate(submittedAt)),
-            getUrlSafe(back) ? 'Open' : '—',
+            getUrlSafe(back) ? 'Open' : 'None',
           ],
         ];
 
@@ -1365,8 +1367,8 @@ function HrRequirements() {
             exam.name,
             statusLabel(status),
             safeText(formatDate(r?.submittedDate || r?.submitted_at)),
-            safeText(validUntil ? formatDate(validUntil) : '—'),
-            url ? 'Open' : '—',
+            safeText(validUntil ? formatDate(validUntil) : 'None'),
+            url ? 'Open' : 'None',
           ]);
         }
 
@@ -1388,8 +1390,8 @@ function HrRequirements() {
             safeText(r?.document || r?.document_type || r?.name),
             statusLabel(r?.status),
             safeText(formatDate(r?.requested_at)),
-            safeText(r?.deadline || '—'),
-            url ? 'Open' : '—',
+            safeText(r?.deadline || 'None'),
+            url ? 'Open' : 'None',
           ]);
         }
 
@@ -1442,7 +1444,8 @@ function HrRequirements() {
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
-        return s.length ? s : "—";
+        if (!s || s === "—" || s === "--") return "None";
+        return s;
       };
 
       const labelByKey = keys.reduce((acc, k) => {

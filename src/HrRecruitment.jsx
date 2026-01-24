@@ -4852,11 +4852,12 @@ function HrRecruitment() {
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
-        return s.length ? s : "—";
+        if (!s || s === "—" || s === "--") return "None";
+        return s;
       };
 
       const interviewDateText = (v) => {
-        if (!v) return "—";
+        if (!v) return "None";
         const d = new Date(v);
         return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
       };
@@ -4950,11 +4951,12 @@ function HrRecruitment() {
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
-        return s.length ? s : "—";
+        if (!s || s === "—" || s === "--") return "None";
+        return s;
       };
 
       const interviewDateText = (v) => {
-        if (!v) return "—";
+        if (!v) return "None";
         const d = new Date(v);
         return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
       };

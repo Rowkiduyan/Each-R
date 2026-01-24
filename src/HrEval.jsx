@@ -921,7 +921,8 @@ function HrEval() {
 
       const safeText = (v) => {
         const s = String(v ?? "").trim();
-        return s.length ? s : "—";
+        if (!s || s === "—" || s === "--") return "None";
+        return s;
       };
 
       const filterSummary = [
@@ -952,11 +953,11 @@ function HrEval() {
       summaryDoc.setTextColor(0);
 
       const body = evaluations.map((ev) => {
-        const fileName = ev?.file_path ? String(ev.file_path).split("/").pop() : "—";
+        const fileName = ev?.file_path ? String(ev.file_path).split("/").pop() : "None";
         return [
           safeText(formatDate(ev?.date_evaluated)),
           safeText(ev?.evaluator_name),
-          safeText(ev?.total_score ? `${ev.total_score}%` : "N/A"),
+          safeText(ev?.total_score ? `${ev.total_score}%` : "None"),
           safeText(ev?.remarks),
           safeText(ev?.reason),
           ev?.file_path ? "Open" : safeText(fileName),
@@ -984,7 +985,7 @@ function HrEval() {
           if (data.column.index !== 5) return;
           const url = recordUrlsByRowIndex?.[data.row.index];
           if (!url) {
-            data.cell.text = ["—"];
+            data.cell.text = ["None"];
             return;
           }
           data.cell.text = ["Open"];
