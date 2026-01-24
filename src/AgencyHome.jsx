@@ -700,7 +700,7 @@ function AgencyHome() {
                                 {responsibilities.length > 0 && (
                                   <div>
                                     <h3 className="text-lg font-semibold text-gray-800 mb-2">Main Responsibilities</h3>
-                                    <ul className="list-disc list-inside text-gray-700 space-y-1">
+                                    <ul className="list-none text-gray-700 space-y-1">
                                       {responsibilities.map((item, idx) => (
                                         <li key={idx}>{item}</li>
                                       ))}
@@ -710,7 +710,7 @@ function AgencyHome() {
                                 {keyRequirements.length > 0 && (
                                   <div>
                                     <h3 className="text-lg font-semibold text-gray-800 mb-2">Basic Key Requirements</h3>
-                                    <ul className="list-disc list-inside text-gray-700 space-y-1">
+                                    <ul className="list-none text-gray-700 space-y-1">
                                       {keyRequirements.map((item, idx) => (
                                         <li key={idx}>{item}</li>
                                       ))}
@@ -856,7 +856,7 @@ function AgencyHome() {
                       <h3 className="font-semibold text-gray-800 mb-2">Main Responsibilities</h3>
                       <ul className="text-sm text-gray-700 space-y-1">
                         {responsibilities.length > 0 ? (
-                          responsibilities.map((resp, idx) => <li key={idx}>• {resp}</li>)
+                          responsibilities.map((resp, idx) => <li key={idx}>{resp}</li>)
                         ) : (
                           <li className="text-gray-500">No responsibilities listed.</li>
                         )}
@@ -866,7 +866,7 @@ function AgencyHome() {
                       <h3 className="font-semibold text-gray-800 mb-2">Basic Key Requirements</h3>
                       <ul className="text-sm text-gray-700 space-y-1">
                         {keyRequirements.length > 0 ? (
-                          keyRequirements.map((req, idx) => <li key={idx}>• {req}</li>)
+                          keyRequirements.map((req, idx) => <li key={idx}>{req}</li>)
                         ) : (
                           <li className="text-gray-500">No requirements listed.</li>
                         )}
