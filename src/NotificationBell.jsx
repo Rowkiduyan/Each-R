@@ -164,30 +164,33 @@ function NotificationBell() {
         // Check for missing or unvalidated requirements
         const missingCategories = [];
 
+        // Helper function to normalize status
+        const normalizeStatus = (status) => {
+          const statusLower = (status || '').toLowerCase();
+          if (statusLower === 'validated' || statusLower === 'approved') return 'approved';
+          if (statusLower === 're-submit' || statusLower === 'resubmit') return 'resubmit';
+          if (statusLower === 'submitted' || statusLower === 'pending') return 'pending';
+          return 'missing';
+        };
+
         // Government IDs - all must be validated
-        const govIds = ['sss', 'tin', 'pagibig', 'philhealth'];
         const idNumbers = requirements.id_numbers || {};
-        const allGovIdsValidated = govIds.every(id => 
-          idNumbers[id]?.status === 'Validated'
-        );
+        const govIds = ['sss', 'tin', 'pagibig', 'philhealth'];
+        const allGovIdsValidated = govIds.every(id => {
+          const status = normalizeStatus(idNumbers[id]?.status);
+          return status === 'approved';
+        });
         if (!allGovIdsValidated) {
           missingCategories.push('Government IDs');
-        }
-
-        // Driver's License - check if required and validated
-        const license = requirements.license || {};
-        const hasLicense = license.status === 'Validated' || Object.keys(license).length === 0;
-        // Only add to missing if license object exists but not validated
-        if (Object.keys(license).length > 0 && license.status !== 'Validated') {
-          missingCategories.push("Driver's License");
         }
 
         // Medical Examination - all must be validated
         const medicalExams = requirements.medicalExams || {};
         const medicalTests = ['xray', 'stool', 'urine', 'hepa', 'cbc', 'drug_test'];
-        const allMedicalValidated = medicalTests.every(test =>
-          medicalExams[test]?.status === 'Validated' || medicalExams[test]?.status === 'approved'
-        );
+        const allMedicalValidated = medicalTests.every(test => {
+          const status = normalizeStatus(medicalExams[test]?.status);
+          return status === 'approved';
+        });
         if (!allMedicalValidated) {
           missingCategories.push('Medical Examination');
         }
@@ -195,38 +198,41 @@ function NotificationBell() {
         // Personal Documents - all must be validated
         const personalDocs = requirements.personalDocuments || {};
         const personalDocTypes = ['photo_2x2', 'psa_birth_certificate', 'residence_sketch'];
-        const allPersonalDocsValidated = personalDocTypes.every(doc =>
-          personalDocs[doc]?.status === 'Validated' || personalDocs[doc]?.status === 'approved'
-        );
+        const allPersonalDocsValidated = personalDocTypes.every(doc => {
+          const status = normalizeStatus(personalDocs[doc]?.status);
+          return status === 'approved';
+        });
         if (!allPersonalDocsValidated) {
           missingCategories.push('Personal Documents');
         }
 
-        // Clearances - all must be validated
+        // Clearances (SEPARATE FROM LICENSE) - all must be validated
         const clearances = requirements.clearances || {};
-        const clearanceTypes = ['nbi', 'police', 'barangay'];
-        const allClearancesValidated = clearanceTypes.every(clearance =>
-          clearances[clearance]?.status === 'Validated' || clearances[clearance]?.status === 'approved'
-        );
+        const clearanceTypes = ['nbi_clearance', 'police_clearance', 'barangay_clearance'];
+        const allClearancesValidated = clearanceTypes.every(clearance => {
+          const status = normalizeStatus(clearances[clearance]?.status);
+          return status === 'approved';
+        });
         if (!allClearancesValidated) {
           missingCategories.push('Clearances');
         }
 
         // Educational Documents - all must be validated
-        const eduDocs = requirements.educationalDocuments || {};
-        const eduDocTypes = ['diploma', 'transcript_of_records'];
-        const allEduDocsValidated = eduDocTypes.every(doc =>
-          eduDocs[doc]?.status === 'Validated' || eduDocs[doc]?.status === 'approved'
-        );
+        const eduDocuments = requirements.educationalDocuments || {};
+        const eduDocs = ['diploma', 'transcript_of_records'];
+        const allEduDocsValidated = eduDocs.every(doc => {
+          const status = normalizeStatus(eduDocuments[doc]?.status);
+          return status === 'approved';
+        });
         if (!allEduDocsValidated) {
           missingCategories.push('Educational Documents');
         }
 
-        // HR Additional Documents - check hr_requests array for pending items
-        const hrRequests = requirements.hr_requests || [];
-        const hasPendingHRRequests = hrRequests.some(req => req.status === 'pending');
-        if (hasPendingHRRequests) {
-          missingCategories.push('HR Additional Documents');
+        // Driver's License - SEPARATE CATEGORY (missing if empty object or not validated)
+        const license = requirements.license || {};
+        const hasLicenseData = Object.keys(license).length > 0 && license.status;
+        if (!hasLicenseData || normalizeStatus(license.status) !== 'approved') {
+          missingCategories.push("Driver's License");
         }
 
         console.log('Missing categories:', missingCategories);

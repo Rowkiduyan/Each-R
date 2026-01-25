@@ -1727,67 +1727,125 @@ function Employees() {
           });
           
           // Use the prioritized application (preferably hired, otherwise most recent)
-          // Always show all document types, even if file doesn't exist
           const mostRecentApp = sortedApps[0];
           const jobTitle = mostRecentApp.job_posts?.title || 'N/A';
           const depot = mostRecentApp.job_posts?.depot || 'N/A';
           const date = mostRecentApp.created_at;
           
+          // Parse payload to extract assessment and agreement files
+          let payloadObj = mostRecentApp.payload;
+          if (typeof payloadObj === 'string') {
+            try {
+              payloadObj = JSON.parse(payloadObj);
+            } catch {
+              payloadObj = {};
+            }
+          }
+          
           const records = [];
           
-          // Assessment Files - always show both
-          records.push({
-            id: `${mostRecentApp.id}-interview-details`,
-            type: 'assessment',
-            documentName: 'Interview Details',
-            fileName: mostRecentApp.interview_details_file ? mostRecentApp.interview_details_file.split('/').pop() : null,
-            filePath: mostRecentApp.interview_details_file,
-            fileUrl: mostRecentApp.interview_details_file ? getFileUrl(mostRecentApp.interview_details_file) : null,
-            date: date,
-            jobTitle: jobTitle,
-            depot: depot,
-            applicationId: mostRecentApp.id,
-            icon: 'blue'
+          // Assessment Files - from payload.interview_notes_attachments array
+          const assessmentAttachments = payloadObj?.interview_notes_attachments || [];
+          assessmentAttachments.forEach((attachment, index) => {
+            if (attachment && attachment.path) {
+              records.push({
+                id: `${mostRecentApp.id}-assessment-${index}`,
+                type: 'assessment',
+                documentName: attachment.label || 'Assessment Document',
+                fileName: attachment.originalName || attachment.path.split('/').pop(),
+                filePath: attachment.path,
+                fileUrl: getFileUrl(attachment.path),
+                date: attachment.uploadedAt || date,
+                jobTitle: jobTitle,
+                depot: depot,
+                applicationId: mostRecentApp.id,
+                icon: index === 0 ? 'blue' : 'green'
+              });
+            }
           });
           
-          records.push({
-            id: `${mostRecentApp.id}-assessment-results`,
-            type: 'assessment',
-            documentName: 'In-Person Assessment Results',
-            fileName: mostRecentApp.assessment_results_file ? mostRecentApp.assessment_results_file.split('/').pop() : null,
-            filePath: mostRecentApp.assessment_results_file,
-            fileUrl: mostRecentApp.assessment_results_file ? getFileUrl(mostRecentApp.assessment_results_file) : null,
-            date: date,
-            jobTitle: jobTitle,
-            depot: depot,
-            applicationId: mostRecentApp.id,
-            icon: 'green'
+          // Fallback: if no assessment attachments in payload, check old columns
+          if (assessmentAttachments.length === 0) {
+            if (mostRecentApp.interview_details_file) {
+              records.push({
+                id: `${mostRecentApp.id}-interview-details`,
+                type: 'assessment',
+                documentName: 'Interview Details',
+                fileName: mostRecentApp.interview_details_file.split('/').pop(),
+                filePath: mostRecentApp.interview_details_file,
+                fileUrl: getFileUrl(mostRecentApp.interview_details_file),
+                date: date,
+                jobTitle: jobTitle,
+                depot: depot,
+                applicationId: mostRecentApp.id,
+                icon: 'blue'
+              });
+            }
+            
+            if (mostRecentApp.assessment_results_file) {
+              records.push({
+                id: `${mostRecentApp.id}-assessment-results`,
+                type: 'assessment',
+                documentName: 'In-Person Assessment Results',
+                fileName: mostRecentApp.assessment_results_file.split('/').pop(),
+                filePath: mostRecentApp.assessment_results_file,
+                fileUrl: getFileUrl(mostRecentApp.assessment_results_file),
+                date: date,
+                jobTitle: jobTitle,
+                depot: depot,
+                applicationId: mostRecentApp.id,
+                icon: 'green'
+              });
+            }
+          }
+          
+          // Agreement Files - from payload.agreement_documents array
+          const agreementDocs = payloadObj?.agreement_documents || [];
+          agreementDocs.forEach((doc, index) => {
+            if (doc && doc.path) {
+              records.push({
+                id: `${mostRecentApp.id}-agreement-${index}`,
+                type: 'agreement',
+                documentName: doc.label || 'Agreement Document',
+                fileName: doc.originalName || doc.path.split('/').pop(),
+                filePath: doc.path,
+                fileUrl: getFileUrl(doc.path),
+                date: doc.uploadedAt || date,
+                jobTitle: jobTitle,
+                depot: depot,
+                applicationId: mostRecentApp.id
+              });
+            }
           });
           
-          // Agreement Files - always show all 6
-          const agreementDocs = [
-            { key: 'appointment-letter', name: 'Employee Appointment Letter', file: mostRecentApp.appointment_letter_file },
-            { key: 'undertaking', name: 'Undertaking', file: mostRecentApp.undertaking_file },
-            { key: 'application-form', name: 'Application Form', file: mostRecentApp.application_form_file },
-            { key: 'undertaking-duties', name: 'Undertaking of Duties and Responsibilities', file: mostRecentApp.undertaking_duties_file },
-            { key: 'pre-employment', name: 'Roadwise Pre Employment Requirements', file: mostRecentApp.pre_employment_requirements_file },
-            { key: 'id-form', name: 'ID Form', file: mostRecentApp.id_form_file }
-          ];
-          
-          agreementDocs.forEach(doc => {
-            records.push({
-              id: `${mostRecentApp.id}-${doc.key}`,
-              type: 'agreement',
-              documentName: doc.name,
-              fileName: doc.file ? doc.file.split('/').pop() : null,
-              filePath: doc.file,
-              fileUrl: doc.file ? getFileUrl(doc.file) : null,
-              date: date,
-              jobTitle: jobTitle,
-              depot: depot,
-              applicationId: mostRecentApp.id
+          // Fallback: if no agreement documents in payload, check old columns
+          if (agreementDocs.length === 0) {
+            const oldAgreementDocs = [
+              { key: 'appointment-letter', name: 'Employee Appointment Letter', file: mostRecentApp.appointment_letter_file },
+              { key: 'undertaking', name: 'Undertaking', file: mostRecentApp.undertaking_file },
+              { key: 'application-form', name: 'Application Form', file: mostRecentApp.application_form_file },
+              { key: 'undertaking-duties', name: 'Undertaking of Duties and Responsibilities', file: mostRecentApp.undertaking_duties_file },
+              { key: 'pre-employment', name: 'Roadwise Pre Employment Requirements', file: mostRecentApp.pre_employment_requirements_file },
+              { key: 'id-form', name: 'ID Form', file: mostRecentApp.id_form_file }
+            ];
+            
+            oldAgreementDocs.forEach(doc => {
+              if (doc.file) {
+                records.push({
+                  id: `${mostRecentApp.id}-${doc.key}`,
+                  type: 'agreement',
+                  documentName: doc.name,
+                  fileName: doc.file.split('/').pop(),
+                  filePath: doc.file,
+                  fileUrl: getFileUrl(doc.file),
+                  date: date,
+                  jobTitle: jobTitle,
+                  depot: depot,
+                  applicationId: mostRecentApp.id
+                });
+              }
             });
-          });
+          }
           
           setAssessmentRecords(records);
           console.log('Successfully loaded assessment records:', records.length, 'records');

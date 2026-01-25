@@ -2722,10 +2722,11 @@ function HrRecruitment() {
 
           // Build employee data with only fields that exist in the employees table
           // Based on Employees.jsx, the table has: id, email, fname, lname, mname, contact_number, 
-          // position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, birthday
+          // position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, birthday, personal_email
           const employeeData = {
             id: rpcData?.employee_id || applicationData.user_id, // Use the ID from RPC or application
             email: employeeEmail,
+            personal_email: applicantEmail || null, // Store the applicant's personal email for linking back to applications
             fname: firstName,
             lname: lastName,
             mname: middleName || null,
@@ -2771,6 +2772,7 @@ function HrRecruitment() {
             const minimalEmployeeData = {
               id: rpcData?.employee_id || applicationData.user_id, // Include ID
               email: employeeEmail,
+              personal_email: applicantEmail || null, // Store the applicant's personal email
               fname: firstName,
               lname: lastName,
               mname: middleName || null,

@@ -23,6 +23,8 @@ function EmployeeRequirements() {
   const [showSuccessAlert, setShowSuccessAlert] = useState(false);
   const [showErrorAlert, setShowErrorAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
+  const [showFileErrorModal, setShowFileErrorModal] = useState(false);
+  const [fileErrorMessage, setFileErrorMessage] = useState('');
 
   // Privacy Policy State
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
@@ -654,15 +656,46 @@ function EmployeeRequirements() {
   // Load assessment records (from when employee was an applicant)
   useEffect(() => {
     const loadAssessmentRecords = async () => {
-      const applicantEmail = employeeData?.email?.trim();
+      const workEmail = employeeData?.email?.trim();
 
-      if (!applicantEmail) {
+      if (!workEmail) {
+        console.log('📋 No employee email, skipping assessment records');
         setAssessmentRecords([]);
         return;
       }
 
       try {
+        console.log('📋 Loading assessment records for work email:', workEmail);
+        
+        // First, get the employee's personal_email from employees table
+        const { data: employeeRecord, error: empError } = await supabase
+          .from('employees')
+          .select('personal_email')
+          .eq('email', workEmail)
+          .maybeSingle();
+
+        if (empError) {
+          console.error('❌ Error fetching employee personal_email:', empError);
+          setAssessmentRecords([]);
+          return;
+        }
+
+        console.log('📧 Employee record:', employeeRecord);
+        
+        const personalEmail = employeeRecord?.personal_email?.trim();
+        
+        if (!personalEmail) {
+          console.log('⚠️ No personal_email found for employee, trying with work email');
+        } else {
+          console.log('✅ Found personal email:', personalEmail);
+        }
+
+        // Use personal email if available, otherwise fall back to work email
+        const applicantEmail = personalEmail || workEmail;
         const normalizedEmail = applicantEmail.toLowerCase();
+        
+        console.log('🔍 Searching for applicant with email:', applicantEmail);
+        
         const baseSelect =
           'id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, status, job_posts:job_id(title, depot), payload';
 
@@ -679,6 +712,7 @@ function EmployeeRequirements() {
 
           if (applicantData?.id) {
             applicantId = applicantData.id;
+            console.log('✅ Found applicant by email:', applicantId);
           } else {
             const { data: applicantData2 } = await supabase
               .from('applicants')
@@ -687,20 +721,41 @@ function EmployeeRequirements() {
               .maybeSingle();
             if (applicantData2?.id) {
               applicantId = applicantData2.id;
+              console.log('✅ Found applicant by normalized email:', applicantId);
             }
           }
         } catch (err) {
           console.error('Error looking up applicant by email:', err);
         }
 
+        if (!applicantId) {
+          console.log('⚠️ No applicant found in applicants table');
+        }
+
         if (applicantId) {
-          const { data, error } = await supabase
+          console.log('🔍 Querying applications with user_id:', applicantId);
+          const { data, error, count } = await supabase
             .from('applications')
-            .select(baseSelect)
+            .select(baseSelect, { count: 'exact' })
             .eq('user_id', applicantId)
             .order('created_at', { ascending: false });
-          if (!error && data && data.length > 0) {
+          
+          console.log('📊 Query result - count:', count, 'data:', data?.length, 'error:', error);
+          
+          if (error) {
+            console.error('❌ Error querying applications by user_id:', error);
+          } else if (data && data.length > 0) {
             applicationsData = data;
+            console.log('✅ Found applications by user_id:', data.length, 'applications');
+            console.log('📄 Application status:', data[0].status);
+            console.log('📄 Application files:', {
+              appointment_letter: data[0].appointment_letter_file,
+              undertaking: data[0].undertaking_file,
+              application_form: data[0].application_form_file,
+            });
+          } else {
+            console.log('⚠️ No applications found for user_id:', applicantId);
+            console.log('🔍 Trying alternate search by email in payload...');
           }
         }
 
@@ -708,6 +763,7 @@ function EmployeeRequirements() {
         if (!applicationsData || applicationsData.length === 0) {
           const emailsToTry = [applicantEmail, normalizedEmail];
           for (const email of emailsToTry) {
+            console.log('🔍 Trying payload->>email for:', email);
             let { data, error } = await supabase
               .from('applications')
               .select(baseSelect)
@@ -715,9 +771,11 @@ function EmployeeRequirements() {
               .order('created_at', { ascending: false });
             if (!error && data && data.length > 0) {
               applicationsData = data;
+              console.log('✅ Found', data.length, 'applications by payload->>email');
               break;
             }
 
+            console.log('🔍 Trying payload->form->>email for:', email);
             const { data: data2, error: error2 } = await supabase
               .from('applications')
               .select(baseSelect)
@@ -725,9 +783,11 @@ function EmployeeRequirements() {
               .order('created_at', { ascending: false });
             if (!error2 && data2 && data2.length > 0) {
               applicationsData = data2;
+              console.log('✅ Found', data2.length, 'applications by payload->form->>email');
               break;
             }
 
+            console.log('🔍 Trying payload->applicant->>email for:', email);
             const { data: data3, error: error3 } = await supabase
               .from('applications')
               .select(baseSelect)
@@ -735,20 +795,27 @@ function EmployeeRequirements() {
               .order('created_at', { ascending: false });
             if (!error3 && data3 && data3.length > 0) {
               applicationsData = data3;
+              console.log('✅ Found', data3.length, 'applications by payload->applicant->>email');
               break;
             }
+          }
+          if (!applicationsData || applicationsData.length === 0) {
+            console.log('⚠️ No applications found by payload email search');
           }
         }
 
         // Approach 3: case-insensitive parsing of recent applications
         if (!applicationsData || applicationsData.length === 0) {
+          console.log('🔍 Trying broad search of all applications with status=hired...');
           const { data: allApps } = await supabase
             .from('applications')
             .select(baseSelect)
+            .eq('status', 'hired')
             .order('created_at', { ascending: false })
             .limit(1000);
 
           if (allApps) {
+            console.log('📋 Found', allApps.length, 'hired applications to search through');
             const matches = allApps.filter((app) => {
               if (!app.payload) return false;
               try {
@@ -758,13 +825,20 @@ function EmployeeRequirements() {
                     : app.payload;
                 const src = payload.form || payload.applicant || payload || {};
                 const email = (src.email || '').trim().toLowerCase();
-                return email && email === normalizedEmail;
+                const match = email && email === normalizedEmail;
+                if (match) {
+                  console.log('✅ Found matching application:', app.id, 'with status:', app.status);
+                }
+                return match;
               } catch {
                 return false;
               }
             });
             if (matches.length > 0) {
               applicationsData = matches;
+              console.log('✅ Found', matches.length, 'matching applications by manual parsing');
+            } else {
+              console.log('⚠️ No matches found in hired applications');
             }
           }
         }
@@ -780,6 +854,7 @@ function EmployeeRequirements() {
           });
 
           const mostRecentApp = sorted[0];
+          console.log('📋 Using application:', mostRecentApp.id, 'status:', mostRecentApp.status);
           const jobTitle = mostRecentApp.job_posts?.title || 'N/A';
           const depot = mostRecentApp.job_posts?.depot || 'N/A';
           const date = mostRecentApp.created_at;
@@ -846,8 +921,11 @@ function EmployeeRequirements() {
             });
           });
 
+          console.log('✅ Created', records.length, 'assessment/agreement records');
+          console.log('📋 Records with files:', records.filter(r => r.filePath).length);
           setAssessmentRecords(records);
         } else {
+          console.log('⚠️ No applications data found for employee');
           setAssessmentRecords([]);
         }
       } catch (err) {
@@ -1051,11 +1129,13 @@ function EmployeeRequirements() {
     if (file) {
       const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
       if (!allowedTypes.includes(file.type)) {
-        alert('Please upload a valid file (PDF, JPG, PNG, DOC, DOCX)');
+        setFileErrorMessage('Please upload a valid file (PDF, JPG, PNG, DOC, DOCX)');
+        setShowFileErrorModal(true);
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB');
+        setFileErrorMessage('File size must be less than 10MB');
+        setShowFileErrorModal(true);
         return;
       }
       setUploadForm(prev => ({ ...prev, file }));
@@ -1066,11 +1146,13 @@ function EmployeeRequirements() {
     if (file) {
       const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
       if (!allowedTypes.includes(file.type)) {
-        alert('Please upload a valid image file (JPG, PNG) or PDF');
+        setFileErrorMessage('Please upload a valid image file (JPG, PNG) or PDF');
+        setShowFileErrorModal(true);
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB');
+        setFileErrorMessage('File size must be less than 10MB');
+        setShowFileErrorModal(true);
         return;
       }
       setUploadForm(prev => ({ ...prev, frontFile: file }));
@@ -1081,11 +1163,13 @@ function EmployeeRequirements() {
     if (file) {
       const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
       if (!allowedTypes.includes(file.type)) {
-        alert('Please upload a valid image file (JPG, PNG) or PDF');
+        setFileErrorMessage('Please upload a valid image file (JPG, PNG) or PDF');
+        setShowFileErrorModal(true);
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB');
+        setFileErrorMessage('File size must be less than 10MB');
+        setShowFileErrorModal(true);
         return;
       }
       setUploadForm(prev => ({ ...prev, backFile: file }));
@@ -3568,6 +3652,37 @@ function EmployeeRequirements() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 Accept & Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* File Error Modal */}
+      {showFileErrorModal && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowFileErrorModal(false)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-md overflow-hidden shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+              </div>
+              <h3 className="text-lg font-bold text-gray-800 mb-2">Invalid File</h3>
+              <p className="text-gray-600 mb-6">{fileErrorMessage}</p>
+              <button
+                onClick={() => setShowFileErrorModal(false)}
+                className="w-full py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
+              >
+                OK
               </button>
             </div>
           </div>
