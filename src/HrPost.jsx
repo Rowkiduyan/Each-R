@@ -175,6 +175,19 @@ function HrPost() {
         if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
           filtered = filtered.filter(job => job.depot === currentUser.depot);
         }
+        
+        // Filter by approval_status based on role
+        // HR can see pending posts, others only see approved
+        if (currentUser?.role?.toUpperCase() !== 'HR') {
+          filtered = filtered.filter(job => job.approval_status === 'approved');
+        }
+        
+        // Sort: pending posts first for HR, then by created_at
+        filtered.sort((a, b) => {
+          if (a.approval_status === 'pending' && b.approval_status !== 'pending') return -1;
+          if (a.approval_status !== 'pending' && b.approval_status === 'pending') return 1;
+          return new Date(b.created_at) - new Date(a.created_at);
+        });
         const withHiringStats = await attachHiringStats(filtered);
         const closable = withHiringStats.filter((job) => {
           const expired = isJobExpired(job);
@@ -456,6 +469,11 @@ function HrPost() {
             URGENT HIRING!
           </div>
         )}
+        {job.approval_status === 'pending' && (
+          <div className="absolute top-0 left-0 bg-yellow-50 text-yellow-700 border border-yellow-200 text-xs font-bold px-4 py-1">
+            PENDING APPROVAL
+          </div>
+        )}
         {isJobExpired(job) && (
           <div className="absolute top-0 right-0 bg-gray-600 text-white text-xs font-bold px-4 py-1">
             CLOSED
@@ -464,7 +482,7 @@ function HrPost() {
         
         {/* 3-dot menu - hidden in view-only mode */}
         {!isViewOnly && (
-          <div className={`absolute ${isJobExpired(job) ? 'top-8' : 'top-2'} right-2`}>
+          <div className={`absolute ${isJobExpired(job) || job.approval_status === 'pending' ? 'top-8' : 'top-2'} right-2`}>
             <button
               onClick={(e) => {
                 e.stopPropagation();

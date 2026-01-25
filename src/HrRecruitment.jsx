@@ -1527,9 +1527,24 @@ function HrRecruitment() {
         return;
       }
 
+      // Filter based on role: HR sees all, HRC sees their own pending + approved posts for their depot
+      const filteredData = data.filter((jobPost) => {
+        // HR role can see all posts including pending
+        if (currentUser?.role?.toUpperCase() === 'HR') {
+          return true;
+        }
+        // HRC can see their own pending posts + all approved posts
+        if (currentUser?.role?.toUpperCase() === 'HRC') {
+          // Show if approved OR if they created it (even if pending)
+          return jobPost.approval_status === 'approved' || jobPost.created_by === currentUser?.id;
+        }
+        // Other roles only see approved posts
+        return jobPost.approval_status === 'approved';
+      });
+
       // Count applications for each job post
       const jobPostsWithStats = await Promise.all(
-        data.map(async (jobPost) => {
+        filteredData.map(async (jobPost) => {
           // Count applications for this job post
           const { data: applicationsData, error: appsError } = await supabase
             .from("applications")
@@ -1605,7 +1620,16 @@ function HrRecruitment() {
         })
       );
 
-      setJobPosts(jobPostsWithStats);
+      // Sort: Pending posts first (for HR), then by created_at descending
+      const sortedJobPosts = jobPostsWithStats.sort((a, b) => {
+        // Pending posts always come first
+        if (a.status === "Pending" && b.status !== "Pending") return -1;
+        if (a.status !== "Pending" && b.status === "Pending") return 1;
+        // Otherwise sort by created_at (newest first)
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+
+      setJobPosts(sortedJobPosts);
     } catch (err) {
       console.error("Unexpected error loading job posts:", err);
       setJobPosts([]);
@@ -4307,6 +4331,18 @@ function HrRecruitment() {
   // Execute job post deletion - called ONLY from OK button
   const executeJobPostDeletion = async (jobId, jobTitle) => {
     try {
+      // First, fetch the job post details to check if we need to notify the creator
+      const { data: jobPost, error: fetchError } = await supabase
+        .from('job_posts')
+        .select('created_by, approval_status')
+        .eq('id', jobId)
+        .single();
+
+      if (fetchError) {
+        console.error('Error fetching job post details:', fetchError);
+      }
+
+      // Delete the job post
       const { error } = await supabase
         .from('job_posts')
         .delete()
@@ -4316,6 +4352,24 @@ function HrRecruitment() {
         setErrorMessage(`Failed to delete job post: ${error.message}`);
         setShowErrorAlert(true);
       } else {
+        // If the job post was pending and created by an HRC user, send them a notification
+        if (jobPost?.approval_status === 'pending' && jobPost?.created_by) {
+          try {
+            const { createNotification } = await import('./notifications');
+            await createNotification({
+              userId: jobPost.created_by,
+              applicationId: null,
+              type: 'job_post_removed',
+              title: 'Job Post Removed',
+              message: `Your pending job post "${jobTitle}" has been removed by the HR Manager.`,
+              userType: 'profile'
+            });
+            console.log('Notification sent to HRC user about job post removal');
+          } catch (notifError) {
+            console.error('Error sending notification to HRC user:', notifError);
+          }
+        }
+
         setSuccessMessage(`Job post "${jobTitle}" has been removed successfully.`);
         setShowSuccessAlert(true);
         // Reload applications and job posts to refresh the tables

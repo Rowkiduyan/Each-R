@@ -124,6 +124,7 @@ function ApplicantGHome() {
         // Use '*' to avoid select-list mismatches when the table schema changes
         .select('*')
         .eq('is_active', true)
+        .eq('approval_status', 'approved')
         .order('created_at', { ascending: false });
 
       if (error) {

@@ -309,6 +309,7 @@ useEffect(() => {
               .from('job_posts')
               .select('*')
               .eq('id', jobIdFromGuest)
+              .eq('approval_status', 'approved')
               .single();
 
             if (!error && data) {
@@ -2498,6 +2499,7 @@ const getApplicationFilesPublicUrl = (path) => {
           // Use '*' to avoid select-list mismatches when the table schema changes
           .select('*')
           .eq('is_active', true)
+          .eq('approval_status', 'approved')
           .order('created_at', { ascending: false });
 
         if (error) {
