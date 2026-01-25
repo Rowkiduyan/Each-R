@@ -3881,29 +3881,29 @@ function EmployeeRequirements() {
                 onClick={handleUploadSubmit}
                 disabled={uploading || 
                   (uploadTarget.type === 'default' && (!uploadForm.idNumber.trim() || !uploadForm.file)) ||
-                  (uploadTarget.type === 'license' && (!uploadForm.licenseNumber.trim() || !uploadForm.licenseExpiry.trim() || !uploadForm.frontFile || !uploadForm.backFile)) ||
-                  (uploadTarget.type === 'medical' && (!uploadForm.file)) ||
+                  (uploadTarget.type === 'license' && (!uploadForm.licenseNumber.trim() || !uploadForm.licenseExpiry.trim() || !uploadForm.file)) ||
+                  (uploadTarget.type === 'medical' && !uploadForm.file) ||
                   (uploadTarget.type === 'clearance' && (!uploadForm.validUntil.trim() || !uploadForm.file)) ||
                   (uploadTarget.type === 'personal' && !uploadForm.file) ||
                   (uploadTarget.type === 'educational' && !uploadForm.file) ||
                   (uploadTarget.type === 'hr' && !uploadForm.file) ||
                   (uploadTarget.type === 'document' && !uploadForm.file)}
                 className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
-                  !uploading && 
-                  (uploadTarget.type === 'document' && uploadForm.file) ||
-                  (uploadTarget.type === 'default' && uploadForm.idNumber.trim() && uploadForm.file) ||
-                  (uploadTarget.type === 'medical' && uploadForm.validUntil.trim() && uploadForm.file) ||
-                  (uploadTarget.type === 'clearance' && uploadForm.validUntil.trim() && uploadForm.file) ||
-                  (uploadTarget.type === 'personal' && uploadForm.file) ||
-                  (uploadTarget.type === 'educational' && uploadForm.file) ||
-                  (uploadTarget.type === 'hr' && uploadForm.file) ||
-                  (uploadTarget.type === 'license' && uploadForm.licenseNumber.trim() && uploadForm.licenseExpiry.trim() && uploadForm.frontFile && uploadForm.backFile)
-                    ? uploadTarget.isRenewal
+                  uploading || 
+                  (uploadTarget.type === 'default' && (!uploadForm.idNumber.trim() || !uploadForm.file)) ||
+                  (uploadTarget.type === 'license' && (!uploadForm.licenseNumber.trim() || !uploadForm.licenseExpiry.trim() || !uploadForm.file)) ||
+                  (uploadTarget.type === 'medical' && !uploadForm.file) ||
+                  (uploadTarget.type === 'clearance' && (!uploadForm.validUntil.trim() || !uploadForm.file)) ||
+                  (uploadTarget.type === 'personal' && !uploadForm.file) ||
+                  (uploadTarget.type === 'educational' && !uploadForm.file) ||
+                  (uploadTarget.type === 'hr' && !uploadForm.file) ||
+                  (uploadTarget.type === 'document' && !uploadForm.file)
+                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                    : uploadTarget.isRenewal
                       ? 'bg-amber-600 text-white hover:bg-amber-700'
                       : uploadTarget.isResubmit
                         ? 'bg-red-600 text-white hover:bg-red-700'
                         : 'bg-blue-600 text-white hover:bg-blue-700'
-                    : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
               >
                 {uploading ? (
