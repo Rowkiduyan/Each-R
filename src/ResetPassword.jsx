@@ -12,6 +12,7 @@ function ResetPassword() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [validSession, setValidSession] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   useEffect(() => {
     // Check if there's a valid recovery session
@@ -76,13 +77,8 @@ function ResetPassword() {
       setLoading(false);
     } else {
       // Password updated successfully
-      alert("Password reset successful! You will now be redirected to login.");
-      
-      // Sign out the user
-      await supabase.auth.signOut();
-      
-      // Redirect to login
-      navigate("/applicant/login");
+      setLoading(false);
+      setShowSuccessModal(true);
     }
   };
 
@@ -236,6 +232,45 @@ function ResetPassword() {
           </button>
         </div>
       </div>
+
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div 
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
+          onClick={async () => {
+            setShowSuccessModal(false);
+            await supabase.auth.signOut();
+            navigate("/applicant/login");
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg w-full max-w-md mx-4 overflow-hidden shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+              </div>
+              <h3 className="text-xl font-bold text-gray-800 mb-2">Password Reset Successful!</h3>
+              <p className="text-gray-600 mb-6">Your password has been updated successfully. You will now be redirected to the login page.</p>
+              <button
+                onClick={async () => {
+                  setShowSuccessModal(false);
+                  await supabase.auth.signOut();
+                  navigate("/applicant/login");
+                }}
+                className="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Continue to Login
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
