@@ -3029,6 +3029,8 @@ function HrRecruitment() {
               firstName: firstName,
               lastName: lastName,
               fullName: `${firstName}${middleName ? ` ${middleName}` : ''} ${lastName}`.trim(),
+              appBaseUrl: window.location.origin,
+              portalUrl: "https://each-r-m4qap.ondigitalocean.app/employee/login",
             });
 
             if (!emailResult.ok) {

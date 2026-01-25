@@ -14,6 +14,7 @@ const HR_REPLY_TO_EMAIL = Deno.env.get("HR_REPLY_TO_EMAIL") || "";
 const HR_REPLY_TO_NAME = Deno.env.get("HR_REPLY_TO_NAME") || "Roadwise HR";
 const HR_SUPPORT_EMAIL = Deno.env.get("HR_SUPPORT_EMAIL") || HR_REPLY_TO_EMAIL || "noreply@roadwise.com";
 const APP_BASE_URL = (Deno.env.get("APP_BASE_URL") || Deno.env.get("VITE_APP_BASE_URL") || "").trim();
+const EMPLOYEE_LOGIN_FALLBACK_URL = (Deno.env.get("EMPLOYEE_LOGIN_URL") || "https://each-r-m4qap.ondigitalocean.app/employee/login").trim();
 
 function escapeHtml(input: unknown): string {
   return String(input ?? "")
@@ -45,6 +46,8 @@ serve(async (req) => {
       firstName,
       lastName,
       fullName,
+      portalUrl: portalUrlFromBody,
+      appBaseUrl,
     } = await req.json();
 
     if (!toEmail || !employeeEmail || !employeePassword) {
@@ -74,7 +77,33 @@ serve(async (req) => {
     const safeEmployeePassword = escapeHtml(employeePassword);
     const safeSupportEmail = escapeHtml(HR_SUPPORT_EMAIL);
 
-    const portalUrl = APP_BASE_URL ? `${APP_BASE_URL.replace(/\/+$/, '')}/employee/login` : '';
+    const originHeader = (req.headers.get("origin") || "").trim();
+    const refererHeader = (req.headers.get("referer") || "").trim();
+    let originFromReferer = "";
+    try {
+      if (refererHeader) {
+        originFromReferer = new URL(refererHeader).origin;
+      }
+    } catch {
+      originFromReferer = "";
+    }
+
+    const normalizeToLoginUrl = (value: string) => {
+      const trimmed = String(value || "").trim();
+      if (!trimmed) return "";
+      if (!/^https?:\/\//i.test(trimmed)) return "";
+      if (trimmed.includes("/employee/login")) return trimmed;
+      return `${trimmed.replace(/\/+$/, "")}/employee/login`;
+    };
+
+    const portalUrl =
+      normalizeToLoginUrl(String(portalUrlFromBody || "")) ||
+      normalizeToLoginUrl(String(appBaseUrl || "")) ||
+      normalizeToLoginUrl(APP_BASE_URL) ||
+      normalizeToLoginUrl(originHeader) ||
+      normalizeToLoginUrl(originFromReferer) ||
+      normalizeToLoginUrl(EMPLOYEE_LOGIN_FALLBACK_URL) ||
+      "";
     const safePortalUrl = portalUrl ? escapeHtml(portalUrl) : '';
     const year = new Date().getFullYear();
 
@@ -93,7 +122,7 @@ serve(async (req) => {
                   <tr>
                     <td style="padding:14px 18px 0;">
                       <a href="${safePortalUrl}" style="display:inline-block; background:${brandRed}; color:#ffffff; text-decoration:none; font-weight:900; padding:10px 14px; border-radius:10px; font-family:Segoe UI, Roboto, Arial, sans-serif; font-size:13px;">
-                        Open Employee Portal
+                        Sign in here
                       </a>
                     </td>
                   </tr>
