@@ -389,9 +389,11 @@ export function SigningScheduleCard({ signing, locked }) {
           <span className="font-semibold text-gray-900 text-left break-words">{signing?.location || '—'}</span>
         </div>
       </div>
-      <div className="mt-3 text-xs text-gray-500">
-        Stay posted for the agreement signing schedule. We will post as soon as possible.
-      </div>
+      {!hasSigning && (
+        <div className="mt-3 text-xs text-gray-500">
+          Stay posted for the agreement signing schedule. We will post as soon as possible.
+        </div>
+      )}
       {locked ? (
         <div className="mt-3 text-xs text-gray-500">Agreements are locked while reschedule is pending.</div>
       ) : null}

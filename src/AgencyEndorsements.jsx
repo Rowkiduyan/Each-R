@@ -16,7 +16,7 @@ function AgencyEndorsements() {
   
   // Check if navigated from Separation page to submit resignation
   const [showSeparationPrompt, setShowSeparationPrompt] = useState(false);
-  const [endorsementsTab, setEndorsementsTab] = useState('pending'); // 'pending' | 'deployed'
+  const [endorsementsTab, setEndorsementsTab] = useState('pending'); // 'pending' | 'deployed' | 'retracted'
   
   useEffect(() => {
     if (location.state?.openSeparationTab) {
@@ -31,6 +31,10 @@ function AgencyEndorsements() {
   const [endorsedEmployees, setEndorsedEmployees] = useState([]);
   const [endorsedLoading, setEndorsedLoading] = useState(true);
   const [endorsedError, setEndorsedError] = useState(null);
+
+  const [retractedEndorsements, setRetractedEndorsements] = useState([]);
+  const [retractedLoading, setRetractedLoading] = useState(true);
+  const [retractedError, setRetractedError] = useState(null);
 
   const [hiredEmployees, setHiredEmployees] = useState([]);
   const [hiredLoading, setHiredLoading] = useState(true);
@@ -453,6 +457,96 @@ function AgencyEndorsements() {
     }
   };
 
+  const loadRetractedEndorsements = async () => {
+    setRetractedLoading(true);
+    setRetractedError(null);
+    try {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        console.error('Error getting user:', userError);
+        setRetractedError('Unable to verify user');
+        setRetractedEndorsements([]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("applications")
+        .select(
+          `id,
+           user_id,
+           job_id,
+           status,
+           payload,
+           endorsed,
+           created_at,
+           updated_at,
+           job_posts:job_posts ( id, title, department, depot )`
+        )
+        .eq("status", "retracted")
+        .eq("endorsed", true)
+        .order("updated_at", { ascending: false });
+
+      if (error) {
+        console.error("Failed loading retracted endorsements:", error);
+        setRetractedError(error.message || String(error));
+        setRetractedEndorsements([]);
+        return;
+      }
+
+      const normalized = (data || []).map((r) => {
+        let payload = r.payload;
+        if (typeof payload === "string") {
+          try { payload = JSON.parse(payload); } catch { payload = {}; }
+        }
+
+        const app = payload?.applicant || payload?.form || payload || null;
+        const meta = payload?.meta || {};
+
+        const endorsedByAuthUserId =
+          meta?.endorsed_by_auth_user_id ||
+          meta?.endorsedByAuthUserId ||
+          meta?.endorsed_by_user_id ||
+          meta?.endorsedByUserId ||
+          payload?.endorsed_by_auth_user_id ||
+          payload?.endorsedByAuthUserId ||
+          null;
+
+        if (!endorsedByAuthUserId || String(endorsedByAuthUserId) !== String(user.id)) {
+          return null;
+        }
+
+        const first = app?.firstName || app?.fname || app?.first_name || null;
+        const last = app?.lastName || app?.lname || app?.last_name || null;
+        const middle = app?.middleName || app?.mname || null;
+        const pos = r.job_posts?.title || app?.position || null;
+        const depot = r.job_posts?.depot || app?.depot || null;
+        const email = app?.email || app?.contact || payload?.email || payload?.contact || null;
+        const displayName = [first, middle, last].filter(Boolean).join(" ").trim() || (app?.fullName || app?.name) || "Unnamed";
+
+        return {
+          id: r.id,
+          name: displayName,
+          email,
+          position: pos || "—",
+          depot: depot || "—",
+          status: 'retracted',
+          agency: true,
+          retractedAt: r.updated_at || r.created_at || null,
+          payload,
+          raw: r,
+        };
+      }).filter(Boolean);
+
+      setRetractedEndorsements(normalized);
+    } catch (err) {
+      console.error("Unexpected retracted endorsements load error:", err);
+      setRetractedError(String(err));
+      setRetractedEndorsements([]);
+    } finally {
+      setRetractedLoading(false);
+    }
+  };
+
   // ---------- Load hired employees (employees table) ----------
   const loadHired = async () => {
     setHiredLoading(true);
@@ -627,6 +721,7 @@ function AgencyEndorsements() {
     const payloadObj = parsePayloadObject(app?.payload ?? app?.raw?.payload ?? {});
 
     const signingDate =
+      app?.agreement_signing_date ??
       payloadObj?.signing_date ??
       payloadObj?.signingDate ??
       payloadObj?.signing?.date ??
@@ -636,6 +731,7 @@ function AgencyEndorsements() {
       payloadObj?.agreement_signing_date ??
       null;
     const signingTime =
+      app?.agreement_signing_time ??
       payloadObj?.signing_time ??
       payloadObj?.signingTime ??
       payloadObj?.signing?.time ??
@@ -645,6 +741,7 @@ function AgencyEndorsements() {
       payloadObj?.agreement_signing_time ??
       null;
     const signingLocation =
+      app?.agreement_signing_location ??
       payloadObj?.signing_location ??
       payloadObj?.signingLocation ??
       payloadObj?.signing?.location ??
@@ -987,8 +1084,12 @@ function AgencyEndorsements() {
       return hiredByEmail?.hired_at || null;
     };
 
-    return (endorsedEmployees || [])
-      .filter((emp) => emp?.status === endorsementsTab)
+    const sourceList = endorsementsTab === 'retracted'
+      ? (retractedEndorsements || [])
+      : (endorsedEmployees || []);
+
+    return sourceList
+      .filter((emp) => endorsementsTab === 'retracted' ? true : emp?.status === endorsementsTab)
       .filter((emp) => {
         if (!searchLower) return true;
         return (
@@ -1036,7 +1137,7 @@ function AgencyEndorsements() {
         const bn = String(b?.name || "");
         return isAsc ? an.localeCompare(bn) : bn.localeCompare(an);
       });
-  }, [endorsedEmployees, hiredEmployees, endorsementsTab, endorsementsSearch, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
+  }, [endorsedEmployees, retractedEndorsements, hiredEmployees, endorsementsTab, endorsementsSearch, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
 
   // Keep selectedEmployee in sync with latest endorsedEmployees data
   useEffect(() => {
@@ -1375,6 +1476,7 @@ function AgencyEndorsements() {
   // initial loads + realtime subscriptions
   useEffect(() => {
     loadEndorsed();
+    loadRetractedEndorsements();
     loadHired();
     fetchInterviews();
 
@@ -1390,8 +1492,17 @@ function AgencyEndorsements() {
         },
         (payload) => {
           // Only reload if the change affects an endorsed application
-          if (payload.new?.endorsed === true || payload.old?.endorsed === true) {
+          const newPayload = payload.new || {};
+          const oldPayload = payload.old || {};
+          const affectsEndorsed = newPayload.endorsed === true || oldPayload.endorsed === true;
+          const affectsRetracted =
+            String(newPayload.status || '').toLowerCase() === 'retracted' ||
+            String(oldPayload.status || '').toLowerCase() === 'retracted' ||
+            newPayload.payload?.endorsement_retracted === true ||
+            oldPayload.payload?.endorsement_retracted === true;
+          if (affectsEndorsed || affectsRetracted) {
             loadEndorsed();
+            loadRetractedEndorsements();
           }
         }
       )
@@ -1406,6 +1517,7 @@ function AgencyEndorsements() {
         () => {
           loadHired();
           loadEndorsed();
+          loadRetractedEndorsements();
         }
       )
       .subscribe();
@@ -1424,6 +1536,7 @@ function AgencyEndorsements() {
   };
 
   const renderNone = () => <span className="text-gray-500 italic">None</span>;
+  const renderNA = () => <span className="text-gray-500 italic">N/A</span>;
 
   const displayValue = (val) => {
     if (val === null || val === undefined) return renderNone();
@@ -1439,6 +1552,14 @@ function AgencyEndorsements() {
   const displayDate = (val) => {
     if (!val || val === '—' || val === '--' || String(val).trim().toLowerCase() === 'n/a') return renderNone();
     return formatDate(val);
+  };
+
+  const isMedicalInfoUnanswered = (data) => {
+    const hasReason = String(data?.medicationReason ?? '').trim() !== '';
+    const hasDate = String(data?.medicalTestDate ?? '').trim() !== '';
+
+    // Treat as unanswered when both flags are false and no other details provided
+    return data?.takingMedications === false && data?.tookMedicalTest === false && !hasReason && !hasDate;
   };
 
   const formatNameLastFirstMiddle = ({ last, first, middle }) => {
@@ -1525,6 +1646,9 @@ function AgencyEndorsements() {
     if (status === 'hired') {
       return { label: 'HIRED', color: 'text-green-600', bg: 'bg-green-50' };
     }
+    if (status === 'retracted') {
+      return { label: 'RETRACTED', color: 'text-red-600', bg: 'bg-red-50' };
+    }
     if (status === 'rejected') {
       return { label: 'REJECTED', color: 'text-red-600', bg: 'bg-red-50' };
     }
@@ -1610,7 +1734,14 @@ function AgencyEndorsements() {
     totalDeployed: endorsedEmployees.filter(e => e.status === 'deployed').length,
     pendingEndorsements: endorsedEmployees.filter(e => e.status === 'pending').length,
     totalEndorsements: endorsedEmployees.length,
+    retractedEndorsements: retractedEndorsements.length,
   };
+
+  const isRetractedTab = endorsementsTab === 'retracted';
+  const listLoading = isRetractedTab ? retractedLoading : endorsedLoading;
+  const listError = isRetractedTab ? retractedError : endorsedError;
+  const listCount = isRetractedTab ? retractedEndorsements.length : endorsedEmployees.length;
+  const emptyListMessage = isRetractedTab ? 'No retracted applications yet.' : 'No endorsements yet.';
 
   return (
     <>
@@ -2034,6 +2165,20 @@ function AgencyEndorsements() {
                       >
                         Deployed ({stats.totalDeployed})
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEndorsementsTab('retracted');
+                          setSelectedEmployee(null);
+                        }}
+                        className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
+                          endorsementsTab === 'retracted'
+                            ? 'bg-white text-[#800000] shadow-sm'
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        Retracted ({stats.retractedEndorsements})
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -2151,12 +2296,14 @@ function AgencyEndorsements() {
             )}
 
             <div className="flex-1 flex flex-col overflow-hidden p-4 min-h-0">
-              {endorsedLoading ? (
-                <div className="p-6 text-gray-600">Loading endorsements…</div>
-              ) : endorsedError ? (
-                <div className="p-4 bg-[#800000]/10 text-[#800000] rounded">{endorsedError}</div>
-              ) : endorsedEmployees.length === 0 ? (
-                <div className="p-6 text-gray-600">No endorsements yet.</div>
+              {listLoading ? (
+                <div className="p-6 text-gray-600">
+                  {isRetractedTab ? 'Loading retracted applications…' : 'Loading endorsements…'}
+                </div>
+              ) : listError ? (
+                <div className="p-4 bg-[#800000]/10 text-[#800000] rounded">{listError}</div>
+              ) : listCount === 0 ? (
+                <div className="p-6 text-gray-600">{emptyListMessage}</div>
               ) : (
                 <>
                   <div className="flex flex-col lg:flex-row gap-4 flex-1 overflow-hidden min-h-0">
@@ -2191,7 +2338,11 @@ function AgencyEndorsements() {
                                   key={emp.id} 
                                   className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${isSelected ? 'bg-[#800000]/10/50' : ''}`} 
                                   onClick={() => {
-                                    setEndorsementsTab(emp.status === 'deployed' ? 'deployed' : 'pending');
+                                    if (emp.status === 'retracted') {
+                                      setEndorsementsTab('retracted');
+                                    } else {
+                                      setEndorsementsTab(emp.status === 'deployed' ? 'deployed' : 'pending');
+                                    }
                                     setSelectedEmployee(emp);
                                     // If coming from Separation page, auto-open the separation tab
                                     if (showSeparationPrompt && emp.status === 'deployed') {
@@ -2260,6 +2411,7 @@ function AgencyEndorsements() {
                         </tbody>
                       </table>
                       )}
+
                     </div>
 
                     {/* Detail panel on the right */}
@@ -2398,6 +2550,7 @@ function AgencyEndorsements() {
                                         }
 
                                         await loadEndorsed();
+                                        await loadRetractedEndorsements();
                                         setSelectedEmployee(null);
 
                                         setAlertMessage('Endorsement retracted successfully. The application has been removed from HR\'s recruitment list.');
@@ -2904,19 +3057,19 @@ function AgencyEndorsements() {
                                     <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                       <div>
                                         <span className="text-gray-500">Taking Medications:</span>
-                                        <span className="ml-2">{formData.takingMedications === true ? 'Yes' : formData.takingMedications === false ? 'No' : renderNone()}</span>
+                                        <span className="ml-2">{isMedicalInfoUnanswered(formData) ? renderNA() : (formData.takingMedications === true ? 'Yes' : formData.takingMedications === false ? 'No' : renderNone())}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Medication Reason:</span>
-                                        <span className="ml-2">{formData.takingMedications ? displayValue(formData.medicationReason) : renderNone()}</span>
+                                        <span className="ml-2">{isMedicalInfoUnanswered(formData) ? renderNA() : (formData.takingMedications ? displayValue(formData.medicationReason) : renderNone())}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Has Taken Medical Test:</span>
-                                        <span className="ml-2">{formData.tookMedicalTest === true ? 'Yes' : formData.tookMedicalTest === false ? 'No' : renderNone()}</span>
+                                        <span className="ml-2">{isMedicalInfoUnanswered(formData) ? renderNA() : (formData.tookMedicalTest === true ? 'Yes' : formData.tookMedicalTest === false ? 'No' : renderNone())}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Medical Test Date:</span>
-                                        <span className="ml-2">{formData.tookMedicalTest ? displayDate(formData.medicalTestDate) : renderNone()}</span>
+                                        <span className="ml-2">{isMedicalInfoUnanswered(formData) ? renderNA() : (formData.tookMedicalTest ? displayDate(formData.medicalTestDate) : renderNone())}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -4018,19 +4171,19 @@ function AgencyEndorsements() {
                                     <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                       <div>
                                         <span className="text-gray-500">Taking Medications:</span>
-                                        <span className="ml-2">{formData.takingMedications === true ? 'Yes' : formData.takingMedications === false ? 'No' : renderNone()}</span>
+                                        <span className="ml-2">{isMedicalInfoUnanswered(formData) ? renderNA() : (formData.takingMedications === true ? 'Yes' : formData.takingMedications === false ? 'No' : renderNone())}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Medication Reason:</span>
-                                        <span className="ml-2">{formData.takingMedications ? displayValue(formData.medicationReason) : renderNone()}</span>
+                                        <span className="ml-2">{isMedicalInfoUnanswered(formData) ? renderNA() : (formData.takingMedications ? displayValue(formData.medicationReason) : renderNone())}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Has Taken Medical Test:</span>
-                                        <span className="ml-2">{formData.tookMedicalTest === true ? 'Yes' : formData.tookMedicalTest === false ? 'No' : renderNone()}</span>
+                                        <span className="ml-2">{isMedicalInfoUnanswered(formData) ? renderNA() : (formData.tookMedicalTest === true ? 'Yes' : formData.tookMedicalTest === false ? 'No' : renderNone())}</span>
                                       </div>
                                       <div>
                                         <span className="text-gray-500">Medical Test Date:</span>
-                                        <span className="ml-2">{formData.tookMedicalTest ? displayDate(formData.medicalTestDate) : renderNone()}</span>
+                                        <span className="ml-2">{isMedicalInfoUnanswered(formData) ? renderNA() : (formData.tookMedicalTest ? displayDate(formData.medicalTestDate) : renderNone())}</span>
                                       </div>
                                     </div>
                                   </div>
@@ -4420,9 +4573,11 @@ function AgencyEndorsements() {
                                           <span className="font-semibold text-gray-900 text-left break-words">{signingLocation || '—'}</span>
                                         </div>
                                       </div>
-                                      <div className="mt-3 text-xs text-gray-500">
-                                        Stay posted for the agreement signing schedule. We will post as soon as possible.
-                                      </div>
+                                      {!(signingDate || signingTime || signingLocation) && (
+                                        <div className="mt-3 text-xs text-gray-500">
+                                          Stay posted for the agreement signing schedule. We will post as soon as possible.
+                                        </div>
+                                      )}
                                       {reschedulePending ? (
                                         <div className="mt-3 text-xs text-gray-500">
                                           Agreements are locked while reschedule is pending.

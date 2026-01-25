@@ -282,7 +282,7 @@ function HrRecruitment() {
   // ---- UI state
   const [activeSubTab, setActiveSubTab] = useState("Applications"); // "Applications" | "JobPosts"
   const [searchTerm, setSearchTerm] = useState("");
-  const [listMode, setListMode] = useState('pending'); // 'pending' | 'waitlisted' | 'rejected'
+  const [listMode, setListMode] = useState('pending'); // 'pending' | 'waitlisted' | 'rejected' | 'retracted'
   const [currentPage, setCurrentPage] = useState(1);
   const [showActionModal, setShowActionModal] = useState(false);
   const [actionType, setActionType] = useState(null);
@@ -637,6 +637,8 @@ function HrRecruitment() {
   // ---- Data from Supabase
   const [applicants, setApplicants] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [retractedApplicants, setRetractedApplicants] = useState([]);
+  const [loadingRetractedApplicants, setLoadingRetractedApplicants] = useState(false);
   const [jobPosts, setJobPosts] = useState([]);
   const [loadingJobPosts, setLoadingJobPosts] = useState(false);
   const itemsPerPage = 10;
@@ -884,6 +886,32 @@ function HrRecruitment() {
   const getApplicantPayloadObject = (applicant) => {
     if (!applicant) return {};
     return safeParseJsonObject(applicant?.raw?.payload ?? applicant?.payload ?? {});
+  };
+
+  const mergeAgreementSigningIntoPayload = (payload, applicant) => {
+    const base = payload && typeof payload === 'object' ? payload : {};
+    const existing =
+      base.agreement_signing ||
+      base.agreementSigning ||
+      base.signing_interview ||
+      base.signingInterview ||
+      null;
+
+    const date = applicant?.agreement_signing_date ?? existing?.date ?? null;
+    const time = applicant?.agreement_signing_time ?? existing?.time ?? null;
+    const location = applicant?.agreement_signing_location ?? existing?.location ?? null;
+
+    if (!date && !time && !location) return base;
+
+    return {
+      ...base,
+      agreement_signing: {
+        ...(existing || {}),
+        ...(date ? { date } : null),
+        ...(time ? { time } : null),
+        ...(location ? { location } : null),
+      },
+    };
   };
 
   const sanitizeFileBaseName = (name) => {
@@ -1251,6 +1279,119 @@ function HrRecruitment() {
 
   const isDriverRole = (position) => /\bdriver\b/i.test(String(position || ""));
 
+  const loadRetractedApplications = async () => {
+    setLoadingRetractedApplicants(true);
+    try {
+      const { data, error } = await supabase
+        .from("applications")
+        .select(`
+          id,
+          user_id,
+          job_id,
+          status,
+          created_at,
+          updated_at,
+          payload,
+          interview_date,
+          interview_time,
+          interview_location,
+          interviewer,
+          interview_confirmed,
+          interview_confirmed_at,
+          interview_details_file,
+          assessment_results_file,
+          appointment_letter_file,
+          undertaking_file,
+          application_form_file,
+          undertaking_duties_file,
+          pre_employment_requirements_file,
+          id_form_file,
+          job_posts:job_posts ( id, title, department, depot )
+        `)
+        .eq("status", "retracted")
+        .order("updated_at", { ascending: false });
+
+      if (error) {
+        console.error("fetch retracted applications error:", error);
+        setRetractedApplicants([]);
+        setLoadingRetractedApplicants(false);
+        return;
+      }
+
+      const mapped = (data || []).map((row) => {
+        let payloadObj = row.payload;
+        if (typeof payloadObj === "string") {
+          try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+        }
+
+        const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
+        const firstName = source.firstName || source.fname || source.first_name || "";
+        const middleName = source.middleName || source.mname || source.middle_name || "";
+        const lastName = source.lastName || source.lname || source.last_name || "";
+        const fullName =
+          formatNameLastFirstMiddle({ last: lastName, first: firstName, middle: middleName }) ||
+          normalizeWs(source.fullName || source.name) ||
+          normalizeWs([firstName, middleName, lastName].filter(Boolean).join(" ")) ||
+          "Unnamed Applicant";
+
+        const position = row.job_posts?.title ?? source.position ?? "—";
+        const department = normalizeDepartmentName(row.job_posts?.department ?? source.department ?? "");
+        const depot = row.job_posts?.depot ?? source.depot ?? "—";
+
+        const agencyStamp =
+          payloadObj?.meta?.endorsed_by_auth_user_id ||
+          payloadObj?.meta?.endorsedByAuthUserId ||
+          payloadObj?.meta?.endorsed_by_profile_id ||
+          payloadObj?.meta?.endorsedByProfileId ||
+          payloadObj?.endorsed_by_auth_user_id ||
+          payloadObj?.endorsedByAuthUserId ||
+          payloadObj?.endorsed_by_profile_id ||
+          payloadObj?.endorsedByProfileId ||
+          null;
+
+        const email = source.email || source.contact || payloadObj?.email || payloadObj?.contact || null;
+
+        return {
+          id: row.id,
+          name: fullName,
+          email,
+          position,
+          department,
+          depot,
+          status: row.status || "retracted",
+          agency: Boolean(agencyStamp),
+          dateApplied: row.created_at
+            ? new Date(row.created_at).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
+            : "—",
+          retractedAt: row.updated_at || row.created_at || null,
+          payload: payloadObj,
+          interview_date: row.interview_date || null,
+          interview_time: row.interview_time || null,
+          interview_location: row.interview_location || null,
+          interviewer: row.interviewer || null,
+          interview_confirmed: row.interview_confirmed || null,
+          interview_confirmed_at: row.interview_confirmed_at || null,
+          interview_details_file: row.interview_details_file || payloadObj?.interview_details_file || null,
+          assessment_results_file: row.assessment_results_file || payloadObj?.assessment_results_file || null,
+          appointment_letter_file: row.appointment_letter_file || payloadObj?.appointment_letter_file || null,
+          undertaking_file: row.undertaking_file || payloadObj?.undertaking_file || null,
+          application_form_file: row.application_form_file || payloadObj?.application_form_file || null,
+          undertaking_duties_file: row.undertaking_duties_file || payloadObj?.undertaking_duties_file || null,
+          pre_employment_requirements_file: row.pre_employment_requirements_file || payloadObj?.pre_employment_requirements_file || null,
+          id_form_file: row.id_form_file || payloadObj?.id_form_file || null,
+          raw: row,
+        };
+      });
+
+      setRetractedApplicants(mapped);
+    } catch (err) {
+      console.error("loadRetractedApplications unexpected error:", err);
+      setRetractedApplicants([]);
+    } finally {
+      setLoadingRetractedApplicants(false);
+    }
+  };
+
   // Normalize and load applications from Supabase
   const loadApplications = async () => {
     setLoading(true);
@@ -1451,10 +1592,10 @@ function HrRecruitment() {
           // New fields - check both column and payload as fallback
           interview_confirmed: row.interview_confirmed ?? payloadObj.interview_confirmed ?? false,
           interview_confirmed_at: row.interview_confirmed_at ?? payloadObj.interview_confirmed_at ?? null,
-          // Agreement signing schedule (stored in payload)
-          agreement_signing_date: agreementSigning?.date || null,
-          agreement_signing_time: agreementSigning?.time || null,
-          agreement_signing_location: agreementSigning?.location || null,
+          // Agreement signing schedule (columns first, then payload)
+          agreement_signing_date: row.agreement_signing_date || agreementSigning?.date || null,
+          agreement_signing_time: row.agreement_signing_time || agreementSigning?.time || null,
+          agreement_signing_location: row.agreement_signing_location || agreementSigning?.location || null,
           agreement_signing_confirmed: payloadObj.agreement_signing_confirmed ?? payloadObj.agreementSigningConfirmed ?? 'Idle',
           agreement_signing_confirmed_at: payloadObj.agreement_signing_confirmed_at ?? payloadObj.agreementSigningConfirmedAt ?? null,
           interview_details_file: row.interview_details_file ?? payloadObj.interview_details_file ?? null,
@@ -1641,14 +1782,19 @@ function HrRecruitment() {
   // ---- useEffect: initial load + polling + refetch on focus
   useEffect(() => {
     loadApplications();
+    loadRetractedApplications();
 
     // Polling: refetch every 30 seconds
-    const interval = setInterval(loadApplications, 30000);
+    const interval = setInterval(() => {
+      loadApplications();
+      loadRetractedApplications();
+    }, 30000);
 
     // Refetch when user returns to tab
     const handleVisibilityChange = () => {
       if (!document.hidden) {
         loadApplications();
+        loadRetractedApplications();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -2970,12 +3116,27 @@ function HrRecruitment() {
 
     // Extract interview type safely (payload may be string or invalid JSON)
     let interviewType = application?.interview_type || "onsite";
+    let preferredDate = '';
+    let preferredTime = '';
+    let rescheduleReqActive = false;
     if (application?.raw?.payload) {
       try {
         const payload = typeof application.raw.payload === 'string'
           ? JSON.parse(application.raw.payload)
           : application.raw.payload;
         interviewType = payload?.interview_type || payload?.interview?.type || interviewType || 'onsite';
+        const rescheduleReq = payload?.interview_reschedule_request || payload?.interviewRescheduleRequest || null;
+        const rescheduleHandled = Boolean(rescheduleReq && (rescheduleReq.handled_at || rescheduleReq.handledAt));
+        rescheduleReqActive = Boolean(
+          rescheduleReq &&
+          typeof rescheduleReq === 'object' &&
+          !rescheduleHandled &&
+          (rescheduleReq.requested_at || rescheduleReq.requestedAt || rescheduleReq.note)
+        );
+        if (rescheduleReq && typeof rescheduleReq === 'object') {
+          preferredDate = rescheduleReq.preferred_date || rescheduleReq.preferredDate || '';
+          preferredTime = rescheduleReq.preferred_time_from || rescheduleReq.preferredTimeFrom || rescheduleReq.preferred_time_to || rescheduleReq.preferredTimeTo || '';
+        }
       } catch {
         // ignore
       }
@@ -2984,9 +3145,11 @@ function HrRecruitment() {
     // For rescheduling, open a fresh form to avoid accidentally re-sending the old schedule.
     const shouldReset = reset || Boolean(application?.interview_date);
 
+    const usePreferred = shouldReset && rescheduleReqActive && (preferredDate || preferredTime);
+
     setInterviewForm({
-      date: shouldReset ? "" : (application?.interview_date || ""),
-      time: shouldReset ? "" : (application?.interview_time || ""),
+      date: usePreferred ? preferredDate : (shouldReset ? "" : (application?.interview_date || "")),
+      time: usePreferred ? preferredTime : (shouldReset ? "" : (application?.interview_time || "")),
       location: shouldReset ? "" : (application?.interview_location || ""),
       interviewer: shouldReset ? "" : (application?.interviewer || ""),
       interview_type: interviewType,
@@ -3089,10 +3252,16 @@ function HrRecruitment() {
             ? 'Email not sent.'
             : 'Email not sent.';
 
-      setSuccessMessage(
-        `Agreement signing ${signingIsReschedule ? 'Rescheduled' : 'Scheduled'}: ${apptSummary}. ` +
-        `In-app notification created.${signingEmailNote ? ` ${signingEmailNote}` : ''}`
-      );
+      const isAgencyApplicant = isAgency(selectedApplicationForSigning || selectedApplicant);
+      if (isAgencyApplicant) {
+        const applicantName = selectedApplicationForSigning?.name || selectedApplicant?.name || 'the applicant';
+        setSuccessMessage(`The agency has been notified about ${applicantName} agreement signing.`);
+      } else {
+        setSuccessMessage(
+          `Agreement signing ${signingIsReschedule ? 'Rescheduled' : 'Scheduled'}: ${apptSummary}. ` +
+          `In-app notification created.${signingEmailNote ? ` ${signingEmailNote}` : ''}`
+        );
+      }
       setShowSuccessAlert(true);
     } catch (err) {
       console.error("scheduleAgreementSigning unexpected error:", err);
@@ -3286,10 +3455,16 @@ function HrRecruitment() {
             ? 'Email not sent.'
             : 'Email not sent.';
 
-      setSuccessMessage(
-        `Interview ${isReschedule ? 'Rescheduled' : 'Scheduled'}: ${interviewSummary}. ` +
-        `In-app notification created.${emailNote ? ` ${emailNote}` : ''}`
-      );
+      const isAgencyApplicant = isAgency(selectedApplicationForInterview || selectedApplicant);
+      if (isAgencyApplicant) {
+        const applicantName = selectedApplicationForInterview?.name || selectedApplicant?.name || 'the applicant';
+        setSuccessMessage(`The agency has been notified about ${applicantName} interview schedule.`);
+      } else {
+        setSuccessMessage(
+          `Interview ${isReschedule ? 'Rescheduled' : 'Scheduled'}: ${interviewSummary}. ` +
+          `In-app notification created.${emailNote ? ` ${emailNote}` : ''}`
+        );
+      }
       setShowSuccessAlert(true);
     } catch (err) {
       console.error("scheduleInterview unexpected error:", err);
@@ -3740,10 +3915,13 @@ function HrRecruitment() {
       }
 
       const combined = existingDocs.concat(uploadedDocs);
-      const updatedPayload = {
-        ...currentPayload,
-        agreement_documents: combined,
-      };
+      const updatedPayload = mergeAgreementSigningIntoPayload(
+        {
+          ...currentPayload,
+          agreement_documents: combined,
+        },
+        selectedApplicant
+      );
 
       // If label matches known titles, also update the corresponding column for compatibility
       const colKey = agreementDocTitleToColumnKey(labelRaw);
@@ -3770,10 +3948,13 @@ function HrRecruitment() {
       setSelectedApplicant((prev) => {
         if (!prev) return prev;
         const prevPayload = getApplicantPayloadObject(prev);
-        const mergedPayload = {
-          ...prevPayload,
-          agreement_documents: combined,
-        };
+        const mergedPayload = mergeAgreementSigningIntoPayload(
+          {
+            ...prevPayload,
+            agreement_documents: combined,
+          },
+          prev
+        );
         return {
           ...prev,
           ...(colKey ? { [colKey]: uploadedDocs[uploadedDocs.length - 1].path } : null),
@@ -3846,10 +4027,13 @@ function HrRecruitment() {
           });
         }
 
-        const updatedPayload = {
-          ...currentPayload,
-          agreement_documents: updatedList,
-        };
+        const updatedPayload = mergeAgreementSigningIntoPayload(
+          {
+            ...currentPayload,
+            agreement_documents: updatedList,
+          },
+          selectedApplicant
+        );
 
         // Clear matching legacy column if applicable
         const columnsToMaybeClear = ['appointment_letter_file', 'undertaking_file', 'undertaking_duties_file'];
@@ -3884,10 +4068,13 @@ function HrRecruitment() {
         setSelectedApplicant((prev) => {
           if (!prev) return prev;
           const prevPayload = getApplicantPayloadObject(prev);
-          const mergedPayload = {
-            ...prevPayload,
-            agreement_documents: updatedList,
-          };
+          const mergedPayload = mergeAgreementSigningIntoPayload(
+            {
+              ...prevPayload,
+              agreement_documents: updatedList,
+            },
+            prev
+          );
           return {
             ...prev,
             ...columnPatch,
@@ -4760,6 +4947,9 @@ function HrRecruitment() {
     if (status === 'hired') {
       return { label: 'HIRED', color: 'text-green-600', bg: 'bg-green-50' };
     }
+    if (status === 'retracted') {
+      return { label: 'RETRACTED', color: 'text-red-600', bg: 'bg-red-50' };
+    }
     if (status === 'rejected') {
       return { label: 'REJECTED', color: 'text-red-600', bg: 'bg-red-50' };
     }
@@ -4800,7 +4990,16 @@ function HrRecruitment() {
     return filtered;
   }, [applicants, currentUser]);
 
-  const filterOptionApplicants = allApplicants;
+  const retractedApplicantsScoped = useMemo(() => {
+    let list = Array.isArray(retractedApplicants) ? retractedApplicants : [];
+    if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
+      const depotValue = String(currentUser.depot).toLowerCase();
+      list = list.filter((a) => String(a.depot || '').toLowerCase() === depotValue);
+    }
+    return list;
+  }, [retractedApplicants, currentUser]);
+
+  const filterOptionApplicants = listMode === 'retracted' ? retractedApplicantsScoped : allApplicants;
 
   // Distinct positions/depots for filters
   const depots = useMemo(() => {
@@ -4876,6 +5075,11 @@ function HrRecruitment() {
       return;
     }
 
+    if (listMode === 'retracted') {
+      if (statusFilter !== 'All') setStatusFilter('All');
+      return;
+    }
+
     if (String(statusFilter || '').trim().toUpperCase() === 'REJECTED') {
       setStatusFilter('All');
     }
@@ -4885,55 +5089,68 @@ function HrRecruitment() {
   // This replaces the previous aggregation-based approach
   const jobPostStats = jobPosts;
 
-  const filteredApplicantsNoStatus = useMemo(() => {
-    let list = allApplicants;
+  const applyApplicantFilters = useCallback((list) => {
+    let next = Array.isArray(list) ? list : [];
 
     const term = searchTerm.toLowerCase();
     if (term) {
-      list = list.filter((a) =>
-        a.name.toLowerCase().includes(term) ||
-        (a.position || "").toLowerCase().includes(term) ||
-        (a.depot || "").toLowerCase().includes(term) ||
-        (a.status || "").toLowerCase().includes(term)
+      next = next.filter((a) =>
+        String(a.name || '').toLowerCase().includes(term) ||
+        String(a.position || "").toLowerCase().includes(term) ||
+        String(a.depot || "").toLowerCase().includes(term) ||
+        String(a.status || "").toLowerCase().includes(term)
       );
     }
 
     if (positionFilter !== "All") {
-      list = list.filter((a) => a.position === positionFilter);
+      next = next.filter((a) => a.position === positionFilter);
     }
 
-    list = list.filter((a) => {
+    next = next.filter((a) => {
       if (recruitmentTypeFilter === "All") return true;
       if (recruitmentTypeFilter === "Agency") return !!a.agency;
       if (recruitmentTypeFilter === "Direct") return !a.agency;
       return true;
     });
 
-    list = list.filter((a) => {
+    next = next.filter((a) => {
       if (departmentFilter === "All") return true;
       const derived = normalizeDepartmentName(a.department || getDepartmentForPosition(a.position));
       return normalizeDepartmentName(derived) === normalizeDepartmentName(departmentFilter);
     });
 
     if (depotFilter !== "All") {
-      list = list.filter((a) => a.depot === depotFilter);
+      next = next.filter((a) => a.depot === depotFilter);
     }
 
-    return list;
-  }, [allApplicants, searchTerm, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter]);
+    return next;
+  }, [searchTerm, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter]);
+
+  const filteredApplicantsNoStatus = useMemo(
+    () => applyApplicantFilters(allApplicants),
+    [applyApplicantFilters, allApplicants]
+  );
+
+  const filteredRetractedApplicants = useMemo(
+    () => applyApplicantFilters(retractedApplicantsScoped),
+    [applyApplicantFilters, retractedApplicantsScoped]
+  );
 
   const listModeCounts = useMemo(() => {
     const rejected = (filteredApplicantsNoStatus || []).filter(isRejectedApplicant).length;
     const waitlisted = (filteredApplicantsNoStatus || []).filter(isWaitlistedApplicant).length;
     const pending = (filteredApplicantsNoStatus || []).length - rejected - waitlisted;
-    return { pending, waitlisted, rejected };
-  }, [filteredApplicantsNoStatus, isRejectedApplicant, isWaitlistedApplicant]);
+    const retracted = (filteredRetractedApplicants || []).length;
+    return { pending, waitlisted, rejected, retracted };
+  }, [filteredApplicantsNoStatus, filteredRetractedApplicants, isRejectedApplicant, isWaitlistedApplicant]);
 
   // Filtered + sorted applicants based on search and filters
   const filteredAllApplicants = useMemo(() => {
     let list = filteredApplicantsNoStatus;
 
-    if (listMode === 'rejected') {
+    if (listMode === 'retracted') {
+      list = filteredRetractedApplicants;
+    } else if (listMode === 'rejected') {
       list = list.filter(isRejectedApplicant);
     } else if (listMode === 'waitlisted') {
       list = list.filter((a) => !isRejectedApplicant(a)).filter(isWaitlistedApplicant);
@@ -4953,7 +5170,9 @@ function HrRecruitment() {
     );
 
     return list;
-  }, [filteredApplicantsNoStatus, listMode, statusFilter, sortOrder, isRejectedApplicant, isWaitlistedApplicant]);
+  }, [filteredApplicantsNoStatus, filteredRetractedApplicants, listMode, statusFilter, sortOrder, isRejectedApplicant, isWaitlistedApplicant]);
+
+  const listLoading = listMode === 'retracted' ? loadingRetractedApplicants : loading;
 
 
   // Pagination for unified table
@@ -5512,6 +5731,20 @@ function HrRecruitment() {
                       >
                         Rejected ({listModeCounts.rejected})
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setListMode('retracted');
+                          setCurrentPage(1);
+                        }}
+                        className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
+                          listMode === 'retracted'
+                            ? 'bg-white text-blue-700 shadow-sm'
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        Retracted ({listModeCounts.retracted})
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -5666,10 +5899,14 @@ function HrRecruitment() {
               {/* Table only when no applicant detail is open */}
               {!selectedApplicant && (
                 <div className="overflow-x-auto">
-                  {loading ? (
-                    <div className="p-8 text-center text-gray-500">Loading applications…</div>
+                  {listLoading ? (
+                    <div className="p-8 text-center text-gray-500">
+                      {listMode === 'retracted' ? 'Loading retracted applications…' : 'Loading applications…'}
+                    </div>
                   ) : filteredAllApplicants.length === 0 ? (
-                    <div className="p-8 text-center text-gray-500">No applications found.</div>
+                    <div className="p-8 text-center text-gray-500">
+                      {listMode === 'retracted' ? 'No retracted applications found.' : 'No applications found.'}
+                    </div>
                   ) : (
                     <table className="w-full">
                       <thead className="bg-gray-50 border-b border-gray-100">
@@ -5734,6 +5971,7 @@ function HrRecruitment() {
                   )}
                 </div>
               )}
+
 
                     </div>
                   </div>
@@ -6223,22 +6461,43 @@ function HrRecruitment() {
                               <div>
                                 <span className="text-gray-500">Skills:</span>
                                 <div className="ml-2 mt-1">
-                                  {form.skills && Array.isArray(form.skills) ? (
-                                    (() => {
-                                      const skillsText = (form.skills || [])
-                                        .filter(Boolean)
-                                        .map((s) => (typeof s === 'string' ? s.trim() : String(s).trim()))
-                                        .filter(Boolean)
-                                        .join(', ');
-                                      return skillsText
-                                        ? <span className="text-gray-800">{skillsText}</span>
-                                        : <span className="text-gray-500 italic">None</span>;
-                                    })()
-                                  ) : form.skills_text ? (
-                                    <span className="text-gray-800">{form.skills_text}</span>
-                                  ) : (
-                                    <span className="text-gray-500 italic">None</span>
-                                  )}
+                                  {(() => {
+                                    const normalizeSkills = (skillsVal) => {
+                                      if (Array.isArray(skillsVal)) {
+                                        return skillsVal
+                                          .filter(Boolean)
+                                          .map((s) => (typeof s === 'string' ? s.trim() : String(s).trim()))
+                                          .filter(Boolean);
+                                      }
+                                      if (typeof skillsVal === 'string' && skillsVal.trim()) {
+                                        try {
+                                          const parsed = JSON.parse(skillsVal);
+                                          if (Array.isArray(parsed)) {
+                                            return parsed
+                                              .filter(Boolean)
+                                              .map((s) => (typeof s === 'string' ? s.trim() : String(s).trim()))
+                                              .filter(Boolean);
+                                          }
+                                        } catch {
+                                          // not JSON, fall back to comma-separated
+                                        }
+                                        return skillsVal
+                                          .split(',')
+                                          .map((s) => s.trim())
+                                          .filter(Boolean);
+                                      }
+                                      return [];
+                                    };
+
+                                    const skillsList = normalizeSkills(form.skills).length
+                                      ? normalizeSkills(form.skills)
+                                      : normalizeSkills(form.skills_text);
+
+                                    const skillsText = skillsList.join(', ');
+                                    return skillsText
+                                      ? <span className="text-gray-800">{skillsText}</span>
+                                      : <span className="text-gray-500 italic">None</span>;
+                                  })()}
                                 </div>
                               </div>
                             </div>
@@ -6619,6 +6878,7 @@ function HrRecruitment() {
                           {/* Medical Information (ALL positions) */}
                           {(() => {
                             const renderNone = () => <span className="text-gray-500 italic">None</span>;
+                            const renderNA = () => <span className="text-gray-500 italic">N/A</span>;
                             const displayValue = (v) => {
                               if (v === null || v === undefined) return renderNone();
                               if (typeof v === 'string') {
@@ -6655,25 +6915,41 @@ function HrRecruitment() {
                             const tookMedicalTest = form.tookMedicalTest ?? form.took_medical_test ?? null;
                             const medicalTestDate = form.medicalTestDate || form.medical_test_date || null;
 
+                            const isMedicalInfoUnanswered = () => {
+                              const hasReason = String(medicationReason ?? '').trim() !== '';
+                              const hasDate = String(medicalTestDate ?? '').trim() !== '';
+
+                              const medsAnswered = takingMedications === true || takingMedications === false;
+                              const testAnswered = tookMedicalTest === true || tookMedicalTest === false;
+
+                              // If nothing answered at all
+                              if (!medsAnswered && !testAnswered && !hasReason && !hasDate) return true;
+
+                              // If both flags are false and no extra details
+                              if (takingMedications === false && tookMedicalTest === false && !hasReason && !hasDate) return true;
+
+                              return false;
+                            };
+
                             return (
                               <div className="mb-6">
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Medical Information</h5>
                                 <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">Taking Medications:</span>
-                                    <span className="ml-2">{displayYesNo(takingMedications) ?? renderNone()}</span>
+                                    <span className="ml-2">{isMedicalInfoUnanswered() ? renderNA() : (displayYesNo(takingMedications) ?? renderNone())}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Medication Reason:</span>
-                                    <span className="ml-2">{takingMedications ? (medicationReason ? displayValue(medicationReason) : renderNone()) : renderNone()}</span>
+                                    <span className="ml-2">{isMedicalInfoUnanswered() ? renderNA() : (takingMedications ? (medicationReason ? displayValue(medicationReason) : renderNone()) : renderNone())}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Has Taken Medical Test:</span>
-                                    <span className="ml-2">{displayYesNo(tookMedicalTest) ?? renderNone()}</span>
+                                    <span className="ml-2">{isMedicalInfoUnanswered() ? renderNA() : (displayYesNo(tookMedicalTest) ?? renderNone())}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">Medical Test Date:</span>
-                                    <span className="ml-2">{tookMedicalTest ? displayDate(medicalTestDate) : renderNone()}</span>
+                                    <span className="ml-2">{isMedicalInfoUnanswered() ? renderNA() : (tookMedicalTest ? displayDate(medicalTestDate) : renderNone())}</span>
                                   </div>
                                 </div>
                               </div>
