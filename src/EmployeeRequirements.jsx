@@ -595,17 +595,22 @@ function EmployeeRequirements() {
       if (!employeeData?.email) return;
 
       try {
+        console.log('🔍 Looking for employee with email:', employeeData.email);
+        
         // Get employee record to find employee_id
         const { data: employeeRecord, error: empError } = await supabase
           .from('employees')
-          .select('id')
+          .select('id, email, personal_email')
           .eq('email', employeeData.email)
           .single();
 
         if (empError || !employeeRecord?.id) {
-          console.error('Error loading employee ID:', empError);
+          console.error('❌ Error loading employee ID:', empError);
+          console.log('Employee record not found, checking if data exists:', employeeRecord);
           return;
         }
+
+        console.log('✅ Found employee ID:', employeeRecord.id);
 
         // Fetch onboarding items
         const { data: onboardingData, error } = await supabase
@@ -615,10 +620,12 @@ function EmployeeRequirements() {
           .order('date_issued', { ascending: false });
 
         if (error) {
-          console.error('Error loading onboarding items:', error);
+          console.error('❌ Error loading onboarding items:', error);
           setOnboardingItems([]);
           return;
         }
+
+        console.log('📦 Onboarding data retrieved:', onboardingData?.length || 0, 'items');
 
         if (onboardingData && onboardingData.length > 0) {
           const items = onboardingData.map(item => ({
@@ -630,11 +637,13 @@ function EmployeeRequirements() {
             fileUrl: item.file_path || item.filePath ? getFileUrl(item.file_path || item.filePath) : null
           }));
           setOnboardingItems(items);
+          console.log('✅ Onboarding items set:', items);
         } else {
           setOnboardingItems([]);
+          console.log('ℹ️ No onboarding items found');
         }
       } catch (err) {
-        console.error('Error loading onboarding items:', err);
+        console.error('❌ Error loading onboarding items:', err);
         setOnboardingItems([]);
       }
     };
