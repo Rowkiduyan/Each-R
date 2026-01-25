@@ -110,6 +110,20 @@ const handleRegister = async (e) => {
     return;
   }
 
+  // Validate age (must be at least 15 years old)
+  const birthDate = new Date(birthday);
+  const today = new Date();
+  const age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  const dayDiff = today.getDate() - birthDate.getDate();
+  const actualAge = monthDiff < 0 || (monthDiff === 0 && dayDiff < 0) ? age - 1 : age;
+
+  if (actualAge < 15) {
+    setErrorMessage("You must be at least 15 years old to register.");
+    setIsSubmitting(false);
+    return;
+  }
+
   if (contact.length !== 11 || !contact.startsWith('09')) {
     setErrorMessage("Contact number must be 11 digits starting with 09 (e.g., 09XXXXXXXXX).");
     setIsSubmitting(false);
@@ -290,7 +304,7 @@ const handleRegister = async (e) => {
                     min="1900-01-01"
                     required
                   />
-                  <p className="text-xs text-gray-500 mt-1">Click to select your date of birth</p>
+                  <p className="text-xs text-gray-500 mt-1">You must be at least 15 years old</p>
                 </div>
 
                 <div>
