@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Calendar from 'react-calendar';
 import 'react-calendar/dist/Calendar.css';
+import { validateNoSunday, validateOfficeHours } from "./utils/dateTimeRules";
 import { supabase } from './supabaseClient';
+import Toast from './components/Toast';
 
 function HrSched() {
   const [date, setDate] = useState(new Date());
@@ -17,6 +19,8 @@ function HrSched() {
     date: '',
     status: 'scheduled'
   });
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -320,7 +324,11 @@ function HrSched() {
                 <input
                   type="date"
                   value={newInterview.date}
-                  onChange={(e) => setNewInterview({...newInterview, date: e.target.value})}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!validateNoSunday(e.target, v)) return;
+                    setNewInterview({ ...newInterview, date: v });
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -332,7 +340,17 @@ function HrSched() {
                 <input
                   type="time"
                   value={newInterview.time}
-                  onChange={(e) => setNewInterview({...newInterview, time: e.target.value})}
+                  onChange={(e) => {
+                    const t = e.target.value;
+                    if (!validateOfficeHours(e.target, t)) {
+                      setToastMessage('Office hours only (08:00–17:00).');
+                      setToastVisible(true);
+                      return;
+                    }
+                    setNewInterview({ ...newInterview, time: t });
+                  }}
+                  min="08:00"
+                  max="17:00"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"
                 />
               </div>
@@ -356,6 +374,8 @@ function HrSched() {
           </div>
         </div>
       )}
+
+      <Toast message={toastMessage} visible={toastVisible} onClose={() => setToastVisible(false)} />
     </div>
   );
 }

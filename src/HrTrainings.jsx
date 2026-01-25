@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { supabase } from './supabaseClient';
 import emailjs from '@emailjs/browser';
 import { generateTrainingCertificates, checkTrainingCertificates } from './utils/simpleCertificateGenerator';
+import { validateNoSunday, validateOfficeHours } from './utils/dateTimeRules';
 
 function HrTrainings() {
   const [loading, setLoading] = useState(true);
@@ -2394,7 +2395,11 @@ function HrTrainings() {
                         <input
                           name="duration_start_date"
                           value={form.duration_start_date}
-                          onChange={onChange}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (!validateNoSunday(e.target, v)) return;
+                            onChange(e);
+                          }}
                           type="date"
                           required
                           min={new Date().toISOString().split('T')[0]}
@@ -2410,7 +2415,11 @@ function HrTrainings() {
                         <input
                           name="end_date"
                           value={form.end_date}
-                          onChange={onChange}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (!validateNoSunday(e.target, v)) return;
+                            onChange(e);
+                          }}
                           type="date"
                           min={form.duration_start_date || new Date().toISOString().split('T')[0]}
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
@@ -2426,9 +2435,15 @@ function HrTrainings() {
                         <input
                           name="time"
                           value={form.time}
-                          onChange={onChange}
+                          onChange={(e) => {
+                            const t = e.target.value;
+                            if (!validateOfficeHours(e.target, t)) return;
+                            onChange(e);
+                          }}
                           type="time"
                           required
+                          min="08:00"
+                          max="17:00"
                           className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
                             fieldErrors.time ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
                           }`}
@@ -2441,9 +2456,15 @@ function HrTrainings() {
                         <input
                           name="end_time"
                           value={form.end_time}
-                          onChange={onChange}
+                          onChange={(e) => {
+                            const t = e.target.value;
+                            if (!validateOfficeHours(e.target, t)) return;
+                            onChange(e);
+                          }}
                           type="time"
                           required
+                          min="08:00"
+                          max="17:00"
                           className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
                             fieldErrors.end_time ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
                           }`}
@@ -3088,7 +3109,11 @@ function HrTrainings() {
                         <input
                           name="duration_start_date"
                           value={editForm.duration_start_date}
-                          onChange={onEditChange}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (!validateNoSunday(e.target, v)) return;
+                            onEditChange(e);
+                          }}
                           type="date"
                           required
                           min={new Date().toISOString().split('T')[0]}
@@ -3102,7 +3127,11 @@ function HrTrainings() {
                         <input
                           name="end_date"
                           value={editForm.end_date}
-                          onChange={onEditChange}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (!validateNoSunday(e.target, v)) return;
+                            onEditChange(e);
+                          }}
                           type="date"
                           min={editForm.duration_start_date || new Date().toISOString().split('T')[0]}
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
@@ -3118,9 +3147,15 @@ function HrTrainings() {
                         <input
                           name="time"
                           value={editForm.time}
-                          onChange={onEditChange}
+                          onChange={(e) => {
+                            const t = e.target.value;
+                            if (!validateOfficeHours(e.target, t)) return;
+                            onEditChange(e);
+                          }}
                           type="time"
                           required
+                          min="08:00"
+                          max="17:00"
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>
@@ -3131,9 +3166,15 @@ function HrTrainings() {
                         <input
                           name="end_time"
                           value={editForm.end_time}
-                          onChange={onEditChange}
+                          onChange={(e) => {
+                            const t = e.target.value;
+                            if (!validateOfficeHours(e.target, t)) return;
+                            onEditChange(e);
+                          }}
                           type="time"
                           required
+                          min="08:00"
+                          max="17:00"
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>

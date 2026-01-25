@@ -75,6 +75,8 @@ function HrCreateJob() {
     positions_needed: 1,
     positionsNoLimit: false,
   });
+  const [salaryMinRaw, setSalaryMinRaw] = useState("");
+  const [salaryMaxRaw, setSalaryMaxRaw] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState("");
@@ -172,14 +174,46 @@ function HrCreateJob() {
     setForm((prev) => ({ ...prev, [k]: v }));
   };
 
+  const normalizeDecimalInput = (s) => {
+    const str = String(s || "");
+    // Keep digits and dot; clamp to one dot and two decimals
+    let cleaned = str.replace(/[^0-9.]/g, "");
+    if (cleaned.startsWith(".")) cleaned = "0" + cleaned;
+    const parts = cleaned.split(".");
+    const integer = parts[0].replace(/^0+(?=\d)/, "");
+    let decimal = parts[1] || "";
+    decimal = decimal.slice(0, 2);
+    return decimal.length ? `${integer || "0"}.${decimal}` : (integer || "");
+  };
+  const toCurrency = (numStr) => {
+    const normalized = normalizeDecimalInput(numStr);
+    const n = Number(normalized || 0);
+    const formatter = new Intl.NumberFormat("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `₱${formatter.format(n)}`;
+  };
+  const buildSalaryRange = (minStr, maxStr) => `${toCurrency(minStr)} - ${toCurrency(maxStr)}`;
+
   // Check if form is complete (all required fields filled)
   const isFormComplete = () => {
     const hasTitle = form.title && form.title.trim() !== "";
     const hasDepot = form.depot && form.depot.trim() !== "";
-    const hasSalaryRange = form.salary_range && form.salary_range.trim() !== "";
+    const hasSalaryRange = isValidSalaryRange(form.salary_range);
     const hasDescription = form.description && form.description.trim() !== "";
     const hasResponsibilities = splitLines(form.mainResponsibilities).length > 0;
     return hasTitle && hasDepot && hasSalaryRange && hasDescription && hasResponsibilities;
+  };
+
+  const isValidSalaryRange = (s) => {
+    const str = String(s || "").trim();
+    const pattern = /^₱\d{1,3}(?:,\d{3})*(?:\.\d{2})\s-\s₱\d{1,3}(?:,\d{3})*(?:\.\d{2})$/;
+    if (!pattern.test(str)) return false;
+    // Compare numeric values
+    const [minPart, maxPart] = str.split(" - ");
+    const toNumber = (p) => Number(p.replace(/[^\d.]/g, ""));
+    const min = toNumber(minPart);
+    const max = toNumber(maxPart);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return false;
+    return min > 0 && max > 0 && min <= max;
   };
 
   const withBulletAutoContinue = (fieldKey) => (e) => {
@@ -220,6 +254,58 @@ function HrCreateJob() {
     requestAnimationFrame(() => {
       const nextPos = start + insertText.length;
       target.selectionStart = target.selectionEnd = nextPos;
+    });
+  };
+
+  const bulletPrefixRe = /^\s*(?:\*\s+|-\s+|•\s+)/;
+  const bulletizeText = (text) => {
+    return String(text || "")
+      .split(/\r?\n/)
+      .map((line) => {
+        const trimmed = line.trim();
+        if (!trimmed) return "";
+        if (bulletPrefixRe.test(line)) return line;
+        return `• ${trimmed}`;
+      })
+      .join("\n");
+  };
+
+  const handleBulletOnChange = (fieldKey) => (e) => {
+    const val = e.target.value;
+    if (val.includes("\n")) {
+      const bulletized = bulletizeText(val);
+      setForm((prev) => ({ ...prev, [fieldKey]: bulletized }));
+    } else {
+      setForm((prev) => ({ ...prev, [fieldKey]: val }));
+    }
+  };
+
+  const handleBulletOnPaste = (fieldKey) => (e) => {
+    const pasted = e.clipboardData?.getData("text") || "";
+    if (!pasted) return;
+    e.preventDefault();
+    const target = e.target;
+    const value = String(form[fieldKey] || "");
+    const start = typeof target.selectionStart === "number" ? target.selectionStart : value.length;
+    const end = typeof target.selectionEnd === "number" ? target.selectionEnd : value.length;
+    const bulletized = bulletizeText(pasted);
+    const newValue = value.slice(0, start) + bulletized + value.slice(end);
+    setForm((prev) => ({ ...prev, [fieldKey]: newValue }));
+    requestAnimationFrame(() => {
+      const pos = start + bulletized.length;
+      try {
+        target.selectionStart = target.selectionEnd = pos;
+      } catch {}
+    });
+  };
+
+  const ensureInitialBullet = (fieldKey) => {
+    setForm((prev) => {
+      const current = String(prev[fieldKey] || "");
+      if (current.length === 0) {
+        return { ...prev, [fieldKey]: "• " };
+      }
+      return prev;
     });
   };
   // safe create + debug function
@@ -349,6 +435,11 @@ function HrCreateJob() {
 
     if (!form.description || !form.description.trim()) {
       setError("Job title description is required.");
+      setSaving(false);
+      return;
+    }
+    if (!isValidSalaryRange(form.salary_range)) {
+      setError("Invalid salary range. Please use the format ₱18,000.00 - ₱22,000.00 with minimum ≤ maximum.");
       setSaving(false);
       return;
     }
@@ -540,14 +631,46 @@ function HrCreateJob() {
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Salary Range <span className="text-red-600">*</span>
             </label>
-            <input
-              type="text"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
-              value={form.salary_range}
-              onChange={(e) => setField("salary_range", e.target.value)}
-              placeholder="e.g., ₱15,000 - ₱25,000"
-            />
-            <p className="text-xs text-gray-500 mt-1">Tip: include the peso sign and range, like “₱18,000 - ₱22,000”.</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg">
+                <span className="text-gray-700">₱</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  aria-label="Minimum salary"
+                  className="w-28 outline-none"
+                  value={salaryMinRaw}
+                  onChange={(e) => {
+                    const raw = normalizeDecimalInput(e.target.value);
+                    setSalaryMinRaw(raw);
+                    const combined = buildSalaryRange(raw, salaryMaxRaw);
+                    setField("salary_range", combined);
+                  }}
+                  placeholder="18000.50"
+                />
+              </div>
+              <span className="text-gray-700">-</span>
+              <div className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg">
+                <span className="text-gray-700">₱</span>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  aria-label="Maximum salary"
+                  className="w-28 outline-none"
+                  value={salaryMaxRaw}
+                  onChange={(e) => {
+                    const raw = normalizeDecimalInput(e.target.value);
+                    setSalaryMaxRaw(raw);
+                    const combined = buildSalaryRange(salaryMinRaw, raw);
+                    setField("salary_range", combined);
+                  }}
+                  placeholder="22000.00"
+                />
+              </div>
+            </div>
+            {!isValidSalaryRange(form.salary_range) && (
+              <p className="text-xs text-red-600 mt-1">Salary format must be like ₱18,000.00 - ₱22,000.00 and minimum ≤ maximum.</p>
+            )}
           </div>
 
           <div>
@@ -562,7 +685,7 @@ function HrCreateJob() {
                 min={getTodayDate()}
               />
               <p className="text-xs text-gray-500 mt-1">
-                The job post will close automatically when the end date is reached, or when hired employees reach Employees Needed (if limited).
+                The job post will automatically close when the end date is reached. If there is no date provided, it will close when it reaches total Employees Needed (if limited).
               </p>
             </div>
             {form.endDate && (
@@ -592,8 +715,10 @@ function HrCreateJob() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-y"
               rows={5}
               value={form.mainResponsibilities}
-              onChange={(e) => setField("mainResponsibilities", e.target.value)}
+              onChange={handleBulletOnChange("mainResponsibilities")}
               onKeyDown={withBulletAutoContinue("mainResponsibilities")}
+              onFocus={() => ensureInitialBullet("mainResponsibilities")}
+              onPaste={handleBulletOnPaste("mainResponsibilities")}
               placeholder="Example: Deliver goods safely and on time; Maintain accurate delivery documents; Follow safety and company procedures."
             />
           </div>
@@ -604,8 +729,10 @@ function HrCreateJob() {
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all resize-y"
               rows={4}
               value={form.keyRequirements}
-              onChange={(e) => setField("keyRequirements", e.target.value)}
+              onChange={handleBulletOnChange("keyRequirements")}
               onKeyDown={withBulletAutoContinue("keyRequirements")}
+              onFocus={() => ensureInitialBullet("keyRequirements")}
+              onPaste={handleBulletOnPaste("keyRequirements")}
               placeholder="Example: Willing to work shifting schedules; Strong communication and teamwork; Relevant experience is an advantage."
             />
           </div>

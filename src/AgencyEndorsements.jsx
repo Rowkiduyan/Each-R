@@ -5,6 +5,7 @@ import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
 import { notifyHRAboutInterviewResponse, notifyHRAboutApplicationRetraction } from './notifications';
 import { UploadedDocumentsSection } from './components/ApplicantArtifactsPanels';
+import { validateNoSunday, validateOfficeHours } from './utils/dateTimeRules';
 
 function AgencyEndorsements() {
   const navigate = useNavigate();
@@ -4346,7 +4347,11 @@ function AgencyEndorsements() {
                   <input
                     type="date"
                     value={reschedulePreferredDate}
-                    onChange={(e) => setReschedulePreferredDate(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!validateNoSunday(e.target, v)) return;
+                      setReschedulePreferredDate(v);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                   />
                 </div>
@@ -4356,14 +4361,26 @@ function AgencyEndorsements() {
                     <input
                       type="time"
                       value={reschedulePreferredTimeFrom}
-                      onChange={(e) => setReschedulePreferredTimeFrom(e.target.value)}
+                      onChange={(e) => {
+                        const t = e.target.value;
+                        if (!validateOfficeHours(e.target, t)) return;
+                        setReschedulePreferredTimeFrom(t);
+                      }}
+                      min="08:00"
+                      max="17:00"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                       aria-label="Preferred time from"
                     />
                     <input
                       type="time"
                       value={reschedulePreferredTimeTo}
-                      onChange={(e) => setReschedulePreferredTimeTo(e.target.value)}
+                      onChange={(e) => {
+                        const t = e.target.value;
+                        if (!validateOfficeHours(e.target, t)) return;
+                        setReschedulePreferredTimeTo(t);
+                      }}
+                      min="08:00"
+                      max="17:00"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                       aria-label="Preferred time to"
                     />

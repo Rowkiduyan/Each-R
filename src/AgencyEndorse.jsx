@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { validateNoSunday } from "./utils/dateTimeRules";
 import { createNotification } from './notifications';
 import LogoCropped from './layouts/photos/logo(cropped).png';
 import SkillsInput from './components/SkillsInput';
@@ -2069,7 +2070,7 @@ function AgencyEndorse() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Available Start Date <span className="text-[#800000]">*</span></label>
-                      <input type="date" min={todayStr} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.dateAvailable || ""} onChange={(e) => handleChange(activeApplicant, "dateAvailable", e.target.value)} />
+                      <input type="date" min={todayStr} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.dateAvailable || ""} onChange={(e) => { const v = e.target.value; if (!validateNoSunday(e.target, v)) return; handleChange(activeApplicant, "dateAvailable", v); }} />
                     </div>
                   </div>
                   <div>
@@ -2345,7 +2346,7 @@ function AgencyEndorse() {
                       </div>
                     )}
 
-                    <p className="text-xs text-gray-500 mt-1">PDF only. Uploading here overrides the applicant’s profile resume for this endorsement.</p>
+                    <p className="text-xs text-gray-500 mt-1">We recommend uploading resumes in PDF format.</p>
                   </div>
 
                   <div className="space-y-2">
@@ -2624,7 +2625,7 @@ function AgencyEndorse() {
             </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">License Expiry Date <span className="text-[#800000]">*</span></label>
-                      <input type="date" min={tomorrowStr} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.licenseExpiry || ""} onChange={(e) => handleChange(activeApplicant, "licenseExpiry", e.target.value)} />
+                      <input type="date" min={tomorrowStr} className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" value={fv.licenseExpiry || ""} onChange={(e) => { const v = e.target.value; if (!validateNoSunday(e.target, v)) return; handleChange(activeApplicant, "licenseExpiry", v); }} />
                     </div>
           </div>
 

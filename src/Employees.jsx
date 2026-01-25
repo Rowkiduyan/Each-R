@@ -1,5 +1,6 @@
 // src/Employees.jsx
-import React, { useCallback, useEffect, useMemo, useState, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { validateNoSunday } from "./utils/dateTimeRules";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import { getStoredJson } from "./authStorage";
@@ -4055,7 +4056,11 @@ function Employees() {
                 <input
                   type="date"
                   value={terminateDate}
-                  onChange={(e) => setTerminateDate(e.target.value)}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!validateNoSunday(e.target, v)) return;
+                    setTerminateDate(v);
+                  }}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
                 />
               </div>
@@ -4438,7 +4443,11 @@ function Employees() {
                 <input
                   type="date"
                   value={newOnboardingItem.date}
-                  onChange={(e) => setNewOnboardingItem(prev => ({ ...prev, date: e.target.value }))}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!validateNoSunday(e.target, v)) return;
+                    setNewOnboardingItem(prev => ({ ...prev, date: v }));
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
               </div>

@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { validateNoSunday, validateOfficeHours } from "./utils/dateTimeRules";
 
 /**
  * scheduleInterviewClient
@@ -1050,9 +1051,11 @@ function ApplicantDetails() {
                     type="date"
                     className="w-full border p-2 rounded"
                     value={interviewDetails.date}
-                    onChange={(e) =>
-                      setInterviewDetails({ ...interviewDetails, date: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!validateNoSunday(e.target, v)) return;
+                      setInterviewDetails({ ...interviewDetails, date: v });
+                    }}
                     required
                   />
                 </div>
@@ -1062,9 +1065,13 @@ function ApplicantDetails() {
                     type="time"
                     className="w-full border p-2 rounded"
                     value={interviewDetails.time}
-                    onChange={(e) =>
-                      setInterviewDetails({ ...interviewDetails, time: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const t = e.target.value;
+                      if (!validateOfficeHours(e.target, t)) return;
+                      setInterviewDetails({ ...interviewDetails, time: t });
+                    }}
+                    min="08:00"
+                    max="17:00"
                     required
                   />
                 </div>
