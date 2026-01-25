@@ -2345,7 +2345,7 @@ function AgencyEndorse() {
                       </div>
                     )}
 
-                    <p className="text-xs text-gray-500 mt-1">PDF only. Uploading here overrides the applicant’s profile resume for this endorsement.</p>
+                    <p className="text-xs text-gray-500 mt-1">We recommend uploading resumes in PDF format.</p>
                   </div>
 
                   <div className="space-y-2">
