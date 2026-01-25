@@ -492,9 +492,9 @@ function EmployeeSeparation() {
         <div className="mb-6 bg-red-50 border-2 border-red-500 rounded-lg p-6">
           <div className="flex items-start justify-between">
             <div className="flex-1">
-              <h2 className="text-xl font-bold text-red-700 mb-2">Account Termination Notice</h2>
+              <h2 className="text-xl font-bold text-red-700 mb-2">Account Disabling Notice</h2>
               <p className="text-red-600 mb-4">
-                Your account has been terminated. You will have access to this account until{' '}
+                Your account has been disabled. You will have access to this account until{' '}
                 <span className="font-semibold">{new Date(accountExpiresAt).toLocaleString()}</span>.
               </p>
               <p className="text-sm text-red-600 mb-4">

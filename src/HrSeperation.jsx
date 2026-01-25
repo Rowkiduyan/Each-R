@@ -1381,7 +1381,7 @@ function HrSeperation() {
                 activeTab === "terminated" ? "bg-red-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              Terminated ({employees.filter(e => e.isTerminated).length})
+              Disabled Accounts ({employees.filter(e => e.isTerminated).length})
             </button>
             <button
               onClick={() => setActiveTab("retirement")}
@@ -1441,7 +1441,7 @@ function HrSeperation() {
                       )}
                       {employee.isTerminated && (
                         <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">
-                          Terminated
+                          Disabled
                         </span>
                       )}
                     </div>
@@ -2030,7 +2030,7 @@ function HrSeperation() {
                             : 'bg-red-600 text-white hover:bg-red-700'
                         }`}
                       >
-                        {selectedEmployee.isTerminated ? 'Employee Already Terminated' : 'Terminate Employee'}
+                        {selectedEmployee.isTerminated ? 'Account Already Disabled' : 'Disable Account'}
                       </button>
                     </div>
                   )}
@@ -2099,22 +2099,22 @@ function HrSeperation() {
         </div>
       )}
 
-      {/* Terminate Employee Modal */}
+      {/* Disable Account Modal */}
       {showTerminateModal && (
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
           <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-red-600 mb-4">Terminate Employee</h3>
+            <h3 className="text-lg font-semibold text-red-600 mb-4">Disable Account</h3>
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-gray-600 mb-1">Employee Name:</p>
                 <p className="font-medium text-gray-800">{selectedEmployee?.name}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-600 mb-1">Termination Date:</p>
+                <p className="text-sm text-gray-600 mb-1">Separation Date:</p>
                 <p className="font-medium text-gray-800">{new Date().toLocaleDateString('en-CA')}</p>
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-2">Upload Termination Document:</label>
+                <label className="block text-sm text-gray-600 mb-2">Upload Separation Document:</label>
                 <input
                   type="file"
                   onChange={(e) => setTerminateFile(e.target.files[0])}
@@ -2140,7 +2140,7 @@ function HrSeperation() {
                 }}
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
               >
-                Terminate
+                Disable
               </button>
             </div>
           </div>
@@ -2151,9 +2151,9 @@ function HrSeperation() {
       {showTerminateConfirm && (
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
           <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-red-600 mb-4">Confirm Termination?</h3>
+            <h3 className="text-lg font-semibold text-red-600 mb-4">Confirm Disable Account?</h3>
             <p className="text-gray-600 mb-6">
-              Are you sure you want to terminate this employee? The employee will have access to their account for 30 days before it is closed.
+              Are you sure you want to Disable this employee's account? The employee will have access to their account for 30 days before it is closed.
             </p>
             <div className="flex justify-end gap-3">
               <button
@@ -2170,7 +2170,7 @@ function HrSeperation() {
                 disabled={isTerminating}
                 className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isTerminating ? 'Terminating...' : 'Confirm Terminate'}
+                {isTerminating ? 'Disabling...' : 'Confirm Disable'}
               </button>
             </div>
           </div>
@@ -2580,11 +2580,11 @@ function HrSeperation() {
                 </svg>
               </div>
               <h3 className="text-lg font-semibold text-gray-800">
-                Employee Terminated Successfully!
+                Employee Account Disabled Successfully!
               </h3>
             </div>
             <p className="text-gray-600 mb-6 ml-16">
-              The employee has been terminated. Their account will expire in 30 days and they will be notified.
+              The employee's account has been disabled. Their account will expire in 30 days and they will be notified.
             </p>
             <div className="flex justify-end">
               <button
