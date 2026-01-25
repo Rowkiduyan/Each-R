@@ -2274,7 +2274,7 @@ function HrTrainings() {
           <div className="bg-white rounded-xl w-full max-w-4xl shadow-xl flex flex-col max-h-[90vh]">
             {/* Header - Fixed */}
             <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0 bg-gradient-to-r from-red-50 to-orange-50">
-              <h2 className="text-center font-bold text-xl text-gray-800">Add Training Schedule</h2>
+              <h2 className="text-center font-bold text-xl text-gray-800">Add Schedule</h2>
               <p className="text-center text-xs text-gray-500 mt-1">Fill in the details below</p>
             </div>
             
@@ -2335,7 +2335,7 @@ function HrTrainings() {
                     {/* Image Upload */}
                     <div>
                       <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                        Training Image <span className="text-gray-500 font-normal">(PNG, JPG, max 10MB)</span>
+                         Image <span className="text-gray-500 font-normal">(PNG, JPG, max 10MB)</span>
                       </label>
                       <div className="relative">
                         <input
@@ -2405,7 +2405,7 @@ function HrTrainings() {
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
-                          End Date <span className="text-gray-500 font-normal">(Optional, for multi-day training)</span>
+                          End Date <span className="text-gray-500 font-normal">(Optional, for multi-day)</span>
                         </label>
                         <input
                           name="end_date"
@@ -2415,7 +2415,7 @@ function HrTrainings() {
                           min={form.duration_start_date || new Date().toISOString().split('T')[0]}
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
-                        <p className="text-xs text-gray-500 mt-0.5">Leave empty for single-day training</p>
+                        <p className="text-xs text-gray-500 mt-0.5">Leave empty for single-day</p>
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
