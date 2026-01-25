@@ -52,7 +52,7 @@ function EmpProfile() {
                 setProfileData({
                     ...employeeData,
                     // Use applicant data for personal information if available
-                    personal_email: employeeData.personal_email || applicantData?.email || employeeData.email,
+                    email: employeeData.email || applicantData?.email || employeeData.email,
                     address: applicantData?.address || employeeData.address || 'Not specified',
                     sex: applicantData?.sex || employeeData.sex || 'Not specified',
                     birthday: applicantData?.birthday || employeeData.birthday,
@@ -201,7 +201,7 @@ function EmpProfile() {
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-sm text-gray-500 mb-1">Personal Email</span>
-                                <span className="text-gray-800 font-medium">{profileData.personal_email || 'Not specified'}</span>
+                                <span className="text-gray-800 font-medium">{profileData.email || 'Not specified'}</span>
                             </div>
                             <div className="flex flex-col">
                                 <span className="text-sm text-gray-500 mb-1">Marital Status</span>

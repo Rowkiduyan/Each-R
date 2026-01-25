@@ -209,53 +209,32 @@ function AdminEnableDisable() {
         fname: resetPasswordAccount.first_name,
         lname: resetPasswordAccount.last_name,
         position: resetPasswordAccount.position || resetPasswordAccount.role,
-        personal_email: null
+        emailToNotify: resetPasswordAccount.email
       };
 
       if (resetPasswordAccount.role === 'Employee') {
-        // Get employee-specific data including personal_email from employees table
+        // Get employee-specific data from employees table
         const { data: empData } = await supabase
           .from('employees')
-          .select('id, email, personal_email, fname, lname, position')
+          .select('id, email, fname, lname, position')
           .eq('email', resetPasswordAccount.email)
           .maybeSingle();
 
         if (empData) {
-          userData.personal_email = empData.personal_email;
           userData.fname = empData.fname || userData.fname;
           userData.lname = empData.lname || userData.lname;
           userData.position = empData.position || userData.position;
-        }
-      } else {
-        // For Agency/HR/HRC users, get personal_email from profiles table
-        const { data: profileData } = await supabase
-          .from('profiles')
-          .select('personal_email')
-          .eq('email', resetPasswordAccount.email)
-          .maybeSingle();
-
-        console.log('Profile data for non-Employee:', profileData);
-        
-        if (profileData) {
-          userData.personal_email = profileData.personal_email;
+          userData.emailToNotify = empData.email || userData.emailToNotify;
         }
       }
 
       console.log('Final userData:', userData);
 
-      // If no personal_email found, alert and stop
-      if (!userData.personal_email) {
-        alert(`No personal email found for this ${resetPasswordAccount.role} account. Please add a personal email first.`);
-        setResetPasswordLoading(false);
-        return;
-      }
-
       // Call edge function to reset password using work email
       const { data, error } = await supabase.functions.invoke('admin-reset-password', {
         body: {
           email: userData.email, // Work email
-          new_password: newPassword,
-          personal_email: userData.personal_email
+          new_password: newPassword
         }
       });
 
@@ -272,7 +251,7 @@ function AdminEnableDisable() {
           'service_ig5n2rj', // Service ID
           'template_gyptu3p', // Template ID
           {
-            to_email: userData.personal_email,
+            to_email: userData.emailToNotify,
             to_name: `${userData.fname} ${userData.lname}`,
             employee_name: `${userData.fname} ${userData.lname}`,
             work_email: userData.email,
@@ -289,13 +268,13 @@ function AdminEnableDisable() {
 
         setSuccessMessage(
           `Password reset successfully for ${resetPasswordAccount.first_name} ${resetPasswordAccount.last_name}. ` +
-          `Email sent to ${userData.personal_email}`
+          `Email sent to ${userData.emailToNotify}`
         );
       } catch (emailError) {
         console.error('Email sending error:', emailError);
         setSuccessMessage(
           `Password reset successfully for ${resetPasswordAccount.first_name} ${resetPasswordAccount.last_name}. ` +
-          `However, failed to send email. Temporary password: ${newPassword} (send this to ${userData.personal_email})`
+          `However, failed to send email. Temporary password: ${newPassword} (send this to ${userData.emailToNotify})`
         );
       }
 

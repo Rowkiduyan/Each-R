@@ -1893,6 +1893,55 @@ const getApplicationFilesPublicUrl = (path) => {
         }
       }
 
+      // Block submission if email already exists in employees or active applications
+      const normalizedEmail = String(form.email || session.user.email || '')
+        .trim()
+        .toLowerCase();
+
+      if (normalizedEmail) {
+        const { data: existingEmployee, error: employeeCheckError } = await supabase
+          .from('employees')
+          .select('id, email')
+          .eq('email', normalizedEmail)
+          .maybeSingle();
+
+        if (employeeCheckError && employeeCheckError.code !== 'PGRST116') {
+          console.warn('Employee email check error:', employeeCheckError);
+        }
+
+        if (existingEmployee?.id) {
+          setErrorMessage(`This email is already registered as an employee. Please use a different email.`);
+          setSubmitting(false);
+          return;
+        }
+
+        const { data: existingApplications, error: applicationCheckError } = await supabase
+          .from('applications')
+          .select('id, status')
+          .eq('job_id', jobId)
+          .or(
+            `user_id.eq.${userId},` +
+              `payload->>email.eq."${normalizedEmail}",` +
+              `payload->form->>email.eq."${normalizedEmail}",` +
+              `payload->applicant->>email.eq."${normalizedEmail}"`
+          );
+
+        if (applicationCheckError) {
+          console.warn('Application email check error:', applicationCheckError);
+        }
+
+        const activeApplication = (existingApplications || []).find((app) => {
+          const status = String(app?.status || '').toLowerCase();
+          return status && status !== 'rejected';
+        });
+
+        if (activeApplication) {
+          setErrorMessage('An application with this email already exists for this job.');
+          setSubmitting(false);
+          return;
+        }
+      }
+
       const { data: insertedData, error } = await supabase.from('applications').insert([
         {
           user_id: userId,

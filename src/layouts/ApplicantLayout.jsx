@@ -60,8 +60,8 @@ function ApplicantLayout() {
           // Check if this email exists in the employees table (means they've been hired)
           const { data: employee, error: empError } = await supabase
             .from('employees')
-            .select('id, email, personal_email')
-            .or(`email.eq."${user.email}",personal_email.eq."${user.email}"`)
+            .select('id, email')
+            .or(`email.eq."${user.email}"`)
             .maybeSingle();
 
           console.log('👤 Employee check:', { employee, empError });

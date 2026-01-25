@@ -253,6 +253,9 @@ function ApplicantDetails() {
         const appObj = {
           id: data.id,
           name: fullName || "Unnamed Applicant",
+          firstName: form.firstName || "",
+          middleName: form.middleName || "",
+          lastName: form.lastName || "",
           position: data.job_posts?.title ?? form.appliedPosition ?? "—",
           depot: data.job_posts?.depot ?? form.city ?? "—",
           dateApplied: new Date(data.created_at).toLocaleDateString("en-US", {
@@ -457,6 +460,114 @@ function ApplicantDetails() {
 
     setLoading(true);
     try {
+      // Ensure payload has name fields required by RPC
+      try {
+        const { data: applicationData, error: appErr } = await supabase
+          .from("applications")
+          .select("id, payload")
+          .eq("id", id)
+          .maybeSingle();
+
+        if (!appErr && applicationData?.payload) {
+          let payloadObj = applicationData.payload;
+          if (typeof payloadObj === "string") {
+            try {
+              payloadObj = JSON.parse(payloadObj);
+            } catch {
+              payloadObj = {};
+            }
+          }
+
+          const source = payloadObj.form || payloadObj.applicant || payloadObj || {};
+          const resolveNameFromText = (text) => {
+            if (!text) return { first: "", last: "", middle: "" };
+            const raw = String(text).trim().replace(/\s+/g, " ");
+            if (!raw) return { first: "", last: "", middle: "" };
+            const parts = raw.split(" ");
+            if (parts.length === 1) return { first: parts[0], last: "", middle: "" };
+            const first = parts[0];
+            const last = parts[parts.length - 1];
+            const middle = parts.slice(1, -1).join(" ");
+            return { first, last, middle };
+          };
+
+          const fallbackNameText =
+            source.fullName ||
+            source.full_name ||
+            source.name ||
+            payloadObj.fullName ||
+            payloadObj.full_name ||
+            payloadObj.name ||
+            applicant?.name ||
+            null;
+
+          const resolved = resolveNameFromText(fallbackNameText);
+
+          const firstName = source.firstName || source.fname || source.first_name || resolved.first || "";
+          const lastName = source.lastName || source.lname || source.last_name || resolved.last || "";
+          const middleName = source.middleName || source.mname || source.middle_name || resolved.middle || "";
+          const email =
+            source.email ||
+            payloadObj.email ||
+            applicant?.email ||
+            "";
+
+          if (firstName || lastName || middleName || email) {
+            const updatedPayload = { ...payloadObj };
+            const targetKey = updatedPayload.form ? "form" : (updatedPayload.applicant ? "applicant" : "form");
+            const target = { ...(updatedPayload[targetKey] || {}) };
+
+            if (firstName) {
+              target.firstName = firstName;
+              target.first_name = firstName;
+              target.fname = firstName;
+              updatedPayload.firstName = firstName;
+              updatedPayload.first_name = firstName;
+              updatedPayload.fname = firstName;
+            }
+            if (lastName) {
+              target.lastName = lastName;
+              target.last_name = lastName;
+              target.lname = lastName;
+              updatedPayload.lastName = lastName;
+              updatedPayload.last_name = lastName;
+              updatedPayload.lname = lastName;
+            }
+            if (middleName) {
+              target.middleName = middleName;
+              target.middle_name = middleName;
+              target.mname = middleName;
+              updatedPayload.middleName = middleName;
+              updatedPayload.middle_name = middleName;
+              updatedPayload.mname = middleName;
+            }
+
+            if (email) {
+              target.email = email;
+              updatedPayload.email = email;
+            }
+
+            const fullName = [firstName, middleName, lastName].filter(Boolean).join(" ").trim();
+            if (fullName) {
+              updatedPayload.fullName = fullName;
+              updatedPayload.full_name = fullName;
+            }
+
+            if (!updatedPayload.form) updatedPayload.form = {};
+            if (!updatedPayload.applicant) updatedPayload.applicant = {};
+
+            updatedPayload[targetKey] = target;
+
+            await supabase
+              .from("applications")
+              .update({ payload: updatedPayload })
+              .eq("id", id);
+          }
+        }
+      } catch (payloadUpdateError) {
+        console.warn("Failed to backfill name fields in payload:", payloadUpdateError);
+      }
+
       // call the best RPC available
       const rpcResult = await tryRpcMoveToEmployee(id);
 
@@ -676,7 +787,8 @@ function ApplicantDetails() {
                 Personal Information
               </h3>
               <div className="grid md:grid-cols-2 gap-4 text-gray-700">
-                <p><strong>Full Name:</strong> {display(applicant.name)}</p>
+                <p><strong>First Name:</strong> {display(applicant.firstName)}</p>
+                <p><strong>Last Name:</strong> {display(applicant.lastName)}</p>
                 <p><strong>Address:</strong> {display(applicant.address)}</p>
                 <p><strong>Contact Number:</strong> {display(applicant.phone)}</p>
                 <p><strong>Email:</strong> {display(applicant.email)}</p>

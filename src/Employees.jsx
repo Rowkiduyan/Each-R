@@ -333,7 +333,6 @@ function Employees() {
         contact: row.contact_number || "",
         role: row.role || "Employee",
         hired_at: row.hired_at,
-        personal_email: row.personal_email || null, // Applicant's original email for direct hires
         employmentStatus: row.status === "Probationary" ? "Under Probation" : row.status === "Regular" ? "Regular" : "Regular", // Map status from DB to employment status
         agency: baseAgency,
         source: row.source || null,
@@ -349,7 +348,7 @@ function Employees() {
       try {
         const { data: empRows, error: empErr } = await supabase
           .from("employees")
-          .select("id, email, fname, lname, mname, contact_number, position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency, personal_email")
+          .select("id, email, fname, lname, mname, contact_number, position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency")
           .order("hired_at", { ascending: false });
 
         if (empErr) throw empErr;
@@ -974,7 +973,7 @@ function Employees() {
         return;
       }
       
-      const employeeEmail = selectedEmployee.email || selectedEmployee.personal_email;
+      const employeeEmail = selectedEmployee.email;
       if (!employeeEmail) {
         setExternalCertificates([]);
         return;
@@ -1513,9 +1512,8 @@ function Employees() {
           return supabase.storage.from('application-files').getPublicUrl(filePath)?.data?.publicUrl;
         };
 
-        // Get the applicant's email - use personal_email (original applicant email) if available,
-        // otherwise fall back to employee email (works for agency hires)
-        const applicantEmail = selectedEmployee.personal_email?.trim() || selectedEmployee.email?.trim();
+        // Get the applicant's email from employee record
+        const applicantEmail = selectedEmployee.email?.trim();
         const employeeEmail = applicantEmail.toLowerCase();
         const employeeName = selectedEmployee.name?.toLowerCase() || '';
         const employeeFname = selectedEmployee.fname?.toLowerCase() || '';
@@ -1527,16 +1525,15 @@ function Employees() {
 
         console.log('Loading assessment records for employee:', {
           email: selectedEmployee.email,
-          personal_email: selectedEmployee.personal_email,
           name: selectedEmployee.name,
           hired_at: employeeHiredAt
         });
 
-        // Approach 1: Search by personal_email (applicant's original email) - this is the key for direct hires
-        if (selectedEmployee.personal_email) {
+        // Approach 1: Search by employee email
+        if (selectedEmployee.email) {
           const emailsToTry = [
-            selectedEmployee.personal_email.trim(),
-            selectedEmployee.personal_email.trim().toLowerCase()
+            selectedEmployee.email.trim(),
+            selectedEmployee.email.trim().toLowerCase()
           ];
           
           for (const emailToTry of emailsToTry) {
@@ -1549,7 +1546,7 @@ function Employees() {
             
             if (!error && data && data.length > 0) {
               applicationsData = data;
-              console.log('Found applications by personal_email in payload->>email:', data.length);
+              console.log('Found applications by email in payload->>email:', data.length);
               break;
             }
             
@@ -1562,7 +1559,7 @@ function Employees() {
             
             if (!error2 && data2 && data2.length > 0) {
               applicationsData = data2;
-              console.log('Found applications by personal_email in payload->form->>email:', data2.length);
+              console.log('Found applications by email in payload->form->>email:', data2.length);
               break;
             }
             
@@ -1575,7 +1572,7 @@ function Employees() {
             
             if (!error3 && data3 && data3.length > 0) {
               applicationsData = data3;
-              console.log('Found applications by personal_email in payload->applicant->>email:', data3.length);
+              console.log('Found applications by email in payload->applicant->>email:', data3.length);
               break;
             }
           }
@@ -1797,7 +1794,6 @@ function Employees() {
         } else {
           console.log('No applications found for employee:', {
             email: selectedEmployee.email,
-            personal_email: selectedEmployee.personal_email,
             name: selectedEmployee.name
           });
           setAssessmentRecords([]);
@@ -1809,7 +1805,7 @@ function Employees() {
     };
 
     loadAssessmentRecords();
-  }, [selectedEmployee?.email, selectedEmployee?.personal_email, selectedEmployee?.name, selectedEmployee?.hired_at, activeTab]);
+  }, [selectedEmployee?.email, selectedEmployee?.name, selectedEmployee?.hired_at, activeTab]);
 
   // Fetch application data when employee is selected and Profiling/Documents tabs need it
   useEffect(() => {
@@ -1818,13 +1814,13 @@ function Employees() {
         return;
       }
 
-      const primaryEmail = selectedEmployee.personal_email?.trim() || '';
-      const secondaryEmail = selectedEmployee.email?.trim() || '';
+      const primaryEmail = selectedEmployee.email?.trim() || '';
+      const secondaryEmail = '';
       const emailCandidates = Array.from(
         new Set([primaryEmail, secondaryEmail].map((e) => String(e || '').trim().toLowerCase()).filter(Boolean))
       );
 
-      const applicantEmail = primaryEmail || secondaryEmail;
+      const applicantEmail = primaryEmail;
       const employeeEmail = (applicantEmail || '').toLowerCase();
       const employeeName = (selectedEmployee.name || '').toLowerCase();
       const employeeFname = (selectedEmployee.fname || '').toLowerCase();
@@ -1839,7 +1835,7 @@ function Employees() {
         let applications = null;
         let error = null;
 
-        // Try querying by email in payload root/form/applicant (try both personal_email and employee email)
+        // Try querying by email in payload root/form/applicant
         const tryEmail = async (emailValue) => {
           if (!emailValue) return null;
 
@@ -2028,7 +2024,7 @@ function Employees() {
         return;
       }
 
-      const applicantEmail = selectedEmployee.personal_email?.trim() || selectedEmployee.email?.trim();
+      const applicantEmail = selectedEmployee.email?.trim();
       if (!applicantEmail) {
         setApplicantExtras({ work_experiences: [], character_references: [] });
         return;
@@ -2629,9 +2625,6 @@ function Employees() {
                                     <span className="text-gray-500">Email:</span>
                                     <span className="ml-2 text-gray-800">
                                       {applicationData?.email ||
-                                        (selectedEmployee.personal_email && String(selectedEmployee.personal_email).includes('@')
-                                          ? selectedEmployee.personal_email
-                                          : null) ||
                                         selectedEmployee.email ||
                                         "None"}
                                     </span>

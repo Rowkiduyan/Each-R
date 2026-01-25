@@ -654,9 +654,7 @@ function EmployeeRequirements() {
   // Load assessment records (from when employee was an applicant)
   useEffect(() => {
     const loadAssessmentRecords = async () => {
-      const applicantEmail =
-        employeeData?.personal_email?.trim() ||
-        employeeData?.email?.trim();
+      const applicantEmail = employeeData?.email?.trim();
 
       if (!applicantEmail) {
         setAssessmentRecords([]);
@@ -859,7 +857,7 @@ function EmployeeRequirements() {
     };
 
     loadAssessmentRecords();
-  }, [employeeData?.email, employeeData?.personal_email]);
+  }, [employeeData?.email]);
 
   // Refresh onboarding items periodically (every 5 seconds) to catch new items from HR
   useEffect(() => {

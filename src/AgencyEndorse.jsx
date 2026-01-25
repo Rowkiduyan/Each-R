@@ -97,6 +97,7 @@ function AgencyEndorse() {
     lastName: "",
     firstName: "",
     middleName: "",
+    fullName: "",
     birthday: "",
     maritalStatus: "",
     sex: "",
@@ -143,6 +144,50 @@ function AgencyEndorse() {
     medicalTestDate: "",
     vehicleTypes: [],
   });
+
+  const parseNameFromFullName = (fullName, lastName) => {
+    const raw = String(fullName || "").trim();
+    if (!raw) return { firstName: "", middleName: "" };
+
+    let parts = raw.split(/\s+/).filter(Boolean);
+    const lname = String(lastName || "").trim().toLowerCase();
+
+    if (lname && parts.length > 0) {
+      const lastToken = String(parts[parts.length - 1]).toLowerCase();
+      if (lastToken === lname) {
+        parts = parts.slice(0, -1);
+      }
+    }
+
+    if (parts.length === 0) return { firstName: "", middleName: "" };
+    return {
+      firstName: parts[0],
+      middleName: parts.slice(1).join(" "),
+    };
+  };
+
+  const getApplicantNameParts = (vals) => {
+    const lname = String(vals.lastName || "").trim();
+    const fullName = String(vals.fullName || "").trim();
+    let fname = String(vals.firstName || "").trim();
+    let mname = String(vals.middleName || "").trim();
+
+    if ((!fname && !mname) && fullName) {
+      const parsed = parseNameFromFullName(fullName, lname);
+      fname = parsed.firstName;
+      mname = parsed.middleName;
+    }
+
+    return { fname, mname, lname, fullName };
+  };
+
+  const getApplicantDisplayNameFromValues = (vals) => {
+    const { fname, mname, lname, fullName } = getApplicantNameParts(vals || makeEmptyValues());
+    if (fname || mname || lname) {
+      return [fname, mname, lname].filter(Boolean).join(" ").trim();
+    }
+    return fullName || "";
+  };
 
   const isApplicantBlank = (vals) => {
     const baseline = makeEmptyValues();
@@ -194,6 +239,7 @@ function AgencyEndorse() {
       'lastName',
       'firstName',
       'middleName',
+      'fullName',
       'birthday',
       'maritalStatus',
       'sex',
@@ -506,13 +552,43 @@ function AgencyEndorse() {
     });
 
   const handleChange = (appId, key, value) => {
-    setFormValues((prev) => ({
-      ...prev,
-      [appId]: {
-        ...(prev[appId] || makeEmptyValues()),
-        [key]: value,
-      },
-    }));
+    setFormValues((prev) => {
+      const current = prev[appId] || makeEmptyValues();
+
+      if (key === "fullName") {
+        const parsed = parseNameFromFullName(value, current.lastName);
+        return {
+          ...prev,
+          [appId]: {
+            ...current,
+            fullName: value,
+            firstName: parsed.firstName,
+            middleName: parsed.middleName,
+          },
+        };
+      }
+
+      if (key === "lastName" && current.fullName) {
+        const parsed = parseNameFromFullName(current.fullName, value);
+        return {
+          ...prev,
+          [appId]: {
+            ...current,
+            lastName: value,
+            firstName: parsed.firstName,
+            middleName: parsed.middleName,
+          },
+        };
+      }
+
+      return {
+        ...prev,
+        [appId]: {
+          ...current,
+          [key]: value,
+        },
+      };
+    });
   };
 
   const toggleArrayValue = (appId, key, value) => {
@@ -805,6 +881,7 @@ function AgencyEndorse() {
       'lastname': 'lastName', 'last_name': 'lastName', 'last name': 'lastName', 'surname': 'lastName',
       'firstname': 'firstName', 'first_name': 'firstName', 'first name': 'firstName', 'given name': 'firstName',
       'middlename': 'middleName', 'middle_name': 'middleName', 'middle name': 'middleName',
+      'fullname': 'fullName', 'full name': 'fullName', 'name': 'fullName',
       'email': 'email', 'email address': 'email', 'emailaddress': 'email',
       'contact': 'contactNumber', 'contact_number': 'contactNumber', 'contactnumber': 'contactNumber', 
       'phone': 'contactNumber', 'mobile': 'contactNumber', 'phone number': 'contactNumber',
@@ -898,6 +975,12 @@ function AgencyEndorse() {
     if (position) values.position = position;
     if (department) values.department = department;
 
+    if (values.fullName) {
+      const parsed = parseNameFromFullName(values.fullName, values.lastName);
+      if (!values.firstName && parsed.firstName) values.firstName = parsed.firstName;
+      if (!values.middleName && parsed.middleName) values.middleName = parsed.middleName;
+    }
+
     return values;
   };
 
@@ -960,9 +1043,7 @@ function AgencyEndorse() {
         const slotIdPreview = blankSlotIds.length ? blankSlotIds[0] : nextId;
         const base = newFormValues[slotIdPreview] || makeEmptyValues();
         const values = mapCsvToFormValues(row, base);
-        const displayName = values.firstName && values.lastName
-          ? `${values.firstName} ${values.lastName}`
-          : null;
+        const displayName = getApplicantDisplayNameFromValues(values) || null;
 
         const slotId = blankSlotIds.length ? blankSlotIds.shift() : nextId++;
         newFormValues[slotId] = values;
@@ -1094,7 +1175,10 @@ function AgencyEndorse() {
       req("employed", "Currently Employed");
 
       req("lastName", "Last Name");
-      req("firstName", "First Name");
+      const hasFirstOrFull =
+        (typeof vals.firstName === "string" && vals.firstName.trim()) ||
+        (typeof vals.fullName === "string" && vals.fullName.trim());
+      if (!hasFirstOrFull) errors.push("Full Name");
       req("birthday", "Birthday");
       req("maritalStatus", "Marital Status");
       req("sex", "Sex");
@@ -1251,25 +1335,21 @@ function AgencyEndorse() {
   // --- Endorse implementation (no blocking auth alert) ---
   const getApplicantDisplayName = (applicantId) => {
     const vals = formValues[applicantId] || makeEmptyValues();
-    const fname = vals.firstName?.trim() || "";
-    const lname = vals.lastName?.trim() || "";
-    const displayName = `${fname} ${lname}`.trim();
+    const displayName = getApplicantDisplayNameFromValues(vals);
     const fallback = applicants.find((a) => a.id === applicantId)?.name;
     return displayName || fallback || `Employee ${applicantId}`;
   };
 
   const endorseOneApplicant = async (applicantId) => {
     const vals = formValues[applicantId] || makeEmptyValues();
-    const fname = vals.firstName?.trim() || "";
-    const lname = vals.lastName?.trim() || "";
-    const mname = vals.middleName?.trim() || "";
+    const { fname, lname, mname, fullName } = getApplicantNameParts(vals);
     const email = (vals.email || "").trim().toLowerCase();
     const contact = sanitizeContact(vals.contactNumber || "");
     const position = vals.position || null;
     const depot = vals.depot || null;
 
     if (!fname || !lname || !email || !contact) {
-      throw new Error("Please fill required fields before endorsing: First Name, Last Name, Contact Number, Email.");
+      throw new Error("Please fill required fields before endorsing: Full Name, Last Name, Contact Number, Email.");
     }
     if (!/^09\d{9}$/.test(contact)) {
       throw new Error("Contact Number must be exactly 11 digits and start with 09.");
@@ -1438,6 +1518,18 @@ function AgencyEndorse() {
       const { depot: jobDepot, position: jobPosition, department: jobDepartment } = getJobPrefill();
       const applicantData = {
         ...valsNoFileObjects,
+        firstName: fname,
+        middleName: mname,
+        lastName: lname,
+        fullName: fullName || [fname, mname].filter(Boolean).join(" "),
+        first_name: fname,
+        middle_name: mname,
+        last_name: lname,
+        full_name: fullName || [fname, mname].filter(Boolean).join(" "),
+        fname,
+        mname,
+        lname,
+        email,
         contactNumber: contact,
         depot: jobDepot || vals.depot || null,
         position: jobPosition || vals.position || null,
@@ -1450,6 +1542,18 @@ function AgencyEndorse() {
       // prepare payload
       const payload = {
         applicant: applicantData,
+        form: applicantData,
+        firstName: fname,
+        middleName: mname,
+        lastName: lname,
+        fullName: fullName || [fname, mname, lname].filter(Boolean).join(" "),
+        first_name: fname,
+        middle_name: mname,
+        last_name: lname,
+        full_name: fullName || [fname, mname, lname].filter(Boolean).join(" "),
+        fname,
+        mname,
+        lname,
         ...(trainingCertFilePath && { trainingCertFilePath }),
         ...(licensePhotocopyPath && {
           requirements: {
@@ -1995,19 +2099,18 @@ function AgencyEndorse() {
                   >
                     {(() => {
                       const v = formValues[applicant.id] || makeEmptyValues();
-                      const f = (v.firstName || "").trim();
-                      const l = (v.lastName || "").trim();
-                      return f && l ? `${f} ${l}` : applicant.name;
+                      const display = getApplicantDisplayNameFromValues(v);
+                      return display || applicant.name;
                     })()}
                   </button>
-            {applicants.length > 1 && (
+                  {applicants.length > 1 && (
                     <button 
                       onClick={() => removeApplicant(applicant.id)} 
                       className="absolute -top-2 -right-2 bg-[#800000] text-white text-xs rounded-full w-5 h-5 flex items-center justify-center hover:bg-[#990000] opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
                     >
                       ×
                     </button>
-            )}
+                  )}
           </div>
         ))}
               <button 
@@ -2093,18 +2196,14 @@ function AgencyEndorse() {
                   <h2 className="text-base font-semibold text-gray-800">Personal Information</h2>
                 </div>
                 <div className="p-6 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name <span className="text-[#800000]">*</span></label>
                       <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter last name" value={fv.lastName} onChange={(e) => handleChange(activeApplicant, "lastName", e.target.value)} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name <span className="text-[#800000]">*</span></label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter first name" value={fv.firstName} onChange={(e) => handleChange(activeApplicant, "firstName", e.target.value)} />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Middle Name</label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter middle name" value={fv.middleName} onChange={(e) => handleChange(activeApplicant, "middleName", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name <span className="text-[#800000]">*</span></label>
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter full name (first + middle)" value={fv.fullName} onChange={(e) => handleChange(activeApplicant, "fullName", e.target.value)} />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3003,7 +3102,7 @@ function AgencyEndorse() {
                       <div>
                         <div className="text-sm font-semibold text-gray-700 mb-2">Personal</div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-                          <div><span className="text-gray-500">Name:</span> {formatSummaryValue(`${(v.firstName || '').trim()} ${(v.middleName || '').trim()} ${(v.lastName || '').trim()}`)}</div>
+                          <div><span className="text-gray-500">Name:</span> {formatSummaryValue(getApplicantDisplayNameFromValues(v))}</div>
                           <div><span className="text-gray-500">Birthday:</span> {formatSummaryValue(v.birthday)}</div>
                           <div><span className="text-gray-500">Marital Status:</span> {formatSummaryValue(v.maritalStatus)}</div>
                           <div><span className="text-gray-500">Sex:</span> {formatSummaryValue(v.sex)}</div>
@@ -3362,7 +3461,7 @@ function AgencyEndorse() {
                     <p className="text-sm font-medium text-blue-800 mb-1">CSV Format Requirements</p>
                     <p className="text-xs text-blue-700">Your CSV file should include column headers. Download the template below for the full supported list.</p>
                     <p className="text-xs text-blue-600 mt-1 font-mono bg-blue-100 px-2 py-1 rounded">
-                      firstname, lastname, middlename, email, contact, position, department, depot, available_start_date, employed, birthday, marital_status, sex, unit_house_number, street, barangay, city, province, zip, education, ...
+                      fullname, lastname, email, contact, position, department, depot, available_start_date, employed, birthday, marital_status, sex, unit_house_number, street, barangay, city, province, zip, education, ...
                     </p>
                     <p className="text-xs text-blue-700 mt-2">
                       Notes: booleans accept <span className="font-mono">yes/no</span>, <span className="font-mono">true/false</span>, or <span className="font-mono">1/0</span>. Lists use <span className="font-mono">|</span> (e.g. <span className="font-mono">restriction_codes=1|2</span>). File uploads (resume/license/certificates) are not supported by CSV and must be uploaded manually.
