@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useEmployeeUser } from "./layouts/EmployeeLayout";
 import { supabase } from "./supabaseClient";
+import { validateNoSunday } from "./utils/dateTimeRules";
 
 function EmployeeRequirements() {
   const { employeeData } = useEmployeeUser();
@@ -3664,7 +3665,11 @@ function EmployeeRequirements() {
                       <input
                         type="date"
                         value={uploadForm.licenseExpiry}
-                        onChange={(e) => setUploadForm(prev => ({ ...prev, licenseExpiry: e.target.value }))}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (!validateNoSunday(e.target, v)) return;
+                          setUploadForm(prev => ({ ...prev, licenseExpiry: v }));
+                        }}
                         min={getTodayDate()}
                         className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
                       />
@@ -3689,7 +3694,11 @@ function EmployeeRequirements() {
                     <input
                       type="date"
                       value={uploadForm.validUntil}
-                      onChange={(e) => setUploadForm(prev => ({ ...prev, validUntil: e.target.value }))}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (!validateNoSunday(e.target, v)) return;
+                        setUploadForm(prev => ({ ...prev, validUntil: v }));
+                      }}
                       min={getTodayDate()}
                       className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
                     />

@@ -8,6 +8,7 @@ import {
   SigningScheduleCard,
   UploadedDocumentsSection,
 } from './components/ApplicantArtifactsPanels';
+import { validateNoSunday, validateOfficeHours } from './utils/dateTimeRules';
 
 function ApplicantApplications() {
   const navigate = useNavigate();
@@ -919,7 +920,7 @@ function ApplicantApplications() {
                             <div>
                               <div className="font-semibold text-gray-600 mb-2">Key Responsibilities</div>
                               {responsibilities.length > 0 ? (
-                                <ul className="list-disc list-inside text-gray-800 space-y-1">
+                                <ul className="list-none text-gray-800 space-y-1">
                                   {responsibilities.map((item, idx) => (
                                     <li key={idx}>{item}</li>
                                   ))}
@@ -932,7 +933,7 @@ function ApplicantApplications() {
                             {keyRequirements.length > 0 ? (
                               <div>
                                 <div className="font-semibold text-gray-600 mb-2">Basic Key Requirements</div>
-                                <ul className="list-disc list-inside text-gray-800 space-y-1">
+                                <ul className="list-none text-gray-800 space-y-1">
                                   {keyRequirements.map((item, idx) => (
                                     <li key={idx}>{item}</li>
                                   ))}
@@ -1461,7 +1462,11 @@ function ApplicantApplications() {
                   <input
                     type="date"
                     value={reschedulePreferredDate}
-                    onChange={(e) => setReschedulePreferredDate(e.target.value)}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!validateNoSunday(e.target, v)) return;
+                      setReschedulePreferredDate(v);
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                   />
                 </div>
@@ -1471,14 +1476,26 @@ function ApplicantApplications() {
                     <input
                       type="time"
                       value={reschedulePreferredTimeFrom}
-                      onChange={(e) => setReschedulePreferredTimeFrom(e.target.value)}
+                      onChange={(e) => {
+                        const t = e.target.value;
+                        if (!validateOfficeHours(e.target, t)) return;
+                        setReschedulePreferredTimeFrom(t);
+                      }}
+                      min="08:00"
+                      max="17:00"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                       aria-label="Preferred time from"
                     />
                     <input
                       type="time"
                       value={reschedulePreferredTimeTo}
-                      onChange={(e) => setReschedulePreferredTimeTo(e.target.value)}
+                      onChange={(e) => {
+                        const t = e.target.value;
+                        if (!validateOfficeHours(e.target, t)) return;
+                        setReschedulePreferredTimeTo(t);
+                      }}
+                      min="08:00"
+                      max="17:00"
                       className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                       aria-label="Preferred time to"
                     />

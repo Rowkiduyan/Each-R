@@ -736,7 +736,7 @@ function HrPost() {
                             {responsibilities.length > 0 && (
                               <div>
                                 <h3 className="text-lg font-semibold text-gray-800 mb-2">Main Responsibilities</h3>
-                                <ul className="list-disc list-inside text-gray-700 space-y-1">
+                                <ul className="list-none text-gray-700 space-y-1">
                                   {responsibilities.map((item, idx) => (
                                     <li key={idx}>{item}</li>
                                   ))}
@@ -746,7 +746,7 @@ function HrPost() {
                             {keyRequirements.length > 0 && (
                               <div>
                                 <h3 className="text-lg font-semibold text-gray-800 mb-2">Basic Key Requirements</h3>
-                                <ul className="list-disc list-inside text-gray-700 space-y-1">
+                                <ul className="list-none text-gray-700 space-y-1">
                                   {keyRequirements.map((item, idx) => (
                                     <li key={idx}>{item}</li>
                                   ))}

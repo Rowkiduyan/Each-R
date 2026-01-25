@@ -4,6 +4,7 @@ import { createNotification } from './notifications';
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { validateNoSunday } from "./utils/dateTimeRules";
 
 function HrEval() {
   // Tab and filter state
@@ -1978,8 +1979,10 @@ function HrEval() {
                           value={record.dateEvaluated}
                           max={new Date().toISOString().split('T')[0]}
                           onChange={(e) => {
+                            const v = e.target.value;
+                            if (!validateNoSunday(e.target, v)) return;
                             const newRecords = [...uploadRecords];
-                            newRecords[index].dateEvaluated = e.target.value;
+                            newRecords[index].dateEvaluated = v;
                             setUploadRecords(newRecords);
                           }}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 text-sm"

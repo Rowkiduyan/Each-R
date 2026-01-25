@@ -25,6 +25,14 @@ function ApplicantRegister() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState('');
 
+  // Allow only applicants at least 15 years old
+  const minAge15BirthdayMaxStr = (() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 15);
+    const iso = d.toISOString().split('T')[0];
+    return iso;
+  })();
+
   // Calculate password strength
   const calculatePasswordStrength = (pwd) => {
     if (!pwd) return '';
@@ -278,7 +286,7 @@ const handleRegister = async (e) => {
                     type="date" 
                     value={birthday}
                     onChange={(e) => setBirthday(e.target.value)}
-                    max={new Date().toISOString().split('T')[0]}
+                    max={minAge15BirthdayMaxStr}
                     min="1900-01-01"
                     required
                   />

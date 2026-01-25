@@ -7,6 +7,7 @@ import { getStoredJson } from "./authStorage";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
+import { validateNoSunday, validateOfficeHours, validateFutureTimeForDate } from "./utils/dateTimeRules";
 
 // Invokes the Supabase Edge Function that schedules interviews + sends notifications.
 async function scheduleInterviewClient(applicationId, interview) {
@@ -2643,7 +2644,7 @@ function HrRecruitment() {
           
           // Build employee data with only fields that exist in the employees table
           // Based on Employees.jsx, the table has: id, email, fname, lname, mname, contact_number, 
-          // position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, personal_email
+          // position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, personal_email, birthday
           const employeeData = {
             id: rpcData?.employee_id || applicationData.user_id, // Use the ID from RPC or application
             email: employeeEmail,
@@ -2659,6 +2660,7 @@ function HrRecruitment() {
             source: employeeSource,
             status: "Probationary", // Set new employees as Probationary
             personal_email: applicantEmail || null, // Carry over applicant's personal email
+            birthday: birthday || null, // Carry over birthday from applicant profile payload
             // For agency applicants, preserve agency metadata
             ...(isAgencyApplicant && {
               is_agency: true,
@@ -2704,6 +2706,7 @@ function HrRecruitment() {
               source: employeeSource,
               status: "Probationary", // Set new employees as Probationary
               personal_email: applicantEmail || null, // Carry over applicant's personal email
+              birthday: birthday || null, // Carry over birthday from applicant profile payload
             };
 
             const { data: retryData, error: retryError } = await supabase
@@ -7116,7 +7119,8 @@ function HrRecruitment() {
                         onClick={() => setShowInterviewNotesUploadModal(false)}
                       >
                         <div
-                          className="bg-white rounded-lg shadow-lg w-full max-w-lg"
+                          className="bg-white rounded-lg shadow-lg w-full"
+                          style={{ maxWidth: '32rem' }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           <div className="p-4 border-b flex items-center justify-between">
@@ -7351,7 +7355,7 @@ function HrRecruitment() {
                         className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
                         onClick={() => setShowAgreementDocsUploadModal(false)}
                       >
-                        <div className="bg-white rounded-lg shadow-lg w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+                        <div className="bg-white rounded-lg shadow-lg w-full" style={{ maxWidth: '32rem' }} onClick={(e) => e.stopPropagation()}>
                           <div className="p-4 border-b flex items-center justify-between">
                             <div>
                               <div className="text-base font-semibold text-gray-800">Upload Agreements</div>
@@ -7876,7 +7880,15 @@ function HrRecruitment() {
                   <input
                     type="date"
                     value={interviewForm.date}
-                    onChange={(e) => setInterviewForm((f) => ({ ...f, date: e.target.value }))}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!validateNoSunday(e.target, v)) {
+                        setErrorMessage('Sundays are disabled. Please pick another date.');
+                        setShowErrorAlert(true);
+                        return;
+                      }
+                      setInterviewForm((f) => ({ ...f, date: v }));
+                    }}
                     min={new Date().toISOString().split('T')[0]}
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     required
@@ -7899,21 +7911,26 @@ function HrRecruitment() {
                     type="time"
                     value={interviewForm.time}
                     onChange={(e) => {
+                      const t = e.target.value;
+                      if (!validateOfficeHours(e.target, t)) {
+                        setErrorMessage('Office hours only (08:00–17:00).');
+                        setShowErrorAlert(true);
+                        return;
+                      }
                       const selectedDate = new Date(interviewForm.date);
                       const today = new Date();
-                      const selectedTime = e.target.value;
+                      const selectedTime = t;
                       // If selected date is today, prevent selecting past times
-                      if (selectedDate.toDateString() === today.toDateString()) {
-                        const currentTime = today.toTimeString().slice(0, 5);
-                        if (selectedTime <= currentTime) {
-                          setErrorMessage("Please select a future time for today's date.");
-                          setShowErrorAlert(true);
-                          return;
-                        }
+                      if (!validateFutureTimeForDate(e.target, interviewForm.date, selectedTime)) {
+                        setErrorMessage("Please select a future time for today's date.");
+                        setShowErrorAlert(true);
+                        return;
                       }
 
                       setInterviewForm((f) => ({ ...f, time: selectedTime }));
                     }}
+                    min="08:00"
+                    max="17:00"
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     required
                   />
@@ -8048,7 +8065,15 @@ function HrRecruitment() {
                   <input
                     type="date"
                     value={agreementSigningForm.date}
-                    onChange={(e) => setAgreementSigningForm((f) => ({ ...f, date: e.target.value }))}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!validateNoSunday(e.target, v)) {
+                        setErrorMessage('Sundays are disabled. Please pick another date.');
+                        setShowErrorAlert(true);
+                        return;
+                      }
+                      setAgreementSigningForm((f) => ({ ...f, date: v }));
+                    }}
                     min={new Date().toISOString().split('T')[0]}
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     required
@@ -8071,19 +8096,22 @@ function HrRecruitment() {
                     type="time"
                     value={agreementSigningForm.time}
                     onChange={(e) => {
-                      const selectedDate = new Date(agreementSigningForm.date);
-                      const today = new Date();
-                      const selectedTime = e.target.value;
-                      if (agreementSigningForm.date && selectedDate.toDateString() === today.toDateString()) {
-                        const currentTime = today.toTimeString().slice(0, 5);
-                        if (selectedTime <= currentTime) {
-                          setErrorMessage("Please select a future time for today's date.");
-                          setShowErrorAlert(true);
-                          return;
-                        }
+                      const t = e.target.value;
+                      if (!validateOfficeHours(e.target, t)) {
+                        setErrorMessage('Office hours only (08:00–17:00).');
+                        setShowErrorAlert(true);
+                        return;
+                      }
+                      const selectedTime = t;
+                      if (!validateFutureTimeForDate(e.target, agreementSigningForm.date, selectedTime)) {
+                        setErrorMessage("Please select a future time for today's date.");
+                        setShowErrorAlert(true);
+                        return;
                       }
                       setAgreementSigningForm((f) => ({ ...f, time: selectedTime }));
                     }}
+                    min="08:00"
+                    max="17:00"
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     required
                   />

@@ -6,6 +6,7 @@ import { getStoredJson } from "./authStorage";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import ExcelJS from "exceljs";
+import { validateNoSunday } from "./utils/dateTimeRules";
 
 function HrRequirements() {
   // Tab, filter, and search state
@@ -4039,7 +4040,11 @@ function HrRequirements() {
                 <input
                   type="date"
                   value={requestForm.deadline}
-                  onChange={(e) => setRequestForm(prev => ({ ...prev, deadline: e.target.value }))}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (!validateNoSunday(e.target, v)) return;
+                    setRequestForm(prev => ({ ...prev, deadline: v }));
+                  }}
                   min={new Date().toISOString().split('T')[0]}
                   className="w-full px-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
                 />

@@ -6,13 +6,14 @@ import {
   createFormValidatedNotification,
   createFormResubmissionNotification,
   createSeparationCompletedNotification,
-  createAccountTerminationNotification
+  createAccountTerminationNotification,
+  createSeparationRejectedNotification
 } from "./notifications";
 
 function HrSeperation() {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState("all"); // all, pending, clearance, completed, terminated
+  const [activeTab, setActiveTab] = useState("all"); // all, pending, clearance, completed, terminated, retirement
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hrUserId, setHrUserId] = useState(null);
@@ -142,7 +143,7 @@ function HrSeperation() {
       
       const { data: employeesData, error: empError } = await supabase
         .from('employees')
-        .select('id, email, fname, lname, mname, position, depot')
+        .select('id, email, fname, lname, mname, position, depot, birthday')
         .in('id', employeeIds);
 
       if (empError) {
@@ -169,6 +170,26 @@ function HrSeperation() {
         .map(sep => {
         const employee = employeeMap[sep.employee_id];
         
+        // Calculate age and retirement status from birthday
+        let age = null;
+        let retirementStatus = null;
+        if (employee?.birthday) {
+          const birthDate = new Date(employee.birthday);
+          const today = new Date();
+          age = today.getFullYear() - birthDate.getFullYear();
+          const monthDiff = today.getMonth() - birthDate.getMonth();
+          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+          }
+          
+          // Determine retirement status
+          if (age >= 65) {
+            retirementStatus = 'Overdue';
+          } else if (age >= 63) {
+            retirementStatus = 'Candidate for Retirement';
+          }
+        }
+        
         // Determine stage based on status
         let stage = 'pending';
         if (sep.status === 'completed') {
@@ -183,6 +204,8 @@ function HrSeperation() {
             ? `${employee.lname}, ${employee.fname}${employee.mname ? ' ' + employee.mname : ''}` 
             : 'Unknown Employee',
           position: employee?.position || 'N/A',
+          age: age,
+          retirementStatus: retirementStatus,
           submissionDate: sep.resignation_submitted_at 
             ? new Date(sep.resignation_submitted_at).toLocaleDateString('en-CA') 
             : 'N/A',
@@ -282,6 +305,84 @@ function HrSeperation() {
         const dateB = new Date(b.submissionDate);
         return dateB - dateA;
       });
+
+      // Fetch ALL employees for retirement tracking (separate from separations)
+      const { data: allEmployees, error: allEmpError } = await supabase
+        .from('employees')
+        .select('id, email, fname, lname, mname, position, depot, birthday');
+
+      if (allEmpError) {
+        console.error('Error fetching all employees:', allEmpError);
+      }
+
+      // Filter by depot for HRC users
+      let filteredAllEmployees = allEmployees || [];
+      if (currentUserRole === 'HRC' && currentUserDepot) {
+        filteredAllEmployees = filteredAllEmployees.filter(emp => emp.depot === currentUserDepot);
+      }
+
+      // Add employees who are near retirement but don't have separation records
+      if (filteredAllEmployees && filteredAllEmployees.length > 0) {
+        filteredAllEmployees.forEach(emp => {
+          // Skip if this employee already has a separation record
+          if (transformedEmployees.some(te => te.id === emp.id)) {
+            return;
+          }
+
+          // Calculate age and retirement status
+          let age = null;
+          let retirementStatus = null;
+          if (emp.birthday) {
+            const birthDate = new Date(emp.birthday);
+            const today = new Date();
+            age = today.getFullYear() - birthDate.getFullYear();
+            const monthDiff = today.getMonth() - birthDate.getMonth();
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+              age--;
+            }
+            
+            // Determine retirement status
+            if (age >= 65) {
+              retirementStatus = 'Overdue';
+            } else if (age >= 63) {
+              retirementStatus = 'Candidate for Retirement';
+            }
+          }
+
+          // Only add employees who are near retirement
+          if (retirementStatus) {
+            transformedEmployees.push({
+              id: emp.id,
+              name: emp.fname && emp.lname 
+                ? `${emp.lname}, ${emp.fname}${emp.mname ? ' ' + emp.mname : ''}` 
+                : 'Unknown Employee',
+              position: emp.position || 'N/A',
+              age: age,
+              retirementStatus: retirementStatus,
+              submissionDate: 'N/A',
+              stage: 'retirement', // Special stage for retirement tracking
+              resignationType: null,
+              resignationStatus: 'N/A',
+              resignationLetterRequired: false,
+              exitClearanceStatus: 'None',
+              exitInterviewStatus: 'None',
+              resignationFile: null,
+              resignationFileUrl: null,
+              exitClearanceFile: null,
+              exitInterviewFile: null,
+              isResignationApproved: false,
+              hrExitFormsUploaded: false,
+              finalDocs: [],
+              isCompleted: false,
+              isTerminated: false,
+              terminationDate: null,
+              dbId: null,
+              employeeUserId: emp.id,
+              isRetirementOnly: true // Flag to indicate this is for retirement tracking only
+            });
+          }
+        });
+      }
 
       setEmployees(transformedEmployees);
       
@@ -919,6 +1020,11 @@ function HrSeperation() {
 
       if (deleteError) throw deleteError;
 
+      // Send rejection notification to employee
+      await createSeparationRejectedNotification({
+        employeeUserId: employee.employeeUserId
+      });
+
       // Remove from local state
       setEmployees(employees.filter(emp => emp.id !== employeeId));
       
@@ -1188,6 +1294,7 @@ function HrSeperation() {
     if (activeTab === "clearance") return matchesSearch && emp.stage === "clearance" && !emp.isTerminated;
     if (activeTab === "completed") return matchesSearch && emp.stage === "completed" && !emp.isTerminated;
     if (activeTab === "terminated") return matchesSearch && emp.isTerminated;
+    if (activeTab === "retirement") return matchesSearch && emp.retirementStatus && emp.isRetirementOnly && !emp.isTerminated;
     return matchesSearch;
   });
 
@@ -1195,12 +1302,14 @@ function HrSeperation() {
     const styles = {
       pending: "bg-orange-100 text-orange-800",
       clearance: "bg-blue-100 text-blue-800",
-      completed: "bg-green-100 text-green-800"
+      completed: "bg-green-100 text-green-800",
+      retirement: "bg-purple-100 text-purple-800"
     };
     const labels = {
       pending: "Pending Review",
       clearance: "In Clearance",
-      completed: "Completed"
+      completed: "Completed",
+      retirement: "Retirement Tracking"
     };
     return (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[stage]}`}>
@@ -1274,6 +1383,14 @@ function HrSeperation() {
             >
               Terminated ({employees.filter(e => e.isTerminated).length})
             </button>
+            <button
+              onClick={() => setActiveTab("retirement")}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "retirement" ? "bg-purple-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              }`}
+            >
+              Near Retirement ({employees.filter(e => e.retirementStatus && e.isRetirementOnly && !e.isTerminated).length})
+            </button>
           </div>
         </div>
 
@@ -1308,8 +1425,20 @@ function HrSeperation() {
                             IMMEDIATE
                           </span>
                         )}
+                        {employee.retirementStatus && (
+                          <span className={`px-2 py-0.5 text-xs font-bold rounded ${
+                            employee.retirementStatus === 'Overdue' 
+                              ? 'bg-red-500 text-white' 
+                              : 'bg-purple-500 text-white'
+                          }`}>
+                            {employee.retirementStatus === 'Overdue' ? 'OVERDUE' : 'RETIREMENT'}
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-gray-600">{employee.position}</p>
+                      {employee.age !== null && employee.retirementStatus && (
+                        <p className="text-xs text-gray-600 mt-1">Age: {employee.age} years old</p>
+                      )}
                       {employee.isTerminated && (
                         <span className="inline-block mt-1 px-2 py-0.5 text-xs font-medium bg-red-100 text-red-800 rounded">
                           Terminated
@@ -1352,11 +1481,26 @@ function HrSeperation() {
                 <span>ID: {selectedEmployee.id}</span>
                 <span>•</span>
                 <span>{selectedEmployee.position}</span>
+                {selectedEmployee.age !== null && (
+                  <>
+                    <span>•</span>
+                    <span>Age: {selectedEmployee.age} years old</span>
+                  </>
+                )}
                 <span>•</span>
                 <span>Submitted: {selectedEmployee.submissionDate}</span>
               </div>
               <div className="flex items-center gap-2 mt-2">
                 {!selectedEmployee.isTerminated && getStageBadge(selectedEmployee.stage)}
+                {selectedEmployee.retirementStatus && (
+                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    selectedEmployee.retirementStatus === 'Overdue' 
+                      ? 'bg-red-100 text-red-800' 
+                      : 'bg-purple-100 text-purple-800'
+                  }`}>
+                    {selectedEmployee.retirementStatus}
+                  </span>
+                )}
                 {selectedEmployee.isTerminated && (
                   <span className="px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
                     Terminated
@@ -1370,6 +1514,35 @@ function HrSeperation() {
               )}
             </div>
 
+            {/* Retirement Tracking Info for employees without separation */}
+            {selectedEmployee.isRetirementOnly && (
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-6 mb-6">
+                <h3 className="text-lg font-semibold text-purple-800 mb-2">Retirement Tracking</h3>
+                <p className="text-sm text-purple-700">
+                  This employee is being tracked for retirement based on age.
+                </p>
+                <div className="mt-4 p-4 bg-white rounded-md">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Current Age:</span>
+                      <p className="font-semibold text-gray-900">{selectedEmployee.age} years old</p>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Status:</span>
+                      <p className={`font-semibold ${
+                        selectedEmployee.retirementStatus === 'Overdue' 
+                          ? 'text-red-600' 
+                          : 'text-purple-600'
+                      }`}>{selectedEmployee.retirementStatus}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Only show separation stages and processes for employees with separation requests */}
+            {!selectedEmployee.isRetirementOnly && (
+              <>
             {/* Stage 1: Resignation Review - Only show if resignation letter exists */}
             {selectedEmployee.resignationFile && (
             <div className={`bg-white rounded-lg shadow-md p-6 mb-6 ${selectedEmployee.isResignationApproved ? 'opacity-50' : ''}`}>
@@ -1437,7 +1610,7 @@ function HrSeperation() {
                       }}
                       className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm"
                     >
-                      Delete Separation Request
+                      Reject Separation Request
                     </button>
                   </div>
                 )}
@@ -1881,6 +2054,8 @@ function HrSeperation() {
                 <p>Validate both documents to proceed to final stage</p>
               </div>
             )}
+            </>
+            )}
           </div>
         ) : (
           <div className="flex items-center justify-center h-full text-gray-500">
@@ -2006,7 +2181,7 @@ function HrSeperation() {
       {showDeleteConfirm && (
         <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
           <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-red-600 mb-4">Delete Separation Request?</h3>
+            <h3 className="text-lg font-semibold text-red-600 mb-4">Reject Separation Request?</h3>
             <p className="text-gray-600 mb-6">
               Are you sure you want to delete this separation request? This will permanently remove the resignation letter and all associated data. The employee will need to submit a new resignation if they wish to proceed.
             </p>

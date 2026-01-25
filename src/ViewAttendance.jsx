@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { validateNoSunday } from "./utils/dateTimeRules";
 
 const statuses = ["Present","Absent","Late","Under Verification","Leave","Non-working"];
 const statusColors = {
@@ -103,7 +104,11 @@ export default function Attendance(){
           <input
             type="date"
             value={dateFilter}
-            onChange={(e)=>setDateFilter(e.target.value)}
+            onChange={(e)=>{
+              const v = e.target.value;
+              if (!validateNoSunday(e.target, v)) return;
+              setDateFilter(v);
+            }}
             className="border px-3 py-2 rounded"
           />
           <button
