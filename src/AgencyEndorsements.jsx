@@ -311,6 +311,7 @@ function AgencyEndorsements() {
             job_posts:job_posts ( id, title, department, depot )`
         )
         .eq("endorsed", true)
+          .neq("status", "retracted")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -322,6 +323,10 @@ function AgencyEndorsements() {
           let payload = r.payload;
           if (typeof payload === "string") {
             try { payload = JSON.parse(payload); } catch { payload = {}; }
+          }
+
+          if (payload?.endorsement_retracted || payload?.endorsementRetracted) {
+            return null;
           }
 
           const app = payload?.applicant || payload?.form || payload || null;
@@ -1216,7 +1221,7 @@ function AgencyEndorsements() {
         // We'll check for all file types: assessment and agreement files
         let applicationsQuery = supabase
           .from('applications')
-          .select('id, interview_details_file, assessment_results_file, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, job_posts:job_id(title, depot)')
+          .select('id, interview_details_file, assessment_results_file, interview_notes_file, interview_notes_file_label, interview_notes, payload, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, job_posts:job_id(title, depot)')
           .order('created_at', { ascending: false });
 
         // If we have applicant user_id, use it (most reliable)
@@ -1246,6 +1251,7 @@ function AgencyEndorsements() {
           const date = mostRecentApp.created_at;
           
           const records = [];
+          const payloadObj = parsePayloadObject(mostRecentApp?.payload ?? {});
           
           // Assessment Files (only if uploaded)
           if (mostRecentApp.interview_details_file) {
@@ -1279,6 +1285,53 @@ function AgencyEndorsements() {
               icon: 'green'
             });
           }
+
+          const rawInterviewNotesList = payloadObj?.interview_notes_attachments || payloadObj?.interviewNotesAttachments;
+          const interviewNotesList = Array.isArray(rawInterviewNotesList) ? rawInterviewNotesList.slice() : [];
+          const singleInterviewNote = payloadObj?.interview_notes_attachment || payloadObj?.interviewNotesAttachment || null;
+          if (singleInterviewNote && typeof singleInterviewNote === 'object') {
+            const singlePath = singleInterviewNote.path || singleInterviewNote.file_path || singleInterviewNote.filePath || singleInterviewNote.storagePath || null;
+            if (singlePath && !interviewNotesList.some((item) => (item?.path || item?.file_path || item?.filePath || item?.storagePath) === singlePath)) {
+              interviewNotesList.push(singleInterviewNote);
+            }
+          }
+
+          const interviewNotesFilePath =
+            mostRecentApp.interview_notes_file ||
+            payloadObj?.interview_notes_file ||
+            payloadObj?.interviewNotesFile ||
+            null;
+          const interviewNotesFileLabel =
+            mostRecentApp.interview_notes_file_label ||
+            payloadObj?.interview_notes_file_label ||
+            payloadObj?.interviewNotesFileLabel ||
+            null;
+          if (interviewNotesFilePath && !interviewNotesList.some((item) => (item?.path || item?.file_path || item?.filePath || item?.storagePath) === interviewNotesFilePath)) {
+            interviewNotesList.push({
+              path: interviewNotesFilePath,
+              label: interviewNotesFileLabel || 'Assessment Attachment',
+              originalName: null,
+              uploadedAt: null,
+            });
+          }
+
+          interviewNotesList.forEach((attachment, idx) => {
+            const filePath = attachment?.path || attachment?.file_path || attachment?.filePath || attachment?.storagePath || null;
+            if (!filePath) return;
+            records.push({
+              id: `${mostRecentApp.id}-assessment-note-${idx}`,
+              type: 'assessment',
+              documentName: attachment?.label || 'Assessment Attachment',
+              fileName: filePath.split('/').pop() || null,
+              filePath: filePath,
+              fileUrl: getFileUrl(filePath),
+              date: date,
+              jobTitle: jobTitle,
+              depot: depot,
+              applicationId: mostRecentApp.id,
+              icon: 'green'
+            });
+          });
           
           // Agreement Files (only if uploaded)
           const agreementDocs = [
@@ -2325,7 +2378,6 @@ function AgencyEndorsements() {
                                         const applicantName = selectedEmployee.name || 'Applicant';
                                         const position = selectedEmployee.position || selectedEmployee.raw?.job_posts?.title || 'Position';
                                         const depot = selectedEmployee.depot || selectedEmployee.raw?.job_posts?.depot || '';
-
                                         await notifyHRAboutApplicationRetraction({
                                           applicationId: selectedEmployee.id,
                                           applicantName,
@@ -2334,9 +2386,9 @@ function AgencyEndorsements() {
                                         });
 
                                         const { error } = await supabase
-                                          .from('applications')
-                                          .delete()
-                                          .eq('id', selectedEmployee.id);
+                                          .rpc('retract_endorsement', {
+                                            p_application_id: selectedEmployee.id,
+                                          });
 
                                         if (error) {
                                           console.error('Error retracting endorsement:', error);
@@ -3184,6 +3236,12 @@ function AgencyEndorsements() {
                                     selectedEmployee.payload?.assessmentRemarks ||
                                     selectedEmployee.raw?.payload?.assessment_remarks ||
                                     selectedEmployee.raw?.payload?.assessmentRemarks ||
+                                    selectedEmployee.interview_notes ||
+                                    selectedEmployee.raw?.interview_notes ||
+                                    selectedEmployee.payload?.interview_notes ||
+                                    selectedEmployee.payload?.interviewNotes ||
+                                    selectedEmployee.raw?.payload?.interview_notes ||
+                                    selectedEmployee.raw?.payload?.interviewNotes ||
                                     null;
 
                                   const normalized = remarks ? String(remarks).trim() : '';
@@ -4140,6 +4198,8 @@ function AgencyEndorsements() {
                                   </div>
 
                                   {(() => {
+                                    const payloadObj = parsePayloadObject(selectedEmployee.payload ?? selectedEmployee.raw?.payload ?? {});
+
                                     const remarks =
                                       selectedEmployee.assessment_remarks ||
                                       selectedEmployee.raw?.assessment_remarks ||
@@ -4147,6 +4207,12 @@ function AgencyEndorsements() {
                                       selectedEmployee.payload?.assessmentRemarks ||
                                       selectedEmployee.raw?.payload?.assessment_remarks ||
                                       selectedEmployee.raw?.payload?.assessmentRemarks ||
+                                      selectedEmployee.interview_notes ||
+                                      selectedEmployee.raw?.interview_notes ||
+                                      selectedEmployee.payload?.interview_notes ||
+                                      selectedEmployee.payload?.interviewNotes ||
+                                      selectedEmployee.raw?.payload?.interview_notes ||
+                                      selectedEmployee.raw?.payload?.interviewNotes ||
                                       null;
 
                                     const normalized = remarks ? String(remarks).trim() : '';
@@ -4154,6 +4220,54 @@ function AgencyEndorsements() {
                                       !normalized ||
                                       normalized.toLowerCase() === 'no uploaded remarks or files.';
                                     const displayText = isEmpty ? 'No uploaded remarks or files.' : normalized;
+
+                                    const rawNotesList = payloadObj?.interview_notes_attachments || payloadObj?.interviewNotesAttachments;
+                                    const notesAttachments = Array.isArray(rawNotesList) ? rawNotesList.slice() : [];
+                                    const singleNote = payloadObj?.interview_notes_attachment || payloadObj?.interviewNotesAttachment || null;
+                                    if (singleNote && typeof singleNote === 'object') {
+                                      const singlePath = singleNote.path || singleNote.file_path || singleNote.filePath || singleNote.storagePath || null;
+                                      if (singlePath && !notesAttachments.some((f) => (f?.path || f?.file_path || f?.filePath || f?.storagePath) === singlePath)) {
+                                        notesAttachments.push(singleNote);
+                                      }
+                                    }
+
+                                    const notesFilePath =
+                                      selectedEmployee.interview_notes_file ||
+                                      selectedEmployee.raw?.interview_notes_file ||
+                                      payloadObj?.interview_notes_file ||
+                                      payloadObj?.interviewNotesFile ||
+                                      null;
+                                    const notesFileLabel =
+                                      selectedEmployee.interview_notes_file_label ||
+                                      selectedEmployee.raw?.interview_notes_file_label ||
+                                      payloadObj?.interview_notes_file_label ||
+                                      payloadObj?.interviewNotesFileLabel ||
+                                      null;
+                                    if (notesFilePath && !notesAttachments.some((f) => (f?.path || f?.file_path || f?.filePath || f?.storagePath) === notesFilePath)) {
+                                      notesAttachments.push({
+                                        path: notesFilePath,
+                                        label: notesFileLabel || 'Assessment Attachment',
+                                        originalName: null,
+                                        uploadedAt: null,
+                                      });
+                                    }
+
+                                    const legacyAssessmentFile =
+                                      selectedEmployee.assessment_results_file ||
+                                      selectedEmployee.raw?.assessment_results_file ||
+                                      payloadObj?.assessment_results_file ||
+                                      null;
+                                    if (legacyAssessmentFile && !notesAttachments.some((f) => (f?.path || f?.file_path || f?.filePath || f?.storagePath) === legacyAssessmentFile)) {
+                                      notesAttachments.push({
+                                        path: legacyAssessmentFile,
+                                        label: 'Assessment Result',
+                                        originalName: null,
+                                        uploadedAt: null,
+                                      });
+                                    }
+
+                                    const hasFiles = notesAttachments.length > 0;
+
                                     return (
                                       <div className="p-4 text-sm">
                                         {!isEmpty ? (
@@ -4173,6 +4287,42 @@ function AgencyEndorsements() {
                                             </div>
                                           </div>
                                         )}
+
+                                        <div className="mt-4">
+                                          <div className="text-xs font-semibold text-gray-600">Files</div>
+                                          {!hasFiles ? (
+                                            <div className="mt-2 text-sm text-gray-500 italic">No uploaded files.</div>
+                                          ) : (
+                                            <div className="mt-2 space-y-2">
+                                              {notesAttachments.map((file, idx) => {
+                                                const filePath = file.path || file.file_path || file.filePath || file.storagePath || null;
+                                                if (!filePath) return null;
+                                                const fileUrl = getFileUrl(filePath);
+                                                const label = file.label || file.originalName || filePath.split('/').pop() || 'Attachment';
+                                                return (
+                                                  <div key={`${filePath}-${idx}`} className="flex items-center justify-between gap-3 rounded-md border border-gray-200 bg-white px-3 py-2">
+                                                    <div className="min-w-0">
+                                                      <div className="text-sm font-medium text-gray-800 truncate">{label}</div>
+                                                      <div className="text-xs text-gray-500 truncate">{filePath.split('/').pop()}</div>
+                                                    </div>
+                                                    {fileUrl ? (
+                                                      <a
+                                                        href={fileUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-sm font-medium text-blue-600 hover:text-blue-700"
+                                                      >
+                                                        View
+                                                      </a>
+                                                    ) : (
+                                                      <span className="text-xs text-gray-400">Unavailable</span>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
                                     );
                                   })()}

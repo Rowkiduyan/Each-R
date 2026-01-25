@@ -673,7 +673,7 @@ function HrTrainings() {
       // Get employees with their personal emails
       const { data: employees, error: empError } = await supabase
         .from('employees')
-        .select('id, fname, lname, mname, personal_email');
+        .select('id, fname, lname, mname, email');
 
       if (empError) {
         console.error('Error fetching employees:', empError);
@@ -689,7 +689,7 @@ function HrTrainings() {
         const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
         const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
         nameToIdMap[full] = emp.id;
-        idToEmailMap[emp.id] = emp.personal_email;
+        idToEmailMap[emp.id] = emp.email;
         idToNameMap[emp.id] = full;
       });
 

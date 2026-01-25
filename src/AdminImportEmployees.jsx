@@ -33,12 +33,12 @@ function AdminImportEmployees() {
   }, []);
 
   // Employee columns
-  const employeeRequiredColumns = ['email', 'fname', 'lname', 'mname', 'contact_number', 'position', 'depot', 'department', 'source', 'status', 'personal_email', 'birthday'];
+  const employeeRequiredColumns = ['email', 'fname', 'lname', 'mname', 'contact_number', 'position', 'depot', 'department', 'source', 'status', 'birthday'];
   const allowedSources = ['Internal', 'Agency'];
   const allowedStatuses = ['Regular', 'Probationary'];
 
   // HR columns
-  const hrRequiredColumns = ['first_name', 'last_name', 'department', 'depot', 'role', 'personal_email'];
+  const hrRequiredColumns = ['first_name', 'last_name', 'department', 'depot', 'role', 'email'];
   const allowedRoles = ['HR', 'HRC', 'Admin'];
 
   // Parse CSV file
@@ -133,13 +133,9 @@ function AdminImportEmployees() {
           if (!row.position || !row.position.trim()) validationErrors.push(`Row ${rowNum}: Missing position`);
           if (!row.depot || !row.depot.trim()) validationErrors.push(`Row ${rowNum}: Missing depot`);
           if (!row.department || !row.department.trim()) validationErrors.push(`Row ${rowNum}: Missing department`);
-          if (!row.personal_email || !row.personal_email.trim()) validationErrors.push(`Row ${rowNum}: Missing personal_email`);
 
           if (row.email && !row.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
             validationErrors.push(`Row ${rowNum}: Invalid email format`);
-          }
-          if (row.personal_email && !row.personal_email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-            validationErrors.push(`Row ${rowNum}: Invalid personal_email format`);
           }
           if (row.source && !allowedSources.includes(row.source)) {
             validationErrors.push(`Row ${rowNum}: Invalid source. Must be: ${allowedSources.join(', ')}`);
@@ -293,7 +289,6 @@ function AdminImportEmployees() {
               department: emp.department || '',
               source: emp.source || 'Internal',
               status: emp.status || 'Regular',
-              personal_email: emp.personal_email || '',
               birthday: emp.birthday || null
             });
 
@@ -392,10 +387,10 @@ function AdminImportEmployees() {
           if (!row.role || !row.role.trim()) validationErrors.push(`Row ${rowNum}: Missing role`);
           if (!row.depot || !row.depot.trim()) validationErrors.push(`Row ${rowNum}: Missing depot`);
           if (!row.department || !row.department.trim()) validationErrors.push(`Row ${rowNum}: Missing department`);
-          if (!row.personal_email || !row.personal_email.trim()) validationErrors.push(`Row ${rowNum}: Missing personal_email`);
+          if (!row.email || !row.email.trim()) validationErrors.push(`Row ${rowNum}: Missing email`);
 
-          if (row.personal_email && !row.personal_email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-            validationErrors.push(`Row ${rowNum}: Invalid personal_email format`);
+          if (row.email && !row.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+            validationErrors.push(`Row ${rowNum}: Invalid email format`);
           }
           if (row.role && !allowedRoles.includes(row.role)) {
             validationErrors.push(`Row ${rowNum}: Invalid role. Must be: ${allowedRoles.join(', ')}`);
@@ -541,7 +536,6 @@ function AdminImportEmployees() {
           importResult.details.push({
             email: email,
             password: password,
-            personal_email: hr.personal_email,
             role: hr.role,
             first_name: hr.first_name,
             last_name: hr.last_name,
@@ -615,11 +609,11 @@ function AdminImportEmployees() {
         // Get from employees table
         const { data: employeeData } = await supabase
           .from('employees')
-          .select('fname, lname, position, depot, personal_email')
+          .select('fname, lname, position, depot, email')
           .eq('email', account.email)
           .maybeSingle();
         
-        if (!employeeData || !employeeData.personal_email) {
+        if (!employeeData || !employeeData.email) {
           console.error(`No employee data found for ${account.email}`);
           setEmailProgress({ sent: i + 1, total: accounts.length });
           continue;
@@ -630,7 +624,7 @@ function AdminImportEmployees() {
           'template_k8bt6ed',
           {
             to_name: `${employeeData.fname} ${employeeData.lname}`,
-            to_email: employeeData.personal_email,
+            to_email: employeeData.email,
             email: account.email,
             password: account.password,
             login_url: window.location.origin + '/employee/login',
@@ -657,8 +651,8 @@ function AdminImportEmployees() {
     for (let i = 0; i < accounts.length; i++) {
       const account = accounts[i];
       try {
-        if (!account.personal_email) {
-          console.error(`No personal email found for ${account.email}`);
+        if (!account.email) {
+          console.error(`No email found for ${account.email}`);
           setHrEmailProgress({ sent: i + 1, total: accounts.length });
           continue;
         }
@@ -668,7 +662,7 @@ function AdminImportEmployees() {
           'template_k8bt6ed',
           {
             to_name: `${account.first_name} ${account.last_name}`,
-            to_email: account.personal_email,
+            to_email: account.email,
             email: account.email,
             password: account.password,
             login_url: window.location.origin + '/hr/login',
@@ -775,7 +769,7 @@ function AdminImportEmployees() {
           <h3 className="font-semibold text-blue-800 mb-2">📋 Instructions:</h3>
           <ol className="list-decimal list-inside space-y-1 text-sm text-blue-900">
             <li>Download the Employee CSV template below</li>
-            <li>Fill in employee data with columns: email, fname, lname, mname, contact_number, position, depot, department, source, status, personal_email, birthday</li>
+            <li>Fill in employee data with columns: email, fname, lname, mname, contact_number, position, depot, department, source, status, birthday</li>
             <li>Birthday format: yyyy-mm-dd (e.g., 1990-01-15)</li>
             <li>Valid sources: {allowedSources.join(', ')}</li>
             <li>Valid statuses: {allowedStatuses.join(', ')}</li>
@@ -992,10 +986,10 @@ function AdminImportEmployees() {
           <h3 className="font-semibold text-purple-800 mb-2">📋 Instructions:</h3>
           <ol className="list-decimal list-inside space-y-1 text-sm text-purple-900">
             <li>Download the HR Staff CSV template below</li>
-            <li>Fill in staff data with columns: first_name, last_name, department, depot, role, personal_email</li>
+            <li>Fill in staff data with columns: first_name, last_name, department, depot, role, email</li>
             <li>Valid roles: HR, HRC, Admin</li>
             <li>Work email will be auto-generated: @roadwisehr.com for HR/HRC, @adminhr.com for Admin</li>
-            <li>Credentials will be sent to the personal_email address provided</li>
+            <li>Credentials will be sent to the email address provided</li>
             <li>Upload the completed CSV file</li>
             <li>Review the preview and confirm import</li>
             <li>Download the results file containing generated passwords</li>
@@ -1086,7 +1080,7 @@ function AdminImportEmployees() {
                             <td className="px-3 py-2 text-sm text-gray-900">{row.first_name} {row.last_name}</td>
                             <td className="px-3 py-2 text-sm text-gray-900">{row.department || '-'}</td>
                             <td className="px-3 py-2 text-sm text-gray-900">{row.depot}</td>
-                            <td className="px-3 py-2 text-sm text-gray-900">{row.personal_email}</td>
+                            <td className="px-3 py-2 text-sm text-gray-900">{row.email}</td>
                           </tr>
                         );
                       })}

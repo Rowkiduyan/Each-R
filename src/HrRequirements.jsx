@@ -262,7 +262,7 @@ function HrRequirements() {
 
           // Map employees to the expected structure
           const mappedEmployees = employeesData.map(emp => {
-            const enrichmentEmail = String(emp?.personal_email || emp?.email || '').trim().toLowerCase();
+            const enrichmentEmail = String(emp?.email || '').trim().toLowerCase();
             const enrichedApplicant = applicantsById[emp?.id] || (enrichmentEmail ? applicantsByEmail[enrichmentEmail] : null);
 
             // Parse requirements directly from employee record
