@@ -38,7 +38,7 @@ function AdminImportEmployees() {
   const allowedStatuses = ['Regular', 'Probationary'];
 
   // HR columns
-  const hrRequiredColumns = ['first_name', 'last_name', 'department', 'depot', 'role', 'email'];
+  const hrRequiredColumns = ['first_name', 'last_name', 'department', 'depot', 'role', 'personal_email'];
   const allowedRoles = ['HR', 'HRC', 'Admin'];
 
   // Parse CSV file
@@ -387,10 +387,10 @@ function AdminImportEmployees() {
           if (!row.role || !row.role.trim()) validationErrors.push(`Row ${rowNum}: Missing role`);
           if (!row.depot || !row.depot.trim()) validationErrors.push(`Row ${rowNum}: Missing depot`);
           if (!row.department || !row.department.trim()) validationErrors.push(`Row ${rowNum}: Missing department`);
-          if (!row.email || !row.email.trim()) validationErrors.push(`Row ${rowNum}: Missing email`);
+          if (!row.personal_email || !row.personal_email.trim()) validationErrors.push(`Row ${rowNum}: Missing personal_email`);
 
-          if (row.email && !row.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
-            validationErrors.push(`Row ${rowNum}: Invalid email format`);
+          if (row.personal_email && !row.personal_email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
+            validationErrors.push(`Row ${rowNum}: Invalid personal_email format`);
           }
           if (row.role && !allowedRoles.includes(row.role)) {
             validationErrors.push(`Row ${rowNum}: Invalid role. Must be: ${allowedRoles.join(', ')}`);
@@ -519,7 +519,8 @@ function AdminImportEmployees() {
               first_name: hr.first_name,
               last_name: hr.last_name,
               department: hr.department || '',
-              depot: hr.depot || ''
+              depot: hr.depot || '',
+              personal_email: hr.personal_email || null
             });
 
           if (profileError) {
@@ -540,6 +541,7 @@ function AdminImportEmployees() {
             first_name: hr.first_name,
             last_name: hr.last_name,
             depot: hr.depot,
+            personal_email: hr.personal_email,
             status: 'Created successfully'
           });
           importResult.created++;
@@ -651,8 +653,8 @@ function AdminImportEmployees() {
     for (let i = 0; i < accounts.length; i++) {
       const account = accounts[i];
       try {
-        if (!account.email) {
-          console.error(`No email found for ${account.email}`);
+        if (!account.personal_email) {
+          console.error(`No personal_email found for ${account.email}`);
           setHrEmailProgress({ sent: i + 1, total: accounts.length });
           continue;
         }
@@ -662,7 +664,7 @@ function AdminImportEmployees() {
           'template_k8bt6ed',
           {
             to_name: `${account.first_name} ${account.last_name}`,
-            to_email: account.email,
+            to_email: account.personal_email,
             email: account.email,
             password: account.password,
             login_url: window.location.origin + '/hr/login',
@@ -986,10 +988,10 @@ function AdminImportEmployees() {
           <h3 className="font-semibold text-purple-800 mb-2">📋 Instructions:</h3>
           <ol className="list-decimal list-inside space-y-1 text-sm text-purple-900">
             <li>Download the HR Staff CSV template below</li>
-            <li>Fill in staff data with columns: first_name, last_name, department, depot, role, email</li>
+            <li>Fill in staff data with columns: first_name, last_name, department, depot, role, personal_email</li>
             <li>Valid roles: HR, HRC, Admin</li>
             <li>Work email will be auto-generated: @roadwisehr.com for HR/HRC, @adminhr.com for Admin</li>
-            <li>Credentials will be sent to the email address provided</li>
+            <li>Credentials will be sent to the personal_email address provided in the CSV</li>
             <li>Upload the completed CSV file</li>
             <li>Review the preview and confirm import</li>
             <li>Download the results file containing generated passwords</li>
@@ -1056,7 +1058,7 @@ function AdminImportEmployees() {
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Depot</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Personal Email</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Personal Email (Send To)</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -1080,7 +1082,7 @@ function AdminImportEmployees() {
                             <td className="px-3 py-2 text-sm text-gray-900">{row.first_name} {row.last_name}</td>
                             <td className="px-3 py-2 text-sm text-gray-900">{row.department || '-'}</td>
                             <td className="px-3 py-2 text-sm text-gray-900">{row.depot}</td>
-                            <td className="px-3 py-2 text-sm text-gray-900">{row.email}</td>
+                            <td className="px-3 py-2 text-sm text-gray-900">{row.personal_email}</td>
                           </tr>
                         );
                       })}
