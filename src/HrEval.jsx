@@ -323,6 +323,7 @@ function HrEval() {
                 total_score: parseFloat(record.totalScore),
                 remarks: recordRemarks,
                 file_path: filePath,
+                original_filename: record.file.name,
                 next_due: nextDueDate,
               },
             ]);

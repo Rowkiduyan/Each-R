@@ -2214,7 +2214,8 @@ function Employees() {
                 .from('application-files')
                 .getPublicUrl(filePath);
               fileUrl = urlData?.publicUrl || null;
-              fileName = filePath.split('/').pop() || 'evaluation.pdf';
+              // Use original_filename if available, otherwise fall back to extracting from path
+              fileName = ev.original_filename || filePath.split('/').pop() || 'evaluation.pdf';
             }
 
             return {
@@ -3828,7 +3829,7 @@ function Employees() {
                                         </div>
                                         {/* Description */}
                                         <div className="flex-1 text-sm text-gray-600 text-center">
-                                          {ob.description || '—'}
+                                          {ob.description || <span className="text-gray-400">None</span>}
                                         </div>
                                         {/* Date Issued */}
                                         <div className="flex-1 text-sm text-gray-600 text-center">
@@ -3849,7 +3850,7 @@ function Employees() {
                                               View
                                             </a>
                                           ) : (
-                                            <span className="text-gray-400">—</span>
+                                            <span className="text-gray-400">None</span>
                                           )}
                                         </div>
                                         {/* Actions */}
@@ -4475,7 +4476,7 @@ function Employees() {
               {/* Description */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description <span className="text-red-500">*</span>
+                  Description <span className="text-gray-400 text-xs">(Optional)</span>
                 </label>
                 <textarea
                   value={newOnboardingItem.description}
@@ -4530,8 +4531,8 @@ function Employees() {
               </button>
               <button
                 onClick={async () => {
-                  if (!newOnboardingItem.item.trim() || !newOnboardingItem.description.trim() || !newOnboardingItem.date) {
-                    setErrorMessage('Please fill in all required fields (Item Name, Description, and Date Issued)');
+                  if (!newOnboardingItem.item.trim() || !newOnboardingItem.date) {
+                    setErrorMessage('Please fill in all required fields (Item Name and Date Issued)');
                     setShowErrorAlert(true);
                     return;
                   }
@@ -4563,7 +4564,7 @@ function Employees() {
                       .insert({
                         employee_id: selectedEmployee.id,
                         item: newOnboardingItem.item.trim(),
-                        description: newOnboardingItem.description.trim(),
+                        description: newOnboardingItem.description.trim() || null,
                         date_issued: newOnboardingItem.date,
                         file_path: filePath,
                       });
