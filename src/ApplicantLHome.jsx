@@ -5580,7 +5580,7 @@ const getApplicationFilesPublicUrl = (path) => {
                 onClick={() => setShowSummary(false)}
               >
                 <div
-                  className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] border-2 border-black overflow-hidden"
+                  className="bg-white rounded-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="flex justify-between items-center p-4 border-b">
@@ -5904,7 +5904,7 @@ const getApplicationFilesPublicUrl = (path) => {
                 className="fixed inset-0 transparent bg-opacity-50 flex items-center justify-center z-50"
               >
                 <div
-                  className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border border-black"
+                  className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden"
                 >
                   <div className="p-4 border-b bg-red-50">
                     <h3 className="text-lg font-semibold text-red-800 flex items-center gap-2">
