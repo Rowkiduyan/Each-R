@@ -5,6 +5,7 @@ import { PieChart, Pie, Cell } from "recharts";
 import { getStoredJson } from "./authStorage";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { buildEachRAutoTableDefaults } from "./utils/eachrPdf";
 import ExcelJS from "exceljs";
 import { validateNoSunday } from "./utils/dateTimeRules";
 
@@ -1212,20 +1213,14 @@ function HrRequirements() {
         return s;
       };
 
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "pt",
-        format: "a4",
+      const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+
+      const autoTableDefaults = buildEachRAutoTableDefaults({
+        title: `Requirement Numbers (${list.length})`,
+        subtitle: "Requirements Export",
+        leftMetaLines: filterSummary ? [filterSummary] : [],
+        rightMetaLines: [`Exported: ${exportedAtLabel}`],
       });
-
-      doc.setFontSize(16);
-      doc.text(`Requirement Numbers (${list.length})`, 28, 40);
-
-      doc.setFontSize(10);
-      doc.setTextColor(80);
-      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
-      if (filterSummary) doc.text(filterSummary, 28, 74);
-      doc.setTextColor(0);
 
       const labelByKey = keys.reduce((acc, k) => {
         const def = REQUIREMENT_NUMBER_FIELDS.find((d) => d.key === k);
@@ -1258,14 +1253,14 @@ function HrRequirements() {
       ]);
 
       autoTable(doc, {
-        startY: filterSummary ? 90 : 78,
+        ...autoTableDefaults,
         head: [head],
         body,
-        theme: "grid",
-        styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
-        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
-        margin: { left: 28, right: 28 },
       });
+
+      if (typeof doc.putTotalPages === 'function') {
+        doc.putTotalPages(autoTableDefaults.totalPagesExp);
+      }
 
       const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
       const rawParts = [
@@ -1323,15 +1318,12 @@ function HrRequirements() {
       return y + 8;
     };
 
-    const addTable = (doc, startY, head, body, linkUrlsByRowIndex, linkColIndex) => {
+    const addTable = (doc, startY, head, body, linkUrlsByRowIndex, linkColIndex, autoTableDefaults) => {
       autoTable(doc, {
+        ...autoTableDefaults,
         startY,
         head: [head],
         body,
-        theme: 'grid',
-        styles: { fontSize: 8, cellPadding: 4, overflow: 'linebreak' },
-        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
-        margin: { left: 28, right: 28 },
         didParseCell: (data) => {
           if (data.section !== 'body') return;
           if (data.column.index !== linkColIndex) return;
@@ -1364,33 +1356,28 @@ function HrRequirements() {
       const exportedAt = new Date();
       const exportedAtLabel = exportedAt.toLocaleString('en-US');
 
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'pt',
-        format: 'a4',
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+
+      const employeeMeta = [
+        employee?.email ? `Email: ${employee.email}` : null,
+        employee?.position ? `Position: ${employee.position}` : null,
+        employee?.depot ? `Depot: ${employee.depot}` : null,
+        employee?.isAgency ? 'Type: Agency' : 'Type: Direct',
+      ].filter(Boolean);
+
+      const autoTableDefaults = buildEachRAutoTableDefaults({
+        title: `${safeText(employee.name)} — Requirements`,
+        subtitle: 'Employee Requirements Export',
+        leftMetaLines: employeeMeta.length ? [employeeMeta.join(' | ')] : [],
+        rightMetaLines: [`Exported: ${exportedAtLabel}`],
       });
 
-      doc.setFontSize(16);
-      doc.text(`${safeText(employee.name)} — Requirements`, 28, 40);
+      // Draw the first page header/footer early (tables will also draw on subsequent pages)
+      if (typeof autoTableDefaults?.didDrawPage === 'function') {
+        autoTableDefaults.didDrawPage({ doc });
+      }
 
-      doc.setFontSize(10);
-      doc.setTextColor(80);
-      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
-      doc.text(
-        [
-          employee?.email ? `Email: ${employee.email}` : null,
-          employee?.position ? `Position: ${employee.position}` : null,
-          employee?.depot ? `Depot: ${employee.depot}` : null,
-          employee?.isAgency ? 'Type: Agency' : 'Type: Direct',
-        ]
-          .filter(Boolean)
-          .join(' | '),
-        28,
-        74
-      );
-      doc.setTextColor(0);
-
-      let y = 94;
+      let y = (autoTableDefaults?.margin?.top || 110) + 12;
 
       // 1) IDs (SSS first)
       y = drawSectionTitle(doc, employee?.isAgency ? 'Government IDs' : 'ID Numbers', y);
@@ -1433,7 +1420,7 @@ function HrRequirements() {
         }
       }
 
-      y = addTable(doc, y, ['Requirement', 'Number', 'Status', 'Submitted', 'File'], idRows, idLinks, 4) + 18;
+      y = addTable(doc, y, ['Requirement', 'Number', 'Status', 'Submitted', 'File'], idRows, idLinks, 4, autoTableDefaults) + 18;
 
       // 2) License (conditional)
       if (!employee?.isAgency && isDeliveryCrew(employee)) {
@@ -1478,7 +1465,7 @@ function HrRequirements() {
         ];
 
         const licLinks = [null, null, getUrlSafe(front), getUrlSafe(back)];
-        y = addTable(doc, y, ['Item', 'Value', 'Status', 'Submitted', 'File'], licRows, licLinks, 4) + 18;
+        y = addTable(doc, y, ['Item', 'Value', 'Status', 'Submitted', 'File'], licRows, licLinks, 4, autoTableDefaults) + 18;
       }
 
       // 3) Medical exams
@@ -1504,7 +1491,7 @@ function HrRequirements() {
           ]);
         }
 
-        y = addTable(doc, y, ['Exam', 'Status', 'Submitted', 'Valid Until', 'File'], medRows, medLinks, 4) + 18;
+        y = addTable(doc, y, ['Exam', 'Status', 'Submitted', 'Valid Until', 'File'], medRows, medLinks, 4, autoTableDefaults) + 18;
       }
 
       // 4) HR Requests
@@ -1526,7 +1513,11 @@ function HrRequirements() {
           ]);
         }
 
-        y = addTable(doc, y, ['Document', 'Status', 'Requested', 'Deadline', 'File'], reqRows, reqLinks, 4) + 18;
+        y = addTable(doc, y, ['Document', 'Status', 'Requested', 'Deadline', 'File'], reqRows, reqLinks, 4, autoTableDefaults) + 18;
+      }
+
+      if (typeof doc.putTotalPages === 'function') {
+        doc.putTotalPages(autoTableDefaults.totalPagesExp);
       }
 
       const yyyyMmDd = exportedAt.toISOString().slice(0, 10);

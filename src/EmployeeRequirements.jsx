@@ -285,6 +285,10 @@ function EmployeeRequirements() {
 
   // Assessment and agreement records state
   const [assessmentRecords, setAssessmentRecords] = useState([]);
+  const [latestApplicationJobTitle, setLatestApplicationJobTitle] = useState(null);
+
+  const isDeliveryCrewRole = (text) => /\bdelivery\s*crew\b/i.test(String(text || ""));
+  const isDriverLikeRole = (text) => /\bdriver\b/i.test(String(text || "")) || isDeliveryCrewRole(text);
 
   // Load employee requirements from database on mount and when employeeData changes
   useEffect(() => {
@@ -869,6 +873,8 @@ function EmployeeRequirements() {
           const depot = mostRecentApp.job_posts?.depot || 'N/A';
           const date = mostRecentApp.created_at;
 
+          setLatestApplicationJobTitle(jobTitle);
+
           const records = [];
 
           records.push({
@@ -937,15 +943,20 @@ function EmployeeRequirements() {
         } else {
           console.log('⚠️ No applications data found for employee');
           setAssessmentRecords([]);
+          setLatestApplicationJobTitle(null);
         }
       } catch (err) {
         console.error('Error loading assessment records:', err);
         setAssessmentRecords([]);
+        setLatestApplicationJobTitle(null);
       }
     };
 
     loadAssessmentRecords();
   }, [employeeData?.email]);
+
+  const shouldShowDriversLicenseSection =
+    isDriverLikeRole(employee?.position) || isDriverLikeRole(latestApplicationJobTitle);
 
   // Refresh onboarding items periodically (every 5 seconds) to catch new items from HR
   useEffect(() => {
@@ -2106,6 +2117,7 @@ function EmployeeRequirements() {
         </div>
 
         {/* License Information Section */}
+        {shouldShowDriversLicenseSection && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-6">
           <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
             <div className="flex items-center justify-between">
@@ -2316,6 +2328,7 @@ function EmployeeRequirements() {
             })()}
           </div>
         </div>
+        )}
 
         {/* Medical Examination Results Section */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-6">

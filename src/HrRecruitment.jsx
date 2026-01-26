@@ -6,6 +6,7 @@ import { createNotification } from './notifications';
 import { getStoredJson } from "./authStorage";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { buildEachRAutoTableDefaults } from "./utils/eachrPdf";
 import ExcelJS from "exceljs";
 import { validateNoSunday, validateOfficeHours, validateFutureTimeForDate } from "./utils/dateTimeRules";
 
@@ -5288,22 +5289,14 @@ function HrRecruitment() {
         return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
       };
 
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "pt",
-        format: "a4",
+      const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+
+      const autoTableDefaults = buildEachRAutoTableDefaults({
+        title: `${title} (${list.length})`,
+        subtitle: "Applicants List Export",
+        leftMetaLines: filterSummary ? [filterSummary] : [],
+        rightMetaLines: [`Exported: ${exportedAtLabel}`],
       });
-
-      doc.setFontSize(16);
-      doc.text(`${title} (${list.length})`, 28, 40);
-
-      doc.setFontSize(10);
-      doc.setTextColor(80);
-      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
-      if (filterSummary) {
-        doc.text(filterSummary, 28, 74);
-      }
-      doc.setTextColor(0);
 
       const body = list.map((a) => {
         const statusLabel = getApplicationStatus(a).label;
@@ -5320,13 +5313,9 @@ function HrRecruitment() {
       });
 
       autoTable(doc, {
-        startY: filterSummary ? 90 : 78,
+        ...autoTableDefaults,
         head: [["Applicant", "Position", "Department", "Depot", "Status", "Date Applied", "Interview Date", "Interview Time"]],
         body,
-        theme: "grid",
-        styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
-        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
-        margin: { left: 28, right: 28 },
         columnStyles: {
           0: { cellWidth: 110 },
           1: { cellWidth: 85 },
@@ -5338,6 +5327,10 @@ function HrRecruitment() {
           7: { cellWidth: 45 },
         },
       });
+
+      if (typeof doc.putTotalPages === 'function') {
+        doc.putTotalPages(autoTableDefaults.totalPagesExp);
+      }
 
       const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
       const rawParts = [title, statusFilter !== "All" ? statusFilter : null, positionFilter !== "All" ? positionFilter : null, depotFilter !== "All" ? depotFilter : null, yyyyMmDd]
