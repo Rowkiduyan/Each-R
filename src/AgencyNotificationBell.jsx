@@ -11,6 +11,8 @@ function AgencyNotificationBell() {
   const [loading, setLoading] = useState(false);
   const [agencyProfileId, setAgencyProfileId] = useState(null);
   const [requirementsNotifications, setRequirementsNotifications] = useState([]);
+  const [showDismissalModal, setShowDismissalModal] = useState(false);
+  const [dismissalInfo, setDismissalInfo] = useState({ employeeName: '', resignationRequired: false });
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -84,6 +86,8 @@ function AgencyNotificationBell() {
     const fetchNotifications = async (profileId) => {
       setLoading(true);
       try {
+        console.log('🔔 Fetching notifications for agency profile ID:', profileId);
+        
         // Fetch from both sources: hired employees and notifications table
         const [hiredResult, notificationsResult] = await Promise.all([
           // Fetch recently hired employees endorsed by this agency
@@ -102,6 +106,12 @@ function AgencyNotificationBell() {
             .order('created_at', { ascending: false })
             .limit(20)
         ]);
+
+        console.log('📬 Notifications fetch result:', {
+          notificationsCount: notificationsResult.data?.length || 0,
+          notifications: notificationsResult.data,
+          error: notificationsResult.error
+        });
 
         const hiredEmployees = hiredResult.data || [];
         const directNotifications = notificationsResult.data || [];
@@ -294,10 +304,55 @@ function AgencyNotificationBell() {
       return;
     }
     
-    // Navigate to separation page for resignation rejected notifications
-    if (notification.type === 'resignation_rejected') {
+    // Navigate to separation page for resignation/separation rejected notifications, exit forms, and completion
+    if (notification.type === 'resignation_rejected' || 
+        notification.type === 'separation_rejected' ||
+        notification.type === 'exit_forms_uploaded_agency' ||
+        notification.type === 'separation_completed_agency') {
       setIsOpen(false);
       navigate('/agency/separation');
+      
+      // Mark as read in database
+      if (!notification.read) {
+        await markNotificationAsRead(notification.id);
+        setNotifications(prev =>
+          prev.map(notif =>
+            notif.id === notification.id ? { ...notif, read: true } : notif
+          )
+        );
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+      return;
+    }
+
+    // Navigate to evaluation page for evaluation uploaded notifications
+    if (notification.type === 'evaluation_uploaded_agency') {
+      setIsOpen(false);
+      navigate('/agency/evaluation');
+      
+      // Mark as read in database
+      if (!notification.read) {
+        await markNotificationAsRead(notification.id);
+        setNotifications(prev =>
+          prev.map(notif =>
+            notif.id === notification.id ? { ...notif, read: true } : notif
+          )
+        );
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+      return;
+    }
+
+    // Navigate to separation page for dismissed evaluation notifications
+    if (notification.type === 'evaluation_dismissed_agency') {
+      setIsOpen(false);
+      
+      // Extract information and show modal
+      const resignationRequired = notification.message.includes('required');
+      const employeeName = notification.message.split(' has dismissed ')[1]?.split('.')[0] || 'Employee';
+      
+      setDismissalInfo({ employeeName, resignationRequired });
+      setShowDismissalModal(true);
       
       // Mark as read in database
       if (!notification.read) {
@@ -339,9 +394,13 @@ function AgencyNotificationBell() {
   };
 
   const handleMarkAllAsRead = async () => {
-    // Mark all notifications from notifications table as read (not hired notifications)
+    // Mark all notifications from notifications table as read (not hired notifications or requirements reminders)
     const notificationIds = notifications
-      .filter(n => n.type !== 'hired' && !n.read)
+      .filter(n => 
+        n.type !== 'hired' && 
+        n.type !== 'requirements_reminder' && 
+        !n.read
+      )
       .map(n => n.id);
     
     if (notificationIds.length > 0) {
@@ -353,9 +412,11 @@ function AgencyNotificationBell() {
         
         if (error) {
           console.error('Error marking notifications as read:', error);
+          return; // Don't update local state if database update failed
         }
       } catch (err) {
         console.error('Error updating notifications:', err);
+        return; // Don't update local state if database update failed
       }
     }
     
@@ -397,7 +458,8 @@ function AgencyNotificationBell() {
   };
 
   return (
-    <div className="relative">
+    <>
+      <div className="relative">
       {/* Bell Icon */}
       <button
         type="button"
@@ -477,7 +539,7 @@ function AgencyNotificationBell() {
                   <div
                     key={notification.id}
                     className={`p-4 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer transition-colors ${
-                      notification.type === 'resignation_rejected' 
+                      (notification.type === 'resignation_rejected' || notification.type === 'separation_rejected')
                         ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500' 
                         : !notification.read ? 'bg-red-50' : ''
                     }`}
@@ -486,7 +548,7 @@ function AgencyNotificationBell() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          {notification.type === 'resignation_rejected' && (
+                          {(notification.type === 'resignation_rejected' || notification.type === 'separation_rejected') && (
                             <svg className="w-4 h-4 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                             </svg>
@@ -503,7 +565,7 @@ function AgencyNotificationBell() {
                           <span className="text-xs text-gray-400">
                             {formatTimeAgo(notification.created_at)}
                           </span>
-                          {notification.type === 'resignation_rejected' && (
+                          {(notification.type === 'resignation_rejected' || notification.type === 'separation_rejected') && (
                             <span className="text-xs text-red-600 font-medium">
                               Action Required
                             </span>
@@ -538,7 +600,77 @@ function AgencyNotificationBell() {
           onClick={() => setIsOpen(false)}
         />
       )}
+
+      {/* Employee Dismissal Modal */}
+      {showDismissalModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full overflow-hidden shadow-2xl border border-gray-200">
+            {/* Header */}
+            <div className="p-6 bg-gradient-to-r from-red-600 to-red-700">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-red-500/30 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Employee Dismissed</h3>
+                  <p className="text-sm text-red-100 mt-0.5">Action required for separation process</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm text-red-800 font-medium mb-2">
+                  <span className="font-semibold">{dismissalInfo.employeeName}</span> has been dismissed by HR.
+                </p>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${
+                      dismissalInfo.resignationRequired ? 'bg-red-500' : 'bg-gray-400'
+                    }`}></div>
+                    <span className="text-sm text-gray-700">
+                      Resignation letter: <span className="font-medium">
+                        {dismissalInfo.resignationRequired ? 'Required' : 'Not required'}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <p className="text-sm text-gray-600">
+                You will be redirected to the separation page to manage the dismissal process for this employee.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-100 bg-gray-50 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowDismissalModal(false)}
+                className="px-4 py-2 rounded-lg bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowDismissalModal(false);
+                  navigate('/agency/separation');
+                }}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 text-sm font-medium transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+                Go to Separation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  </>
   );
 }
 

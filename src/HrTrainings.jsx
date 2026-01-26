@@ -295,15 +295,53 @@ function HrTrainings() {
       try {
         const { data, error } = await supabase
           .from("employees")
-          .select("id, fname, lname, mname, position, email");
+          .select(`
+            id, fname, lname, mname, position, email, auth_user_id,
+            employee_separations(is_terminated)
+          `);
 
         if (error) {
           console.error("Error loading employees for training attendees:", error);
           return;
         }
 
+        // Get auth_user_ids to check account status
+        const authUserIds = data?.filter(emp => emp.auth_user_id).map(emp => emp.auth_user_id) || [];
+        
+        // Fetch account status from profiles
+        let accountStatusMap = {};
+        if (authUserIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, account_expires_at, is_active')
+            .in('id', authUserIds);
+          
+          if (profiles) {
+            profiles.forEach(profile => {
+              accountStatusMap[profile.id] = {
+                isActive: profile.is_active !== false,
+                isExpired: profile.account_expires_at ? new Date(profile.account_expires_at) < new Date() : false
+              };
+            });
+          }
+        }
+
+        // Filter out terminated employees and those with expired/disabled accounts
+        const activeEmployees = data?.filter(emp => {
+          // Check termination status
+          if (emp.employee_separations && emp.employee_separations.is_terminated) return false;
+          
+          // Check account status if employee has auth_user_id
+          if (emp.auth_user_id && accountStatusMap[emp.auth_user_id]) {
+            const accountStatus = accountStatusMap[emp.auth_user_id];
+            if (!accountStatus.isActive || accountStatus.isExpired) return false;
+          }
+          
+          return true;
+        }) || [];
+
         const options =
-          data?.map((emp) => {
+          activeEmployees.map((emp) => {
             const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
             const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
             return {
@@ -386,7 +424,10 @@ function HrTrainings() {
         try {
           const { data, error } = await supabase
             .from("employees")
-            .select("id, fname, lname, mname, position")
+            .select(`
+              id, fname, lname, mname, position, auth_user_id,
+              employee_separations(is_terminated)
+            `)
             .eq("position", position);
 
           if (error) {
@@ -394,8 +435,43 @@ function HrTrainings() {
             continue;
           }
 
+          // Get auth_user_ids to check account status
+          const authUserIds = data?.filter(emp => emp.auth_user_id).map(emp => emp.auth_user_id) || [];
+          
+          // Fetch account status from profiles
+          let accountStatusMap = {};
+          if (authUserIds.length > 0) {
+            const { data: profiles } = await supabase
+              .from('profiles')
+              .select('id, account_expires_at, is_active')
+              .in('id', authUserIds);
+            
+            if (profiles) {
+              profiles.forEach(profile => {
+                accountStatusMap[profile.id] = {
+                  isActive: profile.is_active !== false,
+                  isExpired: profile.account_expires_at ? new Date(profile.account_expires_at) < new Date() : false
+                };
+              });
+            }
+          }
+
+          // Filter out terminated employees and those with expired/disabled accounts
+          const activeEmployees = data?.filter(emp => {
+            // Check termination status
+            if (emp.employee_separations && emp.employee_separations.is_terminated) return false;
+            
+            // Check account status if employee has auth_user_id
+            if (emp.auth_user_id && accountStatusMap[emp.auth_user_id]) {
+              const accountStatus = accountStatusMap[emp.auth_user_id];
+              if (!accountStatus.isActive || accountStatus.isExpired) return false;
+            }
+            
+            return true;
+          }) || [];
+
           const options =
-            data?.map((emp) => {
+            activeEmployees.map((emp) => {
               const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
               const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
               return full || "Unnamed employee";
@@ -1334,7 +1410,10 @@ function HrTrainings() {
         try {
           const { data, error } = await supabase
             .from("employees")
-            .select("id, fname, lname, mname, position")
+            .select(`
+              id, fname, lname, mname, position, auth_user_id,
+              employee_separations(is_terminated)
+            `)
             .eq("position", position);
 
           if (error) {
@@ -1342,8 +1421,43 @@ function HrTrainings() {
             continue;
           }
 
+          // Get auth_user_ids to check account status
+          const authUserIds = data?.filter(emp => emp.auth_user_id).map(emp => emp.auth_user_id) || [];
+          
+          // Fetch account status from profiles
+          let accountStatusMap = {};
+          if (authUserIds.length > 0) {
+            const { data: profiles } = await supabase
+              .from('profiles')
+              .select('id, account_expires_at, is_active')
+              .in('id', authUserIds);
+            
+            if (profiles) {
+              profiles.forEach(profile => {
+                accountStatusMap[profile.id] = {
+                  isActive: profile.is_active !== false,
+                  isExpired: profile.account_expires_at ? new Date(profile.account_expires_at) < new Date() : false
+                };
+              });
+            }
+          }
+
+          // Filter out terminated employees and those with expired/disabled accounts
+          const activeEmployees = data?.filter(emp => {
+            // Check termination status
+            if (emp.employee_separations && emp.employee_separations.is_terminated) return false;
+            
+            // Check account status if employee has auth_user_id
+            if (emp.auth_user_id && accountStatusMap[emp.auth_user_id]) {
+              const accountStatus = accountStatusMap[emp.auth_user_id];
+              if (!accountStatus.isActive || accountStatus.isExpired) return false;
+            }
+            
+            return true;
+          }) || [];
+
           const options =
-            data?.map((emp) => {
+            activeEmployees.map((emp) => {
               const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
               const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
               return full || "Unnamed employee";

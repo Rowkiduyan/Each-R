@@ -88,7 +88,11 @@ function HrEval() {
         setLoading(true);
         const { data, error } = await supabase
           .from("employees")
-          .select("id, fname, lname, mname, position, depot, hired_at, status");
+          .select(`
+            id, fname, lname, mname, position, depot, hired_at, status, 
+            source, endorsed_by_agency_id, agency_profile_id, auth_user_id,
+            employee_separations(is_terminated)
+          `);
 
         if (error) {
           console.error("Error loading employees for evaluations:", error);
@@ -97,6 +101,41 @@ function HrEval() {
         }
 
         let filteredData = data || [];
+        
+        // Get auth_user_ids to check account status
+        const authUserIds = filteredData.filter(emp => emp.auth_user_id).map(emp => emp.auth_user_id);
+        
+        // Fetch account status from profiles
+        let accountStatusMap = {};
+        if (authUserIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, account_expires_at, is_active')
+            .in('id', authUserIds);
+          
+          if (profiles) {
+            profiles.forEach(profile => {
+              accountStatusMap[profile.id] = {
+                isActive: profile.is_active !== false,
+                isExpired: profile.account_expires_at ? new Date(profile.account_expires_at) < new Date() : false
+              };
+            });
+          }
+        }
+        
+        // Filter out terminated employees and those with expired/disabled accounts
+        filteredData = filteredData.filter(emp => {
+          // Check termination status
+          if (emp.employee_separations && emp.employee_separations.is_terminated) return false;
+          
+          // Check account status if employee has auth_user_id
+          if (emp.auth_user_id && accountStatusMap[emp.auth_user_id]) {
+            const accountStatus = accountStatusMap[emp.auth_user_id];
+            if (!accountStatus.isActive || accountStatus.isExpired) return false;
+          }
+          
+          return true;
+        });
         
         // Filter by depot for HRC users
         if (currentUserRole === 'HRC' && currentUserDepot) {
@@ -125,6 +164,9 @@ function HrEval() {
             lastEvaluation: null,
             nextEvaluation: null,
             evaluations: [],
+            source: emp.source || null,
+            endorsedByAgencyId: emp.endorsed_by_agency_id || null,
+            agencyProfileId: emp.agency_profile_id || null,
           };
         });
 
@@ -404,11 +446,11 @@ function HrEval() {
             nextDueDate.setFullYear(nextDueDate.getFullYear() + 1);
             const nextDueDateStr = nextDueDate.toISOString().split('T')[0];
 
-            // Update the most recent evaluation's next_due and employee_type
+            // Update the most recent evaluation's next_due and type
             const { error: evalUpdateError } = await supabase
               .from('evaluations')
               .update({ 
-                employee_type: 'Regular',
+                type: 'Regular',
                 next_due: nextDueDateStr
               })
               .eq('employee_id', selectedEmployee.id)
@@ -447,7 +489,7 @@ function HrEval() {
         const hasRetainedRemark = uploadRecords.some(record => record.remarks === 'Retained');
         const newEmploymentType = (selectedEmployee?.employmentType === 'probationary' && hasRetainedRemark) 
           ? 'regular' 
-          : (mostRecent?.employee_type?.toLowerCase() || selectedEmployee.employmentType);
+          : (mostRecent?.type?.toLowerCase() || selectedEmployee.employmentType);
         
         setEmployees((prev) =>
           prev.map((emp) =>
@@ -473,6 +515,31 @@ function HrEval() {
           message: `HR has uploaded ${successCount} evaluation record${successCount > 1 ? 's' : ''} for you. Final remarks: ${finalRemarks}`,
           userType: 'employee'
         });
+
+        // If employee is from agency, notify the agency as well
+        if (selectedEmployee.source && selectedEmployee.source.toLowerCase() === 'agency') {
+          const agencyUserId = selectedEmployee.endorsedByAgencyId || selectedEmployee.agencyProfileId;
+          if (agencyUserId) {
+            // Check if employee was dismissed
+            if (finalRemarks === 'Dismissed') {
+              await createNotification({
+                userId: agencyUserId,
+                type: 'evaluation_dismissed_agency',
+                title: 'Employee Dismissed - Action Required',
+                message: `HR has dismissed ${selectedEmployee.name}. Please check the separation process. Resignation letter ${requireResignationLetter ? 'required' : 'not required'}.`,
+                userType: 'profile'
+              });
+            } else {
+              await createNotification({
+                userId: agencyUserId,
+                type: 'evaluation_uploaded_agency',
+                title: 'Evaluation Uploaded for Endorsee',
+                message: `HR has uploaded ${successCount} evaluation record${successCount > 1 ? 's' : ''} for ${selectedEmployee.name}. Final remarks: ${finalRemarks}`,
+                userType: 'profile'
+              });
+            }
+          }
+        }
       }
 
       // Reset form and close modal

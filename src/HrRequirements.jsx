@@ -205,20 +205,61 @@ function HrRequirements() {
       setLoading(true);
       setError(null);
       try {
-        // Get all deployed employees (have hired_at)
+        // Get all deployed employees (have hired_at) with auth_user_id and separation status
         const { data: employeesData, error: empError } = await supabase
           .from('employees')
           // Use '*' so we don't hard-fail when optional profile-like columns differ by schema
-          .select('*')
+          .select('*, auth_user_id, employee_separations(is_terminated)')
           .not('hired_at', 'is', null) // Only deployed employees
           .order('hired_at', { ascending: false });
 
         if (empError) throw empError;
 
-        if (employeesData && employeesData.length > 0) {
+        // Get all auth_user_ids to check account status
+        const authUserIds = employeesData
+          ? employeesData.map(emp => emp.auth_user_id).filter(Boolean)
+          : [];
+
+        // Fetch account status for all employees
+        let accountStatusMap = {};
+        if (authUserIds.length > 0) {
+          const { data: profilesStatusData, error: profilesStatusError } = await supabase
+            .from('profiles')
+            .select('id, account_expires_at, is_active')
+            .in('id', authUserIds);
+
+          if (!profilesStatusError && profilesStatusData) {
+            profilesStatusData.forEach(profile => {
+              const isActive = profile.is_active !== false;
+              const expiryDate = profile.account_expires_at ? new Date(profile.account_expires_at) : null;
+              const isExpired = expiryDate ? expiryDate < new Date() : false;
+              accountStatusMap[profile.id] = { isActive, isExpired };
+            });
+          }
+        }
+
+        // Filter out terminated employees and expired/disabled accounts
+        const activeEmployeesData = employeesData ? employeesData.filter(emp => {
+          // Check termination status
+          if (emp.employee_separations?.is_terminated) {
+            return false;
+          }
+          
+          // Check account status
+          if (emp.auth_user_id) {
+            const accountStatus = accountStatusMap[emp.auth_user_id];
+            if (accountStatus && (!accountStatus.isActive || accountStatus.isExpired)) {
+              return false;
+            }
+          }
+          
+          return true;
+        }) : [];
+
+        if (activeEmployeesData && activeEmployeesData.length > 0) {
           // Fetch agency names for employees endorsed by agencies (similar to Employees.jsx)
           const agencyIds = Array.from(new Set(
-            employeesData
+            activeEmployeesData
               .map((e) => e?.endorsed_by_agency_id || e?.agency_profile_id)
               .filter(Boolean)
           ));
@@ -248,7 +289,7 @@ function HrRequirements() {
           const applicantsByEmail = {};
 
           try {
-            const employeeIds = [...new Set(employeesData.map((e) => e?.id).filter(Boolean))];
+            const employeeIds = [...new Set(activeEmployeesData.map((e) => e?.id).filter(Boolean))];
             if (employeeIds.length > 0) {
               let applicantsData = null;
               let applicantsErr = null;
@@ -286,7 +327,7 @@ function HrRequirements() {
           }
 
           // Map employees to the expected structure
-          const mappedEmployees = employeesData.map(emp => {
+          const mappedEmployees = activeEmployeesData.map(emp => {
             const enrichmentEmail = String(emp?.email || '').trim().toLowerCase();
             const enrichedApplicant = applicantsById[emp?.id] || (enrichmentEmail ? applicantsByEmail[enrichmentEmail] : null);
 

@@ -7,13 +7,14 @@ import {
   createFormResubmissionNotification,
   createSeparationCompletedNotification,
   createAccountTerminationNotification,
-  createSeparationRejectedNotification
+  createSeparationRejectedNotification,
+  createAgencyEmployeeTerminationNotification
 } from "./notifications";
 
 function HrSeperation() {
   const [selectedEmployee, setSelectedEmployee] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState("all"); // all, pending, clearance, completed, terminated, retirement
+  const [activeTab, setActiveTab] = useState("all"); // all, pending, clearance, completed, retirement
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [hrUserId, setHrUserId] = useState(null);
@@ -22,6 +23,7 @@ function HrSeperation() {
 
   // Employee data with separation stages
   const [employees, setEmployees] = useState([]);
+  const [allEmployees, setAllEmployees] = useState([]); // All employees for termination modal
 
   // Fetch employees with separation records
   useEffect(() => {
@@ -51,6 +53,7 @@ function HrSeperation() {
   useEffect(() => {
     if (currentUserRole !== null) {
       fetchEmployeeSeparations();
+      fetchAllEmployees();
       
       // Poll every 30 seconds
       const interval = setInterval(fetchEmployeeSeparations, 30000);
@@ -126,6 +129,67 @@ function HrSeperation() {
     }
   };
 
+  const fetchAllEmployees = async () => {
+    try {
+      console.log('🔍 Fetching all employees...');
+      console.log('Current role:', currentUserRole);
+      console.log('Current depot:', currentUserDepot);
+      
+      // Fetch all employees
+      const { data: employeesData, error: empError } = await supabase
+        .from('employees')
+        .select('id, email, fname, lname, mname, position, depot, birthday, endorsed_by_agency_id, agency_profile_id, source');
+
+      if (empError) {
+        console.error('❌ Error fetching all employees:', empError);
+        return;
+      }
+
+      console.log('✅ Fetched employees count:', employeesData?.length || 0);
+      console.log('Raw employees data:', employeesData);
+
+      // Fetch separation records to check termination status
+      const { data: separationsData, error: sepError } = await supabase
+        .from('employee_separations')
+        .select('employee_id, is_terminated');
+
+      if (sepError) {
+        console.error('❌ Error fetching separations:', sepError);
+      }
+
+      console.log('✅ Separations data:', separationsData);
+
+      // Create a map of terminated employees
+      const terminatedMap = new Map();
+      (separationsData || []).forEach(sep => {
+        if (sep.is_terminated) {
+          terminatedMap.set(sep.employee_id, true);
+        }
+      });
+
+      // Transform to match UI format
+      const transformedEmployees = (employeesData || []).map(emp => ({
+        id: emp.id,
+        name: emp.fname && emp.lname 
+          ? `${emp.lname}, ${emp.fname}${emp.mname ? ' ' + emp.mname : ''}` 
+          : 'Unknown Employee',
+        position: emp.position || 'N/A',
+        depot: emp.depot || 'N/A',
+        isTerminated: terminatedMap.has(emp.id),
+        stage: null, // No separation stage for employees without separation records
+        source: emp.source,
+        agency_profile_id: emp.agency_profile_id
+      }));
+
+      console.log('✅ Transformed employees:', transformedEmployees);
+      console.log('✅ Non-terminated employees:', transformedEmployees.filter(e => !e.isTerminated).length);
+      setAllEmployees(transformedEmployees);
+      console.log('✅ setAllEmployees called');
+    } catch (error) {
+      console.error('❌ Error in fetchAllEmployees:', error);
+    }
+  };
+
   const fetchEmployeeSeparations = async () => {
     try {
       setLoading(true);
@@ -143,7 +207,7 @@ function HrSeperation() {
       
       const { data: employeesData, error: empError } = await supabase
         .from('employees')
-        .select('id, email, fname, lname, mname, position, depot, birthday')
+        .select('id, email, fname, lname, mname, position, depot, birthday, endorsed_by_agency_id, agency_profile_id, source')
         .in('id', employeeIds);
 
       if (empError) {
@@ -193,8 +257,22 @@ function HrSeperation() {
         // Determine stage based on status
         let stage = 'pending';
         if (sep.status === 'completed') {
-          stage = 'completed';
+          // Check if employee has resignation letter to determine completion type
+          if (sep.resignation_letter_url) {
+            stage = 'resigned'; // Completed with resignation letter
+          } else {
+            stage = 'dismissed'; // Completed without resignation letter (dismissed employees)
+          }
+          console.log('Employee stage determination:', {
+            employeeId: sep.employee_id,
+            status: sep.status,
+            resignationLetterUrl: sep.resignation_letter_url,
+            finalStage: stage
+          });
         } else if (sep.resignation_status === 'validated') {
+          stage = 'clearance';
+        } else if (sep.resignation_letter_required === false) {
+          // Dismissed employees who don't require resignation letter should skip to clearance stage
           stage = 'clearance';
         }
 
@@ -285,8 +363,12 @@ function HrSeperation() {
           isCompleted: sep.status === 'completed',
           isTerminated: sep.is_terminated || false,
           terminationDate: sep.terminated_at,
+          terminationDocUrl: sep.termination_doc_url,
+          terminationDocFilename: sep.termination_doc_filename,
           dbId: sep.id,
-          employeeUserId: employee?.id || sep.employee_id
+          employeeUserId: employee?.id || sep.employee_id,
+          source: employee?.source || null,
+          isAgencyEmployee: employee?.source && employee.source.toLowerCase() === 'agency'
         };
       });
 
@@ -424,15 +506,27 @@ function HrSeperation() {
   const [pendingValidation, setPendingValidation] = useState(null); // { employeeId, docType }
   const [showUploadFinalDocsConfirm, setShowUploadFinalDocsConfirm] = useState(false);
   const [showMarkCompletedConfirm, setShowMarkCompletedConfirm] = useState(false);
+  const [showMarkCompletedAgencyConfirm, setShowMarkCompletedAgencyConfirm] = useState(false);
   const [uploadingFinalDocs, setUploadingFinalDocs] = useState(false);
   const [pendingCompletionEmployeeId, setPendingCompletionEmployeeId] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pendingDeleteEmployeeId, setPendingDeleteEmployeeId] = useState(null);
   const [showTerminateModal, setShowTerminateModal] = useState(false);
   const [terminateFile, setTerminateFile] = useState(null);
+  const [agencyCompletionFile, setAgencyCompletionFile] = useState(null);
   const [pendingTerminateEmployeeId, setPendingTerminateEmployeeId] = useState(null);
   const [showTerminateConfirm, setShowTerminateConfirm] = useState(false);
   const [showTerminateSuccess, setShowTerminateSuccess] = useState(false);
+  const [terminatedEmployeeIsAgency, setTerminatedEmployeeIsAgency] = useState(false);
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
+  const [showEmployeeSuggestions, setShowEmployeeSuggestions] = useState(false);
+  const [selectedEmployeeForTermination, setSelectedEmployeeForTermination] = useState(null);
+  const [terminationDate, setTerminationDate] = useState("");
+  
+  // Disable Account flow (for completed employees)
+  const [showDisableAccountConfirm, setShowDisableAccountConfirm] = useState(false);
+  const [showDisableAccountSuccess, setShowDisableAccountSuccess] = useState(false);
+  const [pendingDisableEmployeeId, setPendingDisableEmployeeId] = useState(null);
   
   // Loading states for operations
   const [isApproving, setIsApproving] = useState(false);
@@ -507,6 +601,19 @@ function HrSeperation() {
     // Save selected employee ID to sessionStorage for persistence across refreshes
     sessionStorage.setItem('selectedEmployeeId', employee.id);
   };
+
+  // Filter employees for search
+  const filteredEmployeesForSearch = employeeSearchQuery
+    ? allEmployees.filter(emp => {
+        const matchesSearch = emp.name.toLowerCase().includes(employeeSearchQuery.toLowerCase());
+        const notTerminated = !emp.isTerminated;
+        // For HRC role, only show employees from their depot
+        if (currentUserRole === 'HRC' && currentUserDepot) {
+          return matchesSearch && notTerminated && emp.depot === currentUserDepot;
+        }
+        return matchesSearch && notTerminated;
+      })
+    : [];
 
   // Auto-populate templates when employee is selected or templates change
   useEffect(() => {
@@ -596,23 +703,54 @@ function HrSeperation() {
       // Check if this employee was endorsed by an agency
       const { data: employeeData, error: empError } = await supabase
         .from('employees')
-        .select('endorsed_by_agency_id, source, fname, lname')
+        .select('id, endorsed_by_agency_id, agency_profile_id, source, fname, lname')
         .eq('id', employeeId)
         .single();
 
-      if (!empError && employeeData && employeeData.endorsed_by_agency_id && employeeData.source === 'Agency') {
-        // Create notification for the agency
-        const employeeName = `${employeeData.fname || ''} ${employeeData.lname || ''}`.trim();
-        await supabase
-          .from('notifications')
-          .insert({
-            user_id: employeeData.endorsed_by_agency_id,
-            type: 'resignation_rejected',
-            title: 'Resignation Letter Rejected',
-            message: `The resignation letter for ${employeeName} has been rejected by HR. The employee may need to resubmit.`,
-            read: false,
-            created_at: new Date().toISOString()
+      console.log('=== DETAILED EMPLOYEE DATA ===');
+      console.log('Employee ID:', employeeId);
+      console.log('Full employee data:', employeeData);
+      console.log('endorsed_by_agency_id:', employeeData?.endorsed_by_agency_id);
+      console.log('agency_profile_id:', employeeData?.agency_profile_id);
+      console.log('source:', employeeData?.source);
+      console.log('Error:', empError);
+
+      if (!empError && employeeData) {
+        // Use agency_profile_id (agency's auth user ID) instead of endorsed_by_agency_id
+        const agencyUserId = employeeData.agency_profile_id || employeeData.endorsed_by_agency_id;
+        
+        console.log('=== AGENCY NOTIFICATION DECISION ===');
+        console.log('Selected agency user ID:', agencyUserId);
+        console.log('Will create notification?', !!(agencyUserId && employeeData.source === 'Agency'));
+
+        if (agencyUserId && employeeData.source === 'Agency') {
+          // Create notification for the agency
+          const employeeName = `${employeeData.fname || ''} ${employeeData.lname || ''}`.trim();
+          console.log('✅ Creating notification for agency user:', agencyUserId, 'Employee:', employeeName);
+          
+          const { data: notifData, error: notifError } = await supabase
+            .from('notifications')
+            .insert({
+              user_id: agencyUserId,
+              type: 'resignation_rejected',
+              title: 'Resignation Letter Rejected',
+              message: `The resignation letter for ${employeeName} has been rejected by HR. The employee may need to resubmit.`,
+              read: false,
+              created_at: new Date().toISOString()
+            })
+            .select();
+
+          if (notifError) {
+            console.error('❌ Error creating notification:', notifError);
+          } else {
+            console.log('✅ Notification created successfully:', notifData);
+          }
+        } else {
+          console.log('❌ Not creating notification. Reason:', {
+            noAgencyUserId: !agencyUserId,
+            wrongSource: employeeData.source !== 'Agency'
           });
+        }
       }
 
       // Update local state
@@ -734,9 +872,10 @@ function HrSeperation() {
 
       if (updateError) throw updateError;
 
-      // Send notification to employee
+      // Send notification to employee and agency (if applicable)
       await createExitFormsUploadedNotification({
-        employeeUserId: employee.employeeUserId
+        employeeUserId: employee.employeeUserId,
+        employeeId: employee.id
       });
 
       // Update local state
@@ -975,6 +1114,7 @@ function HrSeperation() {
     if (isMarkingCompleted) return;
     
     setShowMarkCompletedConfirm(false);
+    setShowMarkCompletedAgencyConfirm(false);
     setPendingCompletionEmployeeId(null);
     
     try {
@@ -982,19 +1122,49 @@ function HrSeperation() {
       const employee = employees.find(emp => emp.id === employeeId);
       if (!employee) return;
 
+      let completionDocUrl = null;
+      let completionDocFilename = null;
+
+      // Upload completion file if provided (for agency employees)
+      if (agencyCompletionFile) {
+        const fileExt = agencyCompletionFile.name.split('.').pop();
+        const fileName = `${employee.employeeUserId}/completion_${Date.now()}.${fileExt}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('separation-documents')
+          .upload(fileName, agencyCompletionFile, {
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (uploadError) throw uploadError;
+        
+        completionDocUrl = fileName;
+        completionDocFilename = agencyCompletionFile.name;
+      }
+
+      const updateData = {
+        status: 'completed',
+        completed_at: new Date().toISOString()
+      };
+
+      // Add completion doc fields if file was uploaded (reusing termination columns for agency employees)
+      if (completionDocUrl) {
+        updateData.termination_doc_url = completionDocUrl;
+        updateData.termination_doc_filename = completionDocFilename;
+      }
+
       const { error: updateError } = await supabase
         .from('employee_separations')
-        .update({
-          status: 'completed',
-          completed_at: new Date().toISOString()
-        })
+        .update(updateData)
         .eq('id', employee.dbId);
 
       if (updateError) throw updateError;
 
-      // Send notification to employee
+      // Send notification to employee and agency (if applicable)
       await createSeparationCompletedNotification({
-        employeeUserId: employee.employeeUserId
+        employeeUserId: employee.employeeUserId,
+        employeeId: employee.id
       });
 
       // Update local state
@@ -1006,6 +1176,10 @@ function HrSeperation() {
       if (selectedEmployee?.id === employeeId) {
         setSelectedEmployee({ ...selectedEmployee, isCompleted: true, stage: "completed" });
       }
+
+      // Clear form
+      setAgencyCompletionFile(null);
+
     } catch (err) {
       console.error('Error marking as completed:', err);
       setError(`Failed to mark as completed: ${err.message}`);
@@ -1044,7 +1218,8 @@ function HrSeperation() {
 
       // Send rejection notification to employee
       await createSeparationRejectedNotification({
-        employeeUserId: employee.employeeUserId
+        employeeUserId: employee.employeeUserId,
+        employeeId: employeeId
       });
 
       // Remove from local state
@@ -1138,6 +1313,79 @@ function HrSeperation() {
     } catch (err) {
       console.error('Error terminating employee:', err);
       setError(`Failed to terminate employee: ${err.message}`);
+    } finally {
+      setIsTerminating(false);
+    }
+  };
+
+  const handleDisableAccount = async (employeeId) => {
+    try {
+      setIsTerminating(true);
+      
+      const employee = employees.find(e => e.id === employeeId);
+      if (!employee) {
+        throw new Error('Employee not found');
+      }
+
+      // Fetch auth_user_id from employees table
+      const { data: empData, error: empError } = await supabase
+        .from('employees')
+        .select('auth_user_id')
+        .eq('id', employeeId)
+        .single();
+
+      if (empError) throw empError;
+
+      const authUserId = empData?.auth_user_id;
+      if (!authUserId) {
+        alert('This employee does not have an associated account to disable.');
+        return;
+      }
+
+      // Set account expiry to 30 days from now
+      const accountExpiry = new Date();
+      accountExpiry.setDate(accountExpiry.getDate() + 30);
+
+      // Update profiles table using auth_user_id
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          account_expires_at: accountExpiry.toISOString(),
+          is_active: false
+        })
+        .eq('id', authUserId);
+
+      if (profileError) throw profileError;
+
+      // Send notification to employee
+      try {
+        await createAccountTerminationNotification({
+          employeeUserId: employeeId,
+          expiryDate: accountExpiry.toISOString()
+        });
+        console.log('✅ Account disable notification sent to employee ID:', employeeId);
+      } catch (notifError) {
+        console.error('⚠️ Failed to send notification:', notifError);
+      }
+
+      // Update local state
+      setEmployees(employees.map(emp => 
+        emp.id === employeeId 
+          ? { ...emp, isTerminated: true }
+          : emp
+      ));
+
+      if (selectedEmployee && selectedEmployee.id === employeeId) {
+        setSelectedEmployee({ ...selectedEmployee, isTerminated: true });
+      }
+
+      setShowDisableAccountConfirm(false);
+      setShowDisableAccountSuccess(true);
+      setPendingDisableEmployeeId(null);
+
+    } catch (err) {
+      console.error('Error disabling account:', err);
+      alert(`Failed to disable account: ${err.message}`);
     } finally {
       setIsTerminating(false);
     }
@@ -1306,16 +1554,42 @@ function HrSeperation() {
     }
   };
 
+  const handleDownloadSignedForm = async (filePath, fileName, formType) => {
+    try {
+      if (!filePath) {
+        alert('No file available');
+        return;
+      }
+
+      const { data, error } = await supabase.storage
+        .from('separation-documents')
+        .download(filePath);
+      
+      if (error) throw error;
+      
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName || `signed_${formType}_form.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error downloading signed form:', err);
+      alert('Failed to download file');
+    }
+  };
+
   const filteredEmployees = employees.filter(emp => {
     const matchesSearch = emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          emp.id.includes(searchTerm) ||
                          emp.position.toLowerCase().includes(searchTerm.toLowerCase());
     
-    if (activeTab === "all") return matchesSearch && !emp.isTerminated;
+    if (activeTab === "all") return matchesSearch;
     if (activeTab === "pending") return matchesSearch && emp.stage === "pending" && !emp.isTerminated;
     if (activeTab === "clearance") return matchesSearch && emp.stage === "clearance" && !emp.isTerminated;
-    if (activeTab === "completed") return matchesSearch && emp.stage === "completed" && !emp.isTerminated;
-    if (activeTab === "terminated") return matchesSearch && emp.isTerminated;
+    if (activeTab === "completed") return matchesSearch && (emp.stage === "completed" || emp.stage === "resigned" || emp.stage === "dismissed" || emp.isTerminated);
     if (activeTab === "retirement") return matchesSearch && emp.retirementStatus && emp.isRetirementOnly && !emp.isTerminated;
     return matchesSearch;
   });
@@ -1325,13 +1599,19 @@ function HrSeperation() {
       pending: "bg-orange-100 text-orange-800",
       clearance: "bg-blue-100 text-blue-800",
       completed: "bg-green-100 text-green-800",
-      retirement: "bg-purple-100 text-purple-800"
+      resigned: "bg-emerald-100 text-emerald-800",
+      dismissed: "bg-red-100 text-red-800",
+      retirement: "bg-purple-100 text-purple-800",
+      terminated: "bg-red-100 text-red-800"
     };
     const labels = {
       pending: "Pending Review",
       clearance: "In Clearance",
       completed: "Completed",
-      retirement: "Retirement Tracking"
+      resigned: "Resigned",
+      dismissed: "Dismissed",
+      retirement: "Retirement Tracking",
+      terminated: "Terminated"
     };
     return (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${styles[stage]}`}>
@@ -1355,13 +1635,21 @@ function HrSeperation() {
           )}
           
           {/* Search */}
-          <input
-            type="text"
-            placeholder="Search by name, ID, or position..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+          <div className="flex gap-3 items-center">
+            <input
+              type="text"
+              placeholder="Search by name, ID, or position..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={() => setShowTerminateModal(true)}
+              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm font-medium transition-colors"
+            >
+              Terminate
+            </button>
+          </div>
 
           {/* Tabs */}
           <div className="flex gap-2 mt-4 flex-wrap">
@@ -1371,7 +1659,7 @@ function HrSeperation() {
                 activeTab === "all" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              All ({employees.filter(e => !e.isTerminated).length})
+              All ({employees.length})
             </button>
             <button
               onClick={() => setActiveTab("pending")}
@@ -1395,15 +1683,7 @@ function HrSeperation() {
                 activeTab === "completed" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
               }`}
             >
-              Completed ({employees.filter(e => e.stage === "completed" && !e.isTerminated).length})
-            </button>
-            <button
-              onClick={() => setActiveTab("terminated")}
-              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                activeTab === "terminated" ? "bg-red-600 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              Disabled Accounts ({employees.filter(e => e.isTerminated).length})
+              Completed ({employees.filter(e => (e.stage === "completed" || e.stage === "resigned" || e.stage === "dismissed" || e.isTerminated)).length})
             </button>
             <button
               onClick={() => setActiveTab("retirement")}
@@ -1467,7 +1747,7 @@ function HrSeperation() {
                         </span>
                       )}
                     </div>
-                    {!employee.isTerminated && getStageBadge(employee.stage)}
+                    {employee.isTerminated ? getStageBadge('terminated') : getStageBadge(employee.stage)}
                   </div>
                   <div className="flex justify-between items-center text-xs text-gray-500">
                     <span>ID: {employee.id}</span>
@@ -1513,7 +1793,7 @@ function HrSeperation() {
                 <span>Submitted: {selectedEmployee.submissionDate}</span>
               </div>
               <div className="flex items-center gap-2 mt-2">
-                {!selectedEmployee.isTerminated && getStageBadge(selectedEmployee.stage)}
+                {selectedEmployee.isTerminated ? getStageBadge('terminated') : getStageBadge(selectedEmployee.stage)}
                 {selectedEmployee.retirementStatus && (
                   <span className={`px-3 py-1 rounded-full text-sm font-medium ${
                     selectedEmployee.retirementStatus === 'Overdue' 
@@ -1523,18 +1803,80 @@ function HrSeperation() {
                     {selectedEmployee.retirementStatus}
                   </span>
                 )}
-                {selectedEmployee.isTerminated && (
-                  <span className="px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800">
-                    Terminated
-                  </span>
-                )}
               </div>
-              {selectedEmployee.isTerminated && selectedEmployee.terminationDate && (
-                <div className="mt-2 text-sm text-gray-600">
-                  Termination Date: {new Date(selectedEmployee.terminationDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-                </div>
-              )}
             </div>
+
+            {/* Termination Details Section */}
+            {selectedEmployee.isTerminated && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-6 mb-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-red-100 rounded-lg">
+                    <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-red-800">Termination Information</h3>
+                </div>
+                
+                <div className="bg-white rounded-lg p-4 space-y-3">
+                  {/* Termination Date */}
+                  {selectedEmployee.terminationDate && (
+                    <div className="flex items-start gap-3">
+                      <svg className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Termination Date</p>
+                        <p className="text-sm font-semibold text-gray-900">
+                          {new Date(selectedEmployee.terminationDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Termination Document */}
+                  {selectedEmployee.terminationDocUrl && (
+                    <div className="flex items-start gap-3">
+                      <svg className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <div className="flex-1">
+                        <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">Termination Document</p>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const { data, error } = await supabase.storage
+                                .from('separation-documents')
+                                .download(selectedEmployee.terminationDocUrl);
+                              
+                              if (error) throw error;
+                              
+                              const url = URL.createObjectURL(data);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = selectedEmployee.terminationDocFilename || 'termination-document.pdf';
+                              document.body.appendChild(a);
+                              a.click();
+                              document.body.removeChild(a);
+                              URL.revokeObjectURL(url);
+                            } catch (err) {
+                              console.error('Download error:', err);
+                              alert('Failed to download document');
+                            }
+                          }}
+                          className="flex items-center gap-2 px-3 py-2 bg-red-100 text-red-700 rounded-md hover:bg-red-200 transition-colors text-sm font-medium"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          Download {selectedEmployee.terminationDocFilename || 'Document'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Retirement Tracking Info for employees without separation */}
             {selectedEmployee.isRetirementOnly && (
@@ -1740,41 +2082,14 @@ function HrSeperation() {
                             <p className="text-sm text-gray-700 truncate">📎 {hrExitClearanceFile.name}</p>
                           </div>
                           <div className="flex items-center gap-2">
-                            {hrExitClearanceFile.isTemplate && (
-                              <label className="cursor-pointer">
-                                <input
-                                  type="file"
-                                  accept=".pdf,.doc,.docx"
-                                  onChange={(e) => {
-                                    if (e.target.files[0]) {
-                                      setHrExitClearanceFile(e.target.files[0]);
-                                    }
-                                  }}
-                                  className="hidden"
-                                />
-                                <span className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                                  Update
-                                </span>
-                              </label>
-                            )}
                           </div>
                         </div>
                       ) : (
-                        <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
-                          <p className="text-sm text-gray-500 mb-2">No file selected</p>
-                          <label className="cursor-pointer inline-block px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
-                            <input
-                              type="file"
-                              accept=".pdf,.doc,.docx"
-                              onChange={(e) => {
-                                if (e.target.files[0]) {
-                                  setHrExitClearanceFile(e.target.files[0]);
-                                }
-                              }}
-                              className="hidden"
-                            />
-                            Select Custom File
-                          </label>
+                        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                          <p className="text-sm text-yellow-800 mb-1">No template file set</p>
+                          <p className="text-xs text-yellow-700">
+                            Use "Manage Templates" to set a global template for this form.
+                          </p>
                         </div>
                       )}
                     </div>
@@ -1798,41 +2113,14 @@ function HrSeperation() {
                             <p className="text-sm text-gray-700 truncate">📎 {hrExitInterviewFile.name}</p>
                           </div>
                           <div className="flex items-center gap-2">
-                            {hrExitInterviewFile.isTemplate && (
-                              <label className="cursor-pointer">
-                                <input
-                                  type="file"
-                                  accept=".pdf,.doc,.docx"
-                                  onChange={(e) => {
-                                    if (e.target.files[0]) {
-                                      setHrExitInterviewFile(e.target.files[0]);
-                                    }
-                                  }}
-                                  className="hidden"
-                                />
-                                <span className="text-blue-600 hover:text-blue-800 text-sm font-medium">
-                                  Update
-                                </span>
-                              </label>
-                            )}
                           </div>
                         </div>
                       ) : (
-                        <div className="p-3 bg-gray-50 border border-gray-300 rounded-md">
-                          <p className="text-sm text-gray-500 mb-2">No file selected</p>
-                          <label className="cursor-pointer inline-block px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
-                            <input
-                              type="file"
-                              accept=".pdf,.doc,.docx"
-                              onChange={(e) => {
-                                if (e.target.files[0]) {
-                                  setHrExitInterviewFile(e.target.files[0]);
-                                }
-                              }}
-                              className="hidden"
-                            />
-                            Select Custom File
-                          </label>
+                        <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                          <p className="text-sm text-yellow-800 mb-1">No template file set</p>
+                          <p className="text-xs text-yellow-700">
+                            Use "Manage Templates" to set a global template for this form.
+                          </p>
                         </div>
                       )}
                     </div>
@@ -1843,7 +2131,7 @@ function HrSeperation() {
                           setPendingUploadEmployeeId(selectedEmployee.id);
                           setShowUploadFormsConfirm(true);
                         }}
-                        disabled={!hrExitClearanceFile || !hrExitInterviewFile || selectedEmployee.stage === "completed"}
+                        disabled={!hrExitClearanceFile || !hrExitInterviewFile || selectedEmployee.stage === "completed" || selectedEmployee.isCompleted}
                         className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
                       >
                         {selectedEmployee.hrExitFormsUploaded ? 'Update Forms for Employee' : 'Send Forms to Employee'}
@@ -1875,9 +2163,12 @@ function HrSeperation() {
                     </div>
                     {selectedEmployee.exitClearanceFile ? (
                       <div className="flex items-center justify-between">
-                        <a href={selectedEmployee.exitClearanceFile} download className="text-sm text-blue-600 hover:underline">
-                          {selectedEmployee.exitClearanceFile}
-                        </a>
+                        <button
+                          onClick={() => handleDownloadSignedForm(selectedEmployee.exitClearanceFile, 'signed_exit_clearance_form.pdf', 'clearance')}
+                          className="text-sm text-blue-600 hover:underline cursor-pointer bg-transparent border-none p-0"
+                        >
+                          Download Signed Clearance Form
+                        </button>
                         {selectedEmployee.exitClearanceStatus !== "Validated" && selectedEmployee.stage !== "completed" && (
                           <div className="flex gap-2">
                             <button
@@ -1920,9 +2211,12 @@ function HrSeperation() {
                     </div>
                     {selectedEmployee.exitInterviewFile ? (
                       <div className="flex items-center justify-between">
-                        <a href={selectedEmployee.exitInterviewFile} download className="text-sm text-blue-600 hover:underline">
-                          {selectedEmployee.exitInterviewFile}
-                        </a>
+                        <button
+                          onClick={() => handleDownloadSignedForm(selectedEmployee.exitInterviewFile, 'signed_exit_interview_form.pdf', 'interview')}
+                          className="text-sm text-blue-600 hover:underline cursor-pointer bg-transparent border-none p-0"
+                        >
+                          Download Signed Interview Form
+                        </button>
                         {selectedEmployee.exitInterviewStatus !== "Validated" && selectedEmployee.stage !== "completed" && (
                           <div className="flex gap-2">
                             <button
@@ -1969,11 +2263,12 @@ function HrSeperation() {
                       type="file"
                       multiple
                       accept=".pdf,.doc,.docx"
+                      disabled={selectedEmployee.isCompleted}
                       onChange={(e) => {
                         const files = Array.from(e.target.files);
                         setFinalDocFiles([...finalDocFiles, ...files]);
                       }}
-                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                      className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
                     />
                     {finalDocFiles.length > 0 && (
                       <div className="mt-3 space-y-2">
@@ -1995,7 +2290,7 @@ function HrSeperation() {
                         </div>
                         <button
                           onClick={() => setShowUploadFinalDocsConfirm(true)}
-                          disabled={uploadingFinalDocs}
+                          disabled={uploadingFinalDocs || selectedEmployee.isCompleted}
                           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm"
                         >
                           {uploadingFinalDocs ? 'Uploading...' : 'Upload Files'}
@@ -2035,7 +2330,11 @@ function HrSeperation() {
                     <button
                       onClick={() => {
                         setPendingCompletionEmployeeId(selectedEmployee.id);
-                        setShowMarkCompletedConfirm(true);
+                        if (selectedEmployee.isAgencyEmployee) {
+                          setShowMarkCompletedAgencyConfirm(true);
+                        } else {
+                          setShowMarkCompletedConfirm(true);
+                        }
                       }}
                       className="w-full px-4 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
                     >
@@ -2048,20 +2347,22 @@ function HrSeperation() {
                       <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                         <p className="text-sm font-medium text-green-800">✓ Separation process completed</p>
                       </div>
-                      <button
-                        onClick={() => {
-                          setPendingTerminateEmployeeId(selectedEmployee.id);
-                          setShowTerminateModal(true);
-                        }}
-                        disabled={selectedEmployee.isTerminated}
-                        className={`w-full px-4 py-3 rounded-md transition-colors font-medium ${
-                          selectedEmployee.isTerminated
-                            ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
-                            : 'bg-red-600 text-white hover:bg-red-700'
-                        }`}
-                      >
-                        {selectedEmployee.isTerminated ? 'Account Already Disabled' : 'Disable Account'}
-                      </button>
+                      {!selectedEmployee.isAgencyEmployee && (
+                        <button
+                          onClick={() => {
+                            setPendingDisableEmployeeId(selectedEmployee.id);
+                            setShowDisableAccountConfirm(true);
+                          }}
+                          disabled={selectedEmployee.isTerminated}
+                          className={`w-full px-4 py-3 rounded-md transition-colors font-medium ${
+                            selectedEmployee.isTerminated
+                              ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                              : 'bg-red-600 text-white hover:bg-red-700'
+                          }`}
+                        >
+                          {selectedEmployee.isTerminated ? 'Account Already Disabled' : 'Disable Account'}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2071,7 +2372,9 @@ function HrSeperation() {
             {!selectedEmployee.isResignationApproved && selectedEmployee.resignationLetterRequired && (
               <div className="bg-gray-50 rounded-lg p-6 text-center text-gray-500">
                 <p>
-                  {selectedEmployee.resignationFile 
+                  {selectedEmployee.isTerminated
+                    ? 'Employee Terminated'
+                    : selectedEmployee.resignationFile 
                     ? 'Approve the resignation letter to unlock Stage 2' 
                     : 'Waiting for employee to submit resignation letter'}
                 </p>
@@ -2129,49 +2432,195 @@ function HrSeperation() {
         </div>
       )}
 
-      {/* Disable Account Modal */}
+      {/* Terminate Employee Selection Modal */}
       {showTerminateModal && (
-        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-red-600 mb-4">Disable Account</h3>
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Employee Name:</p>
-                <p className="font-medium text-gray-800">{selectedEmployee?.name}</p>
-              </div>
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Separation Date:</p>
-                <p className="font-medium text-gray-800">{new Date().toLocaleDateString('en-CA')}</p>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-600 mb-2">Upload Separation Document:</label>
-                <input
-                  type="file"
-                  onChange={(e) => setTerminateFile(e.target.files[0])}
-                  className="w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
-                />
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b border-gray-200 bg-white bg-opacity-90 rounded-t-lg">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-red-600">Select Employee to Terminate</h3>
+                <button
+                  onClick={() => setShowTerminateModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
               </div>
             </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowTerminateModal(false);
-                  setPendingTerminateEmployeeId(null);
-                  setTerminateFile(null);
-                }}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setShowTerminateModal(false);
-                  setShowTerminateConfirm(true);
-                }}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
-              >
-                Disable
-              </button>
+            
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-4">
+                {/* Search Individual Employee */}
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Search Individual Employee
+                  </label>
+                  <input
+                    type="text"
+                    value={employeeSearchQuery}
+                    onChange={(e) => {
+                      setEmployeeSearchQuery(e.target.value);
+                      setShowEmployeeSuggestions(e.target.value.length > 0);
+                    }}
+                    onFocus={() => {
+                      if (employeeSearchQuery) setShowEmployeeSuggestions(true);
+                    }}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
+                    placeholder="Type employee name..."
+                  />
+                  {showEmployeeSuggestions && filteredEmployeesForSearch.length > 0 && (
+                    <ul className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                      {filteredEmployeesForSearch.map((emp) => (
+                        <li
+                          key={emp.id}
+                          className="px-4 py-3 text-sm border-b last:border-b-0 text-gray-700 hover:bg-gray-100 cursor-pointer"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setSelectedEmployeeForTermination(emp);
+                            setEmployeeSearchQuery(emp.name);
+                            setShowEmployeeSuggestions(false);
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-medium text-gray-900">{emp.name}</div>
+                              <div className="text-xs text-gray-500">{emp.position} • {emp.depot}</div>
+                            </div>
+                            {emp.stage && (
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                emp.stage === 'pending' ? 'bg-orange-100 text-orange-800' :
+                                emp.stage === 'clearance' ? 'bg-blue-100 text-blue-800' :
+                                emp.stage === 'completed' || emp.stage === 'resigned' || emp.stage === 'dismissed' ? 'bg-green-100 text-green-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {emp.stage === 'pending' ? 'Pending' :
+                                 emp.stage === 'clearance' ? 'In Clearance' :
+                                 emp.stage === 'completed' || emp.stage === 'resigned' || emp.stage === 'dismissed' ? 'Completed' :
+                                 emp.stage || 'No Separation'}
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {selectedEmployeeForTermination && (
+                    <div className="mt-2 flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-gray-600 font-medium text-xs">
+                        {selectedEmployeeForTermination.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase()}
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-sm text-gray-900">{selectedEmployeeForTermination.name}</div>
+                        <div className="text-xs text-gray-500">{selectedEmployeeForTermination.position} • {selectedEmployeeForTermination.depot}</div>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setSelectedEmployeeForTermination(null);
+                          setEmployeeSearchQuery("");
+                        }}
+                        className="text-gray-400 hover:text-gray-600"
+                        title="Clear selection"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Termination Date */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Termination Date
+                  </label>
+                  <input
+                    type="date"
+                    value={terminationDate}
+                    onChange={(e) => setTerminationDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white transition-colors"
+                  />
+                </div>
+
+                {/* Upload Document */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload Documents
+                  </label>
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-red-400 transition-colors bg-white">
+                    <input
+                      type="file"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setTerminateFile(e.target.files[0]);
+                        }
+                      }}
+                      className="hidden"
+                      id="terminate-file-upload"
+                      accept=".pdf,.doc,.docx"
+                    />
+                    <label htmlFor="terminate-file-upload" className="cursor-pointer">
+                      <svg className="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      <p className="text-sm text-gray-600 mb-1">
+                        {terminateFile ? terminateFile.name : 'Click to upload or drag and drop'}
+                      </p>
+                      <p className="text-xs text-gray-500">PDF, DOC, DOCX (MAX. 10MB)</p>
+                    </label>
+                  </div>
+                  {terminateFile && (
+                    <div className="mt-2 flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-200">
+                      <div className="flex items-center gap-2">
+                        <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <span className="text-sm text-gray-700">{terminateFile.name}</span>
+                      </div>
+                      <button
+                        onClick={() => setTerminateFile(null)}
+                        className="text-gray-400 hover:text-gray-600"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6 border-t border-gray-200 bg-white bg-opacity-90 rounded-b-lg">
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowTerminateModal(false);
+                    setSelectedEmployeeForTermination(null);
+                    setEmployeeSearchQuery("");
+                    setTerminationDate("");
+                    setTerminateFile(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowTerminateModal(false);
+                    setShowTerminateConfirm(true);
+                  }}
+                  disabled={!selectedEmployeeForTermination || !terminationDate || !terminateFile}
+                  className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  Terminate Employee
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2179,11 +2628,25 @@ function HrSeperation() {
 
       {/* Terminate Confirmation Modal */}
       {showTerminateConfirm && (
-        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-red-600 mb-4">Confirm Disable Account?</h3>
-            <p className="text-gray-600 mb-6">
-              Are you sure you want to Disable this employee's account? The employee will have access to their account for 30 days before it is closed.
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Confirm Termination</h3>
+            </div>
+            <p className="text-gray-600 mb-2">
+              Are you sure you want to terminate <span className="font-semibold text-gray-900">{selectedEmployeeForTermination?.name}</span>?
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              {selectedEmployeeForTermination?.source === 'agency' || selectedEmployeeForTermination?.agency_profile_id ? (
+                'This employee will be marked as terminated in the system.'
+              ) : (
+                'They will have access for 5 minutes before the account is disabled.'
+              )}
             </p>
             <div className="flex justify-end gap-3">
               <button
@@ -2191,16 +2654,293 @@ function HrSeperation() {
                   setShowTerminateConfirm(false);
                   setShowTerminateModal(true);
                 }}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
-                onClick={() => handleTerminateEmployee(pendingTerminateEmployeeId)}
+                onClick={async () => {
+                  if (isTerminating) return; // Prevent double clicks
+                  
+                  setIsTerminating(true);
+                  try {
+                    // Check if employee is from agency
+                    const isAgencyEmployee = selectedEmployeeForTermination.source === 'agency' || 
+                                            selectedEmployeeForTermination.agency_profile_id;
+
+                    // Fetch auth_user_id from employees table for non-agency employees
+                    let authUserId = null;
+                    let accountExpiry = null;
+                    if (!isAgencyEmployee) {
+                      const { data: employeeData, error: employeeError } = await supabase
+                        .from('employees')
+                        .select('auth_user_id')
+                        .eq('id', selectedEmployeeForTermination.id)
+                        .single();
+
+                      if (employeeError) {
+                        console.error('Error fetching employee auth_user_id:', employeeError);
+                      } else {
+                        authUserId = employeeData?.auth_user_id;
+                        console.log('Found auth_user_id:', authUserId);
+                      }
+
+                      // Set account expiry to 5 minutes from now
+                      accountExpiry = new Date();
+                      accountExpiry.setMinutes(accountExpiry.getMinutes() + 5);
+
+                      // Disable account in profiles table using auth_user_id
+                      if (authUserId) {
+                        const { error: profileError } = await supabase
+                          .from('profiles')
+                          .update({
+                            account_expires_at: accountExpiry.toISOString(),
+                            is_active: false
+                          })
+                          .eq('id', authUserId);
+
+                        if (profileError) {
+                          console.error('Error updating profile:', profileError);
+                        } else {
+                          console.log('✅ Account disabled for auth user:', authUserId);
+                        }
+                      }
+                    }
+
+                    // Upload termination document to Supabase storage
+                    let terminationDocUrl = null;
+                    let terminationDocFilename = null;
+                    
+                    if (terminateFile) {
+                      const fileName = `termination-${selectedEmployeeForTermination.id}-${Date.now()}-${terminateFile.name}`;
+                      const { data: uploadData, error: uploadError } = await supabase.storage
+                        .from('separation-documents')
+                        .upload(fileName, terminateFile);
+
+                      if (uploadError) throw uploadError;
+
+                      terminationDocUrl = fileName; // Store the path, not the public URL
+                      terminationDocFilename = terminateFile.name;
+                    }
+
+                    // Create or update employee separation record
+                    const { data: existingSeparation } = await supabase
+                      .from('employee_separations')
+                      .select('id')
+                      .eq('employee_id', selectedEmployeeForTermination.id)
+                      .maybeSingle();
+
+                    const updateData = {
+                      is_terminated: true,
+                      terminated_at: terminationDate,
+                      termination_doc_url: terminationDocUrl,
+                      termination_doc_filename: terminationDocFilename
+                    };
+
+                    // Only set account_expires_at for non-agency employees
+                    if (!isAgencyEmployee && accountExpiry) {
+                      updateData.account_expires_at = accountExpiry.toISOString();
+                    }
+
+                    if (existingSeparation) {
+                      // Override existing separation record with termination data
+                      const { error: updateError } = await supabase
+                        .from('employee_separations')
+                        .update(updateData)
+                        .eq('id', existingSeparation.id);
+
+                      if (updateError) throw updateError;
+                    } else {
+                      // Create new separation record for termination
+                      const { error: insertError } = await supabase
+                        .from('employee_separations')
+                        .insert({
+                          employee_id: selectedEmployeeForTermination.id,
+                          ...updateData
+                        });
+
+                      if (insertError) throw insertError;
+                    }
+
+                    // Send notification to employee if they have a user account
+                    if (!isAgencyEmployee && authUserId) {
+                      try {
+                        await createAccountTerminationNotification({
+                          employeeUserId: selectedEmployeeForTermination.id,
+                          expiryDate: accountExpiry.toISOString()
+                        });
+                        console.log('✅ Notification sent to employee ID:', selectedEmployeeForTermination.id);
+                      } catch (notifError) {
+                        console.error('⚠️ Failed to send notification:', notifError);
+                        // Don't fail the entire termination if notification fails
+                      }
+                    }
+
+                    // Send notification to agency if employee is from agency
+                    if (isAgencyEmployee) {
+                      try {
+                        // Fetch agency user ID
+                        const { data: empData } = await supabase
+                          .from('employees')
+                          .select('endorsed_by_agency_id, agency_profile_id')
+                          .eq('id', selectedEmployeeForTermination.id)
+                          .single();
+
+                        const agencyUserId = empData?.endorsed_by_agency_id || empData?.agency_profile_id;
+                        
+                        if (agencyUserId) {
+                          await createAgencyEmployeeTerminationNotification({
+                            agencyUserId: agencyUserId,
+                            employeeName: selectedEmployeeForTermination.name,
+                            terminationDate: terminationDate
+                          });
+                          console.log('✅ Notification sent to agency ID:', agencyUserId);
+                        }
+                      } catch (notifError) {
+                        console.error('⚠️ Failed to send agency notification:', notifError);
+                      }
+                    }
+
+                    console.log('Termination successful:', selectedEmployeeForTermination.name);
+                    console.log('Is agency employee:', isAgencyEmployee);
+                    if (accountExpiry) {
+                      console.log('Account will expire at:', accountExpiry.toISOString());
+                    } else {
+                      console.log('No account to expire (agency employee)');}
+                    
+                    setTerminatedEmployeeIsAgency(isAgencyEmployee);
+                    setShowTerminateConfirm(false);
+                    setShowTerminateSuccess(true);
+                    
+                    // Refresh the employee list
+                    await fetchEmployeeSeparations();
+                    await fetchAllEmployees();
+                    
+                    // Update selectedEmployee if it's the one that was terminated
+                    if (selectedEmployee && selectedEmployee.id === selectedEmployeeForTermination.id) {
+                      setSelectedEmployee({
+                        ...selectedEmployee,
+                        isTerminated: true,
+                        terminationDate: terminationDate,
+                        terminationDocUrl: terminationDocUrl,
+                        terminationDocFilename: terminationDocFilename
+                      });
+                    }
+                    
+                    // Reset form
+                    setSelectedEmployeeForTermination(null);
+                    setEmployeeSearchQuery("");
+                    setTerminationDate("");
+                    setTerminateFile(null);
+                  } catch (error) {
+                    console.error('Termination error:', error);
+                    alert('Failed to terminate employee. Please try again.');
+                  } finally {
+                    setIsTerminating(false);
+                  }
+                }}
                 disabled={isTerminating}
-                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isTerminating ? 'Disabling...' : 'Confirm Disable'}
+                {isTerminating ? 'Processing...' : 'Confirm Termination'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Termination Success Modal */}
+      {showTerminateSuccess && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Termination Successful</h3>
+            </div>
+            <p className="text-gray-600 mb-6">
+              {terminatedEmployeeIsAgency ? (
+                'Successfully marked as terminated. The agency has been notified.'
+              ) : (
+                'The employee has been successfully terminated. Their account will be disabled after 5 minutes and they have been notified.'
+              )}
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowTerminateSuccess(false)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disable Account Confirmation Modal */}
+      {showDisableAccountConfirm && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-orange-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Disable Account Access</h3>
+            </div>
+            <p className="text-gray-600 mb-2">
+              Are you sure you want to disable account access for <span className="font-semibold text-gray-900">{employees.find(e => e.id === pendingDisableEmployeeId)?.name}</span>?
+            </p>
+            <p className="text-sm text-gray-500 mb-6">
+              The employee will have access for 30 days before the account is disabled. They will receive a notification about this.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDisableAccountConfirm(false);
+                  setPendingDisableEmployeeId(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDisableAccount(pendingDisableEmployeeId)}
+                disabled={isTerminating}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:bg-gray-400"
+              >
+                {isTerminating ? 'Processing...' : 'Disable Account'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Disable Account Success Modal */}
+      {showDisableAccountSuccess && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
+                <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900">Account Disabled</h3>
+            </div>
+            <p className="text-gray-600 mb-6">
+              The employee account will be disabled after 30 days. The employee has been notified.
+            </p>
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowDisableAccountSuccess(false)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>
@@ -2668,6 +3408,65 @@ function HrSeperation() {
                 onClick={() => {
                   setShowMarkCompletedConfirm(false);
                   setPendingCompletionEmployeeId(null);
+                }}
+                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleMarkCompleted(pendingCompletionEmployeeId)}
+                disabled={isMarkingCompleted}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isMarkingCompleted ? 'Processing...' : 'Mark as Completed'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mark Completed Confirmation Modal for Agency Employees */}
+      {showMarkCompletedAgencyConfirm && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 overflow-hidden">
+            <div className="p-6 border-b border-gray-200 bg-green-50">
+              <h3 className="text-lg font-semibold text-green-800">Mark Agency Employee Separation as Completed?</h3>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Employee Name:</p>
+                <p className="font-medium text-gray-800">{selectedEmployee?.name}</p>
+              </div>
+              <div>
+                <p className="text-sm text-gray-600 mb-1">Completion Date:</p>
+                <p className="font-medium text-gray-800">{new Date().toLocaleDateString('en-CA')}</p>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-2">Upload Completion Document:</label>
+                <input
+                  type="file"
+                  onChange={(e) => setAgencyCompletionFile(e.target.files[0])}
+                  className="w-full text-sm text-gray-700 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200"
+                />
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-3">
+                  <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-1">For Agency Employees:</p>
+                    <p>This will finalize the separation process. No account termination will occur as this employee is managed by an external agency.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="p-6 border-t border-gray-200 bg-gray-50 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowMarkCompletedAgencyConfirm(false);
+                  setPendingCompletionEmployeeId(null);
+                  setAgencyCompletionFile(null);
                 }}
                 className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
               >

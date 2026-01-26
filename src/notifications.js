@@ -389,9 +389,11 @@ export async function createResignationValidatedNotification({
 
 // Helper function to create exit forms uploaded notification
 export async function createExitFormsUploadedNotification({
-  employeeUserId
+  employeeUserId,
+  employeeId
 }) {
-  return await createNotification({
+  // Notify the employee
+  const employeeNotification = await createNotification({
     userId: employeeUserId,
     applicationId: null,
     type: 'exit_forms_uploaded',
@@ -399,6 +401,44 @@ export async function createExitFormsUploadedNotification({
     message: 'HR has uploaded exit clearance and interview forms for you. Please download, complete, and upload the signed versions.',
     userType: 'employee'
   });
+
+  // If employeeId is provided, check if this is an agency employee and notify the agency
+  if (employeeId) {
+    try {
+      const { data: employeeData, error: employeeError } = await supabase
+        .from('employees')
+        .select('id, endorsed_by_agency_id, agency_profile_id, source, fname, lname')
+        .eq('id', employeeId)
+        .single();
+
+      if (employeeError) {
+        console.error('Error fetching employee for agency notification:', employeeError);
+      }
+
+      if (employeeData && employeeData.source && employeeData.source.toLowerCase() === 'agency') {
+        const agencyUserId = employeeData.endorsed_by_agency_id || employeeData.agency_profile_id;
+        const employeeName = employeeData.fname && employeeData.lname 
+          ? `${employeeData.fname} ${employeeData.lname}`
+          : 'Employee';
+
+        if (agencyUserId) {
+          await createNotification({
+            userId: agencyUserId,
+            applicationId: null,
+            type: 'exit_forms_uploaded_agency',
+            title: 'Exit Forms Uploaded by HR',
+            message: `HR has uploaded exit clearance and interview forms for your endorsee ${employeeName}. They will need to complete and submit these forms.`,
+            userType: 'profile'
+          });
+          console.log('✅ Agency notification created for exit forms upload');
+        }
+      }
+    } catch (err) {
+      console.error('Error creating agency notification for exit forms:', err);
+    }
+  }
+
+  return employeeNotification;
 }
 
 // Helper function to create form validated notification
@@ -494,9 +534,11 @@ export async function createFormResubmissionNotification({
 
 // Helper function to notify employee about separation completion
 export async function createSeparationCompletedNotification({
-  employeeUserId
+  employeeUserId,
+  employeeId
 }) {
-  return await createNotification({
+  // Notify the employee
+  const employeeNotification = await createNotification({
     userId: employeeUserId,
     applicationId: null,
     type: 'separation_completed',
@@ -504,6 +546,44 @@ export async function createSeparationCompletedNotification({
     message: 'Your separation process has been finalized by HR. Thank you for your service.',
     userType: 'employee'
   });
+
+  // If employeeId is provided, check if this is an agency employee and notify the agency
+  if (employeeId) {
+    try {
+      const { data: employeeData, error: employeeError } = await supabase
+        .from('employees')
+        .select('id, endorsed_by_agency_id, agency_profile_id, source, fname, lname')
+        .eq('id', employeeId)
+        .single();
+
+      if (employeeError) {
+        console.error('Error fetching employee for agency notification:', employeeError);
+      }
+
+      if (employeeData && employeeData.source && employeeData.source.toLowerCase() === 'agency') {
+        const agencyUserId = employeeData.endorsed_by_agency_id || employeeData.agency_profile_id;
+        const employeeName = employeeData.fname && employeeData.lname 
+          ? `${employeeData.fname} ${employeeData.lname}`
+          : 'Employee';
+
+        if (agencyUserId) {
+          await createNotification({
+            userId: agencyUserId,
+            applicationId: null,
+            type: 'separation_completed_agency',
+            title: 'Separation Process Completed',
+            message: `The separation process for your endorsee ${employeeName} has been completed by HR.`,
+            userType: 'profile'
+          });
+          console.log('✅ Agency notification created for separation completion');
+        }
+      }
+    } catch (err) {
+      console.error('Error creating agency notification for separation completion:', err);
+    }
+  }
+
+  return employeeNotification;
 }
 
 // Helper function to notify employee about account termination
@@ -532,9 +612,13 @@ export async function createAccountTerminationNotification({
 
 // Separation Rejection Notification
 export async function createSeparationRejectedNotification({
-  employeeUserId
+  employeeUserId,
+  employeeId
 }) {
-  return await createNotification({
+  console.log('🔔 createSeparationRejectedNotification called with:', { employeeUserId, employeeId });
+  
+  // Send notification to employee
+  const result = await createNotification({
     userId: employeeUserId,
     applicationId: null,
     type: 'separation_rejected',
@@ -542,11 +626,87 @@ export async function createSeparationRejectedNotification({
     message: 'Your separation request has been rejected by HR. Please contact HR for more information.',
     userType: 'employee'
   });
+
+  // Also notify the agency if this is an agency employee
+  if (employeeId) {
+    try {
+      const { data: employeeData, error: empError } = await supabase
+        .from('employees')
+        .select('agency_profile_id, endorsed_by_agency_id, source, fname, lname')
+        .eq('id', employeeId)
+        .single();
+
+      console.log('📋 Employee data fetched:', {
+        employeeData,
+        error: empError,
+        agency_profile_id: employeeData?.agency_profile_id,
+        endorsed_by_agency_id: employeeData?.endorsed_by_agency_id,
+        source: employeeData?.source
+      });
+
+      if (employeeData && employeeData.source && employeeData.source.toLowerCase() === 'agency') {
+        // Use endorsed_by_agency_id directly as it should be the agency's profile ID
+        const agencyUserId = employeeData.endorsed_by_agency_id || employeeData.agency_profile_id;
+        
+        console.log('👤 Selected agency user ID:', agencyUserId);
+        
+        if (agencyUserId) {
+          const employeeName = `${employeeData.fname || ''} ${employeeData.lname || ''}`.trim();
+          
+          const { data: notifData, error: notifError } = await createNotification({
+            userId: agencyUserId,
+            applicationId: null,
+            type: 'separation_rejected',
+            title: 'Separation Request Rejected',
+            message: `The separation request for ${employeeName} has been rejected by HR.`,
+            userType: 'agency'
+          });
+          
+          if (notifError) {
+            console.error('❌ Error creating agency notification:', notifError);
+          } else {
+            console.log('✅ Agency notification created successfully:', notifData);
+          }
+        } else {
+          console.log('❌ No agency user ID found');
+        }
+      } else {
+        console.log('ℹ️ Not an agency employee, skipping agency notification');
+      }
+    } catch (error) {
+      console.error('❌ Error creating agency notification:', error);
+    }
+  } else {
+    console.log('⚠️ No employeeId provided, skipping agency notification');
+  }
+
+  return result;
 }
 
-// Helper function to notify HR when an applicant retracts their application
+// Agency Employee Termination Notification
+export async function createAgencyEmployeeTerminationNotification({
+  agencyUserId,
+  employeeName,
+  terminationDate
+}) {
+  const formattedDate = new Date(terminationDate).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+  });
+
+  return await createNotification({
+    userId: agencyUserId,
+    applicationId: null,
+    type: 'employee_terminated',
+    title: 'Employee Termination Notice',
+    message: `Your endorsed employee ${employeeName} has been terminated effective ${formattedDate}.`,
+    userType: 'agency'
+  });
+}
+
+// Notify HR about retracted applications
 export async function notifyHRAboutApplicationRetraction({
-  applicationId,
   applicantName,
   position,
   depot

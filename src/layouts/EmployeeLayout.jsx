@@ -66,22 +66,61 @@ function EmployeeLayout() {
                 setCurrentUserEmail(user.email);
 
                 // Check if employee is terminated and if account has expired
-                const { data: separationData, error: sepError } = await supabase
-                    .from('employee_separations')
-                    .select('is_terminated, account_expires_at')
-                    .eq('employee_id', user.id)
+                // First get the employee record using auth_user_id
+                const { data: employeeRecord, error: empLookupError } = await supabase
+                    .from('employees')
+                    .select('id')
+                    .eq('auth_user_id', user.id)
                     .maybeSingle();
 
-                if (!sepError && separationData?.is_terminated && separationData?.account_expires_at) {
-                    const expiryDate = new Date(separationData.account_expires_at);
-                    const now = new Date();
-                    
-                    if (now >= expiryDate) {
-                        // Account has expired - force logout
-                        console.log('Account has expired. Logging out...');
+                if (employeeRecord) {
+                    const { data: separationData, error: sepError } = await supabase
+                        .from('employee_separations')
+                        .select('is_terminated, account_expires_at')
+                        .eq('employee_id', employeeRecord.id)
+                        .maybeSingle();
+
+                    if (!sepError && separationData?.is_terminated && separationData?.account_expires_at) {
+                        const expiryDate = new Date(separationData.account_expires_at);
+                        const now = new Date();
+                        
+                        if (now >= expiryDate) {
+                            // Account has expired - force logout
+                            console.log('Account has expired. Logging out...');
+                            await supabase.auth.signOut();
+                            navigate("/employee/login");
+                            return;
+                        }
+                    }
+                }
+
+                // Alternative: Check profiles table for account expiry
+                const { data: profileData, error: profileCheckError } = await supabase
+                    .from('profiles')
+                    .select('account_expires_at, is_active')
+                    .eq('id', user.id)
+                    .maybeSingle();
+
+                if (!profileCheckError && profileData) {
+                    // Check if account is explicitly marked as inactive
+                    if (profileData.is_active === false) {
+                        console.log('Account is inactive. Logging out...');
                         await supabase.auth.signOut();
                         navigate("/employee/login");
                         return;
+                    }
+
+                    // Check if account has expired based on profiles table
+                    if (profileData.account_expires_at) {
+                        const expiryDate = new Date(profileData.account_expires_at);
+                        const now = new Date();
+                        
+                        if (now >= expiryDate) {
+                            console.log('Account has expired (profiles table). Logging out...');
+                            await supabase.auth.signOut();
+                            navigate("/employee/login");
+                            return;
+                        }
                     }
                 }
 
@@ -149,21 +188,61 @@ function EmployeeLayout() {
 
         const checkExpiration = async () => {
             try {
-                const { data: separationData, error: sepError } = await supabase
-                    .from('employee_separations')
-                    .select('is_terminated, account_expires_at')
-                    .eq('employee_id', currentUserId)
+                // First get the employee record using auth_user_id
+                const { data: employeeRecord, error: empLookupError } = await supabase
+                    .from('employees')
+                    .select('id')
+                    .eq('auth_user_id', currentUserId)
                     .maybeSingle();
 
-                if (!sepError && separationData?.is_terminated && separationData?.account_expires_at) {
-                    const expiryDate = new Date(separationData.account_expires_at);
-                    const now = new Date();
-                    
-                    if (now >= expiryDate) {
-                        // Account has expired - force logout
-                        console.log('Account has expired during session. Logging out...');
+                if (employeeRecord) {
+                    const { data: separationData, error: sepError } = await supabase
+                        .from('employee_separations')
+                        .select('is_terminated, account_expires_at')
+                        .eq('employee_id', employeeRecord.id)
+                        .maybeSingle();
+
+                    if (!sepError && separationData?.is_terminated && separationData?.account_expires_at) {
+                        const expiryDate = new Date(separationData.account_expires_at);
+                        const now = new Date();
+                        
+                        if (now >= expiryDate) {
+                            // Account has expired - force logout
+                            console.log('Account has expired during session. Logging out...');
+                            await supabase.auth.signOut();
+                            navigate("/employee/login");
+                            return;
+                        }
+                    }
+                }
+
+                // Also check profiles table
+                const { data: profileData, error: profileCheckError } = await supabase
+                    .from('profiles')
+                    .select('account_expires_at, is_active')
+                    .eq('id', currentUserId)
+                    .maybeSingle();
+
+                if (!profileCheckError && profileData) {
+                    // Check if account is explicitly marked as inactive
+                    if (profileData.is_active === false) {
+                        console.log('Account is inactive. Logging out...');
                         await supabase.auth.signOut();
                         navigate("/employee/login");
+                        return;
+                    }
+
+                    // Check if account has expired based on profiles table
+                    if (profileData.account_expires_at) {
+                        const expiryDate = new Date(profileData.account_expires_at);
+                        const now = new Date();
+                        
+                        if (now >= expiryDate) {
+                            console.log('Account has expired during session (profiles table). Logging out...');
+                            await supabase.auth.signOut();
+                            navigate("/employee/login");
+                            return;
+                        }
                     }
                 }
             } catch (err) {

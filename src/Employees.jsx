@@ -348,12 +348,52 @@ function Employees() {
       try {
         const { data: empRows, error: empErr } = await supabase
           .from("employees")
-          .select("id, email, fname, lname, mname, contact_number, position, depot, department, role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, status, is_agency")
+          .select(`
+            id, email, fname, lname, mname, contact_number, position, depot, department, 
+            role, hired_at, source, endorsed_by_agency_id, endorsed_at, agency_profile_id, 
+            status, is_agency, auth_user_id,
+            employee_separations(is_terminated)
+          `)
           .order("hired_at", { ascending: false });
 
         if (empErr) throw empErr;
 
-        const normalized = (empRows || []).map(normalize);
+        // Get auth_user_ids to check account status
+        const authUserIds = (empRows || []).filter(emp => emp.auth_user_id).map(emp => emp.auth_user_id);
+        
+        // Fetch account status from profiles
+        let accountStatusMap = {};
+        if (authUserIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from('profiles')
+            .select('id, account_expires_at, is_active')
+            .in('id', authUserIds);
+          
+          if (profiles) {
+            profiles.forEach(profile => {
+              accountStatusMap[profile.id] = {
+                isActive: profile.is_active !== false,
+                isExpired: profile.account_expires_at ? new Date(profile.account_expires_at) < new Date() : false
+              };
+            });
+          }
+        }
+
+        // Filter out terminated employees and those with expired/disabled accounts
+        const activeEmployees = (empRows || []).filter(row => {
+          // Check termination status
+          if (row.employee_separations && row.employee_separations.is_terminated) return false;
+          
+          // Check account status if employee has auth_user_id
+          if (row.auth_user_id && accountStatusMap[row.auth_user_id]) {
+            const accountStatus = accountStatusMap[row.auth_user_id];
+            if (!accountStatus.isActive || accountStatus.isExpired) return false;
+          }
+          
+          return true;
+        });
+
+        const normalized = activeEmployees.map(normalize);
 
         // Fetch agency names for employees endorsed by agencies
         const agencyIds = Array.from(new Set(

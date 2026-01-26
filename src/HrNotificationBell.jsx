@@ -1,10 +1,12 @@
 // HrNotificationBell.jsx - Notification bell component for HR to see new applicants and interview responses
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from './supabaseClient';
 import { getNotifications, markNotificationAsRead, markAllNotificationsAsRead, createNotification } from './notifications';
 import { getStoredJson } from './authStorage';
 
 function HrNotificationBell() {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
@@ -188,6 +190,11 @@ function HrNotificationBell() {
     );
     setUnreadCount(prev => Math.max(0, prev - 1));
     
+    // Navigate based on notification type
+    if (notification.type && notification.type.includes('separation')) {
+      navigate('/hr/separation');
+      setIsOpen(false);
+    }
     // You could also navigate to the specific application here
     // navigate(`/hr/applications/${notification.id}`);
   };

@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { notifyHRAboutSeparationSubmission } from "./notifications";
 import LogoCropped from './layouts/photos/logo(cropped).png';
 
 function AgencySeparation() {
@@ -39,11 +40,15 @@ function AgencySeparation() {
   const [deployedEmployees, setDeployedEmployees] = useState([]);
   const [resignationRequests, setResignationRequests] = useState([]);
   const [agencyProfileId, setAgencyProfileId] = useState(null);
+  const [dismissedEmployees, setDismissedEmployees] = useState([]); // Employees dismissed without resignation letter requirement
 
   // Alert modal state
   const [alertModal, setAlertModal] = useState({ show: false, message: '', type: 'error' });
   const showAlert = (message, type = 'error') => setAlertModal({ show: true, message, type });
   const closeAlert = () => setAlertModal({ show: false, message: '', type: 'error' });
+
+  // Submission loading state
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Stage 2 file upload state for agencies (uploading on behalf of employee)
   const [agencyExitClearanceFiles, setAgencyExitClearanceFiles] = useState({}); // { separationId: File }
@@ -70,9 +75,9 @@ function AgencySeparation() {
   const stats = {
     pendingReview: resignationRequests.filter(r => r.status === 'pending_review').length,
     reviewed: resignationRequests.filter(r => r.status === 'reviewed').length,
-    processing: resignationRequests.filter(r => r.status === 'processing').length,
+    processing: resignationRequests.filter(r => r.status === 'processing').length + dismissedEmployees.length,
     completed: resignationRequests.filter(r => r.status === 'completed').length,
-    total: resignationRequests.length,
+    total: resignationRequests.length + dismissedEmployees.length,
   };
 
   // Calculate unviewed counts per tab
@@ -141,6 +146,17 @@ function AgencySeparation() {
       }));
       setDeployedEmployees(formattedEmployees);
 
+      // Check for dismissed employees (both with and without resignation letter requirement)
+      const { data: dismissedEvaluations, error: dismissedEvalError } = await supabase
+        .from('evaluations')
+        .select(`
+          employee_id,
+          remarks,
+          employees!inner(fname, lname, mname, position, depot, endorsed_by_agency_id)
+        `)
+        .eq('employees.endorsed_by_agency_id', profile.id)
+        .eq('remarks', 'Dismissed');
+
       // Fetch separation records for these employees
       const employeeIds = employees.map(emp => emp.id);
       if (employeeIds.length === 0) {
@@ -160,18 +176,53 @@ function AgencySeparation() {
       const transformedRequests = separations.map(sep => {
         const employee = employees.find(emp => emp.id === sep.employee_id);
         
-        // Map status from DB to UI format
-        let uiStatus = 'pending_review';
-        if (sep.status === 'completed') {
+        // Check if this employee is dismissed
+        const isDismissedEmployee = (dismissedEvaluations || []).some(evaluation => evaluation.employee_id === sep.employee_id);
+        
+        let uiStatus; // Declare the status variable
+        
+        // If employee is terminated, force status to completed
+        if (sep.is_terminated) {
           uiStatus = 'completed';
-        } else if (sep.resignation_status === 'validated') {
-          if (sep.signed_exit_clearance_status === 'validated' && sep.signed_exit_interview_status === 'validated') {
-            uiStatus = 'processing';
-          } else {
-            uiStatus = 'reviewed';
-          }
-        } else if (sep.resignation_status === 'submitted') {
+        } else {
+          // Map status from DB to UI format  
           uiStatus = 'pending_review';
+          if (sep.status === 'completed') {
+            uiStatus = 'completed';
+          } else if (sep.resignation_status === 'validated') {
+            if (sep.signed_exit_clearance_status === 'validated' && sep.signed_exit_interview_status === 'validated') {
+              uiStatus = 'processing';
+            } else {
+              uiStatus = 'reviewed';
+            }
+          } else if (sep.resignation_status === 'submitted') {
+            uiStatus = 'pending_review';
+          } else {
+            // No submission yet - check if this should be initial state
+            uiStatus = 'pending_review';
+          }
+        }
+
+        // Special handling for dismissed employees (only if not terminated)
+        if (isDismissedEmployee && !sep.is_terminated) {
+          // First check if already completed in database - this takes priority
+          if (sep.status === 'completed') {
+            uiStatus = 'completed';
+          } else if (sep.resignation_letter_required === false) {
+            // No resignation letter required - can skip to Stage 2
+            if (sep.signed_exit_clearance_status === 'validated' && sep.signed_exit_interview_status === 'validated') {
+              uiStatus = 'processing'; // Stage 3 available when both Stage 2 forms validated
+            } else {
+              uiStatus = 'reviewed'; // Stage 2 available immediately
+            }
+          } else {
+            // Resignation letter IS required - check if they actually submitted one
+            if (!sep.resignation_letter_url) {
+              // No resignation letter uploaded yet - force to initial state
+              uiStatus = 'pending_review';
+            }
+            // If they have uploaded a resignation letter, follow normal status flow
+          }
         }
 
         // Get resignation type directly from the type column
@@ -183,15 +234,39 @@ function AgencySeparation() {
           employeeName: employee ? `${employee.fname} ${employee.lname}` : 'Unknown',
           position: employee?.position || 'N/A',
           depot: employee?.depot || 'N/A',
-          resignationType,
-          reason: sep.resignation_reason || 'No reason provided',
-          submittedDate: sep.resignation_submitted_at ? new Date(sep.resignation_submitted_at).toISOString().split('T')[0] : 'N/A',
+          resignationType: sep.is_terminated ? 'terminated' : (isDismissedEmployee ? 'dismissed' : resignationType),
+          reason: sep.is_terminated 
+            ? `Terminated by HR on ${new Date(sep.terminated_at).toLocaleDateString()}`
+            : (isDismissedEmployee ? (sep.resignation_letter_required ? 'Employee dismissed by HR - resignation letter required' : 'Employee dismissed by HR - no resignation letter required') : (sep.hr_notes || 'No reason provided')),
+          submittedDate: (() => {
+            if (isDismissedEmployee && sep.resignation_letter_required === false) {
+              return 'N/A'; // No resignation letter required
+            } else if (isDismissedEmployee && sep.resignation_letter_required === true && !sep.resignation_letter_url) {
+              return 'Not submitted'; // Required but not uploaded yet
+            } else if (sep.resignation_submitted_at) {
+              return new Date(sep.resignation_submitted_at).toISOString().split('T')[0]; // Actually submitted
+            } else {
+              return 'Not submitted'; // Default case
+            }
+          })(),
           status: uiStatus,
-          hrRemarks: sep.resignation_status === 'validated' ? 'Resignation approved by HR' : null,
+          hrRemarks: (() => {
+            if (isDismissedEmployee && sep.resignation_letter_required === false) {
+              return 'Employee dismissed - no resignation letter required';
+            } else if (isDismissedEmployee && sep.resignation_letter_required === true) {
+              return 'Employee dismissed - resignation letter required';
+            } else if (sep.resignation_status === 'validated') {
+              return 'Resignation approved by HR';
+            } else {
+              return null;
+            }
+          })(),
           processedDate: sep.resignation_validated_at ? new Date(sep.resignation_validated_at).toISOString().split('T')[0] : null,
           completedDate: sep.status === 'completed' && sep.completed_at ? new Date(sep.completed_at).toISOString().split('T')[0] : null,
-          hasResignationLetter: !!sep.resignation_letter_url,
+          hasResignationLetter: isDismissedEmployee && sep.resignation_letter_required === false ? false : !!sep.resignation_letter_url,
           resignationLetterUrl: sep.resignation_letter_url,
+          // Mark as dismissed employee only if no resignation letter required
+          isDismissedEmployee: isDismissedEmployee && sep.resignation_letter_required === false,
           // Stage 2: Exit clearance and interview status
           exitClearanceStatus: sep.signed_exit_clearance_status,
           exitInterviewStatus: sep.signed_exit_interview_status,
@@ -222,11 +297,51 @@ function AgencySeparation() {
           clearanceResubmitRemarks: sep.signed_exit_clearance_status === 'resubmission_required' ? 'Exit clearance requires resubmission' : 
                                    sep.signed_exit_interview_status === 'resubmission_required' ? 'Exit interview requires resubmission' : null,
           isTerminated: sep.is_terminated || false,
-          terminationDate: sep.terminated_at
+          terminationDate: sep.terminated_at,
+          terminationDocUrl: sep.termination_doc_url,
+          terminationDocFilename: sep.termination_doc_filename
         };
       });
 
       setResignationRequests(transformedRequests);
+
+      // Process dismissed employees (already fetched above)
+      if (dismissedEvalError) {
+        console.error('Error fetching evaluations:', dismissedEvalError);
+      } else {
+        console.log('All dismissed evaluations found:', dismissedEvaluations);
+        
+        // For each dismissed employee, check if they need resignation letter
+        const dismissedEmployeesData = [];
+        
+        for (const evaluation of dismissedEvaluations || []) {
+          // Check if this employee already has a separation record
+          const existingSeparation = separations.find(sep => sep.employee_id === evaluation.employee_id);
+          
+          if (existingSeparation) {
+            // Employee already has separation record, don't add to dismissed list
+            // The existing record will be handled in the transformedRequests
+            console.log(`Employee ${evaluation.employee_id} has existing separation record, skipping dismissed list`);
+          } else {
+            // If no separation record, include them ONLY if they don't require resignation letter
+            // Those who require resignation letter should go through normal process
+            console.log(`Employee ${evaluation.employee_id} has no separation record, including for direct Stage 2 access`);
+            dismissedEmployeesData.push({
+              id: evaluation.employee_id,
+              name: `${evaluation.employees.fname} ${evaluation.employees.lname}`,
+              position: evaluation.employees.position || 'N/A',
+              depot: evaluation.employees.depot || 'N/A',
+              isDismissed: true,
+              needsStage2: true,
+              requiresResignationLetter: false // These are ones that don't require resignation letter
+            });
+          }
+        }
+        
+        console.log('Processed dismissed employees for Stage 2:', dismissedEmployeesData);
+        setDismissedEmployees(dismissedEmployeesData);
+      }
+
     } catch (err) {
       console.error('Error fetching agency separation data:', err);
       setError(`Failed to load separation data: ${err.message}`);
@@ -239,10 +354,69 @@ function AgencySeparation() {
   const getFilteredData = () => {
     let data = [...resignationRequests];
     
+    // Filter out terminated employees from all tabs except completed
+    if (activeTab !== 'completed') {
+      data = data.filter(req => !req.isTerminated);
+    }
+    
+    // Add dismissed employees to processing tab or all tab ONLY if they don't already have separation records
+    if (activeTab === 'all' || activeTab === 'processing') {
+      // Filter out dismissed employees that already have separation records
+      const employeeIdsWithSeparations = resignationRequests.map(req => req.employeeId);
+      const dismissedEmployeesWithoutSeparations = dismissedEmployees.filter(emp => 
+        !employeeIdsWithSeparations.includes(emp.id)
+      );
+      
+      const dismissedData = dismissedEmployeesWithoutSeparations.map(emp => {
+        // For dismissed employees without separation records, they should start in reviewed state
+        // and can progress to completed when Stage 2 forms are done
+        return {
+          ...emp,
+          status: 'reviewed', // Start as reviewed since they don't need resignation letter approval
+          resignationType: 'dismissed',
+          reason: 'Employee dismissed by HR',
+          submittedDate: 'N/A',
+          employeeName: emp.name,
+          employeeId: emp.id,
+          isDismissedEmployee: true,
+          // Add default properties that Stage 2 expects
+          exitClearanceStatus: null,
+          exitInterviewStatus: null,
+          hrExitClearanceFormUrl: null,
+          hrExitInterviewFormUrl: null,
+          signedExitClearanceUrl: null,
+          signedExitInterviewUrl: null,
+          hrRemarks: 'Employee dismissed - no resignation letter required',
+          processedDate: new Date().toISOString().split('T')[0], // Today's date
+          // Add other required fields
+          hasResignationLetter: false,
+          resignationLetterUrl: null,
+          exitClearanceRemarks: null,
+          exitInterviewRemarks: null,
+          hrExitClearanceFormFilename: null,
+          hrExitInterviewFormFilename: null,
+          signedExitClearanceFilename: null,
+          signedExitInterviewFilename: null,
+          finalDocsUrls: [],
+          clearanceDocuments: [],
+          hasUnviewedUpdate: false,
+          clearanceResubmitRequired: false,
+          clearanceResubmitRemarks: null,
+          isTerminated: false,
+          terminationDate: null,
+          terminationDocUrl: null,
+          terminationDocFilename: null,
+          completedDate: null
+        };
+      });
+      console.log('Adding dismissed employees to data:', dismissedData);
+      data = [...data, ...dismissedData];
+    }
+    
     // Filter by tab
     if (activeTab !== 'all') {
       if (activeTab === 'processing') {
-        // Show both 'reviewed' and 'processing' statuses in the Processing tab
+        // Show 'reviewed', 'processing' statuses and dismissed employees in the Processing tab
         data = data.filter(r => r.status === 'reviewed' || r.status === 'processing');
       } else {
         data = data.filter(r => r.status === activeTab);
@@ -312,6 +486,8 @@ function AgencySeparation() {
       voluntary: 'Voluntary Resignation',
       retirement: 'Retirement',
       end_of_contract: 'End of Contract',
+      terminated: 'Terminated',
+      dismissed: 'Dismissed',
       other: 'Other',
     };
     return types[type] || type;
@@ -393,8 +569,11 @@ function AgencySeparation() {
       return;
     }
 
+    // Prevent double submission
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     try {
-      setLoading(true);
 
       // Get selected employee
       const selectedEmployee = deployedEmployees.find(e => e.id === submitForm.employeeId);
@@ -433,6 +612,13 @@ function AgencySeparation() {
 
       if (insertError) throw insertError;
 
+      // Notify HR about resignation submission
+      const employeeName = selectedEmployee.name || 'Employee';
+      await notifyHRAboutSeparationSubmission({
+        employeeName,
+        submissionType: 'resignation'
+      });
+
       showAlert('Resignation request submitted successfully!', 'success');
       closeSubmitModal();
       
@@ -442,7 +628,7 @@ function AgencySeparation() {
       console.error('Error submitting resignation:', error);
       showAlert(`Failed to submit resignation: ${error.message}`);
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -563,6 +749,64 @@ function AgencySeparation() {
       showAlert(`Failed to upload: ${error.message}`);
     } finally {
       setUploadingInterview(false);
+    }
+  };
+
+  // Handle downloading final HR documents
+  const handleDownloadFinalDoc = async (doc) => {
+    try {
+      // Parse if doc is a JSON string
+      let docData = doc;
+      if (typeof doc === 'string') {
+        try {
+          docData = JSON.parse(doc);
+        } catch {
+          // If parsing fails, treat it as a plain URL string
+          docData = { url: doc };
+        }
+      }
+      
+      // Handle both object format {url, name} and string format
+      let filePath = typeof docData === 'object' ? docData.url : docData;
+      const fileName = typeof docData === 'object' ? docData.name : '';
+      
+      // If filePath is a full URL with storage.supabase, extract just the path
+      if (filePath.includes('storage.supabase.co') || filePath.includes('supabase.co/storage')) {
+        const urlObj = new URL(filePath);
+        const pathParts = urlObj.pathname.split('/');
+        // Remove empty strings and the bucket name to get the file path
+        const bucketIndex = pathParts.indexOf('separation-documents');
+        if (bucketIndex !== -1) {
+          filePath = pathParts.slice(bucketIndex + 1).join('/');
+        }
+      }
+      
+      console.log('Downloading file from path:', filePath);
+      
+      // Download from Supabase storage
+      const { data, error } = await supabase.storage
+        .from('separation-documents')
+        .download(filePath);
+      
+      if (error) throw error;
+      
+      // Create download link
+      const url = URL.createObjectURL(data);
+      const a = document.createElement('a');
+      a.href = url;
+      
+      // Use provided name or extract from path
+      const urlParts = filePath.split('/');
+      const fileNameFromPath = urlParts[urlParts.length - 1];
+      a.download = fileName || fileNameFromPath.split('_').slice(2).join('_') || fileNameFromPath;
+      
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download error:', error);
+      showAlert('Failed to download document. Please contact HR if the issue persists.');
     }
   };
 
@@ -858,14 +1102,6 @@ function AgencySeparation() {
                   className="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
                 />
               </div>
-
-              {/* Export Button */}
-              <button className="px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 flex items-center gap-2 bg-white">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export
-              </button>
             </div>
           </div>
 
@@ -988,7 +1224,8 @@ function AgencySeparation() {
                                 </div>
                               )}
 
-                              {/* Status Timeline */}
+                              {/* Status Timeline - Hide for terminated employees */}
+                              {!request.isTerminated && (
                               <div className="flex items-center gap-4 py-3">
                                 {/* Step 1: Submitted */}
                                 <div className="flex items-center gap-2">
@@ -1006,8 +1243,8 @@ function AgencySeparation() {
                                 
                                 {/* Step 2: Reviewed */}
                                 <div className="flex items-center gap-2">
-                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center ${request.processedDate ? 'bg-green-500' : 'bg-gray-300'}`}>
-                                    {request.processedDate ? (
+                                  <div className={`w-6 h-6 rounded-full flex items-center justify-center ${request.processedDate || (request.isDismissedEmployee) ? 'bg-green-500' : 'bg-gray-300'}`}>
+                                    {request.processedDate || (request.isDismissedEmployee) ? (
                                       <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                       </svg>
@@ -1017,7 +1254,10 @@ function AgencySeparation() {
                                   </div>
                                   <div>
                                     <p className="text-xs font-medium text-gray-700">Reviewed</p>
-                                    <p className="text-xs text-gray-500">{request.processedDate ? formatDate(request.processedDate) : 'Pending'}</p>
+                                    <p className="text-xs text-gray-500">
+                                      {request.processedDate ? formatDate(request.processedDate) : 
+                                       request.isDismissedEmployee ? 'Automatically Completed' : 'Pending'}
+                                    </p>
                                   </div>
                                 </div>
                                 <div className={`flex-1 h-0.5 ${request.status === 'processing' || request.status === 'completed' ? 'bg-green-500' : 'bg-gray-200'}`}></div>
@@ -1046,7 +1286,9 @@ function AgencySeparation() {
                                   <div>
                                     <p className="text-xs font-medium text-gray-700">Clearance</p>
                                     <p className="text-xs text-gray-500">
-                                      {request.status === 'completed' ? 'Completed' : request.status === 'processing' ? 'Awaiting HR' : 'Pending'}
+                                      {request.status === 'completed' ? 'Completed' : 
+                                       request.status === 'processing' && request.exitClearanceStatus === 'validated' && request.exitInterviewStatus === 'validated' ? 'Completed' :
+                                       request.status === 'processing' ? 'Awaiting HR' : 'Pending'}
                                     </p>
                                   </div>
                                 </div>
@@ -1069,9 +1311,10 @@ function AgencySeparation() {
                                   </div>
                                 </div>
                               </div>
+                              )}
 
                               {/* HR Remarks */}
-                              {request.hrRemarks && (
+                              {request.hrRemarks && !request.isTerminated && (
                                 <div className="bg-white rounded-lg border border-gray-100 p-4">
                                   <div>
                                     <span className="text-gray-500 text-sm">HR Remarks:</span>
@@ -1082,13 +1325,185 @@ function AgencySeparation() {
                                 </div>
                               )}
 
-                              {/* Clearance Documents Section - Show for reviewed, processing, and completed */}
-                              {(request.status === 'reviewed' || request.status === 'processing' || request.status === 'completed') && (
+                              {/* Resignation Letter Submission for Dismissed Employees */}
+                              {request.resignationType === 'dismissed' && !request.isDismissedEmployee && !request.hasResignationLetter && !request.isTerminated && (
+                                <div className="mt-4 pt-4 border-t border-gray-100">
+                                  <h4 className="text-sm font-semibold text-gray-700 mb-4">Stage 1: Resignation Letter Required</h4>
+                                  
+                                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+                                    <div className="flex items-start gap-3">
+                                      <svg className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                      </svg>
+                                      <div>
+                                        <p className="text-sm font-medium text-orange-800">Resignation Letter Required</p>
+                                        <p className="text-xs text-orange-700 mt-1">
+                                          Even though this employee has been dismissed, HR requires a resignation letter to be submitted before proceeding.
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                                    <h5 className="font-medium text-gray-800 mb-3">Upload Resignation Letter</h5>
+                                    
+                                    {!agencyExitClearanceFiles[`resignation_${request.id}`] ? (
+                                      <div className="space-y-3">
+                                        <input
+                                          type="file"
+                                          accept=".pdf,.doc,.docx"
+                                          onChange={(e) => {
+                                            if (e.target.files[0]) {
+                                              setAgencyExitClearanceFiles(prev => ({
+                                                ...prev,
+                                                [`resignation_${request.id}`]: e.target.files[0]
+                                              }));
+                                            }
+                                          }}
+                                          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-orange-50 file:text-orange-700 hover:file:bg-orange-100"
+                                        />
+                                        <p className="text-xs text-gray-500">Upload resignation letter (PDF, DOC, DOCX)</p>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-3">
+                                        <div className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                                          <p className="text-xs text-gray-600 flex-1 truncate">
+                                            Selected: {agencyExitClearanceFiles[`resignation_${request.id}`].name}
+                                          </p>
+                                          <button
+                                            onClick={() => {
+                                              setAgencyExitClearanceFiles(prev => {
+                                                const newFiles = { ...prev };
+                                                delete newFiles[`resignation_${request.id}`];
+                                                return newFiles;
+                                              });
+                                            }}
+                                            className="ml-2 px-2 py-1 text-xs bg-red-500 text-white rounded hover:bg-red-600 transition-colors"
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                        <button
+                                          onClick={async () => {
+                                            try {
+                                              setUploadingClearance(true);
+                                              const file = agencyExitClearanceFiles[`resignation_${request.id}`];
+                                              
+                                              const fileExt = file.name.split('.').pop();
+                                              const fileName = `${Date.now()}_${request.employeeId}_resignation_letter.${fileExt}`;
+                                              
+                                              // Upload file to Supabase storage
+                                              const { data: uploadData, error: uploadError } = await supabase.storage
+                                                .from('separation-documents')
+                                                .upload(fileName, file);
+
+                                              if (uploadError) throw uploadError;
+
+                                              // Update separation record
+                                              const { error: updateError } = await supabase
+                                                .from('employee_separations')
+                                                .update({
+                                                  resignation_letter_url: fileName,
+                                                  resignation_original_filename: file.name,
+                                                  resignation_status: 'submitted',
+                                                  resignation_submitted_at: new Date().toISOString()
+                                                })
+                                                .eq('id', request.id);
+
+                                              if (updateError) throw updateError;
+
+                                              // Clear the file selection
+                                              setAgencyExitClearanceFiles(prev => {
+                                                const newFiles = { ...prev };
+                                                delete newFiles[`resignation_${request.id}`];
+                                                return newFiles;
+                                              });
+
+                                              showAlert('Resignation letter submitted successfully!', 'success');
+                                              
+                                              // Refresh data
+                                              await fetchAgencyData();
+                                            } catch (error) {
+                                              console.error('Upload error:', error);
+                                              showAlert(`Failed to submit resignation letter: ${error.message}`);
+                                            } finally {
+                                              setUploadingClearance(false);
+                                            }
+                                          }}
+                                          disabled={uploadingClearance}
+                                          className="w-full px-3 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+                                        >
+                                          {uploadingClearance ? 'Submitting...' : 'Submit Resignation Letter'}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Show submitted resignation letter for dismissed employees */}
+                              {request.resignationType === 'dismissed' && !request.isDismissedEmployee && request.hasResignationLetter && !request.isTerminated && (
+                                <div className="mt-4 pt-4 border-t border-gray-100">
+                                  <h4 className="text-sm font-semibold text-gray-700 mb-4">Stage 1: Resignation Letter</h4>
+                                  
+                                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2">
+                                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div>
+                                          <p className="text-sm font-medium text-green-800">Resignation Letter Submitted</p>
+                                          <p className="text-xs text-green-700">Awaiting HR review</p>
+                                        </div>
+                                      </div>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            const { data, error } = await supabase.storage
+                                              .from('separation-documents')
+                                              .download(request.resignationLetterUrl);
+                                            
+                                            if (error) throw error;
+                                            
+                                            const url = URL.createObjectURL(data);
+                                            const a = document.createElement('a');
+                                            a.href = url;
+                                            a.download = 'resignation_letter.pdf';
+                                            document.body.appendChild(a);
+                                            a.click();
+                                            document.body.removeChild(a);
+                                            URL.revokeObjectURL(url);
+                                          } catch (err) {
+                                            console.error('Error downloading resignation letter:', err);
+                                            showAlert('Failed to download resignation letter');
+                                          }
+                                        }}
+                                        className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors"
+                                      >
+                                        Download
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Clearance Documents Section - Show for reviewed, processing, completed, and dismissed employees */}
+                              {(() => {
+                                const shouldShow = request.status === 'reviewed' || request.status === 'processing' || request.status === 'completed' || request.isDismissedEmployee;
+                                console.log('Stage 2 check:', { 
+                                  status: request.status, 
+                                  isDismissedEmployee: request.isDismissedEmployee, 
+                                  shouldShow,
+                                  employeeName: request.employeeName 
+                                });
+                                return shouldShow && !request.isTerminated; // Hide for terminated employees
+                              })() && (
                                 <div className="mt-4 pt-4 border-t border-gray-100">
                                     <h4 className="text-sm font-semibold text-gray-700 mb-4">Stage 2: Exit Clearance & Interview Forms</h4>
                                     
-                                    {/* Info Banner for Reviewed Status */}
-                                    {request.status === 'reviewed' && (
+                                    {/* Info Banner for Reviewed Status - only for normal resignations and dismissed employees who submitted resignation letters */}
+                                    {request.status === 'reviewed' && !request.isDismissedEmployee && (
                                       <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
                                         <div className="flex items-start gap-3">
                                           <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1098,6 +1513,23 @@ function AgencySeparation() {
                                             <p className="text-sm font-medium text-blue-800">Resignation Approved - Stage 2 Unlocked</p>
                                             <p className="text-xs text-blue-700 mt-1">
                                               HR has approved the resignation. The employee can now download and complete the exit clearance and interview forms.
+                                            </p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Info Banner for Dismissed Employees who don't require resignation letter */}
+                                    {request.isDismissedEmployee && (
+                                      <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                                        <div className="flex items-start gap-3">
+                                          <svg className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                          </svg>
+                                          <div className="flex-1">
+                                            <p className="text-sm font-medium text-red-800">Employee Dismissed - Stage 2 Available</p>
+                                            <p className="text-xs text-red-700 mt-1">
+                                              HR has dismissed this employee and no resignation letter is required. You can now proceed with exit clearance and interview forms.
                                             </p>
                                           </div>
                                         </div>
@@ -1474,8 +1906,8 @@ function AgencySeparation() {
                                       </div>
                                     </div>
 
-                                    {/* Additional HR Documentation */}
-                                    {(request.status === 'processing' || request.status === 'completed') && request.finalDocsUrls && request.finalDocsUrls.length > 0 && (
+                                    {/* Additional HR Documentation - Show for processing/completed status OR dismissed employees with both forms validated */}
+                                    {((request.status === 'processing' || request.status === 'completed') || (request.isDismissedEmployee && request.exitClearanceStatus === 'validated' && request.exitInterviewStatus === 'validated')) && request.finalDocsUrls && request.finalDocsUrls.length > 0 && (
                                       <div className="mt-4 pt-4 border-t border-gray-200">
                                         <h5 className="text-sm font-medium text-gray-700 mb-3">Additional HR Documentation</h5>
                                         <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
@@ -1500,27 +1932,7 @@ function AgencySeparation() {
                                                     <span className="text-xs text-gray-700 font-medium">{displayName}</span>
                                                   </div>
                                                   <button
-                                                    onClick={async () => {
-                                                      try {
-                                                        const { data, error } = await supabase.storage
-                                                          .from('separation-documents')
-                                                          .download(docUrl);
-                                                        
-                                                        if (error) throw error;
-                                                        
-                                                        const url = URL.createObjectURL(data);
-                                                        const a = document.createElement('a');
-                                                        a.href = url;
-                                                        a.download = displayName;
-                                                        document.body.appendChild(a);
-                                                        a.click();
-                                                        document.body.removeChild(a);
-                                                        URL.revokeObjectURL(url);
-                                                      } catch (error) {
-                                                        console.error('Download error:', error);
-                                                        showAlert('Failed to download document');
-                                                      }
-                                                    }}
+                                                    onClick={() => handleDownloadFinalDoc(doc)}
                                                     className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors"
                                                   >
                                                     Download
@@ -1528,6 +1940,74 @@ function AgencySeparation() {
                                                 </div>
                                               );
                                             })}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Termination Notice - Show for terminated employees */}
+                                    {request.isTerminated && (
+                                      <div className="mt-4 pt-4 border-t border-gray-200">
+                                        <h5 className="text-sm font-medium text-gray-700 mb-3">Termination Notice</h5>
+                                        <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                                          <div className="flex items-start gap-3 mb-3">
+                                            <div className="w-8 h-8 bg-red-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                              <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                              </svg>
+                                            </div>
+                                            <div className="flex-1">
+                                              <p className="text-sm font-semibold text-red-800">Employee Terminated</p>
+                                              <p className="text-xs text-red-700 mt-1">
+                                                This employee was terminated by HR on {new Date(request.terminationDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}.
+                                              </p>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Agency Completion Document */}
+                                    {request.status === 'completed' && request.terminationDocUrl && !request.isTerminated && (
+                                      <div className="mt-4 pt-4 border-t border-gray-200">
+                                        <h5 className="text-sm font-medium text-gray-700 mb-3">Completion Document</h5>
+                                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                          <p className="text-xs font-medium text-blue-800 mb-2">Separation completion document:</p>
+                                          <div className="flex items-center justify-between p-2 bg-white border border-gray-200 rounded">
+                                            <div className="flex items-center gap-2">
+                                              <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                              </svg>
+                                              <span className="text-xs text-gray-700 font-medium">
+                                                {request.terminationDocFilename || 'Completion Document'}
+                                              </span>
+                                            </div>
+                                            <button
+                                              onClick={async () => {
+                                                try {
+                                                  const { data, error } = await supabase.storage
+                                                    .from('separation-documents')
+                                                    .download(request.terminationDocUrl);
+                                                  
+                                                  if (error) throw error;
+                                                  
+                                                  const url = URL.createObjectURL(data);
+                                                  const a = document.createElement('a');
+                                                  a.href = url;
+                                                  a.download = request.terminationDocFilename || 'completion_document.pdf';
+                                                  document.body.appendChild(a);
+                                                  a.click();
+                                                  document.body.removeChild(a);
+                                                  URL.revokeObjectURL(url);
+                                                } catch (err) {
+                                                  console.error('Error downloading document:', err);
+                                                  showAlert('Failed to download document');
+                                                }
+                                              }}
+                                              className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 transition-colors"
+                                            >
+                                              Download
+                                            </button>
                                           </div>
                                         </div>
                                       </div>
@@ -1853,17 +2333,29 @@ function AgencySeparation() {
               </button>
               <button
                 onClick={handleSubmitRequest}
-                disabled={!submitForm.employeeId || !submitForm.resignationType || !submitForm.resignationLetter || !submitForm.confirmSubmit}
+                disabled={!submitForm.employeeId || !submitForm.resignationType || !submitForm.resignationLetter || !submitForm.confirmSubmit || isSubmitting}
                 className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-colors flex items-center gap-2 ${
-                  submitForm.employeeId && submitForm.resignationType && submitForm.resignationLetter && submitForm.confirmSubmit
+                  submitForm.employeeId && submitForm.resignationType && submitForm.resignationLetter && submitForm.confirmSubmit && !isSubmitting
                     ? 'bg-[#800000] text-white hover:bg-[#990000]'
                     : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                 }`}
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-                Submit Request
+                {isSubmitting ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Submitting...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                    Submit Request
+                  </>
+                )}
               </button>
             </div>
           </div>

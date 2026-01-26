@@ -48,7 +48,6 @@ function EmployeeSeparation() {
   const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
   const [showExitClearanceConfirm, setShowExitClearanceConfirm] = useState(false);
   const [showExitInterviewConfirm, setShowExitInterviewConfirm] = useState(false);
-  const [showTerminationModal, setShowTerminationModal] = useState(false);
 
   // Termination data
   const [isTerminated, setIsTerminated] = useState(false);
@@ -518,14 +517,6 @@ function EmployeeSeparation() {
               <p className="text-sm text-red-600 mb-4">
                 After this time, your account will be automatically closed and you will no longer be able to log in.
               </p>
-              {terminationDocUrl && (
-                <button
-                  onClick={() => setShowTerminationModal(true)}
-                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors text-sm font-medium"
-                >
-                  View Termination Details
-                </button>
-              )}
             </div>
           </div>
         </div>
@@ -1361,55 +1352,6 @@ function EmployeeSeparation() {
                 className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {uploadingInterview ? (separationRecord?.signed_exit_interview_url ? 'Updating...' : 'Uploading...') : separationRecord?.signed_exit_interview_url ? 'Update' : 'Submit'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Termination Details Modal */}
-      {showTerminationModal && (
-        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg border border-black max-w-md w-full mx-4 p-6">
-            <h3 className="text-lg font-semibold text-red-600 mb-4">Termination Details</h3>
-            <div className="space-y-4 mb-6">
-              <div>
-                <p className="text-sm text-gray-600 mb-1">Termination Document:</p>
-                <p className="font-medium text-gray-800">{terminationDocFilename || 'Termination Document'}</p>
-              </div>
-              <button
-                onClick={async () => {
-                  try {
-                    const { data, error } = await supabase.storage
-                      .from('separation-documents')
-                      .download(terminationDocUrl);
-                    
-                    if (error) throw error;
-                    
-                    const url = URL.createObjectURL(data);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = terminationDocFilename || 'termination_document.pdf';
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                  } catch (err) {
-                    console.error('Error downloading document:', err);
-                    alert('Failed to download document');
-                  }
-                }}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-              >
-                Download Document
-              </button>
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={() => setShowTerminationModal(false)}
-                className="px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
-              >
-                Close
               </button>
             </div>
           </div>
