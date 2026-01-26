@@ -759,6 +759,10 @@ function AgencyRequirements() {
       if (uploadError) {
         throw new Error(`Failed to upload file: ${uploadError.message}`);
       }
+
+      // Supabase SDK versions differ in the upload response shape.
+      // Prefer returned path/fullPath, but always fall back to our known filePath.
+      const storedFilePath = uploadData?.path || uploadData?.fullPath || filePath;
       
       // Get current requirements from employees table
       const { data: employeeData, error: empError } = await supabase
@@ -814,6 +818,8 @@ function AgencyRequirements() {
           currentRequirements.id_numbers[idKey] = {};
         }
         currentRequirements.id_numbers[idKey].value = uploadForm.idNumber.trim();
+        currentRequirements.id_numbers[idKey].file_path = storedFilePath;
+        currentRequirements.id_numbers[idKey].filePath = storedFilePath;
         currentRequirements.id_numbers[idKey].status = uploadTarget.isResubmit ? 'Re-submit' : 'Submitted';
         currentRequirements.id_numbers[idKey].submitted_at = new Date().toISOString();
       }
@@ -838,8 +844,8 @@ function AgencyRequirements() {
           id: requestId,
           document_type: uploadTarget.name,
           document: uploadTarget.name,
-          file_path: uploadData.path,
-          filePath: uploadData.path,
+          file_path: storedFilePath,
+          filePath: storedFilePath,
           submitted_at: new Date().toISOString(),
           // Mark as submitted so both Agency and HR UIs reflect the upload.
           // HR validation will later set this to approved/resubmit.
@@ -861,7 +867,7 @@ function AgencyRequirements() {
         const documentEntry = {
           key: docKey,
           name: uploadTarget.name,
-          file_path: uploadData.path,
+          file_path: storedFilePath,
           uploaded_at: new Date().toISOString(),
           status: uploadTarget.isResubmit ? 'Re-submit' : 'Submitted',
         };
