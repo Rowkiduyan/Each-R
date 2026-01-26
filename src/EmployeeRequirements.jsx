@@ -869,19 +869,38 @@ function EmployeeRequirements() {
           const depot = mostRecentApp.job_posts?.depot || 'N/A';
           const date = mostRecentApp.created_at;
 
+          // Parse payload to get interview_notes_attachments
+          let payload = null;
+          try {
+            payload = typeof mostRecentApp.payload === 'string' 
+              ? JSON.parse(mostRecentApp.payload) 
+              : mostRecentApp.payload;
+          } catch (err) {
+            console.error('Error parsing payload:', err);
+          }
+
+          const interviewNotesAttachments = payload?.interview_notes_attachments || [];
+          const agreementDocuments = payload?.agreement_documents || [];
+
+          // Find Interview Details and Assessment Result from payload
+          const interviewDetailsDoc = interviewNotesAttachments.find(doc => 
+            doc.label === 'Interview Details'
+          );
+          const assessmentResultDoc = interviewNotesAttachments.find(doc => 
+            doc.label === 'Assessment Result'
+          );
+
           const records = [];
 
           records.push({
             id: `${mostRecentApp.id}-interview-details`,
             type: 'assessment',
             documentName: 'Interview Details',
-            fileName: mostRecentApp.interview_details_file
-              ? mostRecentApp.interview_details_file.split('/').pop()
-              : null,
-            filePath: mostRecentApp.interview_details_file,
-            fileUrl: mostRecentApp.interview_details_file
-              ? getFileUrl(mostRecentApp.interview_details_file)
-              : null,
+            fileName: interviewDetailsDoc?.originalName || (interviewDetailsDoc?.path ? interviewDetailsDoc.path.split('/').pop() : null),
+            filePath: interviewDetailsDoc?.path || mostRecentApp.interview_details_file,
+            fileUrl: interviewDetailsDoc?.path 
+              ? getFileUrl(interviewDetailsDoc.path)
+              : (mostRecentApp.interview_details_file ? getFileUrl(mostRecentApp.interview_details_file) : null),
             date,
             jobTitle,
             depot,
@@ -893,13 +912,11 @@ function EmployeeRequirements() {
             id: `${mostRecentApp.id}-assessment-results`,
             type: 'assessment',
             documentName: 'In-Person Assessment Results',
-            fileName: mostRecentApp.assessment_results_file
-              ? mostRecentApp.assessment_results_file.split('/').pop()
-              : null,
-            filePath: mostRecentApp.assessment_results_file,
-            fileUrl: mostRecentApp.assessment_results_file
-              ? getFileUrl(mostRecentApp.assessment_results_file)
-              : null,
+            fileName: assessmentResultDoc?.originalName || (assessmentResultDoc?.path ? assessmentResultDoc.path.split('/').pop() : null),
+            filePath: assessmentResultDoc?.path || mostRecentApp.assessment_results_file,
+            fileUrl: assessmentResultDoc?.path 
+              ? getFileUrl(assessmentResultDoc.path)
+              : (mostRecentApp.assessment_results_file ? getFileUrl(mostRecentApp.assessment_results_file) : null),
             date,
             jobTitle,
             depot,
@@ -907,23 +924,25 @@ function EmployeeRequirements() {
             icon: 'green',
           });
 
-          const agreementDocs = [
-            { key: 'appointment-letter', name: 'Employee Appointment Letter', file: mostRecentApp.appointment_letter_file },
-            { key: 'undertaking', name: 'Undertaking', file: mostRecentApp.undertaking_file },
-            { key: 'application-form', name: 'Application Form', file: mostRecentApp.application_form_file },
-            { key: 'undertaking-duties', name: 'Undertaking of Duties and Responsibilities', file: mostRecentApp.undertaking_duties_file },
-            { key: 'pre-employment', name: 'Roadwise Pre Employment Requirements', file: mostRecentApp.pre_employment_requirements_file },
-            { key: 'id-form', name: 'ID Form', file: mostRecentApp.id_form_file },
+          // Get agreement documents from payload (with labels matching exactly)
+          const agreementDocsMapping = [
+            { key: 'appointment-letter', name: 'Employee Appointment Letter', label: 'Employee Appointment Letter' },
+            { key: 'undertaking', name: 'Undertaking', label: 'Undertaking' },
+            { key: 'undertaking-duties', name: 'Undertaking of Duties and Responsibilities', label: 'Undertaking of Duties and Responsibilities' },
           ];
 
-          agreementDocs.forEach((doc) => {
+          agreementDocsMapping.forEach((docDef) => {
+            const payloadDoc = agreementDocuments.find(doc => doc.label === docDef.label);
+            const filePath = payloadDoc?.path || null;
+            const fileName = payloadDoc?.originalName || (filePath ? filePath.split('/').pop() : null);
+
             records.push({
-              id: `${mostRecentApp.id}-${doc.key}`,
+              id: `${mostRecentApp.id}-${docDef.key}`,
               type: 'agreement',
-              documentName: doc.name,
-              fileName: doc.file ? doc.file.split('/').pop() : null,
-              filePath: doc.file,
-              fileUrl: doc.file ? getFileUrl(doc.file) : null,
+              documentName: docDef.name,
+              fileName,
+              filePath,
+              fileUrl: filePath ? getFileUrl(filePath) : null,
               date,
               jobTitle,
               depot,
