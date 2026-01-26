@@ -2055,9 +2055,13 @@ function HrRecruitment() {
     return `${displayHour}:${m} ${period}`;
   };
 
+  // Pending statuses for schedule grouping
+  const pendingScheduleStatuses = new Set(['submitted', 'pending', 'screening', 'interview', 'scheduled', 'onsite']);
+  const isPendingScheduleStatus = (status) => pendingScheduleStatuses.has(String(status || '').toLowerCase());
+
   const getTodayInterviews = () => {
     const today = new Date().toISOString().split('T')[0];
-    let todayInterviews = interviews.filter(interview => interview.date === today && String(interview.status || '').toLowerCase() !== 'hired');
+    let todayInterviews = interviews.filter(interview => interview.date === today && isPendingScheduleStatus(interview.status));
     
     console.log('[getTodayInterviews] Before filtering:', todayInterviews.length, 'interviews');
     console.log('[getTodayInterviews] currentUser:', currentUser);
@@ -2087,7 +2091,7 @@ function HrRecruitment() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowDate = tomorrow.toISOString().split('T')[0];
-    let tomorrowInterviews = interviews.filter(interview => interview.date === tomorrowDate && String(interview.status || '').toLowerCase() !== 'hired');
+    let tomorrowInterviews = interviews.filter(interview => interview.date === tomorrowDate && isPendingScheduleStatus(interview.status));
     
     // Filter by depot for HRC users (case-insensitive role check)
     if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
@@ -2111,7 +2115,7 @@ function HrRecruitment() {
       return interviewDate >= today && interviewDate <= nextWeek;
     });
 
-    let filteredWeek = weekInterviews.filter((interview) => String(interview.status || '').toLowerCase() !== 'hired');
+    let filteredWeek = weekInterviews.filter((interview) => isPendingScheduleStatus(interview.status));
     
     // Filter by depot for HRC users (case-insensitive role check)
     if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
@@ -2129,7 +2133,7 @@ function HrRecruitment() {
   const getPastInterviews = () => {
     const todayStr = new Date().toISOString().split('T')[0];
     let pastInterviews = interviews.filter(interview =>
-      String(interview.status || '').toLowerCase() === 'hired' ||
+      !isPendingScheduleStatus(interview.status) ||
       (interview.date && interview.date < todayStr)
     );
     
@@ -2148,7 +2152,7 @@ function HrRecruitment() {
 
   const getTodaySigningSchedules = () => {
     const today = new Date().toISOString().split('T')[0];
-    let todaySchedules = signingSchedules.filter((s) => s.date === today && String(s.status || '').toLowerCase() !== 'hired');
+    let todaySchedules = signingSchedules.filter((s) => s.date === today && isPendingScheduleStatus(s.status));
     
     // Filter by depot for HRC users (case-insensitive role check)
     if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
@@ -2166,7 +2170,7 @@ function HrRecruitment() {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowDate = tomorrow.toISOString().split('T')[0];
-    let tomorrowSchedules = signingSchedules.filter((s) => s.date === tomorrowDate && String(s.status || '').toLowerCase() !== 'hired');
+    let tomorrowSchedules = signingSchedules.filter((s) => s.date === tomorrowDate && isPendingScheduleStatus(s.status));
     
     // Filter by depot for HRC users (case-insensitive role check)
     if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
@@ -2190,7 +2194,7 @@ function HrRecruitment() {
       return d >= today && d <= nextWeek;
     });
 
-    let filteredWeek = weekSchedules.filter((s) => String(s.status || '').toLowerCase() !== 'hired');
+    let filteredWeek = weekSchedules.filter((s) => isPendingScheduleStatus(s.status));
     
     // Filter by depot for HRC users (case-insensitive role check)
     if (currentUser?.role?.toUpperCase() === 'HRC' && currentUser?.depot) {
@@ -2208,7 +2212,7 @@ function HrRecruitment() {
   const getPastSigningSchedules = () => {
     const todayStr = new Date().toISOString().split('T')[0];
     let past = signingSchedules.filter((s) =>
-      String(s.status || '').toLowerCase() === 'hired' ||
+      !isPendingScheduleStatus(s.status) ||
       (s.date && s.date < todayStr)
     );
     

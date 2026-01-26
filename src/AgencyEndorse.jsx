@@ -200,40 +200,47 @@ function AgencyEndorse() {
   };
 
   const isApplicantBlank = (vals) => {
-    const baseline = makeEmptyValues();
-    const obj = vals || baseline;
+    const v = vals || makeEmptyValues();
 
-    for (const key of Object.keys(baseline)) {
-      const v = obj[key];
-      const b = baseline[key];
+    // Ignore auto-prefilled job fields from determining user input
+    const jobKeys = ["department", "position", "depot"];
 
-      if (typeof File !== 'undefined' && v instanceof File) return false;
-      if (v && typeof v === 'object' && v?.name) return false;
+    // If any primary identifying/contact field is present, treat as non-blank
+    const primaryFields = [
+      "firstName",
+      "middleName",
+      "lastName",
+      "fullName",
+      "email",
+      "contactNumber",
+      "birthday",
+      "street",
+      "province",
+      "city",
+      "barangay",
+      "zip",
+      "dateAvailable",
+    ];
 
-      if (Array.isArray(v) || Array.isArray(b)) {
-        const arr = Array.isArray(v) ? v : [];
-        if (arr.length > 0) return false;
-        continue;
-      }
-
-      if (typeof b === 'boolean') {
-        if (v !== b) return false;
-        continue;
-      }
-
-      if (typeof b === 'number') {
-        const num = Number(v);
-        const baseNum = Number(b);
-        if (Number.isFinite(num) && Number.isFinite(baseNum) && num !== baseNum) return false;
-        if (Number.isFinite(num) && !Number.isFinite(baseNum)) return false;
-        continue;
-      }
-
-      // Treat default strings (e.g., "no") as blank.
-      const vs = String(v ?? '').trim();
-      const bs = String(b ?? '').trim();
-      if (vs !== bs) return false;
+    for (const key of primaryFields) {
+      if (jobKeys.includes(key)) continue;
+      if (String(v[key] ?? "").trim() !== "") return false;
     }
+
+    // If any uploads exist, treat as non-blank
+    if (typeof File !== "undefined") {
+      if (v.resumeFile instanceof File) return false;
+      if (v.trainingCertFile instanceof File) return false;
+      if (v.licenseFile instanceof File) return false;
+    }
+
+    // If any list selections exist, treat as non-blank
+    if (Array.isArray(v.restrictionCodes) && v.restrictionCodes.length > 0) return false;
+    if (Array.isArray(v.vehicleTypes) && v.vehicleTypes.length > 0) return false;
+    if (Array.isArray(v.troubleshootingTasks) && v.troubleshootingTasks.length > 0) return false;
+
+    // If explicit answers differ from defaults (e.g., employed "yes"), treat as non-blank
+    if (String(v.employed ?? "").trim().toLowerCase() === "yes") return false;
 
     return true;
   };
@@ -1083,18 +1090,18 @@ function AgencyEndorse() {
       setCsvError('');
       if (csvInputRef.current) csvInputRef.current.value = '';
 
-      // After import, open Summary so the CSV flow can proceed to endorsement.
-      // If validation fails, users will see a validation alert.
+      // After import, show a success message (do not auto-open summary).
       setTimeout(() => {
+        const baseMsg = `Successfully imported ${data.length} employee(s).`;
         if (isDeliveryDriverJob) {
           setSuccessMessage(
-            `Successfully imported ${data.length} employee(s). Please upload the required License Photocopy for each employee before endorsing.`
+            `${baseMsg} Please upload the required License Photocopy for each employee before endorsing.`
           );
-          setSuccessNavigatePath(null);
-          setShowSuccessAlert(true);
         } else {
-          handleOpenSummary();
+          setSuccessMessage(baseMsg);
         }
+        setSuccessNavigatePath(null);
+        setShowSuccessAlert(true);
       }, 0);
     };
     reader.readAsText(csvFile);
@@ -3103,10 +3110,9 @@ function AgencyEndorse() {
                 return (
                   <div key={a.id} className="border border-gray-200 rounded-xl overflow-hidden">
                     <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-                      <div className="font-semibold text-gray-800">{a.name}</div>
-                      {a.id === activeApplicant && (
-                        <span className="text-xs px-2 py-1 rounded-full bg-[#800000]/10 text-[#800000]">Active</span>
-                      )}
+                      <div className="font-semibold text-gray-800">
+                        {getApplicantDisplayNameFromValues(formValues[a.id] || makeEmptyValues()) || a.name}
+                      </div>
                     </div>
                     <div className="p-5 space-y-5">
                       <div>
