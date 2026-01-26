@@ -167,40 +167,76 @@ function AdminCreate() {
 
   // Parse CSV file
   const parseCSV = (text) => {
-    const lines = text.replace(/\r\n/g, '\n').split('\n').filter(line => line.trim());
+    // Normalize line endings
+    const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    
+    // Detect delimiter (tab or comma)
+    const firstLine = normalizedText.split('\n')[0];
+    const delimiter = firstLine.includes('\t') ? '\t' : ',';
+    
+    const lines = normalizedText.split('\n');
     if (lines.length === 0) return [];
 
-    const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/"/g, ''));
+    // Parse headers
+    const headers = lines[0].split(delimiter).map(h => h.trim().toLowerCase().replace(/"/g, ''));
     const rows = [];
 
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
+    let i = 1;
+    while (i < lines.length) {
+      let line = lines[i].trim();
+      if (!line) {
+        i++;
+        continue;
+      }
 
       const values = [];
       let current = '';
       let inQuotes = false;
+      let j = 0;
 
-      for (let j = 0; j < line.length; j++) {
-        const char = line[j];
-        if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          values.push(current.trim());
-          current = '';
+      // Handle multi-line fields (values with line breaks inside quotes)
+      while (true) {
+        for (; j < line.length; j++) {
+          const char = line[j];
+          if (char === '"') {
+            inQuotes = !inQuotes;
+          } else if (char === delimiter && !inQuotes) {
+            // Clean value: remove quotes, trim, and remove line breaks
+            const cleanValue = current.trim().replace(/^["']|["']$/g, '').replace(/\n/g, '').trim();
+            values.push(cleanValue);
+            current = '';
+          } else {
+            current += char;
+          }
+        }
+
+        // If still in quotes and there are more lines, continue to next line
+        if (inQuotes && i + 1 < lines.length) {
+          i++;
+          line = lines[i];
+          j = 0;
+          current += '\n'; // Add line break to current value
         } else {
-          current += char;
+          break;
         }
       }
-      values.push(current.trim());
 
-      if (values.length === 0 || values.every(v => !v)) continue;
+      // Add the last value, clean it
+      const cleanValue = current.trim().replace(/^["']|["']$/g, '').replace(/\n/g, '').trim();
+      values.push(cleanValue);
+
+      // Skip empty rows
+      if (values.every(v => !v)) {
+        i++;
+        continue;
+      }
 
       const row = {};
       headers.forEach((header, index) => {
         row[header] = values[index] || '';
       });
       rows.push(row);
+      i++;
     }
 
     return rows;

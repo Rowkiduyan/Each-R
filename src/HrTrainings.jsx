@@ -3784,7 +3784,7 @@ function HrTrainings() {
                 )}
 
                 <div>
-                  <p className="text-xs text-gray-500 uppercase font-semibold">Training Title</p>
+                  <p className="text-xs text-gray-500 uppercase font-semibold">Title</p>
                   <p className="text-sm text-gray-900 font-medium mt-1">{form.title}</p>
                 </div>
                 

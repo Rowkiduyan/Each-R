@@ -105,17 +105,23 @@ export async function generateTrainingCertificates(training, attendees) {
           .from('certificates')
           .getPublicUrl(filePath);
 
+        const certData = {
+          training_id: training.id,
+          employee_name: attendee.name,
+          certificate_url: publicUrl,
+          certificate_path: filePath,
+          sent_by: user?.id,
+          sent_at: new Date().toISOString()
+        };
+
+        // Only add employee_id if it exists (for company employees)
+        if (attendee.userId) {
+          certData.employee_id = attendee.userId;
+        }
+
         const { error: dbError } = await supabase
           .from('generated_certificates')
-          .insert({
-            training_id: training.id,
-            employee_id: attendee.userId,
-            employee_name: attendee.name,
-            certificate_url: publicUrl,
-            certificate_path: filePath,
-            sent_by: user?.id,
-            sent_at: new Date().toISOString()
-          });
+          .insert(certData);
 
         if (dbError) throw dbError;
 

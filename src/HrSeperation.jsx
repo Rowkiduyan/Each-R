@@ -593,6 +593,28 @@ function HrSeperation() {
 
       if (updateError) throw updateError;
 
+      // Check if this employee was endorsed by an agency
+      const { data: employeeData, error: empError } = await supabase
+        .from('employees')
+        .select('endorsed_by_agency_id, source, fname, lname')
+        .eq('id', employeeId)
+        .single();
+
+      if (!empError && employeeData && employeeData.endorsed_by_agency_id && employeeData.source === 'Agency') {
+        // Create notification for the agency
+        const employeeName = `${employeeData.fname || ''} ${employeeData.lname || ''}`.trim();
+        await supabase
+          .from('notifications')
+          .insert({
+            user_id: employeeData.endorsed_by_agency_id,
+            type: 'resignation_rejected',
+            title: 'Resignation Letter Rejected',
+            message: `The resignation letter for ${employeeName} has been rejected by HR. The employee may need to resubmit.`,
+            read: false,
+            created_at: new Date().toISOString()
+          });
+      }
+
       // Update local state
       setEmployees(employees.map(emp => 
         emp.id === employeeId 
@@ -1638,7 +1660,14 @@ function HrSeperation() {
 
             {/* Stage 2: Clearance & Exit Interview */}
             {(selectedEmployee.isResignationApproved || !selectedEmployee.resignationLetterRequired) && (
-              <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+              <div className={`bg-white rounded-lg shadow-md p-6 mb-6 ${selectedEmployee.stage === "completed" ? "opacity-60 pointer-events-none" : ""}`}>
+                {selectedEmployee.stage === "completed" && (
+                  <div className="mb-4 p-3 bg-gray-100 border border-gray-300 rounded-lg">
+                    <p className="text-sm text-gray-700">
+                      <strong>Stage Completed:</strong> This stage has been completed and is now locked. All documents have been processed.
+                    </p>
+                  </div>
+                )}
                 {!selectedEmployee.resignationLetterRequired && (
                   <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
                     <p className="text-sm text-blue-800">
@@ -1650,7 +1679,8 @@ function HrSeperation() {
                   <h3 className="text-xl font-semibold text-gray-800">Stage 2: Clearance & Exit Interview</h3>
                   <button
                     onClick={() => setShowTemplateManager(true)}
-                    className="px-3 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm font-medium"
+                    disabled={selectedEmployee.stage === "completed"}
+                    className="px-3 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
                   >
                     Manage Templates
                   </button>
@@ -1813,7 +1843,7 @@ function HrSeperation() {
                           setPendingUploadEmployeeId(selectedEmployee.id);
                           setShowUploadFormsConfirm(true);
                         }}
-                        disabled={!hrExitClearanceFile || !hrExitInterviewFile}
+                        disabled={!hrExitClearanceFile || !hrExitInterviewFile || selectedEmployee.stage === "completed"}
                         className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-medium"
                       >
                         {selectedEmployee.hrExitFormsUploaded ? 'Update Forms for Employee' : 'Send Forms to Employee'}
@@ -1848,7 +1878,7 @@ function HrSeperation() {
                         <a href={selectedEmployee.exitClearanceFile} download className="text-sm text-blue-600 hover:underline">
                           {selectedEmployee.exitClearanceFile}
                         </a>
-                        {selectedEmployee.exitClearanceStatus !== "Validated" && (
+                        {selectedEmployee.exitClearanceStatus !== "Validated" && selectedEmployee.stage !== "completed" && (
                           <div className="flex gap-2">
                             <button
                               onClick={() => {
@@ -1893,7 +1923,7 @@ function HrSeperation() {
                         <a href={selectedEmployee.exitInterviewFile} download className="text-sm text-blue-600 hover:underline">
                           {selectedEmployee.exitInterviewFile}
                         </a>
-                        {selectedEmployee.exitInterviewStatus !== "Validated" && (
+                        {selectedEmployee.exitInterviewStatus !== "Validated" && selectedEmployee.stage !== "completed" && (
                           <div className="flex gap-2">
                             <button
                               onClick={() => {

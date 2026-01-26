@@ -294,6 +294,24 @@ function AgencyNotificationBell() {
       return;
     }
     
+    // Navigate to separation page for resignation rejected notifications
+    if (notification.type === 'resignation_rejected') {
+      setIsOpen(false);
+      navigate('/agency/separation');
+      
+      // Mark as read in database
+      if (!notification.read) {
+        await markNotificationAsRead(notification.id);
+        setNotifications(prev =>
+          prev.map(notif =>
+            notif.id === notification.id ? { ...notif, read: true } : notif
+          )
+        );
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+      return;
+    }
+    
     // Mark as read in database if it's from notifications table
     if (notification.type !== 'hired' && !notification.read) {
       await markNotificationAsRead(notification.id);
@@ -459,13 +477,20 @@ function AgencyNotificationBell() {
                   <div
                     key={notification.id}
                     className={`p-4 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer transition-colors ${
-                      !notification.read ? 'bg-red-50' : ''
+                      notification.type === 'resignation_rejected' 
+                        ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500' 
+                        : !notification.read ? 'bg-red-50' : ''
                     }`}
                     onClick={() => handleNotificationClick(notification)}
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
+                          {notification.type === 'resignation_rejected' && (
+                            <svg className="w-4 h-4 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          )}
                           <h4 className={`text-sm font-medium ${!notification.read ? 'text-gray-900' : 'text-gray-700'}`}>
                             {notification.title}
                           </h4>
@@ -478,6 +503,11 @@ function AgencyNotificationBell() {
                           <span className="text-xs text-gray-400">
                             {formatTimeAgo(notification.created_at)}
                           </span>
+                          {notification.type === 'resignation_rejected' && (
+                            <span className="text-xs text-red-600 font-medium">
+                              Action Required
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
