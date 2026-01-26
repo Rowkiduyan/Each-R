@@ -162,6 +162,7 @@ export function AssessmentSectionCard({
   schedule,
   interviewConfirmed,
   rescheduleRequest,
+  assessmentFinalized,
   onRequestReschedule,
 }) {
   const hasInterview = Boolean(schedule?.date || schedule?.time || schedule?.location);
@@ -245,13 +246,15 @@ export function AssessmentSectionCard({
 
           <div className="mt-3 flex items-center justify-between gap-3">
             <div className="text-xs text-gray-500">
-              {isRescheduleRequested
+              {assessmentFinalized
+                ? 'Assessment has been finalized by HR. Interview actions are no longer available.'
+                : isRescheduleRequested
                 ? 'Reschedule has been requested. Please wait for HR to update the schedule.'
                 : hasEverRescheduleRequest
                   ? 'A reschedule was already requested once for this interview.'
                   : 'If you need changes, request a reschedule.'}
             </div>
-            {hasInterview && isIdle && !hasEverRescheduleRequest && typeof onRequestReschedule === 'function' ? (
+            {hasInterview && isIdle && !hasEverRescheduleRequest && !assessmentFinalized && typeof onRequestReschedule === 'function' ? (
               <button
                 type="button"
                 onClick={onRequestReschedule}
@@ -378,15 +381,15 @@ export function SigningScheduleCard({ signing, locked }) {
       <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-gray-700">
         <div className="grid grid-cols-[110px_1fr] gap-4">
           <span className="text-gray-500">Date</span>
-          <span className="font-semibold text-gray-900 text-left break-words">{signingDate || '—'}</span>
+          <span className="font-semibold text-gray-900 text-left break-words">{signingDate || <span className="text-gray-500 italic">None</span>}</span>
         </div>
         <div className="grid grid-cols-[110px_1fr] gap-4">
           <span className="text-gray-500">Time</span>
-          <span className="font-semibold text-gray-900 text-left break-words">{signingTime || '—'}</span>
+          <span className="font-semibold text-gray-900 text-left break-words">{signingTime || <span className="text-gray-500 italic">None</span>}</span>
         </div>
         <div className="grid grid-cols-[110px_1fr] gap-4">
           <span className="text-gray-500">Location</span>
-          <span className="font-semibold text-gray-900 text-left break-words">{signing?.location || '—'}</span>
+          <span className="font-semibold text-gray-900 text-left break-words">{signing?.location || <span className="text-gray-500 italic">None</span>}</span>
         </div>
       </div>
       {!hasSigning && (

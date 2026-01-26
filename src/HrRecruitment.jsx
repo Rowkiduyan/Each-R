@@ -2916,6 +2916,7 @@ function HrRecruitment() {
             source: employeeSource,
             status: "Probationary", // Set new employees as Probationary
             birthday: birthday || null, // Carry over birthday from applicant profile payload
+            auth_user_id: authUserId || null, // Link to employee's auth account (not applicant's)
             // For agency applicants, preserve agency metadata
             ...(isAgencyApplicant && {
               is_agency: true,
@@ -2962,6 +2963,7 @@ function HrRecruitment() {
               source: employeeSource,
               status: "Probationary", // Set new employees as Probationary
               birthday: birthday || null, // Carry over birthday from applicant profile payload
+              auth_user_id: authUserId || null, // Link to employee's auth account
             };
 
             const { data: retryData, error: retryError } = await supabase

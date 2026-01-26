@@ -1,3 +1,4 @@
+-- Alternative version: Look up auth_user_id from profiles table by email
 CREATE OR REPLACE FUNCTION public.move_applicant_to_employee(p_application_id uuid)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -19,6 +20,7 @@ DECLARE
   v_work_email text;
   v_employee_id uuid;
   v_first_initial text;
+  v_auth_user_id uuid;
 BEGIN
   SELECT * INTO v_app FROM applications WHERE id = p_application_id;
   IF NOT FOUND THEN
@@ -56,11 +58,31 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'missing_email', 'message', 'Email is required');
   END IF;
 
+  -- OPTION 1: Try to get auth_user_id from applications.user_id (most reliable)
+  v_auth_user_id := v_app.user_id;
+  
+  -- OPTION 2: If not available, look up from profiles table by email
+  IF v_auth_user_id IS NULL THEN
+    SELECT id INTO v_auth_user_id 
+    FROM profiles 
+    WHERE LOWER(email) = LOWER(v_email)
+    LIMIT 1;
+  END IF;
+
   v_first_initial := LOWER(LEFT(v_first_name, 1));
   v_work_email := v_first_initial || LOWER(v_last_name) || '@roadwise.com';
 
   IF EXISTS (SELECT 1 FROM employees WHERE email = v_work_email) THEN
     SELECT id INTO v_employee_id FROM employees WHERE email = v_work_email;
+
+    -- Update existing employee's auth_user_id if it's missing
+    IF v_auth_user_id IS NOT NULL THEN
+      UPDATE employees 
+      SET auth_user_id = v_auth_user_id,
+          updated_at = NOW()
+      WHERE id = v_employee_id 
+      AND auth_user_id IS NULL;
+    END IF;
 
     UPDATE applications
     SET status = 'hired',
@@ -81,6 +103,8 @@ BEGIN
     );
   END IF;
 
+  -- NOTE: auth_user_id is set to NULL initially and will be updated after employee auth account is created
+  -- The employee gets a NEW auth account with work email, not the applicant's auth account
   INSERT INTO employees (
     email,
     fname,
@@ -93,7 +117,8 @@ BEGIN
     source,
     status,
     hired_at,
-    auth_user_id
+    auth_user_id,
+    personal_email
   ) VALUES (
     v_work_email,
     v_first_name,
@@ -106,7 +131,8 @@ BEGIN
     'Direct',
     'Probationary',
     NOW(),
-    v_app.user_id
+    NULL, -- Will be set after employee auth account is created
+    v_email
   )
   RETURNING id INTO v_employee_id;
 

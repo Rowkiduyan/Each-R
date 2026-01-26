@@ -888,7 +888,7 @@ function HrEval() {
   };
 
   const formatDate = (dateStr) => {
-    if (!dateStr) return "—";
+    if (!dateStr) return "None";
     const date = new Date(dateStr);
     return date.toLocaleDateString("en-US", {
       month: "short",
@@ -1434,7 +1434,7 @@ function HrEval() {
                             </td>
                             <td className="px-6 py-4">
                               <div className="flex flex-col items-center">
-                                <p className="text-sm text-gray-800">
+                                <p className={`text-sm ${employee.lastEvaluation ? 'text-gray-800' : 'text-gray-400'}`}>
                                   {formatDate(employee.lastEvaluation)}
                                 </p>
                                 {employee.evaluations.length > 0 && (

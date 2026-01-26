@@ -217,10 +217,10 @@ function EmployeeSeparation() {
       return;
     }
     
-    // Verify employee exists in employees table
+    // Verify employee exists in employees table and check auth mapping
     const { data: employeeCheck, error: checkError } = await supabase
       .from('employees')
-      .select('id')
+      .select('id, auth_user_id')
       .eq('id', employeeId)
       .maybeSingle();
     
@@ -233,6 +233,24 @@ function EmployeeSeparation() {
     if (!employeeCheck) {
       console.error('Employee not found in employees table with ID:', employeeId);
       setError('Employee record not found. Please contact HR to ensure your employee account is set up correctly.');
+      return;
+    }
+    
+    console.log('Employee auth mapping:', {
+      employeeId: employeeCheck.id,
+      authUserId: employeeCheck.auth_user_id,
+      currentUserId: userId,
+      matches: employeeCheck.auth_user_id === userId
+    });
+    
+    // Check if employee is linked to current auth user
+    if (!employeeCheck.auth_user_id || employeeCheck.auth_user_id !== userId) {
+      console.error('Employee record not linked to auth user:', {
+        employeeId: employeeCheck.id,
+        employeeAuthUserId: employeeCheck.auth_user_id,
+        currentAuthUserId: userId
+      });
+      setError('Your employee record is not properly linked to your account. Please contact HR to fix this issue.');
       return;
     }
     
@@ -1257,12 +1275,14 @@ function EmployeeSeparation() {
                       }
                     }
                     
-                    setResignationFile(null);
-                    setSeparationRecord(null);
-                    setResignationStatus('none');
-                    setUploadedFileName(null);
-                    setFileInputKey(Date.now());
                     setShowRemoveConfirm(false);
+                    
+                    // Refresh data from database - this will reset all states properly
+                    await fetchSeparationRecord();
+                    
+                    // Reset file input and show success after fetch completes
+                    setResignationFile(null);
+                    setFileInputKey(Date.now());
                     setSuccess('Resignation letter deleted successfully.');
                     
                   } catch (err) {

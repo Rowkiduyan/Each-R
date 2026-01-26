@@ -40,6 +40,7 @@ import { validateNoSunday } from './utils/dateTimeRules';
     const [showRejectInterviewDialog, setShowRejectInterviewDialog] = useState(false);
     const [showProfileIncompleteModal, setShowProfileIncompleteModal] = useState(false);
     const [profileIncompleteMessage, setProfileIncompleteMessage] = useState('');
+    const [showRetractedConfirmDialog, setShowRetractedConfirmDialog] = useState(false);
     const [applicationTab, setApplicationTab] = useState('personal');
     const jobDetailsRef = useRef(null);
 
@@ -1502,6 +1503,13 @@ const getApplicationFilesPublicUrl = (path) => {
         }, 1500);
         return;
       }
+
+      // Check if user previously retracted this job
+      const currentJobStatus = getLatestStatusForJob(selectedJob?.id);
+      if (currentJobStatus === 'retracted') {
+        setShowRetractedConfirmDialog(true);
+        return;
+      }
       setShowDetails(false);
       setWorkExperiences(
         Array.isArray(profileForm.work_experiences) && profileForm.work_experiences.length
@@ -1933,7 +1941,7 @@ const getApplicationFilesPublicUrl = (path) => {
 
         const activeApplication = (existingApplications || []).find((app) => {
           const status = String(app?.status || '').toLowerCase();
-          return status && status !== 'rejected';
+          return status && status !== 'rejected' && status !== 'retracted';
         });
 
         if (activeApplication) {
@@ -2035,7 +2043,7 @@ const getApplicationFilesPublicUrl = (path) => {
     const hasExistingApplication = Boolean(userApplication);
     const appliedJobId = userApplication?.job_id || null;
     // Keep the existing “only show my job” behavior except when the latest application is rejected.
-    const shouldLockToAppliedJob = hasExistingApplication && !!appliedJobId && latestApplicationStatus !== 'rejected';
+    const shouldLockToAppliedJob = hasExistingApplication && !!appliedJobId && latestApplicationStatus !== 'rejected' && latestApplicationStatus !== 'retracted';
 
     const selectedApplication = (() => {
       const list = Array.isArray(userApplications) ? userApplications : [];
@@ -2767,10 +2775,12 @@ const getApplicationFilesPublicUrl = (path) => {
                     ? 'bg-green-100 text-green-700'
                     : jobStatus === 'rejected'
                     ? 'bg-red-100 text-red-700'
+                    : jobStatus === 'retracted'
+                    ? 'bg-gray-100 text-gray-700'
                     : 'bg-green-100 text-green-700'
                 }`}
               >
-                {jobStatus === 'hired' ? 'Hired' : jobStatus === 'rejected' ? 'Rejected' : 'Applied'}
+                {jobStatus === 'hired' ? 'Hired' : jobStatus === 'rejected' ? 'Rejected' : jobStatus === 'retracted' ? 'Retracted' : 'Applied'}
               </div>
             )}
           </div>
@@ -2966,6 +2976,28 @@ const getApplicationFilesPublicUrl = (path) => {
                                         <span className="px-10 py-2 rounded bg-red-100 text-red-700 font-medium">
                                           Rejected
                                         </span>
+                                      );
+                                    }
+                                    if (selectedStatus === 'retracted') {
+                                      // Allow reapplying to retracted jobs
+                                      if (!isProfileComplete) {
+                                        return (
+                                          <button
+                                            className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                                            onClick={proceedToApplicationForm}
+                                            title="Complete your profile to apply"
+                                          >
+                                            Apply Again
+                                          </button>
+                                        );
+                                      }
+                                      return (
+                                        <button
+                                          className="px-10 py-2 rounded bg-red-600 text-white hover:bg-red-700 transition-colors"
+                                          onClick={proceedToApplicationForm}
+                                        >
+                                          Apply Again
+                                        </button>
                                       );
                                     }
                                     return (
@@ -5792,9 +5824,10 @@ const getApplicationFilesPublicUrl = (path) => {
                           setConfirmSubmissionDeclarationChecked(false);
                           setShowConfirmDialog(true);
                         }}
-                        className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                        disabled={submitting}
+                        className="px-6 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
                       >
-                        Submit
+                        {submitting ? 'Submitting...' : 'Submit'}
                       </button>
 
                     </div>
@@ -5853,6 +5886,7 @@ const getApplicationFilesPublicUrl = (path) => {
                       disabled={submitting || !confirmSubmissionDeclarationChecked}
                       onClick={async () => {
                         setShowConfirmDialog(false);
+                        setShowSummary(false);
                         setConfirmSubmissionDeclarationChecked(false);
                         await handleFinalSubmit();
                       }}
@@ -5883,6 +5917,62 @@ const getApplicationFilesPublicUrl = (path) => {
                   <div className="p-4">
                     <p className="text-sm text-gray-700 mb-4">{profileIncompleteMessage}</p>
                     <p className="text-xs text-gray-600 italic">Redirecting you to your profile...</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Retracted Application Confirmation Dialog */}
+            {showRetractedConfirmDialog && (
+              <div
+                className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
+                onClick={() => setShowRetractedConfirmDialog(false)}
+              >
+                <div
+                  className="bg-white rounded-lg max-w-md w-full mx-4 overflow-hidden border border-gray-300 shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="p-4 border-b bg-yellow-50">
+                    <h3 className="text-lg font-semibold text-yellow-800 flex items-center gap-2">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
+                        <path fillRule="evenodd" d="M9.401 3.003c1.155-2 4.043-2 5.197 0l7.355 12.748c1.154 2-.29 4.5-2.599 4.5H4.645c-2.309 0-3.752-2.5-2.598-4.5L9.4 3.003ZM12 8.25a.75.75 0 0 1 .75.75v3.75a.75.75 0 0 1-1.5 0V9a.75.75 0 0 1 .75-.75Zm0 8.25a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z" clipRule="evenodd" />
+                      </svg>
+                      Reapply Confirmation
+                    </h3>
+                  </div>
+                  <div className="p-6">
+                    <p className="text-sm text-gray-700 mb-6">
+                      You have previously retracted your application for this job post. Do you wish to apply again?
+                    </p>
+                    <div className="flex gap-3 justify-end">
+                      <button
+                        onClick={() => setShowRetractedConfirmDialog(false)}
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowRetractedConfirmDialog(false);
+                          setShowDetails(false);
+                          setWorkExperiences(
+                            Array.isArray(profileForm.work_experiences) && profileForm.work_experiences.length
+                              ? profileForm.work_experiences
+                              : [{}]
+                          );
+                          setCharacterReferences(
+                            Array.isArray(profileForm.character_references) && profileForm.character_references.length
+                              ? profileForm.character_references
+                              : [{}]
+                          );
+                          setApplicationTab('personal');
+                          setShowModal(true);
+                        }}
+                        className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                      >
+                        Yes, Apply Again
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

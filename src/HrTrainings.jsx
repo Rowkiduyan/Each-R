@@ -673,7 +673,7 @@ function HrTrainings() {
       // Get employees with their personal emails
       const { data: employees, error: empError } = await supabase
         .from('employees')
-        .select('id, fname, lname, mname, email');
+        .select('id, fname, lname, mname, email, personal_email');
 
       if (empError) {
         console.error('Error fetching employees:', empError);
@@ -689,7 +689,8 @@ function HrTrainings() {
         const lastFirst = [emp.lname, emp.fname].filter(Boolean).join(", ");
         const full = [lastFirst, emp.mname].filter(Boolean).join(" ");
         nameToIdMap[full] = emp.id;
-        idToEmailMap[emp.id] = emp.email;
+        // Prefer personal_email over work email for training notifications
+        idToEmailMap[emp.id] = emp.personal_email || emp.email;
         idToNameMap[emp.id] = full;
       });
 
@@ -1690,7 +1691,7 @@ function HrTrainings() {
       <div className="w-full py-8">
         {/* Page Header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-800">Trainings & Orientation</h1>
+          <h1 className="text-2xl font-bold text-gray-800">Trainings & Seminars</h1>
           <p className="text-gray-500 mt-1">Manage schedules and track employee participation</p>
         </div>
 
@@ -2435,15 +2436,9 @@ function HrTrainings() {
                         <input
                           name="time"
                           value={form.time}
-                          onChange={(e) => {
-                            const t = e.target.value;
-                            if (!validateOfficeHours(e.target, t)) return;
-                            onChange(e);
-                          }}
+                          onChange={onChange}
                           type="time"
                           required
-                          min="08:00"
-                          max="17:00"
                           className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
                             fieldErrors.time ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
                           }`}
@@ -2456,15 +2451,9 @@ function HrTrainings() {
                         <input
                           name="end_time"
                           value={form.end_time}
-                          onChange={(e) => {
-                            const t = e.target.value;
-                            if (!validateOfficeHours(e.target, t)) return;
-                            onChange(e);
-                          }}
+                          onChange={onChange}
                           type="time"
                           required
-                          min="08:00"
-                          max="17:00"
                           className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
                             fieldErrors.end_time ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
                           }`}
@@ -3148,15 +3137,9 @@ function HrTrainings() {
                         <input
                           name="time"
                           value={editForm.time}
-                          onChange={(e) => {
-                            const t = e.target.value;
-                            if (!validateOfficeHours(e.target, t)) return;
-                            onEditChange(e);
-                          }}
+                          onChange={onEditChange}
                           type="time"
                           required
-                          min="08:00"
-                          max="17:00"
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>
@@ -3167,15 +3150,9 @@ function HrTrainings() {
                         <input
                           name="end_time"
                           value={editForm.end_time}
-                          onChange={(e) => {
-                            const t = e.target.value;
-                            if (!validateOfficeHours(e.target, t)) return;
-                            onEditChange(e);
-                          }}
+                          onChange={onEditChange}
                           type="time"
                           required
-                          min="08:00"
-                          max="17:00"
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
                       </div>
@@ -3239,7 +3216,14 @@ function HrTrainings() {
                             className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                           />
                           {editForm.operations_manager_signature && (
-                            <p className="text-xs text-gray-500">Current signature saved</p>
+                            <a 
+                              href={editForm.operations_manager_signature} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-xs text-blue-600 hover:underline font-medium inline-block mt-1"
+                            >
+                              View current
+                            </a>
                           )}
                         </div>
 
@@ -3262,7 +3246,14 @@ function HrTrainings() {
                             className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                           />
                           {editForm.safety_officer_signature && (
-                            <p className="text-xs text-gray-500">Current signature saved</p>
+                            <a 
+                              href={editForm.safety_officer_signature} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-xs text-blue-600 hover:underline font-medium inline-block mt-1"
+                            >
+                              View current
+                            </a>
                           )}
                         </div>
 
@@ -3285,7 +3276,14 @@ function HrTrainings() {
                             className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                           />
                           {editForm.hr_manager_signature && (
-                            <p className="text-xs text-gray-500">Current signature saved</p>
+                            <a 
+                              href={editForm.hr_manager_signature} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-xs text-blue-600 hover:underline font-medium inline-block mt-1"
+                            >
+                              View current
+                            </a>
                           )}
                         </div>
 
@@ -3308,7 +3306,14 @@ function HrTrainings() {
                             className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 file:mr-2 file:py-1 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
                           />
                           {editForm.general_manager_signature && (
-                            <p className="text-xs text-gray-500">Current signature saved</p>
+                            <a 
+                              href={editForm.general_manager_signature} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-xs text-blue-600 hover:underline font-medium inline-block mt-1"
+                            >
+                              View current
+                            </a>
                           )}
                         </div>
                       </div>
@@ -3759,7 +3764,7 @@ function HrTrainings() {
                   </svg>
                 </div>
                 <div>
-                  <h2 className="text-lg font-bold text-gray-900">Confirm Training Schedule</h2>
+                  <h2 className="text-lg font-bold text-gray-900">Confirm Schedule</h2>
                   <p className="text-sm text-gray-500 mt-0.5">Review before creating</p>
                 </div>
               </div>

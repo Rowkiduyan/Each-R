@@ -112,9 +112,6 @@ function ApplicantApplications() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyApplications, setHistoryApplications] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
-  const [showRetractedModal, setShowRetractedModal] = useState(false);
-  const [retractedApplications, setRetractedApplications] = useState([]);
-  const [loadingRetracted, setLoadingRetracted] = useState(false);
 
   const parsePayloadObject = (payload) => {
     if (!payload) return {};
@@ -558,7 +555,7 @@ function ApplicantApplications() {
         .from('applications')
         .select('id, status, payload, created_at, updated_at')
         .eq('user_id', user.id)
-        .in('status', ['hired', 'rejected', 'waitlisted'])
+        .in('status', ['hired', 'rejected', 'waitlisted', 'retracted'])
         .order('updated_at', { ascending: false });
 
       if (error) {
@@ -573,36 +570,6 @@ function ApplicantApplications() {
       setLoadingHistory(false);
     }
   };
-
-  const fetchRetractedApplications = async () => {
-    try {
-      setLoadingRetracted(true);
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { data, error } = await supabase
-        .from('applications')
-        .select('id, status, payload, created_at, updated_at')
-        .eq('user_id', user.id)
-        .eq('status', 'retracted')
-        .order('updated_at', { ascending: false });
-
-      if (error) {
-        console.error('Error fetching retracted applications:', error);
-        return;
-      }
-
-      setRetractedApplications(data || []);
-    } catch (err) {
-      console.error('Error in fetchRetractedApplications:', err);
-    } finally {
-      setLoadingRetracted(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRetractedApplications();
-  }, []);
 
 
 //   const getStepClasses = (step) => {
@@ -668,7 +635,6 @@ function ApplicantApplications() {
       });
       setShowRetractDialog(false);
       setShowRetractSuccess(true);
-      fetchRetractedApplications();
     } catch (err) {
       console.error('Error retracting application:', err);
       setRetractError('Failed to retract application. Please try again.');
@@ -689,28 +655,16 @@ function ApplicantApplications() {
         </div>
 
         <div className="mb-4">
-          <div className="flex items-center gap-2">
-            <button 
-              type="button" 
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-              onClick={() => {
-                setShowHistoryModal(true);
-                fetchHistoryApplications();
-              }}
-            >
-              History
-            </button>
-            <button
-              type="button"
-              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors"
-              onClick={() => {
-                setShowRetractedModal(true);
-                fetchRetractedApplications();
-              }}
-            >
-              Retracted
-            </button>
-          </div>
+          <button 
+            type="button" 
+            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+            onClick={() => {
+              setShowHistoryModal(true);
+              fetchHistoryApplications();
+            }}
+          >
+            History
+          </button>
         </div>
 
         {/* Enhanced Steps Progress Indicator - Only show when application exists */}
@@ -1322,11 +1276,13 @@ function ApplicantApplications() {
                   {(() => {
                     const interviewStatus = applicationData?.interview_confirmed || payloadObj?.interview_confirmed || 'Idle';
                     const rescheduleRequest = payloadObj?.interview_reschedule_request || payloadObj?.interviewRescheduleRequest || null;
+                    const assessmentFinalized = Boolean(payloadObj?.assessment_finalized || payloadObj?.assessmentFinalized);
                     return (
                       <AssessmentSectionCard
                         schedule={interview}
                         interviewConfirmed={interviewStatus}
                         rescheduleRequest={rescheduleRequest}
+                        assessmentFinalized={assessmentFinalized}
                         onRequestReschedule={() => {
                           setRescheduleNote('');
                           setReschedulePreferredDate('');
@@ -1341,7 +1297,8 @@ function ApplicantApplications() {
                   {(() => {
                     const interviewStatus = applicationData?.interview_confirmed || payloadObj?.interview_confirmed || 'Idle';
                     const statusLower = String(interviewStatus || '').toLowerCase();
-                    const showButtons = statusLower === 'idle' && interview?.date && interview?.time && interview?.location;
+                    const assessmentFinalized = Boolean(payloadObj?.assessment_finalized || payloadObj?.assessmentFinalized);
+                    const showButtons = statusLower === 'idle' && interview?.date && interview?.time && interview?.location && !assessmentFinalized;
                     return showButtons ? (
                       <div className="flex justify-end">
                         <button
@@ -1897,7 +1854,7 @@ function ApplicantApplications() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                   <p className="text-gray-600 font-medium">No completed applications found.</p>
-                  <p className="text-gray-500 text-sm mt-1">Your hired, rejected, or waitlisted applications will appear here.</p>
+                  <p className="text-gray-500 text-sm mt-1">Your hired, rejected, waitlisted, or retracted applications will appear here.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1934,88 +1891,6 @@ function ApplicantApplications() {
                           <div>
                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${statusColor}`}>
                               {(app.status || 'Unknown').toUpperCase()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Retracted Applications Modal */}
-      {showRetractedModal && (
-        <div
-          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
-          onClick={() => setShowRetractedModal(false)}
-        >
-          <div
-            className="bg-white rounded-lg w-full max-w-3xl mx-4 max-h-[80vh] overflow-hidden"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-gradient-to-r from-red-50 to-orange-50 px-6 py-4 border-b border-gray-200">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Retracted Applications
-                </h3>
-                <button
-                  onClick={() => setShowRetractedModal(false)}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
-              {loadingRetracted ? (
-                <div className="text-center py-8">
-                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-red-600 mb-2"></div>
-                  <p className="text-gray-600 text-sm">Loading retracted applications...</p>
-                </div>
-              ) : retractedApplications.length === 0 ? (
-                <div className="text-center py-8">
-                  <svg className="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <p className="text-gray-600 font-medium">No retracted applications found.</p>
-                  <p className="text-gray-500 text-sm mt-1">Your retracted applications will appear here.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {retractedApplications.map((app) => {
-                    const payloadObj = typeof app.payload === 'string' ? JSON.parse(app.payload) : app.payload || {};
-                    const job = payloadObj?.job || payloadObj?.form?.job || payloadObj?.applicant?.job || {};
-                    const jobTitle = job?.title || 'Unknown Position';
-                    const depot = job?.depot || '';
-                    const retractedAt = app.updated_at || app.created_at;
-
-                    return (
-                      <div key={app.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <div className="font-semibold text-gray-800 text-lg">{jobTitle}</div>
-                            {depot && (
-                              <div className="text-sm text-gray-600 mt-1">
-                                <span className="font-medium">Depot:</span> {depot}
-                              </div>
-                            )}
-                            <div className="text-xs text-gray-500 mt-2">
-                              Retracted: {retractedAt ? new Date(retractedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown'}
-                            </div>
-                          </div>
-                          <div>
-                            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border bg-red-100 text-red-700 border-red-200">
-                              RETRACTED
                             </span>
                           </div>
                         </div>
