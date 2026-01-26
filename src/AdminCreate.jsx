@@ -16,7 +16,7 @@ function AdminCreate() {
   const [generatedPassword, setGeneratedPassword] = useState('');
 
   // CSV Import States
-  const [csvFile, setCsvFile] = useState(null);
+  const [, setCsvFile] = useState(null);
   const [csvData, setCsvData] = useState([]);
   const [csvLoading, setCsvLoading] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
@@ -89,7 +89,10 @@ function AdminCreate() {
         options: {
           data: {
             role: 'Agency',
-            agency_name: formData.agencyName
+            agency_name: formData.agencyName,
+            contact_number: formData.contactNumber || null,
+            first_name: formData.contactPerson.split(' ')[0] || '',
+            last_name: formData.contactPerson.split(' ').slice(1).join(' ') || ''
           }
         }
       });
@@ -109,20 +112,38 @@ function AdminCreate() {
         }
       }
 
-      // Create profile entry
-      const { error: profileError } = await supabase
+      // Upsert profile entry (a DB trigger may already create the row on signup)
+      let { error: profileError } = await supabase
         .from('profiles')
-        .insert([{
+        .upsert({
           id: authData.user.id,
           email: formData.email,
           role: 'Agency',
           first_name: formData.contactPerson.split(' ')[0] || '',
           last_name: formData.contactPerson.split(' ').slice(1).join(' ') || '',
-          agency_name: formData.agencyName
-        }]);
+          agency_name: formData.agencyName,
+          contact_number: formData.contactNumber || null,
+        }, { onConflict: 'id' });
 
       if (profileError) {
         console.error('Profile creation error:', profileError);
+        // If `contact_number` column doesn't exist yet, retry without it.
+        if (String(profileError.message || '').toLowerCase().includes('contact_number')) {
+          const retry = await supabase
+            .from('profiles')
+            .upsert({
+              id: authData.user.id,
+              email: formData.email,
+              role: 'Agency',
+              first_name: formData.contactPerson.split(' ')[0] || '',
+              last_name: formData.contactPerson.split(' ').slice(1).join(' ') || '',
+              agency_name: formData.agencyName,
+            }, { onConflict: 'id' });
+          profileError = retry.error;
+          if (profileError) {
+            console.error('Profile creation retry error:', profileError);
+          }
+        }
         // Continue anyway, as the main account was created
       }
 
@@ -366,7 +387,10 @@ function AdminCreate() {
             options: {
               data: {
                 role: 'Agency',
-                agency_name: agency.agency_name
+                agency_name: agency.agency_name,
+                contact_number: agency.contact_number || null,
+                first_name: agency.contact_person.split(' ')[0] || '',
+                last_name: agency.contact_person.split(' ').slice(1).join(' ') || ''
               }
             }
           });
@@ -400,20 +424,38 @@ function AdminCreate() {
             continue;
           }
 
-          // Create profile
-          const { error: profileError } = await supabase
+          // Upsert profile (a DB trigger may already create the row on signup)
+          let { error: profileError } = await supabase
             .from('profiles')
-            .insert({
+            .upsert({
               id: authData.user.id,
               email: email,
               role: 'Agency',
               first_name: agency.contact_person.split(' ')[0] || '',
               last_name: agency.contact_person.split(' ').slice(1).join(' ') || '',
-              agency_name: agency.agency_name
-            });
+              agency_name: agency.agency_name,
+              contact_number: agency.contact_number || null,
+            }, { onConflict: 'id' });
 
           if (profileError) {
-            console.error('Profile error:', profileError);
+            console.error('Profile creation error:', profileError);
+            if (String(profileError.message || '').toLowerCase().includes('contact_number')) {
+              const retry = await supabase
+                .from('profiles')
+                .upsert({
+                  id: authData.user.id,
+                  email: email,
+                  role: 'Agency',
+                  first_name: agency.contact_person.split(' ')[0] || '',
+                  last_name: agency.contact_person.split(' ').slice(1).join(' ') || '',
+                  agency_name: agency.agency_name,
+                }, { onConflict: 'id' });
+              profileError = retry.error;
+              if (profileError) {
+                console.error('Profile creation retry error:', profileError);
+              }
+            }
+            // Continue anyway, as the main account was created
           }
 
           importResult.details.push({
@@ -601,6 +643,7 @@ function AdminCreate() {
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Contact Person</th>
                       <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Contact Number</th>
+                      
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -610,6 +653,7 @@ function AdminCreate() {
                         <td className="px-3 py-2 text-sm text-gray-900">{row.email}</td>
                         <td className="px-3 py-2 text-sm text-gray-900">{row.contact_person}</td>
                         <td className="px-3 py-2 text-sm text-gray-900">{row.contact_number || '-'}</td>
+                        
                       </tr>
                     ))}
                   </tbody>

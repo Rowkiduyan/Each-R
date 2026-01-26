@@ -356,6 +356,8 @@ function HrRequirements() {
               tin: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null, remarks: null },
               pagibig: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null, remarks: null },
               philhealth: { idNumber: '', hasFile: false, filePath: null, status: 'missing', submittedDate: null, remarks: null },
+              // Allow optional personal documents to be tracked/validated for agency employees too.
+              personalDocuments: {},
             } : {
               // Direct applicant: initialize with ID numbers and all document sections
               id_numbers: {
@@ -467,6 +469,11 @@ function HrRequirements() {
                   }
                 });
               }
+
+              // Map optional personal documents (if present)
+              if (requirementsData?.personalDocuments) {
+                requirements.personalDocuments = requirementsData.personalDocuments;
+              }
             } else {
               // Direct applicants: map ID numbers and all document sections
               if (requirementsData?.id_numbers) {
@@ -507,34 +514,47 @@ function HrRequirements() {
             // Map HR requests from requirements
             let hrRequests = [];
             if (requirementsData?.hr_requests && Array.isArray(requirementsData.hr_requests)) {
-              hrRequests = requirementsData.hr_requests.map(req => ({
-                // Normalize file path early (avoid showing placeholder/local paths)
-                id: req.id || Date.now().toString(),
-                document: req.document_type || req.document || '',
-                description: req.description || req.remarks || '',
-                priority: req.priority || 'normal',
-                requested_at: req.requested_at || new Date().toISOString(),
-                requested_by: req.requested_by || 'HR',
-                status: req.status || 'pending',
-                deadline: req.deadline || null,
-                remarks: req.remarks || req.description || null,
-                // Support both snake_case and camelCase to avoid UI mismatches
-                file_path: (() => {
-                  const raw = req.file_path || req.filePath || null;
-                  if (!raw) return null;
-                  const p = String(raw);
-                  return p.includes('local-file-path') || p.startsWith('local-') || !p.includes('/') ? null : p;
-                })(),
-                filePath: (() => {
-                  const raw = req.filePath || req.file_path || null;
-                  if (!raw) return null;
-                  const p = String(raw);
-                  return p.includes('local-file-path') || p.startsWith('local-') || !p.includes('/') ? null : p;
-                })(),
-                submitted_at: req.submitted_at || null,
-                validated_at: req.validated_at || null,
-                validated_file_path: req.validated_file_path || null,
-              }));
+              hrRequests = requirementsData.hr_requests.map(req => {
+                const stableId =
+                  getHrRequestId(req) ||
+                  [
+                    canonicalizeDocType(req?.document_type || req?.document || ''),
+                    req?.requested_at || '',
+                    req?.deadline || '',
+                  ]
+                    .filter(Boolean)
+                    .join('|') ||
+                  Date.now().toString();
+
+                return {
+                  // Normalize file path early (avoid showing placeholder/local paths)
+                  id: stableId,
+                  document: req.document_type || req.document || '',
+                  description: req.description || req.remarks || '',
+                  priority: req.priority || 'normal',
+                  requested_at: req.requested_at || new Date().toISOString(),
+                  requested_by: req.requested_by || 'HR',
+                  status: req.status || 'pending',
+                  deadline: req.deadline || null,
+                  remarks: req.remarks || req.description || null,
+                  // Support both snake_case and camelCase to avoid UI mismatches
+                  file_path: (() => {
+                    const raw = req.file_path || req.filePath || null;
+                    if (!raw) return null;
+                    const p = String(raw);
+                    return p.includes('local-file-path') || p.startsWith('local-') || !p.includes('/') ? null : p;
+                  })(),
+                  filePath: (() => {
+                    const raw = req.filePath || req.file_path || null;
+                    if (!raw) return null;
+                    const p = String(raw);
+                    return p.includes('local-file-path') || p.startsWith('local-') || !p.includes('/') ? null : p;
+                  })(),
+                  submitted_at: req.submitted_at || null,
+                  validated_at: req.validated_at || null,
+                  validated_file_path: req.validated_file_path || null,
+                };
+              });
             }
 
             // Build employee name
@@ -818,12 +838,50 @@ function HrRequirements() {
 
   const isOfficeEmployee = (employee) => !isDeliveryCrew(employee);
 
+  const getHrRequestId = (r) => {
+    const v = r?.id ?? r?.request_id ?? r?.requestId ?? null;
+    const s = String(v || '').trim();
+    return s || null;
+  };
+
+  const pickBestHrRequestIndex = (list, { requestId, documentType }) => {
+    if (!Array.isArray(list) || list.length === 0) return -1;
+
+    const reqId = String(requestId || '').trim();
+    if (reqId) {
+      const byId = list.findIndex((r) => String(getHrRequestId(r) || '') === reqId);
+      if (byId >= 0) return byId;
+    }
+
+    const docCanon = canonicalizeDocType(documentType);
+    if (!docCanon) return -1;
+
+    const candidates = list
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => {
+        const name = r?.document_type || r?.document || r?.name || '';
+        if (canonicalizeDocType(name) !== docCanon) return false;
+        const fp = r?.file_path || r?.filePath || null;
+        return Boolean(fp);
+      })
+      .map(({ r, idx }) => {
+        const ts = r?.submitted_at || r?.uploaded_at || r?.requested_at || null;
+        const t = ts ? new Date(ts).getTime() : 0;
+        return { idx, t: Number.isFinite(t) ? t : 0 };
+      })
+      .sort((a, b) => b.t - a.t);
+
+    return candidates.length > 0 ? candidates[0].idx : -1;
+  };
+
   const getPersonalDocRule = (doc, employee) => {
     const key = String(doc?.key || '').trim();
     if (!key) return { applicable: false, required: false };
 
+    // Show "Marriage Contract" as an optional trackable document.
+    // If it doesn't apply, employees can simply leave it missing.
     if (key === 'marriage_contract') {
-      return { applicable: isMarriedEmployee(employee), required: false };
+      return { applicable: true, required: false };
     }
 
     if (key === 'residence_sketch') {
@@ -841,7 +899,7 @@ function HrRequirements() {
     const entries = [];
     const reqs = employee.requirements;
 
-    const pushEntry = ({ status, submitted, requiredForCompletion }) => {
+    const pushEntry = ({ status, submitted, requiredForCompletion, countInProgress = true }) => {
       let s = normalizeStatus(status);
       // If a file is present but status is still missing/empty, treat it as pending validation.
       // This prevents employees from showing as "Incomplete" when they already submitted the document.
@@ -852,7 +910,7 @@ function HrRequirements() {
         status: s,
         submitted: Boolean(submitted),
         requiredForCompletion: required,
-        includeInProgress: required || includeOptional,
+        includeInProgress: Boolean(countInProgress) && (required || includeOptional),
         includeInStatus: required || includeOptional,
       });
     };
@@ -925,6 +983,9 @@ function HrRequirements() {
           status: doc?.status,
           submitted,
           requiredForCompletion: rule.required,
+          // "(If applicable)" docs only add to totals if submitted.
+          countInProgress:
+            String(docDef?.note || '').trim().toLowerCase() !== 'if applicable' || submitted,
         });
       }
 
@@ -1452,7 +1513,6 @@ function HrRequirements() {
         y = drawSectionTitle(doc, 'HR Requests', y);
         const reqRows = [];
         const reqLinks = [];
-
         for (const r of hrReqs) {
           const filePath = r?.file_path || r?.filePath || null;
           const url = getUrlSafe(filePath);
@@ -1479,7 +1539,6 @@ function HrRequirements() {
       setShowErrorAlert(true);
     }
   }, [formatDate, getDocumentUrl, isExpiredDate, isDeliveryCrew, medicalExams, normalizeStatus, normalizeStoragePath]);
-
   const exportRequirementsNumbersExcel = useCallback(async (rows, selectedKeys) => {
     const list = Array.isArray(rows) ? rows : [];
     if (list.length === 0) {
@@ -1677,6 +1736,7 @@ function HrRequirements() {
       submitted: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Submitted' },
       resubmit: { bg: 'bg-red-100', text: 'text-red-700', label: 'Re-submit' },
       expired: { bg: 'bg-red-100', text: 'text-red-700', label: 'Expired' },
+      optional: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Optional' },
       missing: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Missing' },
     };
     return styles[status] || styles.pending;
@@ -1732,13 +1792,16 @@ function HrRequirements() {
       // Get current employee data
       const { data: employeeData, error: empError } = await supabase
         .from('employees')
-        .select('id, requirements, is_agency, agency_profile_id')
+        .select('id, email, requirements, is_agency, agency_profile_id')
         .eq('id', validationTarget.employeeId)
         .single();
 
       if (empError) throw empError;
 
       const isAgency = employeeData.is_agency === true;
+
+      // Used for post-save verification (especially important for HR-requested docs).
+      let expectedHrRequestStatus = null;
 
       // Parse current requirements
       let currentRequirements = null;
@@ -1766,7 +1829,49 @@ function HrRequirements() {
         };
       }
 
-      if (isAgency) {
+      // HR requested documents must be validated for BOTH agency and direct employees.
+      if (validationTarget.type === 'hr_request') {
+        if (!Array.isArray(currentRequirements.hr_requests)) {
+          currentRequirements.hr_requests = [];
+        }
+
+        const requestId = validationTarget.key;
+        const idx = pickBestHrRequestIndex(currentRequirements.hr_requests, {
+          requestId,
+          documentType: validationTarget.name,
+        });
+
+        const nextStatus =
+          validationForm.status === 'Validated'
+            ? 'approved'
+            : validationForm.status === 'Re-submit'
+              ? 'resubmit'
+              : 'pending';
+
+        expectedHrRequestStatus = nextStatus;
+
+        if (idx >= 0) {
+          const fp = currentRequirements.hr_requests[idx]?.file_path || currentRequirements.hr_requests[idx]?.filePath || null;
+          currentRequirements.hr_requests[idx] = {
+            ...currentRequirements.hr_requests[idx],
+            id: getHrRequestId(currentRequirements.hr_requests[idx]) || String(requestId),
+            status: nextStatus,
+            remarks: validationForm.remarks.trim() || null,
+            validated_at: new Date().toISOString(),
+            validated_file_path: fp,
+          };
+        } else {
+          currentRequirements.hr_requests.push({
+            id: requestId,
+            document_type: validationTarget.name,
+            document: validationTarget.name,
+            status: nextStatus,
+            remarks: validationForm.remarks.trim() || null,
+            validated_at: new Date().toISOString(),
+            validated_file_path: null,
+          });
+        }
+      } else if (isAgency) {
         // Agency employees: update ID numbers
         if (!currentRequirements.id_numbers) {
           currentRequirements.id_numbers = {};
@@ -1939,54 +2044,59 @@ function HrRequirements() {
               validated_at: validationForm.status === 'Validated' ? new Date().toISOString() : null,
             });
           }
-        } else if (validationTarget.type === 'hr_request') {
-          // HR requested documents
-          if (!Array.isArray(currentRequirements.hr_requests)) {
-            currentRequirements.hr_requests = [];
-          }
-
-          const requestId = validationTarget.key;
-          const idx = currentRequirements.hr_requests.findIndex((r) => String(r?.id || '') === String(requestId));
-
-          const nextStatus =
-            validationForm.status === 'Validated'
-              ? 'approved'
-              : validationForm.status === 'Re-submit'
-                ? 'resubmit'
-                : 'pending';
-
-          if (idx >= 0) {
-            const fp = currentRequirements.hr_requests[idx]?.file_path || currentRequirements.hr_requests[idx]?.filePath || null;
-            currentRequirements.hr_requests[idx] = {
-              ...currentRequirements.hr_requests[idx],
-              status: nextStatus,
-              remarks: validationForm.remarks.trim() || null,
-              validated_at: new Date().toISOString(),
-              validated_file_path: fp,
-            };
-          } else {
-            // Fallback: if request wasn't found by id, add a minimal record to preserve validation.
-            currentRequirements.hr_requests.push({
-              id: requestId,
-              document_type: validationTarget.name,
-              document: validationTarget.name,
-              status: nextStatus,
-              remarks: validationForm.remarks.trim() || null,
-              validated_at: new Date().toISOString(),
-              validated_file_path: null,
-            });
-          }
         }
       }
 
       // Update requirements in employees table
-      const { error: updateError } = await supabase
-        .from('employees')
-        .update({ requirements: currentRequirements })
-        .eq('id', validationTarget.employeeId);
+      const doUpdate = async (where) => {
+        let q = supabase.from('employees').update({ requirements: currentRequirements });
+        if (where?.id) q = q.eq('id', where.id);
+        if (where?.email) q = q.eq('email', where.email);
+        // Request a representation so we can confirm an update actually happened.
+        return await q.select('id');
+      };
 
-      if (updateError) {
-        throw new Error(`Failed to save validation: ${updateError.message}`);
+      let updateRes = await doUpdate({ id: validationTarget.employeeId });
+      if (updateRes.error) throw new Error(`Failed to save validation: ${updateRes.error.message}`);
+      if (!updateRes.data || updateRes.data.length === 0) {
+        // Fallback: some environments may have mismatched ids or non-standard keys for agency employees.
+        const email = employeeData?.email || null;
+        if (email) {
+          updateRes = await doUpdate({ email });
+          if (updateRes.error) throw new Error(`Failed to save validation: ${updateRes.error.message}`);
+        }
+      }
+
+      if (!updateRes.data || updateRes.data.length === 0) {
+        throw new Error('Failed to save validation (no rows updated).');
+      }
+
+      // Verify the DB reflects the requested change.
+      // This avoids showing "success" when the wrong HR-request entry was updated or policies block the update.
+      if (validationTarget.type === 'hr_request' && expectedHrRequestStatus) {
+        const updatedEmployeeId = updateRes.data?.[0]?.id || validationTarget.employeeId;
+        const { data: verifyEmployee, error: verifyError } = await supabase
+          .from('employees')
+          .select('requirements')
+          .eq('id', updatedEmployeeId)
+          .single();
+
+        if (verifyError) throw verifyError;
+
+        const verifyReqs = verifyEmployee?.requirements;
+        const list = Array.isArray(verifyReqs?.hr_requests) ? verifyReqs.hr_requests : [];
+        const idx = pickBestHrRequestIndex(list, {
+          requestId: validationTarget.key,
+          documentType: validationTarget.name,
+        });
+
+        const actual = idx >= 0 ? normalizeStatus(list[idx]?.status) : null;
+        if (actual !== expectedHrRequestStatus) {
+          throw new Error(
+            `Validation saved but did not reflect (expected ${expectedHrRequestStatus}, got ${actual || 'missing'}). ` +
+              'This is usually caused by RLS/policies blocking updates or the request not matching the stored row.'
+          );
+        }
       }
 
       // Close modal and show success
@@ -2177,11 +2287,14 @@ function HrRequirements() {
   const requestRequiredCanon = requestRequiredLabels.map(canonicalizeDocType);
 
   const requestDocCatalog = getDocTypeCatalog();
-  const requestDocSuggestions = requestDocCatalog.filter(
-    (name) => !isDuplicateDocType(name, requestRequiredCanon)
-  );
+  const requestDocSuggestions = requestDocCatalog
+    // "Marriage Contract Photocopy" is already on the main requirements list; don't allow requesting it here.
+    .filter((name) => canonicalizeDocType(name) !== canonicalizeDocType('Marriage Contract Photocopy'))
+    .filter((name) => !isDuplicateDocType(name, requestRequiredCanon));
 
-  const requestDocDuplicate = isDuplicateDocType(requestForm.documentType, requestRequiredCanon);
+  const requestDocDuplicate =
+    canonicalizeDocType(requestForm.documentType) === canonicalizeDocType('Marriage Contract Photocopy') ||
+    isDuplicateDocType(requestForm.documentType, requestRequiredCanon);
   const requestDeadlineDays = getDaysUntil(requestForm.deadline);
   const requestDeadlineSoon =
     requestDeadlineDays != null && requestDeadlineDays >= 0 && requestDeadlineDays <= 7;
@@ -3241,7 +3354,7 @@ function HrRequirements() {
                                     )}
 
                                     {/* Personal Documents Section */}
-                                    {!employee.isAgency && employee.requirements.personalDocuments !== undefined && (
+                                    {employee.requirements.personalDocuments !== undefined && (
                                       <div>
                                         <div className="flex items-center gap-2 mb-4">
                                           <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
@@ -3252,17 +3365,32 @@ function HrRequirements() {
                                           <p className="text-sm font-semibold text-gray-800">Personal Documents</p>
                                         </div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                          {personalDocuments.map((doc) => {
-                                            const rule = getPersonalDocRule(doc, employee);
-                                            if (!rule.applicable) return null;
+                                          {(employee.isAgency
+                                            ? personalDocuments.filter((d) => d.key === 'dependents_birth_certificate' || d.key === 'marriage_contract')
+                                            : personalDocuments
+                                          ).map((doc) => {
+                                            if (!employee.isAgency) {
+                                              const rule = getPersonalDocRule(doc, employee);
+                                              if (!rule.applicable) return null;
+                                            }
                                             const docData = employee.requirements.personalDocuments?.[doc.key] || {};
-                                            const docStatus = typeof docData === 'object' && docData !== null ? (docData.status || 'missing') : 'missing';
+                                            const docHasFile = Boolean(docData?.filePath || docData?.file_path);
+                                            const isIfApplicable = String(doc?.note || '').trim().toLowerCase() === 'if applicable';
+                                            const rawDocStatus = typeof docData === 'object' && docData !== null ? (docData.status || 'missing') : 'missing';
+                                            const docStatus = isIfApplicable && !docHasFile ? 'optional' : rawDocStatus;
                                             const statusStyle = getStatusStyle(
-                                              docStatus === 'approved' || docStatus === 'Validated' ? 'approved' :
-                                              docStatus === 'resubmit' || docStatus === 'Re-submit' ? 'resubmit' :
-                                              docStatus === 'pending' || docStatus === 'Submitted' ? 'pending' : 'missing'
+                                              docStatus === 'optional'
+                                                ? 'optional'
+                                                : docStatus === 'approved' || docStatus === 'Validated'
+                                                  ? 'approved'
+                                                  : docStatus === 'resubmit' || docStatus === 'Re-submit'
+                                                    ? 'resubmit'
+                                                    : docStatus === 'pending' || docStatus === 'Submitted'
+                                                      ? 'pending'
+                                                      : 'missing'
                                             );
-                                            const needsAction = docStatus === 'missing' || docStatus === 'resubmit' || docStatus === 'Re-submit';
+                                            const needsAction =
+                                              docStatus === 'missing' || docStatus === 'resubmit' || docStatus === 'Re-submit';
                                             
                                             return (
                                               <div 
@@ -3272,6 +3400,8 @@ function HrRequirements() {
                                                     ? 'bg-red-50 border-red-200 shadow-sm' 
                                                     : docStatus === 'missing' 
                                                       ? 'bg-orange-50/50 border-orange-200 border-dashed' 
+                                                      : docStatus === 'optional'
+                                                        ? 'bg-gray-50/50 border-gray-200 border-dashed'
                                                       : docStatus === 'approved' || docStatus === 'Validated'
                                                         ? 'bg-green-50/50 border-green-200'
                                                         : 'bg-white border-gray-200'

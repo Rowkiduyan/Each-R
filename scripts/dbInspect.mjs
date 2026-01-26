@@ -207,6 +207,7 @@ try {
 } catch (e) {
   console.error(String(e?.message ?? e));
   console.log('');
-  console.log('If this is `tables`/`columns`, run the SQL helpers in supabase/introspection.sql in your Supabase Dashboard SQL editor.');
+  console.log('If this is `tables`/`columns`, install the SQL helpers from supabase/introspection.sql.');
+  console.log('For local Supabase, you can run `npx supabase migration up` (recommended) or paste the SQL into Supabase Studio SQL editor.');
   process.exitCode = 1;
 }

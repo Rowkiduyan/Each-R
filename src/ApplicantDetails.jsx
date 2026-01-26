@@ -605,6 +605,8 @@ function ApplicantDetails() {
       // Generate employee password
       const employeePassword = generateEmployeePassword(firstName, lastName, birthday);
 
+      let employeeAuthUserId = null;
+
       // Create auth account for employee
       try {
         const authResult = await createEmployeeAuthAccount({
@@ -619,6 +621,82 @@ function ApplicantDetails() {
           // Continue anyway - employee record was created
         } else {
           console.log("Auth account created successfully");
+          employeeAuthUserId = authResult?.data?.userId || null;
+
+          // Link employees row to the auth user so employee-side lookups work.
+          if (employeeAuthUserId && workEmail) {
+            try {
+              const { error: linkErr } = await supabase
+                .from('employees')
+                .update({ auth_user_id: employeeAuthUserId })
+                .eq('email', workEmail);
+              if (linkErr) console.warn('Failed to link employees.auth_user_id (non-fatal):', linkErr);
+            } catch (e) {
+              console.warn('Failed to link employees.auth_user_id (non-fatal):', e);
+            }
+          }
+
+          // Ensure there is an applicants row linked to this employee for personal fields
+          // (sex/marital/address). Employee-facing profile reads from applicants when present.
+          if (employeeAuthUserId) {
+            try {
+              const { data: empRow } = await supabase
+                .from('employees')
+                .select('id,email,personal_email,contact_number,fname,lname,mname')
+                .eq('email', workEmail)
+                .maybeSingle();
+
+              const employeeId = empRow?.id || null;
+
+              const { data: appRow } = await supabase
+                .from('applications')
+                .select('payload')
+                .eq('id', id)
+                .maybeSingle();
+
+              let payloadObj = appRow?.payload;
+              if (typeof payloadObj === 'string') {
+                try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+              }
+              const source = payloadObj?.form || payloadObj?.applicant || payloadObj || {};
+
+              const applicantUpsert = {
+                id: employeeAuthUserId,
+                email: personalEmail || empRow?.personal_email || source.email || null,
+                fname: firstName || empRow?.fname || null,
+                lname: lastName || empRow?.lname || null,
+                mname: empRow?.mname || null,
+                contact_number: empRow?.contact_number || source.contact_number || source.phone || null,
+                address: source.address || null,
+                sex: source.sex || source.gender || null,
+                birthday: birthday || null,
+                marital_status: source.marital_status || source.maritalStatus || source.marital || null,
+                educational_attainment: source.educational_attainment || source.educationalAttainment || source.education_attainment || null,
+                institution_name: source.institution_name || source.institutionName || null,
+                year_graduated: source.year_graduated || source.yearGraduated || null,
+                education_program: source.education_program || source.educationProgram || null,
+                barangay: source.barangay || null,
+                city: source.city || null,
+                street: source.street || null,
+                province: source.province || null,
+                zip: source.zip || null,
+                unit_house_number: source.unit_house_number || source.unitHouseNumber || null,
+                postal_code: source.postal_code || source.postalCode || null,
+                employee_id: employeeId,
+                is_hired: true,
+                hired_at: new Date().toISOString(),
+              };
+
+              const { error: applicantUpsertErr } = await supabase
+                .from('applicants')
+                .upsert(applicantUpsert, { onConflict: 'id' });
+              if (applicantUpsertErr) {
+                console.warn('Failed to upsert applicants link/profile (non-fatal):', applicantUpsertErr);
+              }
+            } catch (e) {
+              console.warn('Failed to create applicants link/profile (non-fatal):', e);
+            }
+          }
 
           // Send credentials email to personal email
           try {

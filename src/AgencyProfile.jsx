@@ -4,6 +4,7 @@ import { supabase } from "./supabaseClient";
 function AgencyProfile() {
     const [profileData, setProfileData] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [authEmail, setAuthEmail] = useState('');
 
     useEffect(() => {
         const fetchAgencyProfile = async () => {
@@ -14,6 +15,7 @@ function AgencyProfile() {
                     setLoading(false);
                     return;
                 }
+                setAuthEmail(user.email || '');
 
                 // Fetch profile data from profiles table
                 const { data, error } = await supabase
@@ -22,11 +24,39 @@ function AgencyProfile() {
                     .eq('id', user.id)
                     .single();
 
+                // Also fetch employee row for agency users; some fields (contact_number)
+                // may be stored in employees rather than profiles.
+                let employeeRow = null;
+                try {
+                    const byAuth = await supabase
+                        .from('employees')
+                        .select('contact_number, role')
+                        .eq('auth_user_id', user.id)
+                        .maybeSingle();
+                    employeeRow = byAuth.data || null;
+
+                    if (!employeeRow && user.email) {
+                        const byEmail = await supabase
+                            .from('employees')
+                            .select('contact_number, role')
+                            .eq('email', user.email)
+                            .maybeSingle();
+                        employeeRow = byEmail.data || null;
+                    }
+                } catch (e) {
+                    // ignore employee lookup errors
+                }
+
                 if (error) {
                     console.error('Error fetching agency profile:', error);
                     setProfileData(null);
                 } else if (data) {
-                    setProfileData(data);
+                    setProfileData({
+                        ...data,
+                        // Prefer employees table values when present
+                        contact_number: employeeRow?.contact_number ?? data.contact_number,
+                        role: data.role ?? employeeRow?.role,
+                    });
                 } else {
                     console.warn('No agency profile found for user:', user.id);
                     setProfileData(null);
@@ -52,6 +82,12 @@ function AgencyProfile() {
         const firstInitial = firstName ? firstName[0].toUpperCase() : '';
         const lastInitial = lastName ? lastName[0].toUpperCase() : '';
         return firstInitial + lastInitial || 'AG';
+    };
+
+    const displayValue = (value) => {
+        if (value === null || value === undefined) return 'Not specified';
+        const str = String(value).trim();
+        return str ? str : 'Not specified';
     };
 
     if (loading) {
@@ -98,14 +134,9 @@ function AgencyProfile() {
                                 </h2>
                                 <div className="flex items-center gap-2">
                                     <span className="text-sm text-gray-600 font-medium">
-                                        {profileData.role || 'Agency User'}
+                                        {profileData.agency_name ? profileData.agency_name : (profileData.role || 'Agency User')}
                                     </span>
-                                    {profileData.depot && (
-                                        <>
-                                            <span className="text-gray-400">|</span>
-                                            <span className="text-sm text-gray-600 font-medium">{profileData.depot}</span>
-                                        </>
-                                    )}
+                                    
                                 </div>
                             </div>
                         </div>
@@ -144,21 +175,17 @@ function AgencyProfile() {
                                 </div>
                                 <div className="flex flex-col">
                                     <span className="text-sm text-gray-500 mb-1">Email</span>
-                                    <span className="text-gray-800 font-medium">{profileData.email || 'Not specified'}</span>
+                                    <span className="text-gray-800 font-medium">{displayValue(profileData.email || authEmail)}</span>
                                 </div>
                                 <div className="flex flex-col">
                                     <span className="text-sm text-gray-500 mb-1">Contact Number</span>
-                                    <span className="text-gray-800 font-medium">{profileData.contact_number || 'Not specified'}</span>
+                                    <span className="text-gray-800 font-medium">{displayValue(profileData.contact_number)}</span>
                                 </div>
                             </div>
                             <div className="space-y-4">
                                 <div className="flex flex-col">
                                     <span className="text-sm text-gray-500 mb-1">Role</span>
-                                    <span className="text-gray-800 font-medium">{profileData.role || 'Not specified'}</span>
-                                </div>
-                                <div className="flex flex-col">
-                                    <span className="text-sm text-gray-500 mb-1">Depot</span>
-                                    <span className="text-gray-800 font-medium">{profileData.depot || 'Not specified'}</span>
+                                    <span className="text-gray-800 font-medium">{displayValue(profileData.role)}</span>
                                 </div>
                                 <div className="flex flex-col">
                                     <span className="text-sm text-gray-500 mb-1">Account Created</span>

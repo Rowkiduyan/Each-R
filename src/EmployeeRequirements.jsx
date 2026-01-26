@@ -445,6 +445,16 @@ function EmployeeRequirements() {
             });
           }
 
+          // Mark "(If applicable)" personal docs as optional when not submitted.
+          ['marriage_contract', 'dependents_birth_certificate'].forEach((key) => {
+            const doc = updated.personalDocuments?.[key];
+            if (!doc) return;
+            const hasFile = Boolean(doc?.hasFile || doc?.filePath || doc?.file_path);
+            if (!hasFile && (doc.status === 'missing' || !doc.status)) {
+              updated.personalDocuments[key] = { ...doc, status: 'optional' };
+            }
+          });
+
           // Map clearances
           if (requirementsData.clearances) {
             Object.keys(requirementsData.clearances).forEach(key => {
@@ -955,9 +965,18 @@ function EmployeeRequirements() {
       pending: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: 'Pending' },
       submitted: { bg: 'bg-blue-100', text: 'text-blue-700', label: 'Submitted' },
       resubmit: { bg: 'bg-red-100', text: 'text-red-700', label: 'Re-submit' },
+      optional: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Optional' },
       missing: { bg: 'bg-gray-100', text: 'text-gray-600', label: 'Missing' },
     };
     return styles[status] || styles.pending;
+  };
+
+  const OPTIONAL_PERSONAL_DOC_KEYS = new Set(['marriage_contract', 'dependents_birth_certificate']);
+  const shouldCountPersonalDoc = (key, doc) => {
+    const k = String(key || '').trim();
+    const isOptional = OPTIONAL_PERSONAL_DOC_KEYS.has(k);
+    const hasFile = Boolean(doc?.hasFile || doc?.filePath || doc?.file_path);
+    return !isOptional || hasFile;
   };
 
   // Calculate employee status (pure UI)
@@ -966,7 +985,9 @@ function EmployeeRequirements() {
     const govReqs = Object.values(employee.requirements || {});
     const docReqs = Object.values(employee.documents || {});
     const medicalReqs = Object.values(employee.medicalExams || {});
-    const personalReqs = Object.values(employee.personalDocuments || {});
+    const personalReqs = Object.entries(employee.personalDocuments || {})
+      .filter(([key, doc]) => shouldCountPersonalDoc(key, doc))
+      .map(([, doc]) => doc);
     const clearanceReqs = Object.values(employee.clearances || {});
     const educationalReqs = Object.values(employee.educationalDocuments || {});
     const licenseReq = employee.license ? [employee.license] : [];
@@ -1005,7 +1026,9 @@ function EmployeeRequirements() {
     const govReqs = Object.values(employee.requirements || {});
     const docReqs = Object.values(employee.documents || {});
     const medicalReqs = Object.values(employee.medicalExams || {});
-    const personalReqs = Object.values(employee.personalDocuments || {});
+    const personalReqs = Object.entries(employee.personalDocuments || {})
+      .filter(([key, doc]) => shouldCountPersonalDoc(key, doc))
+      .map(([, doc]) => doc);
     const clearanceReqs = Object.values(employee.clearances || {});
     const educationalReqs = Object.values(employee.educationalDocuments || {});
     const licenseReq = employee.license ? [employee.license] : [];
@@ -1020,7 +1043,9 @@ function EmployeeRequirements() {
     const govReqs = Object.values(employee.requirements || {});
     const docReqs = Object.values(employee.documents || {});
     const medicalReqs = Object.values(employee.medicalExams || {});
-    const personalReqs = Object.values(employee.personalDocuments || {});
+    const personalReqs = Object.entries(employee.personalDocuments || {})
+      .filter(([key, doc]) => shouldCountPersonalDoc(key, doc))
+      .map(([, doc]) => doc);
     const clearanceReqs = Object.values(employee.clearances || {});
     const educationalReqs = Object.values(employee.educationalDocuments || {});
     const licenseReq = employee.license ? [employee.license] : [];
@@ -2512,20 +2537,25 @@ function EmployeeRequirements() {
                   submittedDate: null,
                   remarks: null,
                 };
-                const style = getStatusStyle(data.status);
-                const needsAction = data.status === "missing" || data.status === "resubmit";
+                const isIfApplicable = String(doc?.note || '').trim().toLowerCase() === 'if applicable';
+                const effectiveStatus = isIfApplicable && !data.hasFile ? 'optional' : data.status;
+                const style = getStatusStyle(effectiveStatus);
+                const needsAction = effectiveStatus === "missing" || effectiveStatus === "resubmit";
+                const showUploadButton = needsAction || effectiveStatus === 'optional';
 
                 return (
                   <div
                     key={doc.key}
                     className={`p-4 rounded-xl border-2 transition-all ${
-                      data.status === "resubmit"
+                      effectiveStatus === "resubmit"
                         ? "bg-red-50 border-red-200 shadow-sm"
-                        : data.status === "missing"
+                        : effectiveStatus === "missing"
                           ? doc.required
                             ? "bg-orange-50/50 border-orange-200 border-dashed"
                             : "bg-gray-50/50 border-gray-200 border-dashed"
-                          : data.status === "approved"
+                          : effectiveStatus === "optional"
+                            ? "bg-gray-50/50 border-gray-200 border-dashed"
+                          : effectiveStatus === "approved"
                             ? "bg-green-50/50 border-green-200"
                             : "bg-white border-gray-200"
                     }`}
@@ -2582,20 +2612,20 @@ function EmployeeRequirements() {
                         <span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${style.bg} ${style.text}`}>
                           {style.label}
                         </span>
-                        {needsAction && (
+                        {showUploadButton && (
                           <button
                             onClick={() =>
                               openUploadModal(
                                 "personal",
                                 doc.key,
                                 doc.name,
-                                data.status === "resubmit"
+                                effectiveStatus === "resubmit"
                               )
                             }
                             className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                              data.status === "resubmit"
+                              effectiveStatus === "resubmit"
                                 ? "bg-red-600 text-white hover:bg-red-700"
-                                : data.hasFile && data.status !== "approved"
+                                : data.hasFile && effectiveStatus !== "approved"
                                   ? "bg-blue-600 text-white hover:bg-blue-700"
                                   : "bg-blue-600 text-white hover:bg-blue-700"
                             }`}
@@ -2613,10 +2643,14 @@ function EmployeeRequirements() {
                                 d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
                               />
                             </svg>
-                            {data.hasFile && data.status !== "approved" ? "Re-upload" : data.status === "resubmit" ? "Re-upload" : "Upload"}
+                            {data.hasFile && effectiveStatus !== "approved"
+                              ? "Re-upload"
+                              : effectiveStatus === "resubmit"
+                                ? "Re-upload"
+                                : "Upload"}
                           </button>
                         )}
-                        {data.status === "approved" && (
+                        {effectiveStatus === "approved" && (
                           <div className="flex items-center gap-1 text-green-600">
                             <svg
                               className="w-4 h-4"

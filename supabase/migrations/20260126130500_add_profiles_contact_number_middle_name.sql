@@ -1,0 +1,6 @@
+-- DEPRECATED
+-- This file was an accidental duplicate of:
+--   supabase/migrations/20260126120000_add_profile_contact_number_and_middle_name.sql
+--
+-- It is intentionally a NO-OP to avoid double-applying migrations.
+-- If your workflow permits, you can delete this file.

@@ -3,6 +3,73 @@ import { useState, useEffect } from "react";
 import { useEmployeeUser } from "./layouts/EmployeeLayout";
 import { supabase } from "./supabaseClient";
 
+const normalizeWs = (v) => {
+    if (v === null || v === undefined) return "";
+    return String(v).replace(/\s+/g, " ").trim();
+};
+
+const safeJsonParse = (v) => {
+    if (!v) return null;
+    if (typeof v === "object") return v;
+    if (typeof v !== "string") return null;
+    try {
+        return JSON.parse(v);
+    } catch {
+        return null;
+    }
+};
+
+const extractApplicationFormSource = (payloadObj) => {
+    const p = payloadObj && typeof payloadObj === "object" ? payloadObj : {};
+    const formObj = p.form && typeof p.form === "object" ? p.form : {};
+    const applicantObj = p.applicant && typeof p.applicant === "object" ? p.applicant : {};
+    return { ...formObj, ...applicantObj, ...p };
+};
+
+// Mirrors the HR-side behavior (see Employees.jsx): support either a single address string
+// or compose from common address parts.
+const formatFullAddressOneLine = (data) => {
+    if (!data || typeof data !== "object") return "";
+
+    const oneLine =
+        data.fullAddress ||
+        data.full_address ||
+        data.currentAddress ||
+        data.current_address ||
+        data.presentAddress ||
+        data.present_address ||
+        data.address ||
+        data.current_address_text ||
+        null;
+
+    const oneLineStr = normalizeWs(oneLine);
+    if (oneLineStr) return oneLineStr;
+
+    const parts = [
+        data.unitHouseNumber,
+        data.unitHouseNo,
+        data.unit_house_number,
+        data.house_number,
+        data.houseNumber,
+        data.unit,
+        data.street,
+        data.streetAddress,
+        data.subdivision,
+        data.village,
+        data.subdivision_village,
+        data.barangay,
+        data.city,
+        data.province,
+        data.zip,
+        data.postalCode,
+        data.postal_code,
+    ]
+        .map(normalizeWs)
+        .filter(Boolean);
+
+    return parts.join(", ");
+};
+
 function EmpProfile() {
     const { userId, userEmail, employeeUser } = useEmployeeUser();
     const [profileData, setProfileData] = useState(null);
@@ -16,11 +83,29 @@ function EmpProfile() {
                 setLoading(true);
                 
                 // Fetch employee data
-                const { data: employeeData, error: employeeError } = await supabase
-                    .from('employees')
-                    .select('*')
-                    .eq('email', userEmail)
-                    .maybeSingle();
+                // Prefer auth_user_id when available, but fall back to email for older rows.
+                let employeeData = null;
+                let employeeError = null;
+
+                if (userId) {
+                    const res = await supabase
+                        .from('employees')
+                        .select('*')
+                        .eq('auth_user_id', userId)
+                        .maybeSingle();
+                    employeeData = res.data;
+                    employeeError = res.error;
+                }
+
+                if (!employeeData && !employeeError) {
+                    const res = await supabase
+                        .from('employees')
+                        .select('*')
+                        .eq('email', userEmail)
+                        .maybeSingle();
+                    employeeData = res.data;
+                    employeeError = res.error;
+                }
 
                 if (employeeError) {
                     console.error('Error fetching employee profile:', employeeError);
@@ -37,27 +122,304 @@ function EmpProfile() {
                 }
 
                 // Fetch applicant data to get personal information (address, sex, birthday, marital status)
-                // NOTE: This requires an RLS policy allowing employees to read their applicant data
-                const { data: applicantData, error: applicantError } = await supabase
-                    .from('applicants')
-                    .select('address, sex, birthday, marital_status')
-                    .eq('id', employeeData.id)
-                    .maybeSingle();
+                // In some datasets applicants are linked via applicants.employee_id, in others by applicants.id (auth uid).
+                // Try a few strategies to avoid showing "Not specified" when data exists.
+                let applicantData = null;
+                let applicantError = null;
+
+                // Fetch the latest application payload for this user (this is what HR uses as its source of truth).
+                let applicationSource = null;
+                const emailCandidates = Array.from(
+                    new Set(
+                        [
+                            userEmail,
+                            employeeData?.email,
+                            employeeData?.personal_email,
+                            employeeUser?.email,
+                        ]
+                            .filter(Boolean)
+                            .flatMap((e) => {
+                                const s = String(e).trim();
+                                return s ? [s, s.toLowerCase()] : [];
+                            })
+                    )
+                );
+
+                // Approach 0: find applicantId by email, then get application by user_id = applicantId
+                // (Employee accounts may use work email, while application used personal email.)
+                try {
+                    if (emailCandidates.length > 0) {
+                        const { data: applicantRow, error: applicantIdErr } = await supabase
+                            .from("applicants")
+                            .select("id,email")
+                            .in("email", emailCandidates)
+                            .limit(1)
+                            .maybeSingle();
+                        if (!applicantIdErr && applicantRow?.id) {
+                            const { data: appRow, error: appErr } = await supabase
+                                .from("applications")
+                                .select("id,payload,created_at,user_id,status")
+                                .eq("user_id", applicantRow.id)
+                                .order("created_at", { ascending: false })
+                                .limit(1)
+                                .maybeSingle();
+                            if (!appErr && appRow?.payload) {
+                                const payloadObj = safeJsonParse(appRow.payload);
+                                applicationSource = extractApplicationFormSource(payloadObj);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Could not resolve applicantId/application by email:", e);
+                }
+
+                if (userId) {
+                    const { data: appRow, error: appErr } = await supabase
+                        .from("applications")
+                        .select("id,payload,created_at,user_id,status")
+                        .eq("user_id", userId)
+                        .order("created_at", { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+                    if (appErr) {
+                        console.warn("Could not load application by user_id:", appErr);
+                    } else if (appRow?.payload) {
+                        const payloadObj = safeJsonParse(appRow.payload);
+                        applicationSource = extractApplicationFormSource(payloadObj);
+                    }
+                }
+
+                if (!applicationSource && emailCandidates.length > 0) {
+                    for (const e of emailCandidates) {
+                        const { data: appRow, error: appErr } = await supabase
+                            .from("applications")
+                            .select("id,payload,created_at,user_id,status")
+                            .eq("payload->>email", e)
+                            .order("created_at", { ascending: false })
+                            .limit(1)
+                            .maybeSingle();
+                        if (!appErr && appRow?.payload) {
+                            const payloadObj = safeJsonParse(appRow.payload);
+                            applicationSource = extractApplicationFormSource(payloadObj);
+                            break;
+                        }
+
+                        const { data: appRow2, error: appErr2 } = await supabase
+                            .from("applications")
+                            .select("id,payload,created_at,user_id,status")
+                            .eq("payload->form->>email", e)
+                            .order("created_at", { ascending: false })
+                            .limit(1)
+                            .maybeSingle();
+                        if (!appErr2 && appRow2?.payload) {
+                            const payloadObj = safeJsonParse(appRow2.payload);
+                            applicationSource = extractApplicationFormSource(payloadObj);
+                            break;
+                        }
+
+                        const { data: appRow3, error: appErr3 } = await supabase
+                            .from("applications")
+                            .select("id,payload,created_at,user_id,status")
+                            .eq("payload->applicant->>email", e)
+                            .order("created_at", { ascending: false })
+                            .limit(1)
+                            .maybeSingle();
+                        if (!appErr3 && appRow3?.payload) {
+                            const payloadObj = safeJsonParse(appRow3.payload);
+                            applicationSource = extractApplicationFormSource(payloadObj);
+                            break;
+                        }
+                    }
+                }
+
+                // Approach 3: match among nearby applications by name + date proximity (mirrors HR fallback).
+                if (!applicationSource && (employeeData?.hired_at || employeeData?.date_hired)) {
+                    try {
+                        const hiredAt = employeeData.hired_at || employeeData.date_hired;
+                        const start = new Date(new Date(hiredAt).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString();
+                        const end = new Date(new Date(hiredAt).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
+
+                        const employeeFname = String(employeeData?.fname || "").toLowerCase().trim();
+                        const employeeLname = String(employeeData?.lname || "").toLowerCase().trim();
+                        const normalizedEmpName = String(employeeData?.name || "")
+                            .toLowerCase()
+                            .replace(/\s+/g, " ")
+                            .trim();
+
+                        const { data: hiredApps, error: hiredAppsError } = await supabase
+                            .from("applications")
+                            .select("id,payload,created_at,status")
+                            .gte("created_at", start)
+                            .lte("created_at", end)
+                            .order("created_at", { ascending: false })
+                            .limit(500);
+
+                        if (!hiredAppsError && hiredApps && hiredApps.length > 0) {
+                            const matches = hiredApps.filter((app) => {
+                                if (!app.payload) return false;
+                                const payloadObj = safeJsonParse(app.payload);
+                                const src = extractApplicationFormSource(payloadObj);
+
+                                const appEmail = String(src?.email || "").trim().toLowerCase();
+                                if (appEmail && emailCandidates.map((x) => x.toLowerCase()).includes(appEmail)) {
+                                    return true;
+                                }
+
+                                const appFname = String(src?.firstName || src?.fname || src?.first_name || "")
+                                    .toLowerCase()
+                                    .trim();
+                                const appLname = String(src?.lastName || src?.lname || src?.last_name || "")
+                                    .toLowerCase()
+                                    .trim();
+                                const appFullName = String(src?.fullName || src?.name || "")
+                                    .toLowerCase()
+                                    .replace(/\s+/g, " ")
+                                    .trim();
+
+                                if (employeeFname && employeeLname && appFname && appLname) {
+                                    return employeeFname === appFname && employeeLname === appLname;
+                                }
+                                if (normalizedEmpName && appFullName) {
+                                    return normalizedEmpName === appFullName;
+                                }
+                                return false;
+                            });
+
+                            if (matches.length > 0) {
+                                const payloadObj = safeJsonParse(matches[0].payload);
+                                applicationSource = extractApplicationFormSource(payloadObj);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Could not match hired application by name/date:", e);
+                    }
+                }
+
+                // Keep this list aligned with the actual `applicants` table columns.
+                // Selecting a non-existent column causes Supabase/PostgREST to return 400.
+                const applicantSelect =
+                    'email,address,sex,birthday,marital_status,' +
+                    'unit_house_number,street,barangay,city,province,zip,postal_code,' +
+                    'educational_attainment,institution_name,year_graduated,education_program';
+
+                // 1) Preferred: applicants.employee_id -> employees.id
+                {
+                    const res = await supabase
+                        .from('applicants')
+                        .select(applicantSelect)
+                        .eq('employee_id', employeeData.id)
+                        .maybeSingle();
+                    applicantData = res.data;
+                    applicantError = res.error;
+                }
+
+                // 2) Fallback: applicants.id -> auth uid
+                if (!applicantData && !applicantError && userId) {
+                    const res = await supabase
+                        .from('applicants')
+                        .select(applicantSelect)
+                        .eq('id', userId)
+                        .maybeSingle();
+                    applicantData = res.data;
+                    applicantError = res.error;
+                }
+
+                // 3) Fallback: applicants.email -> employee email
+                if (!applicantData && !applicantError && userEmail) {
+                    const res = await supabase
+                        .from('applicants')
+                        .select(applicantSelect)
+                        .eq('email', userEmail)
+                        .maybeSingle();
+                    applicantData = res.data;
+                    applicantError = res.error;
+                }
+
+                // 4) Fallback: applicants.email -> any known email candidates (work/personal)
+                if (!applicantData && !applicantError && emailCandidates.length > 0) {
+                    const res = await supabase
+                        .from('applicants')
+                        .select(applicantSelect)
+                        .in('email', emailCandidates)
+                        .limit(1)
+                        .maybeSingle();
+                    applicantData = res.data;
+                    applicantError = res.error;
+                }
 
                 if (applicantError) {
                     console.error('Error fetching applicant data:', applicantError);
                 }
 
                 // Merge employee and applicant data
+                const computedAddress =
+                    formatFullAddressOneLine(applicationSource) ||
+                    formatFullAddressOneLine(applicantData);
+
+                const computedSex =
+                    applicationSource?.sex ||
+                    applicationSource?.gender ||
+                    applicationSource?.Sex ||
+                    applicantData?.sex ||
+                    employeeData.sex ||
+                    "Not specified";
+
+                const computedMaritalStatus =
+                    applicationSource?.marital_status ||
+                    applicationSource?.maritalStatus ||
+                    applicationSource?.marital ||
+                    applicantData?.marital_status ||
+                    employeeData.marital_status ||
+                    "Not specified";
+
+                const computedBirthday =
+                    applicationSource?.birthday ||
+                    applicationSource?.birthdate ||
+                    applicationSource?.birth_date ||
+                    applicantData?.birthday ||
+                    employeeData.birthday ||
+                    null;
+
+                const computedEducationalAttainment =
+                    applicationSource?.educational_attainment ||
+                    applicationSource?.educationalAttainment ||
+                    applicationSource?.education_attainment ||
+                    applicantData?.educational_attainment ||
+                    null;
+
+                const computedInstitutionName =
+                    applicationSource?.institution_name ||
+                    applicationSource?.institutionName ||
+                    applicantData?.institution_name ||
+                    null;
+
+                const computedYearGraduated =
+                    applicationSource?.year_graduated ||
+                    applicationSource?.yearGraduated ||
+                    applicantData?.year_graduated ||
+                    null;
+
+                const computedEducationProgram =
+                    applicationSource?.education_program ||
+                    applicationSource?.educationProgram ||
+                    applicantData?.education_program ||
+                    null;
+
                 setProfileData({
                     ...employeeData,
                     // Use applicant data for personal information if available
-                    email: employeeData.email || applicantData?.email || employeeData.email,
-                    address: applicantData?.address || employeeData.address || 'Not specified',
-                    sex: applicantData?.sex || employeeData.sex || 'Not specified',
-                    birthday: applicantData?.birthday || employeeData.birthday,
-                    marital_status: applicantData?.marital_status || employeeData.marital_status || 'Not specified',
-                    employment_status: employeeData.status || 'regular'
+                    email: applicationSource?.email || applicantData?.email || employeeData.email,
+                    address: computedAddress || employeeData.address || 'Not specified',
+                    sex: computedSex,
+                    birthday: computedBirthday,
+                    marital_status: computedMaritalStatus,
+                    educational_attainment: computedEducationalAttainment,
+                    institution_name: computedInstitutionName,
+                    year_graduated: computedYearGraduated,
+                    education_program: computedEducationProgram,
+                    employment_status: employeeData.status || 'regular',
+                    // Some data uses hired_at; keep date_hired compatible for display
+                    date_hired: employeeData.date_hired || employeeData.hired_at || null,
                 });
             } catch (err) {
                 console.error('Error:', err);
@@ -68,7 +430,7 @@ function EmpProfile() {
         };
 
         fetchEmployeeProfile();
-    }, [userEmail]);
+    }, [userEmail, userId]);
 
     const formatDate = (dateStr) => {
         if (!dateStr) return 'Not specified';
@@ -272,19 +634,22 @@ function EmpProfile() {
                     </div>
                     <div className="p-6">
                         <div className="space-y-4">
-                        {profileData.educational_attainment && (
+                        {(profileData.educational_attainment || profileData.institution_name || profileData.education_program) && (
                             <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                                 <div className="flex items-center gap-2 mb-2">
                                     <span className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">
-                                        {profileData.educational_level || 'Education'}
+                                        Education
                                     </span>
-                                    <h4 className="font-semibold text-gray-800">{profileData.educational_attainment}</h4>
+                                    <h4 className="font-semibold text-gray-800">{profileData.educational_attainment || 'Not specified'}</h4>
                                 </div>
-                                {profileData.secondary_institution && (
-                                    <p className="text-sm text-gray-600">{profileData.secondary_institution}</p>
+                                {profileData.education_program && (
+                                    <p className="text-sm text-gray-700 font-medium">{profileData.education_program}</p>
                                 )}
-                                {profileData.secondary_year_graduated && (
-                                    <p className="text-sm text-gray-500 mt-1">Graduated: {profileData.secondary_year_graduated}</p>
+                                {profileData.institution_name && (
+                                    <p className="text-sm text-gray-600">{profileData.institution_name}</p>
+                                )}
+                                {profileData.year_graduated && (
+                                    <p className="text-sm text-gray-500 mt-1">Graduated: {profileData.year_graduated}</p>
                                 )}
                             </div>
                         )}
@@ -300,7 +665,7 @@ function EmpProfile() {
                                 )}
                             </div>
                         )}
-                        {!profileData.educational_attainment && !profileData.specialized_training_institution && (
+                        {!profileData.educational_attainment && !profileData.institution_name && !profileData.education_program && !profileData.specialized_training_institution && (
                             <div className="p-4 bg-gray-50 rounded-lg border border-gray-200 text-center">
                                 <p className="text-sm text-gray-500">No educational information available</p>
                             </div>

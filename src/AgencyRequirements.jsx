@@ -277,13 +277,24 @@ function AgencyRequirements() {
                 const rawStatus = String(req.status || '').trim().toLowerCase();
                 const filePath = req.file_path || req.filePath || null;
 
+                const stableId =
+                  String(req.id ?? req.request_id ?? req.requestId ?? '').trim() ||
+                  [
+                    String(req.document_type || req.document || '').trim().toLowerCase(),
+                    String(req.requested_at || '').trim(),
+                    String(req.deadline || '').trim(),
+                  ]
+                    .filter(Boolean)
+                    .join('|') ||
+                  Date.now().toString();
+
                 let status = 'pending';
                 if (rawStatus === 'validated' || rawStatus === 'approved') status = 'approved';
                 else if (rawStatus === 're-submit' || rawStatus === 'resubmit') status = 'resubmit';
                 else if (filePath) status = 'submitted';
 
                 return {
-                  id: req.id || Date.now().toString(),
+                  id: stableId,
                   document: req.document_type || req.document || '',
                   description: req.description || req.remarks || '',
                   priority: req.priority || 'normal',
@@ -813,7 +824,16 @@ function AgencyRequirements() {
           throw new Error('HR request ID not found');
         }
 
-        const idx = currentRequirements.hr_requests.findIndex((r) => String(r?.id || '') === requestId);
+        const normalizedDoc = String(uploadTarget.name || '').trim().toLowerCase();
+        const idx = currentRequirements.hr_requests.findIndex((r) => {
+          const rid = String(r?.id ?? r?.request_id ?? r?.requestId ?? '').trim();
+          if (rid && rid === requestId) return true;
+          if (!rid) {
+            const name = String(r?.document_type || r?.document || r?.name || '').trim().toLowerCase();
+            if (name && normalizedDoc && name === normalizedDoc) return true;
+          }
+          return false;
+        });
         const patch = {
           id: requestId,
           document_type: uploadTarget.name,

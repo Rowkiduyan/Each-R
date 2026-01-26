@@ -1257,7 +1257,7 @@ function Employees() {
             { key: 'psa_birth_certificate', name: 'PSA Birth Cert' },
             { key: 'photo_2x2', name: '2x2 Picture w/ White Background' },
             { key: 'marriage_contract', name: 'Marriage Contract Photocopy (If applicable)' },
-            { key: 'dependents_birth_certificate', name: 'PSA Birth Certificate of Dependents (if applicable)' },
+            { key: 'dependents_birth_certificate', name: 'PSA Birth Certificate of Dependents (If applicable)' },
             { key: 'residence_sketch', name: 'Direction of Residence (House to Depot Sketch)' },
           ];
 
@@ -1265,10 +1265,13 @@ function Employees() {
             const docData = personalDocs[key];
             if (docData && typeof docData === 'object') {
               const filePath = docData.filePath || docData.file_path;
+              const isIfApplicable = key === 'marriage_contract' || key === 'dependents_birth_certificate';
               const status = docData.status || 'Missing';
-              const displayStatus = status === 'Validated' || status === 'approved' ? 'Validated' : 
-                                   status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
-                                   status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
+              const displayStatus = !filePath && isIfApplicable
+                ? 'Optional'
+                : status === 'Validated' || status === 'approved' ? 'Validated' : 
+                  status === 'Re-submit' || status === 'resubmit' ? 'Re-submit' : 
+                  status === 'Submitted' || status === 'pending' ? 'Submitted' : 'Missing';
               
               documents.push({
                 id: key,
@@ -1279,13 +1282,20 @@ function Employees() {
               });
             } else {
               // Only add required documents or if they have data
-              if (key === 'psa_birth_certificate' || key === 'photo_2x2' || key === 'residence_sketch') {
+              // HR wants to track these even when missing (incl. "If applicable" docs)
+              if (
+                key === 'psa_birth_certificate' ||
+                key === 'photo_2x2' ||
+                key === 'residence_sketch' ||
+                key === 'marriage_contract' ||
+                key === 'dependents_birth_certificate'
+              ) {
                 documents.push({
                   id: key,
                   name: name,
                   file: null,
                   previewUrl: null,
-                  status: 'Missing',
+                  status: (key === 'marriage_contract' || key === 'dependents_birth_certificate') ? 'Optional' : 'Missing',
                 });
               }
             }

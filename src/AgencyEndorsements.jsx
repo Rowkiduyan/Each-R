@@ -148,6 +148,9 @@ function AgencyEndorsements() {
   // Requirements data for selected employee
   const [employeeRequirements, setEmployeeRequirements] = useState(null);
   const [loadingRequirements, setLoadingRequirements] = useState(false);
+  const [employeeIsAgency, setEmployeeIsAgency] = useState(false);
+  const [employeeDocuments, setEmployeeDocuments] = useState([]);
+  const [loadingDocuments, setLoadingDocuments] = useState(false);
 
   // Assessment records state
   const [assessmentRecords, setAssessmentRecords] = useState([]);
@@ -353,8 +356,25 @@ function AgencyEndorsements() {
           const first = app?.firstName || app?.fname || app?.first_name || null;
           const last = app?.lastName || app?.lname || app?.last_name || null;
           const middle = app?.middleName || app?.mname || null;
-          const email = app?.email || app?.contact || null;
-          const contact = app?.contactNumber || app?.contact || app?.phone || null;
+
+          const rawContact = app?.contactNumber || app?.phone || app?.contact || null;
+          const emailFromContact =
+            typeof rawContact === 'string' && rawContact.includes('@') ? rawContact : null;
+
+          const emailRaw =
+            app?.email ||
+            app?.Email ||
+            payload?.email ||
+            payload?.Email ||
+            emailFromContact ||
+            null;
+          const email = emailRaw ? normalizeEmail(emailRaw) : null;
+
+          const contact =
+            app?.contactNumber ||
+            app?.phone ||
+            (typeof app?.contact === 'string' && !app.contact.includes('@') ? app.contact : null) ||
+            null;
           const pos = r.job_posts?.title || app?.position || null;
           const depot = r.job_posts?.depot || app?.depot || null;
 
@@ -372,8 +392,11 @@ function AgencyEndorsements() {
           let endorsedEmployeeId = null;
           let hasAgencyEmployee = false;
 
-          if (email && hiredEmployees.length > 0) {
-            const hiredEmp = hiredEmployees.find(h => h.email === email);
+          if (hiredEmployees.length > 0) {
+            const hiredEmp = hiredEmployees.find(h =>
+              (h.auth_user_id && r.user_id && String(h.auth_user_id) === String(r.user_id)) ||
+              (email && h.email && normalizeEmail(h.email) === email)
+            );
 
             if (hiredEmp) {
               endorsedEmployeeId = hiredEmp.id;
@@ -391,14 +414,9 @@ function AgencyEndorsements() {
             }
           }
 
-          // If this application has already been converted to an agency employee,
-          // skip listing the application row and let the employee row represent it.
-          if (hasAgencyEmployee && appStatus === "hired") {
-            return null;
-          }
-
           return {
             id: r.id,
+            user_id: r.user_id || null,
             name: displayName,
             first,
             middle,
@@ -562,7 +580,7 @@ function AgencyEndorsements() {
 
       const { data, error } = await supabase
         .from("employees")
-        .select("id, email, fname, lname, mname, contact_number, position, depot, hired_at, agency_profile_id, endorsed_by_agency_id, is_agency, source, status")
+        .select("id, auth_user_id, email, fname, lname, mname, contact_number, position, depot, hired_at, agency_profile_id, endorsed_by_agency_id, is_agency, source, status")
         // Only include employees that belong to the current agency.
         .or(`agency_profile_id.eq.${user.id},endorsed_by_agency_id.eq.${user.id}`)
         .neq("source", "internal")
@@ -585,6 +603,7 @@ function AgencyEndorsements() {
             return {
               id: r.id,
               name,
+              auth_user_id: r.auth_user_id || null,
               email: r.email || null,
               contact: r.contact_number || null,
               position: r.position || "Employee",
@@ -939,11 +958,18 @@ function AgencyEndorsements() {
           .map(e => [normalizeEmail(e.email), e])
       );
 
+      const byAuthUserId = new Map(
+        existing
+          .filter(e => e.user_id)
+          .map(e => [String(e.user_id), e])
+      );
+
       // First, update existing endorsements that now have an employee row
       const updatedList = existing.map((emp) => {
-        if (!emp.email) return emp;
-        const empKey = normalizeEmail(emp.email);
-        const hiredEmp = hiredEmployees.find(h => normalizeEmail(h.email) === empKey);
+        const hiredEmp = hiredEmployees.find(h =>
+          (h.auth_user_id && emp.user_id && String(h.auth_user_id) === String(emp.user_id)) ||
+          (emp.email && h.email && normalizeEmail(h.email) === normalizeEmail(emp.email))
+        );
         if (!hiredEmp) return emp;
 
         // Explicitly exclude internal/direct applicants
@@ -985,12 +1011,16 @@ function AgencyEndorsements() {
           h.source === "agency";
 
         if (!isAgencyEmployee) return;
-        if (!h.email) return;
-        const key = normalizeEmail(h.email);
-        if (byEmail.has(key)) return;
+
+        const authKey = h.auth_user_id ? String(h.auth_user_id) : null;
+        const emailKey = h.email ? normalizeEmail(h.email) : null;
+        if (authKey && byAuthUserId.has(authKey)) return;
+        if (emailKey && byEmail.has(emailKey)) return;
+        if (!authKey && !emailKey) return;
 
         updatedList.push({
           id: `emp-${h.id}`,
+          user_id: h.auth_user_id || null,
           name: h.name,
           first: null,
           middle: null,
@@ -1018,10 +1048,37 @@ function AgencyEndorsements() {
           raw: { source: h.source || null, from: "employees" },
         });
 
-        byEmail.set(key, true);
+        if (emailKey) byEmail.set(emailKey, true);
+        if (authKey) byAuthUserId.set(authKey, true);
       });
 
-      return updatedList;
+      // Final dedupe: if both an application row and a synthetic employee row exist, keep the application row.
+      const indexByKey = new Map();
+      const deduped = [];
+      for (const item of updatedList) {
+        const key = item?.user_id
+          ? `u:${String(item.user_id)}`
+          : item?.email
+            ? `e:${normalizeEmail(item.email)}`
+            : `id:${String(item?.id || '')}`;
+
+        if (!indexByKey.has(key)) {
+          indexByKey.set(key, deduped.length);
+          deduped.push(item);
+          continue;
+        }
+
+        const idx = indexByKey.get(key);
+        const existingItem = deduped[idx];
+        const existingIsEmp = String(existingItem?.id || '').startsWith('emp-');
+        const currentIsEmp = String(item?.id || '').startsWith('emp-');
+
+        if (existingIsEmp && !currentIsEmp) {
+          deduped[idx] = item;
+        }
+      }
+
+      return deduped;
     });
   }, [hiredEmployees]);
 
@@ -1153,6 +1210,7 @@ function AgencyEndorsements() {
     const loadEmployeeRequirements = async () => {
       if (!selectedEmployee) {
         setEmployeeRequirements(null);
+        setEmployeeIsAgency(false);
         return;
       }
 
@@ -1169,7 +1227,7 @@ function AgencyEndorsements() {
         if (employeeId) {
           const result = await supabase
             .from('employees')
-            .select('id, email, requirements')
+            .select('id, email, requirements, is_agency')
             .eq('id', employeeId)
             .single();
           data = result.data;
@@ -1178,7 +1236,7 @@ function AgencyEndorsements() {
           // Fallback: try to find employee by email (same logic Requirements tab uses)
           const result = await supabase
             .from('employees')
-            .select('id, email, requirements')
+            .select('id, email, requirements, is_agency')
             .ilike('email', selectedEmployee.email.trim());
 
           if (result.error) {
@@ -1194,6 +1252,7 @@ function AgencyEndorsements() {
         if (error) {
           console.error('Error loading employee requirements:', error);
           setEmployeeRequirements(null);
+          setEmployeeIsAgency(false);
         } else {
           // Parse requirements
           let requirementsData = null;
@@ -1209,10 +1268,12 @@ function AgencyEndorsements() {
             }
           }
           setEmployeeRequirements(requirementsData);
+          setEmployeeIsAgency(data?.is_agency === true);
         }
       } catch (err) {
         console.error('Unexpected error loading requirements:', err);
         setEmployeeRequirements(null);
+        setEmployeeIsAgency(false);
       } finally {
         setLoadingRequirements(false);
       }
@@ -1258,6 +1319,190 @@ function AgencyEndorsements() {
       supabase.removeChannel(employeesChannel);
     };
   }, [selectedEmployee?.endorsed_employee_id]);
+
+  const getFilename = (filePath) => {
+    if (!filePath) return null;
+    return String(filePath).split('/').pop() || String(filePath);
+  };
+
+  const normalizeDocStatus = (rawStatus) => {
+    const s = String(rawStatus || '').trim();
+    if (s === 'Validated' || s === 'approved') return 'Validated';
+    if (s === 'Re-submit' || s === 'resubmit') return 'Re-submit';
+    if (s === 'Submitted' || s === 'pending') return 'Submitted';
+    if (s === 'Optional') return 'Optional';
+    return 'Missing';
+  };
+
+  const buildEmployeeDocuments = (requirementsData, isAgency) => {
+    const documents = [];
+
+    const addDoc = ({ id, name, filePath, status }) => {
+      documents.push({
+        id,
+        name,
+        file: filePath ? { name: getFilename(filePath) } : null,
+        previewUrl: filePath ? getFileUrl(filePath) : null,
+        status,
+      });
+    };
+
+    const idNumbers = requirementsData?.id_numbers || {};
+
+    if (isAgency) {
+      const idMapping = [
+        { key: 'sss', name: 'SSS (Social Security System)' },
+        { key: 'tin', name: 'TIN (Tax Identification Number)' },
+        { key: 'pagibig', name: 'PAG-IBIG (HDMF)' },
+        { key: 'philhealth', name: 'PhilHealth' },
+      ];
+
+      idMapping.forEach(({ key, name }) => {
+        const idData = idNumbers[key];
+        const filePath = idData?.file_path || idData?.filePath || null;
+        const status = normalizeDocStatus(idData?.status);
+        addDoc({ id: key, name, filePath, status });
+      });
+
+      return documents;
+    }
+
+    // Direct employees: extract from all document sections
+    const directIdMapping = [
+      { key: 'sss', name: 'Photocopy of SSS ID' },
+      { key: 'tin', name: 'TIN (Tax Identification Number)' },
+      { key: 'pagibig', name: 'PAG-IBIG (HDMF)' },
+      { key: 'philhealth', name: 'PhilHealth' },
+    ];
+
+    directIdMapping.forEach(({ key, name }) => {
+      const idData = idNumbers[key];
+      const filePath = idData?.file_path || idData?.filePath || null;
+      const status = normalizeDocStatus(idData?.status);
+      addDoc({ id: key, name, filePath, status });
+    });
+
+    // Driver's License
+    const license = requirementsData?.license || {};
+    if (license && typeof license === 'object') {
+      const photocopyPath =
+        license.filePath ||
+        license.file_path ||
+        license.licenseFilePath ||
+        license.license_file_path ||
+        null;
+      const frontPath = license.frontFilePath || license.front_file_path;
+      const backPath = license.backFilePath || license.back_file_path;
+      const bestPath = photocopyPath || frontPath || backPath || null;
+      const status = normalizeDocStatus(license.status);
+      addDoc({
+        id: 'drivers_license',
+        name: 'Photocopy of Drivers License',
+        filePath: bestPath,
+        status,
+      });
+    } else {
+      addDoc({ id: 'drivers_license', name: 'Photocopy of Drivers License', filePath: null, status: 'Missing' });
+    }
+
+    // Personal Documents
+    const personalDocs = requirementsData?.personalDocuments || {};
+    const personalDocMapping = [
+      { key: 'psa_birth_certificate', name: 'PSA Birth Cert' },
+      { key: 'photo_2x2', name: '2x2 Picture w/ White Background' },
+      { key: 'marriage_contract', name: 'Marriage Contract Photocopy (If applicable)' },
+      { key: 'dependents_birth_certificate', name: 'PSA Birth Certificate of Dependents (If applicable)' },
+      { key: 'residence_sketch', name: 'Direction of Residence (House to Depot Sketch)' },
+    ];
+
+    personalDocMapping.forEach(({ key, name }) => {
+      const docData = personalDocs[key];
+      const filePath = docData?.filePath || docData?.file_path || null;
+      const isIfApplicable = key === 'marriage_contract' || key === 'dependents_birth_certificate';
+      const status = !filePath && isIfApplicable ? 'Optional' : normalizeDocStatus(docData?.status);
+      addDoc({ id: key, name, filePath, status });
+    });
+
+    // Clearances
+    const clearances = requirementsData?.clearances || {};
+    const clearanceMapping = [
+      { key: 'nbi_clearance', name: 'NBI Clearance' },
+      { key: 'police_clearance', name: 'Police Clearance' },
+      { key: 'barangay_clearance', name: 'Barangay Clearance' },
+    ];
+    clearanceMapping.forEach(({ key, name }) => {
+      const docData = clearances[key];
+      const filePath = docData?.filePath || docData?.file_path || null;
+      const status = normalizeDocStatus(docData?.status);
+      addDoc({ id: key, name, filePath, status });
+    });
+
+    // Educational Documents
+    const educationalDocs = requirementsData?.educationalDocuments || {};
+    const educationalDocMapping = [
+      { key: 'diploma', name: 'Diploma' },
+      { key: 'transcript_of_records', name: 'Transcript of Records' },
+    ];
+    educationalDocMapping.forEach(({ key, name }) => {
+      const docData = educationalDocs[key];
+      const filePath = docData?.filePath || docData?.file_path || null;
+      const status = normalizeDocStatus(docData?.status);
+      addDoc({ id: key, name, filePath, status });
+    });
+
+    // Medical Exams
+    const medicalExams = requirementsData?.medicalExams || {};
+    const medicalExamMapping = [
+      { key: 'xray', name: 'X-ray' },
+      { key: 'stool', name: 'Stool' },
+      { key: 'urine', name: 'Urine' },
+      { key: 'hepa', name: 'HEPA' },
+      { key: 'cbc', name: 'CBC' },
+      { key: 'drug_test', name: 'Drug Test' },
+    ];
+    medicalExamMapping.forEach(({ key, name }) => {
+      const docData = medicalExams[key];
+      const filePath = docData?.filePath || docData?.file_path || null;
+      const status = normalizeDocStatus(docData?.status);
+      addDoc({ id: key, name, filePath, status });
+    });
+
+    // Legacy Documents Array (backward compatibility)
+    const legacyDocuments = requirementsData?.documents || [];
+    legacyDocuments.forEach((doc) => {
+      const filePath = doc?.file_path || doc?.filePath || null;
+      const name = doc?.name || doc?.key || 'Unknown Document';
+      const id = doc?.key || doc?.name || `doc-${documents.length}`;
+
+      if (documents.some((d) => d.id === id || d.name === name)) return;
+
+      const status = normalizeDocStatus(doc?.status);
+      addDoc({ id, name, filePath, status });
+    });
+
+    return documents;
+  };
+
+  // Build the HR-standard documents list when the documents tab is active
+  useEffect(() => {
+    if (employeeDetailTab !== 'documents') {
+      setEmployeeDocuments([]);
+      setLoadingDocuments(false);
+      return;
+    }
+
+    if (loadingRequirements) {
+      setLoadingDocuments(true);
+      return;
+    }
+
+    setLoadingDocuments(true);
+    try {
+      setEmployeeDocuments(buildEmployeeDocuments(employeeRequirements, employeeIsAgency));
+    } finally {
+      setLoadingDocuments(false);
+    }
+  }, [employeeDetailTab, loadingRequirements, employeeRequirements, employeeIsAgency]);
 
   // Load assessment records when documents tab is active
   useEffect(() => {
@@ -1322,7 +1567,7 @@ function AgencyEndorsements() {
         // We'll check for all file types: assessment and agreement files
         let applicationsQuery = supabase
           .from('applications')
-          .select('id, interview_details_file, assessment_results_file, interview_notes_file, interview_notes_file_label, interview_notes, payload, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, job_posts:job_id(title, depot)')
+          .select('id, interview_details_file, assessment_results_file, interview_notes_file, interview_notes_file_label, interview_notes, payload, appointment_letter_file, undertaking_file, application_form_file, undertaking_duties_file, pre_employment_requirements_file, id_form_file, created_at, user_id, status, job_posts:job_id(title, depot)')
           .order('created_at', { ascending: false });
 
         // If we have applicant user_id, use it (most reliable)
@@ -1345,8 +1590,16 @@ function AgencyEndorsements() {
         }
 
         if (applicationsData && applicationsData.length > 0) {
-          // Use the most recent application to show uploaded documents
-          const mostRecentApp = applicationsData[0]; // Already sorted by created_at DESC
+          // Prefer the application that became the employee (status=hired), else most recent
+          const sortedApps = [...applicationsData].sort((a, b) => {
+            const aHired = String(a?.status || '').toLowerCase() === 'hired';
+            const bHired = String(b?.status || '').toLowerCase() === 'hired';
+            if (aHired && !bHired) return -1;
+            if (!aHired && bHired) return 1;
+            return new Date(b.created_at) - new Date(a.created_at);
+          });
+
+          const mostRecentApp = sortedApps[0];
           const jobTitle = mostRecentApp.job_posts?.title || 'N/A';
           const depot = mostRecentApp.job_posts?.depot || 'N/A';
           const date = mostRecentApp.created_at;
@@ -1434,31 +1687,60 @@ function AgencyEndorsements() {
             });
           });
           
-          // Agreement Files (only if uploaded)
-          const agreementDocs = [
-            { key: 'appointment-letter', name: 'Employee Appointment Letter', file: mostRecentApp.appointment_letter_file },
-            { key: 'undertaking', name: 'Undertaking', file: mostRecentApp.undertaking_file },
-            { key: 'application-form', name: 'Application Form', file: mostRecentApp.application_form_file },
-            { key: 'undertaking-duties', name: 'Undertaking of Duties and Responsibilities', file: mostRecentApp.undertaking_duties_file },
-            { key: 'pre-employment', name: 'Roadwise Pre Employment Requirements', file: mostRecentApp.pre_employment_requirements_file },
-            { key: 'id-form', name: 'ID Form', file: mostRecentApp.id_form_file }
-          ];
-          
-          agreementDocs.forEach(doc => {
-            if (!doc.file) return;
+          // Agreement Files
+          const payloadAgreementDocs = Array.isArray(payloadObj?.agreement_documents)
+            ? payloadObj.agreement_documents
+            : Array.isArray(payloadObj?.agreementDocuments)
+              ? payloadObj.agreementDocuments
+              : [];
+
+          payloadAgreementDocs.forEach((doc, index) => {
+            const filePath = doc?.path || doc?.file_path || doc?.filePath || doc?.storagePath || null;
+            if (!filePath) return;
+            const label = doc?.label || doc?.name || 'Agreement Document';
+            const originalName = doc?.originalName || doc?.original_name || null;
+
             records.push({
-              id: `${mostRecentApp.id}-${doc.key}`,
+              id: `${mostRecentApp.id}-agreement-${index}`,
               type: 'agreement',
-              documentName: doc.name,
-              fileName: doc.file.split('/').pop() || null,
-              filePath: doc.file,
-              fileUrl: getFileUrl(doc.file),
-              date: date,
-              jobTitle: jobTitle,
-              depot: depot,
-              applicationId: mostRecentApp.id
+              documentName: label,
+              fileName: originalName || String(filePath).split('/').pop() || null,
+              filePath,
+              fileUrl: getFileUrl(filePath),
+              date: doc?.uploadedAt || doc?.uploaded_at || date,
+              jobTitle,
+              depot,
+              applicationId: mostRecentApp.id,
             });
           });
+
+          // Legacy agreement columns fallback (only if payload list is empty)
+          if (payloadAgreementDocs.length === 0) {
+            const agreementDocs = [
+              { key: 'appointment-letter', name: 'Employee Appointment Letter', file: mostRecentApp.appointment_letter_file },
+              { key: 'undertaking', name: 'Undertaking', file: mostRecentApp.undertaking_file },
+              { key: 'application-form', name: 'Application Form', file: mostRecentApp.application_form_file },
+              { key: 'undertaking-duties', name: 'Undertaking of Duties and Responsibilities', file: mostRecentApp.undertaking_duties_file },
+              { key: 'pre-employment', name: 'Roadwise Pre Employment Requirements', file: mostRecentApp.pre_employment_requirements_file },
+              { key: 'id-form', name: 'ID Form', file: mostRecentApp.id_form_file }
+            ];
+
+            agreementDocs.forEach((doc) => {
+              if (!doc.file) return;
+              records.push({
+                id: `${mostRecentApp.id}-${doc.key}`,
+                type: 'agreement',
+                documentName: doc.name,
+                fileName: String(doc.file).split('/').pop() || null,
+                filePath: doc.file,
+                fileUrl: getFileUrl(doc.file),
+                date: date,
+                jobTitle: jobTitle,
+                depot: depot,
+                applicationId: mostRecentApp.id,
+              });
+            });
+          }
           
           setAssessmentRecords(records);
         } else {
@@ -1709,6 +1991,8 @@ function AgencyEndorsements() {
   // Helper function to get file URL
   const getFileUrl = (filePath) => {
     if (!filePath) return null;
+    const asString = String(filePath);
+    if (/^https?:\/\//i.test(asString)) return asString;
     const { data } = supabase.storage.from('application-files').getPublicUrl(filePath);
     return data?.publicUrl || null;
   };
@@ -3080,390 +3364,201 @@ function AgencyEndorsements() {
                             </div>
                           )}
 
-                          {/* DOCUMENTS TAB - View Only */}
+                          {/* DOCUMENTS TAB */}
                           {currentTab === 'documents' && (
                             <div className="space-y-6">
-                              {/* Header with link to Requirements */}
-                              <div className="flex items-center justify-between">
-                                <p className="text-sm text-gray-600">View employee's submitted documents and their status.</p>
-                                <Link 
-                                  to="/agency/requirements" 
-                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                  </svg>
-                                  Manage Requirements
-                                </Link>
+                              <div className="mb-4">
+                                <h5 className="font-semibold text-gray-800">Required Documents</h5>
                               </div>
-                              
-                              {/* Default Requirements Table */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Default Requirements (Government IDs)</h5>
+
+                              {loadingDocuments ? (
+                                <div className="text-center py-8 text-gray-500">Loading documents...</div>
+                              ) : (
                                 <div className="border border-gray-200 rounded-lg overflow-hidden">
                                   <table className="w-full text-sm">
                                     <thead className="bg-gray-50">
                                       <tr>
                                         <th className="px-4 py-3 text-left text-gray-600 font-medium">Document</th>
-                                        <th className="px-4 py-3 text-left text-gray-600 font-medium">ID Number</th>
                                         <th className="px-4 py-3 text-left text-gray-600 font-medium">File</th>
                                         <th className="px-4 py-3 text-left text-gray-600 font-medium">Status</th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
-                                      {(() => {
-                                        const requirements = [
-                                          { key: 'sss', name: 'SSS', desc: 'Social Security System' },
-                                          { key: 'tin', name: 'TIN', desc: 'Tax Identification Number' },
-                                          { key: 'pagibig', name: 'PAG-IBIG', desc: 'HDMF' },
-                                          { key: 'philhealth', name: 'PhilHealth', desc: 'Philippine Health Insurance' },
-                                        ];
-                                        
-                                        return requirements.map((req) => {
-                                          const reqData = getRequirementData(req.key);
-                                          const fileUrl = getFileUrl(reqData.filePath);
-                                          
-                                          let statusBadge = null;
-                                          if (reqData.status === 'approved') {
-                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">Approved</span>;
-                                          } else if (reqData.status === 'resubmit') {
-                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-[#800000]/20 text-[#800000] rounded">Re-submit</span>;
-                                          } else if (reqData.status === 'pending') {
-                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 rounded">Pending</span>;
-                                          } else {
-                                            statusBadge = <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">Missing</span>;
-                                          }
-                                          
+                                      {employeeDocuments.length === 0 ? (
+                                        <tr>
+                                          <td colSpan="3" className="px-4 py-8 text-center text-gray-500">
+                                            No documents found
+                                          </td>
+                                        </tr>
+                                      ) : (
+                                        employeeDocuments.map((doc) => {
+                                          const displayStatus = doc.status || (doc.file ? 'Submitted' : 'Missing');
+                                          const badgeClass =
+                                            displayStatus === 'Submitted' ? 'bg-orange-100 text-orange-700' :
+                                            displayStatus === 'Re-submit' ? 'bg-red-100 text-red-700' :
+                                            displayStatus === 'Validated' ? 'bg-green-100 text-green-700' :
+                                            'bg-gray-100 text-gray-600';
+
                                           return (
-                                            <tr key={req.key} className="hover:bg-gray-50/50">
+                                            <tr key={doc.id} className="hover:bg-gray-50/50">
+                                              <td className="px-4 py-3 text-gray-800">{doc.name}</td>
                                               <td className="px-4 py-3">
-                                                <p className="font-medium text-gray-800">{req.name}</p>
-                                                <p className="text-xs text-gray-500">{req.desc}</p>
-                                              </td>
-                                              <td className="px-4 py-3 text-gray-600">
-                                                {reqData.idNumber ? (
-                                                  <span className="text-gray-800">{reqData.idNumber}</span>
-                                                ) : (
-                                                  <span className="text-gray-400 italic">Not provided</span>
-                                                )}
-                                              </td>
-                                              <td className="px-4 py-3">
-                                                {fileUrl ? (
-                                                  <a 
-                                                    href={fileUrl} 
-                                                    target="_blank" 
+                                                {doc.file ? (
+                                                  <a
+                                                    href={doc.previewUrl || '#'}
+                                                    target="_blank"
                                                     rel="noopener noreferrer"
-                                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                                    className="text-blue-600 hover:underline"
                                                   >
-                                                    View File
+                                                    {doc.file.name}
                                                   </a>
                                                 ) : (
                                                   <span className="text-gray-400 italic">No file</span>
                                                 )}
                                               </td>
                                               <td className="px-4 py-3">
-                                                {statusBadge}
+                                                <span className={`px-2 py-1 rounded text-xs font-medium ${badgeClass}`}>
+                                                  {displayStatus}
+                                                </span>
                                               </td>
                                             </tr>
                                           );
-                                        });
-                                      })()}
+                                        })
+                                      )}
                                     </tbody>
                                   </table>
                                 </div>
-                              </div>
-
-                              {/* Upload Endorsement Files */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Upload Endorsement Files</h5>
-                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
-                                  {(() => {
-                                    const uploads = [
-                                      { label: 'Interview Details', path: selectedEmployee?.interview_details_file },
-                                      { label: 'Assessment Results', path: selectedEmployee?.assessment_results_file },
-                                      { label: 'Appointment Letter', path: selectedEmployee?.appointment_letter_file },
-                                      { label: 'Undertaking', path: selectedEmployee?.undertaking_file },
-                                      { label: 'Application Form', path: selectedEmployee?.application_form_file },
-                                      { label: 'Undertaking Duties', path: selectedEmployee?.undertaking_duties_file },
-                                      { label: 'Pre-employment Requirements', path: selectedEmployee?.pre_employment_requirements_file },
-                                      { label: 'ID Form', path: selectedEmployee?.id_form_file },
-                                    ].filter((f) => !!f.path);
-
-                                    if (uploads.length === 0) {
-                                      return <div className="text-gray-500">No uploaded files yet.</div>;
-                                    }
-
-                                    return (
-                                      <div className="space-y-2">
-                                        {uploads.map((f) => {
-                                          const url = getFileUrl(f.path);
-                                          const filename = String(f.path).split('/').pop();
-                                          return (
-                                            <div key={f.label} className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
-                                              <div className="min-w-0">
-                                                <div className="font-medium text-gray-800">{f.label}</div>
-                                                <div className="text-xs text-gray-500 truncate">{filename || f.path}</div>
-                                              </div>
-                                              {url ? (
-                                                <a
-                                                  href={url}
-                                                  target="_blank"
-                                                  rel="noreferrer"
-                                                  className="shrink-0 text-[#800000] hover:underline font-medium"
-                                                >
-                                                  View
-                                                </a>
-                                              ) : (
-                                                <span className="shrink-0 text-gray-400">—</span>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
+                              )}
 
                               {/* Specialized Training */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Specialized Training</h5>
-                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
-                                  {(() => {
-                                    const rawPayload = selectedEmployee?.payload || selectedEmployee?.raw?.payload || {};
-                                    let payloadObj = {};
-                                    try {
-                                      payloadObj = typeof rawPayload === 'string' ? JSON.parse(rawPayload) : rawPayload;
-                                    } catch {
-                                      payloadObj = {};
-                                    }
-
-                                    const form = payloadObj?.applicant || payloadObj?.form || payloadObj || {};
-
-                                    const trainingName = form?.specializedTraining || form?.specialized_training || null;
-                                    const trainingYear = form?.specializedYear || form?.specialized_year || null;
-
-                                    const trainingCertPath =
-                                      form?.trainingCertFilePath ||
-                                      form?.training_cert_file_path ||
-                                      form?.trainingCertPath ||
-                                      form?.training_cert_path ||
-                                      form?.specializedTrainingCertFilePath ||
-                                      form?.specialized_training_cert_file_path ||
-                                      payloadObj?.trainingCertFilePath ||
-                                      payloadObj?.training_cert_file_path ||
-                                      payloadObj?.trainingCertPath ||
-                                      payloadObj?.training_cert_path ||
-                                      null;
-
-                                    const url = trainingCertPath ? getFileUrl(trainingCertPath) : null;
-                                    const hasAnything = Boolean(String(trainingName || '').trim() || String(trainingYear || '').trim() || trainingCertPath);
-
-                                    if (!hasAnything) {
-                                      return <div className="text-gray-500">No uploaded specialized training yet.</div>;
-                                    }
-
-                                    return (
-                                      <div className="space-y-2">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                          <div>
-                                            <span className="text-gray-500">Training/Certification Name:</span>
-                                            <span className="ml-2">{trainingName ? String(trainingName) : <span className="text-gray-400 italic">None</span>}</span>
-                                          </div>
-                                          <div>
-                                            <span className="text-gray-500">Year Completed:</span>
-                                            <span className="ml-2">{trainingYear ? String(trainingYear) : <span className="text-gray-400 italic">None</span>}</span>
-                                          </div>
-                                        </div>
-
-                                        <div className="flex items-center justify-between gap-3 border border-gray-100 rounded-lg px-3 py-2">
-                                          <div className="min-w-0">
-                                            <div className="font-medium text-gray-800">Training Certificate</div>
-                                            <div className="text-xs text-gray-500 truncate">{trainingCertPath ? String(trainingCertPath).split('/').pop() : '—'}</div>
-                                          </div>
-                                          {url ? (
-                                            <a
-                                              href={url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="shrink-0 text-[#800000] hover:underline font-medium"
-                                            >
-                                              View
-                                            </a>
-                                          ) : (
-                                            <span className="shrink-0 text-gray-400">—</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    );
-                                  })()}
-                                </div>
-                              </div>
-
-                              {/* HR Requested Documents Section */}
-                              <div>
-                                <div className="flex items-center justify-between mb-3">
-                                  <h5 className="font-semibold text-gray-800 bg-gray-100 px-3 py-2 rounded flex-1">HR Requested Documents</h5>
-                                </div>
-                                
-                                {(!documentRequests || documentRequests.filter(d => d.employeeId === selectedEmployee.id).length === 0) ? (
-                                  <div className="border border-gray-200 rounded-lg p-6 text-center">
-                                    <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    <p className="text-sm text-gray-500">No additional documents have been requested by HR yet.</p>
-                                  </div>
-                                ) : (
-                                  <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                    <table className="w-full text-sm">
-                                      <thead className="bg-gray-50">
-                                        <tr>
-                                          <th className="px-4 py-3 text-left text-gray-600 font-medium">Document</th>
-                                          <th className="px-4 py-3 text-left text-gray-600 font-medium">Deadline</th>
-                                          <th className="px-4 py-3 text-left text-gray-600 font-medium">Status</th>
-                                          <th className="px-4 py-3 text-left text-gray-600 font-medium">Remarks</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-gray-100">
-                                        {documentRequests
-                                          .filter(d => d.employeeId === selectedEmployee.id)
-                                          .sort((a, b) => {
-                                            const statusOrder = { resubmit: 0, pending: 1, submitted: 2, approved: 3 };
-                                            return statusOrder[a.status] - statusOrder[b.status];
-                                          })
-                                          .map((request) => (
-                                          <tr key={request.id} className={`${
-                                            request.status === 'resubmit' ? 'bg-[#800000]/10/50' : 
-                                            request.status === 'pending' ? 'bg-orange-50/50' : 
-                                            'hover:bg-gray-50/50'
-                                          }`}>
-                                            <td className="px-4 py-3">
-                                              <p className="font-medium text-gray-800">{request.document}</p>
-                                              {request.priority === 'high' && (
-                                                <span className="text-xs text-[#800000] font-medium">High Priority</span>
-                                              )}
-                                            </td>
-                                            <td className="px-4 py-3 text-gray-600">{formatDate(request.deadline)}</td>
-                                            <td className="px-4 py-3">
-                                              {request.status === 'resubmit' && (
-                                                <span className="px-2 py-1 text-xs font-medium bg-[#800000]/20 text-[#800000] rounded">Re-submit</span>
-                                              )}
-                                              {request.status === 'pending' && (
-                                                <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-700 rounded">Pending</span>
-                                              )}
-                                              {request.status === 'submitted' && (
-                                                <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">Under Review</span>
-                                              )}
-                                              {request.status === 'approved' && (
-                                                <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded">Approved</span>
-                                              )}
-                                            </td>
-                                            <td className="px-4 py-3 text-gray-600 max-w-xs">
-                                              {request.remarks ? (
-                                                <p className="text-xs text-[#800000] truncate" title={request.remarks}>{request.remarks}</p>
-                                              ) : (
-                                                <span className="text-gray-400 italic text-xs">—</span>
-                                              )}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Assessment Remarks and Records */}
-                              <div>
-                                <div className="flex items-center justify-between mb-3">
-                                  <h5 className="font-semibold text-gray-800 bg-gray-100 px-3 py-2 rounded flex-1">Assessment Remarks and Records</h5>
+                              <div className="mt-6">
+                                <div className="mb-4">
+                                  <h5 className="font-semibold text-gray-800">Specialized Training</h5>
                                 </div>
 
                                 {(() => {
-                                  const assessmentFiles = assessmentRecords.filter(r => r.type === 'assessment');
+                                  const rawPayload = selectedEmployee?.payload || selectedEmployee?.raw?.payload || {};
+                                  let payloadObj = {};
+                                  try {
+                                    payloadObj = typeof rawPayload === 'string' ? JSON.parse(rawPayload) : rawPayload;
+                                  } catch {
+                                    payloadObj = {};
+                                  }
 
-                                  const remarks =
-                                    selectedEmployee.assessment_remarks ||
-                                    selectedEmployee.raw?.assessment_remarks ||
-                                    selectedEmployee.payload?.assessment_remarks ||
-                                    selectedEmployee.payload?.assessmentRemarks ||
-                                    selectedEmployee.raw?.payload?.assessment_remarks ||
-                                    selectedEmployee.raw?.payload?.assessmentRemarks ||
-                                    selectedEmployee.interview_notes ||
-                                    selectedEmployee.raw?.interview_notes ||
-                                    selectedEmployee.payload?.interview_notes ||
-                                    selectedEmployee.payload?.interviewNotes ||
-                                    selectedEmployee.raw?.payload?.interview_notes ||
-                                    selectedEmployee.raw?.payload?.interviewNotes ||
+                                  const form = payloadObj?.applicant || payloadObj?.form || payloadObj || {};
+
+                                  const trainingName = form?.specializedTraining || form?.specialized_training || null;
+                                  const trainingYear = form?.specializedYear || form?.specialized_year || null;
+
+                                  const trainingCertPath =
+                                    form?.trainingCertFilePath ||
+                                    form?.training_cert_file_path ||
+                                    form?.trainingCertPath ||
+                                    form?.training_cert_path ||
+                                    form?.specializedTrainingCertFilePath ||
+                                    form?.specialized_training_cert_file_path ||
+                                    payloadObj?.trainingCertFilePath ||
+                                    payloadObj?.training_cert_file_path ||
+                                    payloadObj?.trainingCertPath ||
+                                    payloadObj?.training_cert_path ||
                                     null;
 
-                                  const normalized = remarks ? String(remarks).trim() : '';
-                                  const hasRemarks = Boolean(normalized);
+                                  const trainingCertUrl = trainingCertPath ? getFileUrl(trainingCertPath) : null;
+                                  const hasAnything = Boolean(String(trainingName || '').trim() || String(trainingYear || '').trim() || trainingCertPath);
 
-                                  if (!hasRemarks && assessmentFiles.length === 0) {
+                                  if (!hasAnything) {
                                     return (
                                       <div className="border border-gray-200 rounded-lg p-6 text-center">
                                         <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                         </svg>
-                                        <p className="text-sm text-gray-500">No uploaded records/documents yet.</p>
+                                        <p className="text-sm text-gray-500">No uploaded specialized training yet.</p>
                                       </div>
                                     );
                                   }
 
                                   return (
-                                    <div className="space-y-4">
-                                      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                                        <div className="px-4 py-3 bg-gray-50">
-                                          <div className="text-sm font-semibold text-gray-900">Remarks</div>
+                                    <div className="border border-gray-200 rounded-lg overflow-hidden">
+                                      <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                                        <div className="col-span-5">Training</div>
+                                        <div className="col-span-2">Year</div>
+                                        <div className="col-span-5">Certificate</div>
+                                      </div>
+                                      <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                                        <div className="col-span-12 md:col-span-5 text-sm text-gray-800">
+                                          {trainingName ? String(trainingName) : <span className="text-gray-400 italic">None</span>}
                                         </div>
-                                        <div className="p-4 text-sm">
-                                          {hasRemarks ? (
-                                            <div className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-gray-800">
-                                              {normalized}
+                                        <div className="col-span-12 md:col-span-2 text-sm text-gray-700">
+                                          {trainingYear ? String(trainingYear) : <span className="text-gray-400 italic">—</span>}
+                                        </div>
+                                        <div className="col-span-12 md:col-span-5 text-sm">
+                                          {trainingCertUrl ? (
+                                            <div className="flex items-center gap-2">
+                                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                                                <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                              </svg>
+                                              <a
+                                                href={trainingCertUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                              >
+                                                {String(trainingCertPath).split('/').pop() || 'View File'}
+                                              </a>
                                             </div>
                                           ) : (
-                                            <div className="flex items-center gap-2 text-gray-500 italic">
-                                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z" />
-                                              </svg>
-                                              <span>No uploaded remarks yet.</span>
-                                            </div>
+                                            <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
                                           )}
                                         </div>
                                       </div>
+                                    </div>
+                                  );
+                                })()}
+                              </div>
 
-                                      {assessmentFiles.length === 0 ? (
-                                        <div className="border border-gray-200 rounded-lg p-6 text-center">
-                                          <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                          </svg>
-                                          <p className="text-sm text-gray-500">No uploaded records/documents yet.</p>
-                                        </div>
-                                      ) : (
-                                        <div>
-                                          <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
-                                          <div className="border border-gray-200 rounded-b-lg overflow-hidden">
-                                            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
-                                              <div className="col-span-6">Document</div>
-                                              <div className="col-span-6">File</div>
-                                            </div>
-                                            {assessmentFiles.map((record) => (
-                                              <div key={record.id} className="border-b">
-                                                <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                                                  <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
-                                                    {record.documentName === 'Interview Details' ? (
-                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
-                                                        <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
-                                                      </svg>
-                                                    ) : (
-                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
-                                                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
-                                                      </svg>
-                                                    )}
-                                                    {record.documentName}
-                                                  </div>
-                                                  <div className="col-span-12 md:col-span-6 text-sm">
+                              {/* Assessment and Agreement Records Section */}
+                              <div className="mt-6">
+                                <div className="mb-4">
+                                  <h5 className="font-semibold text-gray-800">Assessment and Agreement Records</h5>
+                                </div>
+
+                                {assessmentRecords.length === 0 ? (
+                                  <div className="border border-gray-200 rounded-lg p-6 text-center">
+                                    <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <p className="text-sm text-gray-500">No assessment or agreement records found.</p>
+                                    <p className="text-xs text-gray-400 mt-1">Files from the application process will appear here.</p>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-6">
+                                    {assessmentRecords.filter(r => r.type === 'assessment').length > 0 && (
+                                      <div>
+                                        <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Assessment Files</div>
+                                        <div className="border border-gray-200 rounded-b-lg overflow-hidden">
+                                          <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                                            <div className="col-span-6">Document</div>
+                                            <div className="col-span-6">File</div>
+                                          </div>
+                                          {assessmentRecords
+                                            .filter(r => r.type === 'assessment')
+                                            .map((record) => (
+                                            <div key={record.id} className="border-b">
+                                              <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                                                <div className="col-span-12 md:col-span-6 text-sm text-gray-800 flex items-center gap-2">
+                                                  {record.documentName === 'Interview Details' ? (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-blue-600">
+                                                      <path fillRule="evenodd" d="M4.5 3.75a3 3 0 0 0-3 3v10.5a3 3 0 0 0 3 3h15a3 3 0 0 0 3-3V6.75a3 3 0 0 0-3-3h-15Zm4.125 3a2.25 2.25 0 1 0 0 4.5 2.25 2.25 0 0 0 0-4.5Zm-3.873 8.703a4.126 4.126 0 0 1 7.746 0 .75.75 0 0 1-.372.84A7.72 7.72 0 0 1 8 18.75a7.72 7.72 0 0 1-5.501-2.607.75.75 0 0 1-.372-.84Zm4.622-1.44a5.076 5.076 0 0 0 5.024 0l.348-1.597c.271.1.56.153.856.153h6a.75.75 0 0 0 0-1.5h-3.045c.01-.1.02-.2.02-.3V11.25c0-5.385-4.365-9.75-9.75-9.75S2.25 5.865 2.25 11.25v.756a2.25 2.25 0 0 0 1.988 2.246l.217.037a2.25 2.25 0 0 0 2.163-1.684l1.38-4.276a1.125 1.125 0 0 1 1.08-.82Z" clipRule="evenodd" />
+                                                    </svg>
+                                                  ) : (
+                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-green-600">
+                                                      <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.525-1.72-1.72a.75.75 0 1 0-1.06 1.061l2.25 2.25a.75.75 0 0 0 1.144-.094l3.843-5.15Z" clipRule="evenodd" />
+                                                    </svg>
+                                                  )}
+                                                  {record.documentName}
+                                                </div>
+                                                <div className="col-span-12 md:col-span-6 text-sm">
+                                                  {record.fileUrl ? (
                                                     <div className="flex items-center gap-2">
                                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
                                                         <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
@@ -3499,110 +3594,82 @@ function AgencyEndorsements() {
                                                         Download
                                                       </button>
                                                     </div>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
-                              </div>
-
-                              {/* Agreement Documents */}
-                              <div>
-                                <div className="flex items-center justify-between mb-3">
-                                  <h5 className="font-semibold text-gray-800 bg-gray-100 px-3 py-2 rounded flex-1">Agreement Documents</h5>
-                                </div>
-
-                                {(() => {
-                                  const agreementFiles = assessmentRecords.filter(r => r.type === 'agreement');
-
-                                  if (agreementFiles.length === 0) {
-                                    return (
-                                      <div className="border border-gray-200 rounded-lg p-6 text-center">
-                                        <svg className="w-10 h-10 text-gray-300 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
-                                        <p className="text-sm text-gray-500">No uploaded records/documents yet.</p>
-                                      </div>
-                                    );
-                                  }
-
-                                  return (
-                                    <div>
-                                      <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
-                                      <div className="border border-gray-200 rounded-b-lg overflow-hidden">
-                                        <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
-                                          <div className="col-span-6">Document</div>
-                                          <div className="col-span-6">File</div>
-                                        </div>
-                                        {agreementFiles.map((record) => (
-                                          <div key={record.id} className="border-b">
-                                            <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
-                                              <div className="col-span-12 md:col-span-6 text-sm text-gray-800">
-                                                {record.documentName}
-                                              </div>
-                                              <div className="col-span-12 md:col-span-6 text-sm">
-                                                <div className="flex items-center gap-2">
-                                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
-                                                    <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
-                                                  </svg>
-                                                  <a
-                                                    href={record.fileUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-blue-600 hover:text-blue-800 underline text-sm"
-                                                  >
-                                                    {record.fileName}
-                                                  </a>
-                                                  <button
-                                                    onClick={async () => {
-                                                      try {
-                                                        const response = await fetch(record.fileUrl);
-                                                        const blob = await response.blob();
-                                                        const url = window.URL.createObjectURL(blob);
-                                                        const link = document.createElement('a');
-                                                        link.href = url;
-                                                        link.download = record.fileName;
-                                                        document.body.appendChild(link);
-                                                        link.click();
-                                                        document.body.removeChild(link);
-                                                        window.URL.revokeObjectURL(url);
-                                                      } catch (error) {
-                                                        console.error('Error downloading file:', error);
-                                                        window.open(record.fileUrl, '_blank');
-                                                      }
-                                                    }}
-                                                    className="text-purple-600 hover:text-purple-800 underline text-sm"
-                                                  >
-                                                    Download
-                                                  </button>
+                                                  ) : (
+                                                    <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
+                                                  )}
                                                 </div>
                                               </div>
                                             </div>
-                                          </div>
-                                        ))}
+                                          ))}
+                                        </div>
                                       </div>
-                                    </div>
-                                  );
-                                })()}
-                              </div>
+                                    )}
 
-                              {/* Info Banner */}
-                              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                                <div className="flex items-start gap-3">
-                                  <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                  </svg>
-                                  <div>
-                                    <p className="text-sm text-blue-800">
-                                      <strong>Need to upload or update documents?</strong> Go to the <Link to="/agency/requirements" className="underline font-semibold hover:text-blue-900">Requirements</Link> module to manage all employee documents in one place.
-                                    </p>
+                                    {assessmentRecords.filter(r => r.type === 'agreement').length > 0 && (
+                                      <div>
+                                        <div className="bg-gray-100 text-gray-800 px-3 py-2 text-sm font-semibold border rounded-t-md">Agreement Documents</div>
+                                        <div className="border border-gray-200 rounded-b-lg overflow-hidden">
+                                          <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs text-gray-600 border-b bg-gray-50">
+                                            <div className="col-span-6">&nbsp;</div>
+                                            <div className="col-span-6">File</div>
+                                          </div>
+                                          {assessmentRecords
+                                            .filter(r => r.type === 'agreement')
+                                            .map((record) => (
+                                            <div key={record.id} className="border-b">
+                                              <div className="grid grid-cols-12 items-center gap-3 px-3 py-3">
+                                                <div className="col-span-12 md:col-span-6 text-sm text-gray-800">
+                                                  {record.documentName}
+                                                </div>
+                                                <div className="col-span-12 md:col-span-6 text-sm">
+                                                  {record.fileUrl ? (
+                                                    <div className="flex items-center gap-2">
+                                                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4 text-gray-400">
+                                                        <path fillRule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v11.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 1 1 1.06-1.06l3.22 3.22V3a.75.75 0 0 1 .75-.75ZM6.75 15a.75.75 0 0 1 .75.75v2.25a1.5 1.5 0 0 0 1.5 1.5h6a1.5 1.5 0 0 0 1.5-1.5V15.75a.75.75 0 0 1 1.5 0v2.25a3 3 0 0 1-3 3h-6a3 3 0 0 1-3-3V15.75a.75.75 0 0 1 .75-.75Z" clipRule="evenodd" />
+                                                      </svg>
+                                                      <a
+                                                        href={record.fileUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                                      >
+                                                        {record.fileName}
+                                                      </a>
+                                                      <button
+                                                        onClick={async () => {
+                                                          try {
+                                                            const response = await fetch(record.fileUrl);
+                                                            const blob = await response.blob();
+                                                            const url = window.URL.createObjectURL(blob);
+                                                            const link = document.createElement('a');
+                                                            link.href = url;
+                                                            link.download = record.fileName;
+                                                            document.body.appendChild(link);
+                                                            link.click();
+                                                            document.body.removeChild(link);
+                                                            window.URL.revokeObjectURL(url);
+                                                          } catch (error) {
+                                                            console.error('Error downloading file:', error);
+                                                            window.open(record.fileUrl, '_blank');
+                                                          }
+                                                        }}
+                                                        className="text-purple-600 hover:text-purple-800 underline text-sm"
+                                                      >
+                                                        Download
+                                                      </button>
+                                                    </div>
+                                                  ) : (
+                                                    <span className="text-gray-400 italic text-sm">No file uploaded yet</span>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
                                   </div>
-                                </div>
+                                )}
                               </div>
                             </div>
                           )}

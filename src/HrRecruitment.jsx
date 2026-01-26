@@ -3025,6 +3025,52 @@ function HrRecruitment() {
           return;
         }
 
+        // Ensure there is an applicants row linked to this employee auth user.
+        // Employee-facing profile pulls personal fields (sex/marital/address) from applicants.
+        if (authUserId) {
+          try {
+            // Prefer the same employee id we upserted into employees
+            const employeeRowId = rpcData?.employee_id || applicationData.user_id || null;
+
+            const applicantUpsert = {
+              id: authUserId,
+              email: applicantEmail || source.email || null,
+              fname: firstName || null,
+              lname: lastName || null,
+              mname: middleName || null,
+              contact_number: contactNumber || null,
+              address: source.address || null,
+              sex: source.sex || source.gender || null,
+              birthday: birthday || null,
+              marital_status: source.marital_status || source.maritalStatus || source.marital || null,
+              educational_attainment: source.educational_attainment || source.educationalAttainment || source.education_attainment || null,
+              institution_name: source.institution_name || source.institutionName || null,
+              year_graduated: source.year_graduated || source.yearGraduated || null,
+              education_program: source.education_program || source.educationProgram || null,
+              barangay: source.barangay || null,
+              city: source.city || null,
+              street: source.street || null,
+              province: source.province || null,
+              zip: source.zip || null,
+              unit_house_number: source.unit_house_number || source.unitHouseNumber || null,
+              postal_code: source.postal_code || source.postalCode || null,
+              employee_id: employeeRowId,
+              is_hired: true,
+              hired_at: new Date().toISOString(),
+            };
+
+            const { error: applicantUpsertErr } = await supabase
+              .from('applicants')
+              .upsert(applicantUpsert, { onConflict: 'id' });
+
+            if (applicantUpsertErr) {
+              console.warn('Failed to upsert applicants link/profile (non-fatal):', applicantUpsertErr);
+            }
+          } catch (e) {
+            console.warn('Failed to create applicants link/profile (non-fatal):', e);
+          }
+        }
+
         // Send email with credentials
         // Send email with credentials only for direct hires who got an account
         // Only send once - guard against duplicate sends

@@ -1,8 +1,43 @@
 // updateRole.mjs
+import fs from 'node:fs';
+import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = 'https://nokbftmzugwyfgyprcwh.supabase.co';
-const SERVICE_ROLE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5va2JmdG16dWd3eWZneXByY3doIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDY5ODM0MiwiZXhwIjoyMDc2Mjc0MzQyfQ.6RbTpKtk774ezqaoeB4AuLZAqYiE4VYUaC4cfrEivco'; // <-- paste service role key
+function readDotEnv(dotEnvPath) {
+  const env = {};
+  if (!fs.existsSync(dotEnvPath)) return env;
+  const text = fs.readFileSync(dotEnvPath, 'utf8');
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith('#')) continue;
+
+    const eq = line.indexOf('=');
+    if (eq < 0) continue;
+
+    const key = line.slice(0, eq).trim();
+    let value = line.slice(eq + 1).trim();
+
+    if (value.length >= 2) {
+      const first = value[0];
+      const last = value[value.length - 1];
+      if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+        value = value.slice(1, -1);
+      }
+    }
+
+    env[key] = value;
+  }
+  return env;
+}
+
+const env = {
+  ...readDotEnv(path.join(process.cwd(), '.env')),
+  ...process.env,
+};
+
+const SUPABASE_URL = env.SUPABASE_URL || env.VITE_SUPABASE_URL;
+const SERVICE_ROLE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
 
 // Accept email from CLI (node updateRole.mjs email@example.com)
 const EMAIL = (process.argv[2] || '').trim();
@@ -35,8 +70,11 @@ async function findUserIdByEmail(supabase, email) {
 async function main() {
   console.log('▶ Starting role update...');
 
-  if (!SERVICE_ROLE_KEY || SERVICE_ROLE_KEY === 'YOUR_SERVICE_ROLE_KEY_HERE') {
-    die('❌ SERVICE_ROLE_KEY is missing. Paste your service role key in updateRole.mjs.');
+  if (!SUPABASE_URL) {
+    die('❌ Missing SUPABASE_URL. Set SUPABASE_URL or VITE_SUPABASE_URL in .env.');
+  }
+  if (!SERVICE_ROLE_KEY) {
+    die('❌ Missing SUPABASE_SERVICE_ROLE_KEY. Set it in .env (never in client code).');
   }
   if (!EMAIL) {
     die('❌ Usage: node updateRole.mjs applicant@example.com');

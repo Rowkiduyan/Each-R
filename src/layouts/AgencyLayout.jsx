@@ -24,12 +24,33 @@ function AgencyLayout() {
           return;
         }
 
-        // Fetch profile data from profiles table
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('id, email, first_name, last_name, role')
-          .eq('id', user.id)
-          .single();
+        // Fetch profile data from profiles table.
+        // Some environments may not yet have `profiles.contact_number`; fall back if missing.
+        const selectWithContact = 'id, email, first_name, last_name, role, agency_name, contact_number';
+        const selectWithoutContact = 'id, email, first_name, last_name, role, agency_name';
+
+        let profile = null;
+        let error = null;
+
+        {
+          const res = await supabase
+            .from('profiles')
+            .select(selectWithContact)
+            .eq('id', user.id)
+            .single();
+          profile = res.data;
+          error = res.error;
+        }
+
+        if (error && String(error.message || '').toLowerCase().includes('contact_number')) {
+          const res = await supabase
+            .from('profiles')
+            .select(selectWithoutContact)
+            .eq('id', user.id)
+            .single();
+          profile = res.data;
+          error = res.error;
+        }
 
         if (error) {
           console.error('Error fetching agency profile:', error);
