@@ -306,11 +306,14 @@ function HrTrainings() {
         }
 
         // Get auth_user_ids to check account status
-        const authUserIds = data?.filter(emp => emp.auth_user_id).map(emp => emp.auth_user_id) || [];
+        const authUserIds = (data || [])
+          .filter(emp => emp.auth_user_id)
+          .map(emp => emp.auth_user_id)
+          .filter(Boolean);
         
         // Fetch account status from profiles
         let accountStatusMap = {};
-        if (authUserIds.length > 0) {
+        if (authUserIds.length > 0 && Array.isArray(authUserIds)) {
           const { data: profiles } = await supabase
             .from('profiles')
             .select('id, account_expires_at, is_active')
@@ -1422,11 +1425,14 @@ function HrTrainings() {
           }
 
           // Get auth_user_ids to check account status
-          const authUserIds = data?.filter(emp => emp.auth_user_id).map(emp => emp.auth_user_id) || [];
+          const authUserIds = (data || [])
+            .filter(emp => emp.auth_user_id)
+            .map(emp => emp.auth_user_id)
+            .filter(Boolean);
           
           // Fetch account status from profiles
           let accountStatusMap = {};
-          if (authUserIds.length > 0) {
+          if (authUserIds.length > 0 && Array.isArray(authUserIds)) {
             const { data: profiles } = await supabase
               .from('profiles')
               .select('id, account_expires_at, is_active')
