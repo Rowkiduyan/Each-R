@@ -151,6 +151,13 @@ function AgencyEndorsements() {
   const [employeeIsAgency, setEmployeeIsAgency] = useState(false);
   const [employeeDocuments, setEmployeeDocuments] = useState([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
+  const [resolvedEmployeeId, setResolvedEmployeeId] = useState(null);
+
+  // Onboarding records (read-only for agency; sourced from HR uploads)
+  const [onboardingItems, setOnboardingItems] = useState([]);
+  const [onboardingLoading, setOnboardingLoading] = useState(false);
+  const [onboardingError, setOnboardingError] = useState(null);
+  const [onboardingRefreshTrigger, setOnboardingRefreshTrigger] = useState(0);
 
   // Assessment records state
   const [assessmentRecords, setAssessmentRecords] = useState([]);
@@ -393,10 +400,14 @@ function AgencyEndorsements() {
           let hasAgencyEmployee = false;
 
           if (hiredEmployees.length > 0) {
-            const hiredEmp = hiredEmployees.find(h =>
-              (h.auth_user_id && r.user_id && String(h.auth_user_id) === String(r.user_id)) ||
-              (email && h.email && normalizeEmail(h.email) === email)
-            );
+            const hiredEmp = findHiredEmployeeMatch({
+              user_id: r.user_id || null,
+              email,
+              first,
+              last,
+              name: displayName,
+              position: pos || null,
+            });
 
             if (hiredEmp) {
               endorsedEmployeeId = hiredEmp.id;
@@ -941,6 +952,51 @@ function AgencyEndorsements() {
 
   const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 
+  const normalizeNameToken = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  const getPersonKey = ({ first, last, name }) => {
+    const f = normalizeNameToken(first);
+    const l = normalizeNameToken(last);
+    if (f && l) return `${f}|${l}`;
+    const n = normalizeNameToken(name);
+    if (!n) return null;
+    const parts = n.split(' ').filter(Boolean);
+    if (parts.length >= 2) return `${parts[0]}|${parts[parts.length - 1]}`;
+    return n;
+  };
+
+  const findHiredEmployeeMatch = (emp) => {
+    if (!Array.isArray(hiredEmployees) || hiredEmployees.length === 0 || !emp) return null;
+
+    // 1) Prefer auth_user_id match
+    if (emp.user_id) {
+      const byUser = hiredEmployees.find((h) => h?.auth_user_id && String(h.auth_user_id) === String(emp.user_id));
+      if (byUser) return byUser;
+    }
+
+    // 2) Then email match
+    const keyEmail = normalizeEmail(emp.email);
+    if (keyEmail) {
+      const byEmail = hiredEmployees.find((h) => normalizeEmail(h?.email) === keyEmail);
+      if (byEmail) return byEmail;
+    }
+
+    // 3) Finally, name match (best-effort)
+    const empKey = getPersonKey({ first: emp.first, last: emp.last, name: emp.name });
+    if (!empKey) return null;
+
+    const posNorm = normalizeNameToken(emp.position);
+    const candidates = hiredEmployees.filter((h) => {
+      const hKey = getPersonKey({ first: h?.raw?.fname, last: h?.raw?.lname, name: h?.name });
+      return hKey && hKey === empKey;
+    });
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+
+    const byPos = posNorm ? candidates.find((h) => normalizeNameToken(h?.position) === posNorm) : null;
+    return byPos || candidates[0];
+  };
+
   // Sync endorsed list with agency-sourced employees
   // - If an endorsed application has a matching agency employee, mark it as deployed and link employee row
   // - If there is an agency employee without an application row (but still endorsed/from agency), add it to the list as deployed
@@ -966,10 +1022,7 @@ function AgencyEndorsements() {
 
       // First, update existing endorsements that now have an employee row
       const updatedList = existing.map((emp) => {
-        const hiredEmp = hiredEmployees.find(h =>
-          (h.auth_user_id && emp.user_id && String(h.auth_user_id) === String(emp.user_id)) ||
-          (emp.email && h.email && normalizeEmail(h.email) === normalizeEmail(emp.email))
-        );
+        const hiredEmp = findHiredEmployeeMatch(emp);
         if (!hiredEmp) return emp;
 
         // Explicitly exclude internal/direct applicants
@@ -999,59 +1052,6 @@ function AgencyEndorsements() {
         };
       });
 
-      // Then, add any agency employees that don't yet appear in the endorsements list
-      hiredEmployees.forEach((h) => {
-        // Explicitly exclude internal/direct applicants
-        if (h.source === "internal") return;
-
-        const isAgencyEmployee =
-          h.is_agency ||
-          !!h.agency_profile_id ||
-          !!h.endorsed_by_agency_id ||
-          h.source === "agency";
-
-        if (!isAgencyEmployee) return;
-
-        const authKey = h.auth_user_id ? String(h.auth_user_id) : null;
-        const emailKey = h.email ? normalizeEmail(h.email) : null;
-        if (authKey && byAuthUserId.has(authKey)) return;
-        if (emailKey && byEmail.has(emailKey)) return;
-        if (!authKey && !emailKey) return;
-
-        updatedList.push({
-          id: `emp-${h.id}`,
-          user_id: h.auth_user_id || null,
-          name: h.name,
-          first: null,
-          middle: null,
-          last: null,
-          email: h.email,
-          contact: h.contact,
-          position: h.position || "Employee",
-          depot: h.depot || "—",
-          status: "deployed",
-          agency_profile_id: h.agency_profile_id || h.endorsed_by_agency_id || null,
-          payload: null,
-          endorsed_employee_id: h.id,
-          job_id: null,
-          created_at: h.hired_at || null,
-          employmentStatus: h.employmentStatus || null,
-          agency: true,
-          // No interview data on pure employee rows
-          interview_date: null,
-          interview_time: null,
-          interview_location: null,
-          interviewer: null,
-          interview_confirmed: null,
-          interview_details_file: null,
-          assessment_results_file: null,
-          raw: { source: h.source || null, from: "employees" },
-        });
-
-        if (emailKey) byEmail.set(emailKey, true);
-        if (authKey) byAuthUserId.set(authKey, true);
-      });
-
       // Final dedupe: if both an application row and a synthetic employee row exist, keep the application row.
       const indexByKey = new Map();
       const deduped = [];
@@ -1078,7 +1078,21 @@ function AgencyEndorsements() {
         }
       }
 
-      return deduped;
+      // If an employee-backed synthetic row exists alongside an application row linked
+      // to the same employee id, drop the synthetic row.
+      const appEmployeeIds = new Set(
+        deduped
+          .filter((x) => !String(x?.id || '').startsWith('emp-'))
+          .map((x) => x?.endorsed_employee_id)
+          .filter(Boolean)
+      );
+
+      return deduped.filter((x) => {
+        const isEmpRow = String(x?.id || '').startsWith('emp-');
+        if (!isEmpRow) return true;
+        if (!x?.endorsed_employee_id) return true;
+        return !appEmployeeIds.has(x.endorsed_employee_id);
+      });
     });
   }, [hiredEmployees]);
 
@@ -1105,6 +1119,15 @@ function AgencyEndorsements() {
   const employmentStatuses = ["All", "Regular", "Under Probation", "Part Time"];
   const recruitmentTypes = ["All", "Agency", "Direct"];
 
+  const getIsAgency = (emp) => {
+    if (!emp) return false;
+    if (emp?.agency === true) return true;
+    if (emp?.raw?.source === 'agency') return true;
+    if (emp?.raw?.from === 'agency') return true;
+    if (emp?.agency_profile_id) return true;
+    return false;
+  };
+
   const filteredEmployees = React.useMemo(() => {
     const [sortKey, sortDir] = String(sortOption || "name-asc").split("-");
     const isAsc = sortDir === "asc";
@@ -1121,12 +1144,6 @@ function AgencyEndorsements() {
       if (!key) return null;
       const hiredByEmail = hiredEmployees.find((h) => normalizeEmail(h?.email) === key);
       return hiredByEmail?.employmentStatus || null;
-    };
-
-    const getIsAgency = (emp) => {
-      if (emp?.agency === true) return true;
-      // Endorsements page is agency-scoped; treat unknown as agency.
-      return true;
     };
 
     const getHiredAt = (emp) => {
@@ -1211,18 +1228,32 @@ function AgencyEndorsements() {
       if (!selectedEmployee) {
         setEmployeeRequirements(null);
         setEmployeeIsAgency(false);
+        setResolvedEmployeeId(null);
         return;
       }
 
-      // Prefer the linked employee id; if missing, try to resolve by email
-      let employeeId = selectedEmployee.endorsed_employee_id;
-
-      setLoadingRequirements(true);
+      // Prefer the linked employee id; if missing, try auth_user_id, then email
+      let employeeId =
+        selectedEmployee.endorsed_employee_id ||
+        selectedEmployee?.raw?.endorsed_employee_id ||
+        selectedEmployee.employee_id ||
+        selectedEmployee?.raw?.employee_id ||
+        null;
+      const derivedIsAgency = getIsAgency(selectedEmployee);
 
       setLoadingRequirements(true);
       try {
         let data = null;
         let error = null;
+
+        // If the application row isn't linked yet, try matching against hiredEmployees.
+        if (!employeeId) {
+          const hiredMatch = findHiredEmployeeMatch(selectedEmployee);
+          if (hiredMatch?.id) {
+            employeeId = hiredMatch.id;
+            setSelectedEmployee((prev) => (prev ? { ...prev, endorsed_employee_id: employeeId } : prev));
+          }
+        }
 
         if (employeeId) {
           const result = await supabase
@@ -1232,6 +1263,20 @@ function AgencyEndorsements() {
             .single();
           data = result.data;
           error = result.error;
+        } else if (selectedEmployee.user_id) {
+          const result = await supabase
+            .from('employees')
+            .select('id, email, requirements, is_agency')
+            .eq('auth_user_id', selectedEmployee.user_id)
+            .maybeSingle();
+
+          data = result.data;
+          error = result.error;
+
+          if (!error && data?.id) {
+            employeeId = data.id;
+            setSelectedEmployee((prev) => prev ? { ...prev, endorsed_employee_id: employeeId } : prev);
+          }
         } else if (selectedEmployee.email) {
           // Fallback: try to find employee by email (same logic Requirements tab uses)
           const result = await supabase
@@ -1252,7 +1297,8 @@ function AgencyEndorsements() {
         if (error) {
           console.error('Error loading employee requirements:', error);
           setEmployeeRequirements(null);
-          setEmployeeIsAgency(false);
+          setEmployeeIsAgency(derivedIsAgency);
+          setResolvedEmployeeId(employeeId || null);
         } else {
           // Parse requirements
           let requirementsData = null;
@@ -1268,33 +1314,44 @@ function AgencyEndorsements() {
             }
           }
           setEmployeeRequirements(requirementsData);
-          setEmployeeIsAgency(data?.is_agency === true);
+          // In this module, treat endorsed agency employees as agency even if is_agency is missing.
+          setEmployeeIsAgency((data?.is_agency === true) || derivedIsAgency);
+          setResolvedEmployeeId(employeeId || data?.id || null);
         }
       } catch (err) {
         console.error('Unexpected error loading requirements:', err);
         setEmployeeRequirements(null);
-        setEmployeeIsAgency(false);
+        setEmployeeIsAgency(getIsAgency(selectedEmployee));
+        setResolvedEmployeeId(employeeId || null);
       } finally {
         setLoadingRequirements(false);
       }
     };
     
     loadEmployeeRequirements();
-  }, [selectedEmployee]);
+  }, [selectedEmployee, hiredEmployees]);
   
   // Subscribe to employees table changes to refresh requirements
   useEffect(() => {
-    if (!selectedEmployee?.endorsed_employee_id) return;
+    const employeeId =
+      resolvedEmployeeId ||
+      selectedEmployee?.endorsed_employee_id ||
+      selectedEmployee?.raw?.endorsed_employee_id ||
+      selectedEmployee?.employee_id ||
+      selectedEmployee?.raw?.employee_id ||
+      null;
+
+    if (!employeeId) return;
     
     const employeesChannel = supabase
-      .channel(`employees-requirements-rt-${selectedEmployee.endorsed_employee_id}`)
+      .channel(`employees-requirements-rt-${employeeId}`)
       .on(
         'postgres_changes',
         {
           event: 'UPDATE',
           schema: 'public',
           table: 'employees',
-          filter: `id=eq.${selectedEmployee.endorsed_employee_id}`
+          filter: `id=eq.${employeeId}`
         },
         (payload) => {
           // Reload requirements when employee record is updated
@@ -1318,7 +1375,113 @@ function AgencyEndorsements() {
     return () => {
       supabase.removeChannel(employeesChannel);
     };
-  }, [selectedEmployee?.endorsed_employee_id]);
+  }, [selectedEmployee, resolvedEmployeeId]);
+
+  // Fetch onboarding records (read-only) from onboarding table
+  useEffect(() => {
+    const fetchOnboardingItems = async () => {
+      if (!selectedEmployee || employeeDetailTab !== 'onboarding') {
+        setOnboardingItems([]);
+        setOnboardingError(null);
+        setOnboardingLoading(false);
+        return;
+      }
+
+      const employeeId =
+        resolvedEmployeeId ||
+        selectedEmployee?.endorsed_employee_id ||
+        selectedEmployee?.raw?.endorsed_employee_id ||
+        selectedEmployee?.employee_id ||
+        selectedEmployee?.raw?.employee_id ||
+        null;
+
+      if (!employeeId) {
+        setOnboardingItems([]);
+        setOnboardingError(null);
+        setOnboardingLoading(false);
+        return;
+      }
+
+      setOnboardingLoading(true);
+      setOnboardingError(null);
+
+      try {
+        const { data, error } = await supabase
+          .from('onboarding')
+          .select('*')
+          .eq('employee_id', employeeId)
+          .order('date_issued', { ascending: false });
+
+        if (error) {
+          console.error('Error fetching onboarding items:', error);
+          setOnboardingError(error.message || String(error));
+          setOnboardingItems([]);
+          return;
+        }
+
+        const items = (data || []).map((item) => {
+          const filePath = item.file_path || item.filePath || null;
+          const fileUrl = filePath
+            ? (supabase.storage.from('application-files').getPublicUrl(filePath)?.data?.publicUrl || null)
+            : null;
+
+          return {
+            id: item.id,
+            item: item.item || item.name || '',
+            description: item.description || '',
+            date: item.date_issued || item.date || '',
+            filePath,
+            fileUrl,
+          };
+        });
+
+        setOnboardingItems(items);
+      } catch (e) {
+        console.error('Unexpected onboarding fetch error:', e);
+        setOnboardingError(String(e));
+        setOnboardingItems([]);
+      } finally {
+        setOnboardingLoading(false);
+      }
+    };
+
+    fetchOnboardingItems();
+  }, [selectedEmployee, employeeDetailTab, resolvedEmployeeId, onboardingRefreshTrigger]);
+
+  // Subscribe to onboarding table changes so HR uploads appear immediately
+  useEffect(() => {
+    if (!selectedEmployee || employeeDetailTab !== 'onboarding') return;
+
+    const employeeId =
+      resolvedEmployeeId ||
+      selectedEmployee?.endorsed_employee_id ||
+      selectedEmployee?.raw?.endorsed_employee_id ||
+      selectedEmployee?.employee_id ||
+      selectedEmployee?.raw?.employee_id ||
+      null;
+
+    if (!employeeId) return;
+
+    const channel = supabase
+      .channel(`onboarding-rt-${employeeId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'onboarding',
+          filter: `employee_id=eq.${employeeId}`,
+        },
+        () => {
+          setOnboardingRefreshTrigger((x) => x + 1);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedEmployee, employeeDetailTab, resolvedEmployeeId]);
 
   const getFilename = (filePath) => {
     if (!filePath) return null;
@@ -1347,7 +1510,34 @@ function AgencyEndorsements() {
       });
     };
 
+    const extractFilePath = (obj) => {
+      if (!obj || typeof obj !== 'object') return null;
+      return (
+        obj.file_path ||
+        obj.filePath ||
+        obj.path ||
+        obj.storagePath ||
+        obj.storage_path ||
+        obj.url ||
+        obj.publicUrl ||
+        obj.public_url ||
+        null
+      );
+    };
+
     const idNumbers = requirementsData?.id_numbers || {};
+    const legacyDocs = Array.isArray(requirementsData?.documents) ? requirementsData.documents : [];
+
+    const findLegacyDoc = (key) => {
+      const needle = String(key || '').trim().toLowerCase();
+      if (!needle) return null;
+      return (
+        legacyDocs.find((doc) => {
+          const docKey = String(doc?.key || doc?.type || doc?.name || '').trim().toLowerCase();
+          return docKey === needle || docKey === needle.replace('-', '') || docKey.replace(/\s+/g, '') === needle;
+        }) || null
+      );
+    };
 
     if (isAgency) {
       const idMapping = [
@@ -1359,8 +1549,9 @@ function AgencyEndorsements() {
 
       idMapping.forEach(({ key, name }) => {
         const idData = idNumbers[key];
-        const filePath = idData?.file_path || idData?.filePath || null;
-        const status = normalizeDocStatus(idData?.status);
+        const legacyDoc = findLegacyDoc(key);
+        const filePath = extractFilePath(idData) || extractFilePath(legacyDoc);
+        const status = normalizeDocStatus(idData?.status || legacyDoc?.status);
         addDoc({ id: key, name, filePath, status });
       });
 
@@ -1377,7 +1568,7 @@ function AgencyEndorsements() {
 
     directIdMapping.forEach(({ key, name }) => {
       const idData = idNumbers[key];
-      const filePath = idData?.file_path || idData?.filePath || null;
+      const filePath = extractFilePath(idData);
       const status = normalizeDocStatus(idData?.status);
       addDoc({ id: key, name, filePath, status });
     });
@@ -1498,11 +1689,12 @@ function AgencyEndorsements() {
 
     setLoadingDocuments(true);
     try {
-      setEmployeeDocuments(buildEmployeeDocuments(employeeRequirements, employeeIsAgency));
+      const effectiveIsAgency = employeeIsAgency || getIsAgency(selectedEmployee);
+      setEmployeeDocuments(buildEmployeeDocuments(employeeRequirements, effectiveIsAgency));
     } finally {
       setLoadingDocuments(false);
     }
-  }, [employeeDetailTab, loadingRequirements, employeeRequirements, employeeIsAgency]);
+  }, [employeeDetailTab, loadingRequirements, employeeRequirements, employeeIsAgency, selectedEmployee]);
 
   // Load assessment records when documents tab is active
   useEffect(() => {
@@ -1968,12 +2160,27 @@ function AgencyEndorsements() {
     
     const idNums = employeeRequirements.id_numbers || {};
     const documents = employeeRequirements.documents || [];
+
+    const k = String(key || '').trim().toLowerCase();
+    const aliases = k === 'pagibig' ? ['pagibig', 'pag-ibig', 'pag_ibig'] : [k];
+    const matchKey = (value) => {
+      const s = String(value || '').trim().toLowerCase();
+      return aliases.includes(s);
+    };
     
-    const idData = idNums[key] || {};
-    const docData = documents.find(d => (d.key || d.type || d.name || '').toLowerCase() === key.toLowerCase());
+    const idData = aliases.map((a) => idNums[a]).find(Boolean) || {};
+    const docData = documents.find(d => matchKey(d.key || d.type || d.name || ''));
     
     const idNumber = idData.value || null;
-    const filePath = docData?.file_path || null;
+    const filePath =
+      idData?.file_path ||
+      idData?.filePath ||
+      docData?.file_path ||
+      docData?.filePath ||
+      docData?.path ||
+      docData?.storagePath ||
+      docData?.url ||
+      null;
     
     // Determine status
     let status = 'missing';
@@ -3677,94 +3884,76 @@ function AgencyEndorsements() {
                           {/* ONBOARDING TAB */}
                           {currentTab === 'onboarding' && (
                             <div className="space-y-6">
-                              {/* Trainings Section */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Trainings</h5>
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-gray-50">
-                                      <tr>
-                                        <th className="px-4 py-2 text-left text-gray-600">Training Name</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Date</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Status</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Certificate</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      <tr className="border-t border-gray-200">
-                                        <td className="px-4 py-3 text-gray-500 italic" colSpan="4">No trainings assigned yet.</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                </div>
+                              <div className="flex items-center justify-between mb-4">
+                                <h5 className="text-lg font-semibold text-gray-800">Onboarding Records</h5>
                               </div>
 
-                              {/* Training History Section */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Training History</h5>
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-gray-50">
-                                      <tr>
-                                        <th className="px-4 py-2 text-left text-gray-600">Training Name</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Date</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Taken At</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Certificate</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      <tr className="border-t border-gray-200">
-                                        <td className="px-4 py-3 text-gray-500 italic" colSpan="4">No training history yet.</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
+                              {onboardingLoading ? (
+                                <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-sm text-gray-500">
+                                  Loading onboarding records...
                                 </div>
-                                <button className="mt-2 text-sm text-blue-600 hover:underline">+ Add Training History</button>
-                              </div>
+                              ) : onboardingError ? (
+                                <div className="bg-white rounded-lg border border-red-200 p-6 text-sm text-red-700">
+                                  Failed to load onboarding records: {onboardingError}
+                                </div>
+                              ) : onboardingItems.length === 0 ? (
+                                <div className="bg-white rounded-lg border border-gray-200">
+                                  <div className="flex px-6 py-3 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    <div className="flex-1 text-center">Item Name</div>
+                                    <div className="flex-1 text-center">Description</div>
+                                    <div className="flex-1 text-center">Date Issued</div>
+                                    <div className="flex-1 text-center">Attachment</div>
+                                  </div>
+                                  <div className="p-16 text-center">
+                                    <svg className="w-16 h-16 mx-auto text-gray-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    <p className="text-gray-400 text-sm">No onboarding records yet</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                                  <div className="flex px-6 py-3 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-600 uppercase tracking-wider">
+                                    <div className="flex-1 text-center">Item Name</div>
+                                    <div className="flex-1 text-center">Description</div>
+                                    <div className="flex-1 text-center">Date Issued</div>
+                                    <div className="flex-1 text-center">Attachment</div>
+                                  </div>
 
-                              {/* Orientation Section */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Orientation</h5>
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-gray-50">
-                                      <tr>
-                                        <th className="px-4 py-2 text-left text-gray-600">Orientation Date</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Status</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Notes</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      <tr className="border-t border-gray-200">
-                                        <td className="px-4 py-3 text-gray-500 italic" colSpan="3">No orientation scheduled yet.</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
+                                  <div className="divide-y divide-gray-200">
+                                    {onboardingItems.map((ob) => (
+                                      <div key={ob.id} className="flex px-6 py-4 hover:bg-gray-50 transition-colors">
+                                        <div className="flex-1 text-sm text-gray-800 font-medium text-center">
+                                          {ob.item || '—'}
+                                        </div>
+                                        <div className="flex-1 text-sm text-gray-600 text-center">
+                                          {ob.description || <span className="text-gray-400">None</span>}
+                                        </div>
+                                        <div className="flex-1 text-sm text-gray-600 text-center">
+                                          {ob.date ? new Date(ob.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                                        </div>
+                                        <div className="flex-1 text-sm flex justify-center">
+                                          {ob.fileUrl ? (
+                                            <a
+                                              href={ob.fileUrl}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                              className="text-blue-600 hover:text-blue-800 underline flex items-center gap-1"
+                                            >
+                                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                              </svg>
+                                              View
+                                            </a>
+                                          ) : (
+                                            <span className="text-gray-400">None</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
-                              </div>
-
-                              {/* Deployed Items Section */}
-                              <div>
-                                <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Deployed Items</h5>
-                                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                                  <table className="w-full text-sm">
-                                    <thead className="bg-gray-50">
-                                      <tr>
-                                        <th className="px-4 py-2 text-left text-gray-600">Item</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Serial/ID</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Date Issued</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Condition</th>
-                                        <th className="px-4 py-2 text-left text-gray-600">Status</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      <tr className="border-t border-gray-200">
-                                        <td className="px-4 py-3 text-gray-500 italic" colSpan="5">No items deployed yet.</td>
-                                      </tr>
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
+                              )}
                             </div>
                           )}
 
@@ -4006,22 +4195,22 @@ function AgencyEndorsements() {
                               {/* Government IDs (Declared) */}
                               <div>
                                 <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">Government IDs (Declared)</h5>
-                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
                                   <div>
                                     <span className="text-gray-500">SSS:</span>
-                                    <span className="ml-2 text-gray-800">{formData.hasSSS ? 'Yes' : 'No'}</span>
+                                    <span className="ml-2">{formData.hasSSS ? 'Yes' : 'No'}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">PAG-IBIG:</span>
-                                    <span className="ml-2 text-gray-800">{formData.hasPAGIBIG ? 'Yes' : 'No'}</span>
+                                    <span className="ml-2">{formData.hasPAGIBIG ? 'Yes' : 'No'}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">TIN:</span>
-                                    <span className="ml-2 text-gray-800">{formData.hasTIN ? 'Yes' : 'No'}</span>
+                                    <span className="ml-2">{formData.hasTIN ? 'Yes' : 'No'}</span>
                                   </div>
                                   <div>
                                     <span className="text-gray-500">PhilHealth:</span>
-                                    <span className="ml-2 text-gray-800">{formData.hasPhilHealth ? 'Yes' : 'No'}</span>
+                                    <span className="ml-2">{formData.hasPhilHealth ? 'Yes' : 'No'}</span>
                                   </div>
                                 </div>
                               </div>
