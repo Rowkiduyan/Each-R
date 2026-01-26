@@ -2558,11 +2558,15 @@ function HrTrainings() {
                           value={form.time}
                           onChange={onChange}
                           type="time"
+                          min="08:00"
                           required
                           className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
                             fieldErrors.time ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
                           }`}
                         />
+                        {form.time && form.time < '08:00' && (
+                          <p className="text-red-600 text-xs font-medium mt-1">Start time cannot be earlier than 8:00 AM</p>
+                        )}
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
@@ -2573,11 +2577,15 @@ function HrTrainings() {
                           value={form.end_time}
                           onChange={onChange}
                           type="time"
+                          max="17:00"
                           required
                           className={`w-full rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
                             fieldErrors.end_time ? 'border-2 border-red-500' : 'border border-gray-300 focus:border-red-500'
                           }`}
                         />
+                        {form.end_time && form.end_time > '17:00' && (
+                          <p className="text-red-600 text-xs font-medium mt-1">End time cannot be later than 5:00 PM</p>
+                        )}
                       </div>
                     </div>
                     {form.time && form.end_time && form.end_time <= form.time && (
@@ -3259,9 +3267,13 @@ function HrTrainings() {
                           value={editForm.time}
                           onChange={onEditChange}
                           type="time"
+                          min="08:00"
                           required
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
+                        {editForm.time && editForm.time < '08:00' && (
+                          <p className="text-red-600 text-xs font-medium mt-1">Start time cannot be earlier than 8:00 AM</p>
+                        )}
                       </div>
                       <div>
                         <label className="block text-xs font-medium text-gray-700 mb-0.5">
@@ -3272,9 +3284,13 @@ function HrTrainings() {
                           value={editForm.end_time}
                           onChange={onEditChange}
                           type="time"
+                          max="17:00"
                           required
                           className="w-full border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-colors"
                         />
+                        {editForm.end_time && editForm.end_time > '17:00' && (
+                          <p className="text-red-600 text-xs font-medium mt-1">End time cannot be later than 5:00 PM</p>
+                        )}
                       </div>
                     </div>
                     {editForm.time && editForm.end_time && editForm.end_time <= editForm.time && (

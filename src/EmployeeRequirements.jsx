@@ -243,8 +243,8 @@ function EmployeeRequirements() {
     return daysUntilExpiry <= 30; // Expired or expiring within 30 days
   };
 
-  // Medical Examination Results: expiry starts from hire time (for testing: 1 day; later: 365 days)
-  const MEDICAL_EXAMS_VALIDITY_DAYS = 1;
+  // Medical Examination Results: expiry starts from hire time (1 year validity)
+  const MEDICAL_EXAMS_VALIDITY_DAYS = 365;
   const getMedicalExamsExpiryDate = (deployedDate) => {
     if (!deployedDate) return null;
     const base = new Date(deployedDate);

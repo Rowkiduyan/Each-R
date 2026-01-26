@@ -150,7 +150,7 @@ function AgencyNotificationBell() {
         // Get all employees endorsed by this agency
         const { data: endorsedEmployees, error: empError } = await supabase
           .from('employees')
-          .select('id, email, fname, lname, requirements')
+          .select('id, email, fname, lname, requirements, position')
           .eq('endorsed_by_agency_id', profileId);
 
         if (empError) {
@@ -168,6 +168,7 @@ function AgencyNotificationBell() {
         // Check requirements for each endorsed employee
         for (const employee of endorsedEmployees) {
           const requirements = employee.requirements || {};
+          const position = employee.position || '';
           const missingCategories = [];
           const employeeName = `${employee.fname || ''} ${employee.lname || ''}`.trim() || 'Unknown Employee';
 
@@ -181,10 +182,15 @@ function AgencyNotificationBell() {
             missingCategories.push('Government IDs');
           }
 
-          // Driver's License - check if required and validated
-          const license = requirements.license || {};
-          if (Object.keys(license).length > 0 && license.status !== 'Validated') {
-            missingCategories.push("Driver's License");
+          // Driver's License - only required for delivery/driver positions
+          const deliveryPositions = ['Delivery Driver', 'Delivery Helper', 'Rider/Messenger'];
+          const requiresLicense = deliveryPositions.includes(position);
+          
+          if (requiresLicense) {
+            const license = requirements.license || {};
+            if (Object.keys(license).length > 0 && license.status !== 'Validated') {
+              missingCategories.push("Driver's License");
+            }
           }
 
           // Medical Examination - all must be validated
@@ -215,16 +221,6 @@ function AgencyNotificationBell() {
           );
           if (!allClearancesValidated) {
             missingCategories.push('Clearances');
-          }
-
-          // Educational Documents - all must be validated
-          const eduDocs = requirements.educationalDocuments || {};
-          const eduDocTypes = ['diploma', 'transcript_of_records'];
-          const allEduDocsValidated = eduDocTypes.every(doc =>
-            eduDocs[doc]?.status === 'Validated' || eduDocs[doc]?.status === 'approved'
-          );
-          if (!allEduDocsValidated) {
-            missingCategories.push('Educational Documents');
           }
 
           // HR Additional Documents - check hr_requests array for pending items

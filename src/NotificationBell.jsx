@@ -145,10 +145,10 @@ function NotificationBell() {
       try {
         console.log('Checking requirements for:', employeeEmail);
         
-        // Query the employees table for the requirements JSONB column
+        // Query the employees table for the requirements JSONB column and position
         const { data: employee, error } = await supabase
           .from('employees')
-          .select('requirements')
+          .select('requirements, position')
           .eq('email', employeeEmail)
           .maybeSingle();
 
@@ -158,8 +158,10 @@ function NotificationBell() {
         }
 
         console.log('Requirements data:', employee?.requirements);
+        console.log('Employee position:', employee?.position);
 
         const requirements = employee?.requirements || {};
+        const position = employee?.position || '';
 
         // Check for missing or unvalidated requirements
         const missingCategories = [];
@@ -217,22 +219,17 @@ function NotificationBell() {
           missingCategories.push('Clearances');
         }
 
-        // Educational Documents - all must be validated
-        const eduDocuments = requirements.educationalDocuments || {};
-        const eduDocs = ['diploma', 'transcript_of_records'];
-        const allEduDocsValidated = eduDocs.every(doc => {
-          const status = normalizeStatus(eduDocuments[doc]?.status);
-          return status === 'approved';
-        });
-        if (!allEduDocsValidated) {
-          missingCategories.push('Educational Documents');
-        }
-
         // Driver's License - SEPARATE CATEGORY (missing if empty object or not validated)
-        const license = requirements.license || {};
-        const hasLicenseData = Object.keys(license).length > 0 && license.status;
-        if (!hasLicenseData || normalizeStatus(license.status) !== 'approved') {
-          missingCategories.push("Driver's License");
+        // Only required for delivery/driver positions
+        const deliveryPositions = ['Delivery Driver', 'Delivery Helper', 'Rider/Messenger'];
+        const requiresLicense = deliveryPositions.includes(position);
+        
+        if (requiresLicense) {
+          const license = requirements.license || {};
+          const hasLicenseData = Object.keys(license).length > 0 && license.status;
+          if (!hasLicenseData || normalizeStatus(license.status) !== 'approved') {
+            missingCategories.push("Driver's License");
+          }
         }
 
         console.log('Missing categories:', missingCategories);
