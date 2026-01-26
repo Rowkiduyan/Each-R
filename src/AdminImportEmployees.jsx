@@ -33,7 +33,7 @@ function AdminImportEmployees() {
   }, []);
 
   // Employee columns
-  const employeeRequiredColumns = ['email', 'fname', 'lname', 'mname', 'contact_number', 'position', 'depot', 'department', 'source', 'status', 'birthday'];
+  const employeeRequiredColumns = ['email', 'fname', 'lname', 'mname', 'contact_number', 'position', 'depot', 'department', 'source', 'status', 'personal_email', 'birthday'];
   const allowedSources = ['Internal', 'Agency'];
   const allowedStatuses = ['Regular', 'Probationary'];
 
