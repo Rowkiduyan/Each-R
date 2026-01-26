@@ -289,7 +289,8 @@ function AdminImportEmployees() {
               department: emp.department || '',
               source: emp.source || 'Internal',
               status: emp.status || 'Regular',
-              birthday: emp.birthday || null
+              birthday: emp.birthday || null,
+              personal_email: emp.personal_email || null
             });
 
           if (employeeError) {
@@ -611,12 +612,12 @@ function AdminImportEmployees() {
         // Get from employees table
         const { data: employeeData } = await supabase
           .from('employees')
-          .select('fname, lname, position, depot, email')
+          .select('fname, lname, position, depot, email, personal_email')
           .eq('email', account.email)
           .maybeSingle();
         
-        if (!employeeData || !employeeData.email) {
-          console.error(`No employee data found for ${account.email}`);
+        if (!employeeData || !employeeData.personal_email) {
+          console.error(`No employee data or personal_email found for ${account.email}`);
           setEmailProgress({ sent: i + 1, total: accounts.length });
           continue;
         }
@@ -626,7 +627,7 @@ function AdminImportEmployees() {
           'template_k8bt6ed',
           {
             to_name: `${employeeData.fname} ${employeeData.lname}`,
-            to_email: employeeData.email,
+            to_email: employeeData.personal_email,
             email: account.email,
             password: account.password,
             login_url: window.location.origin + '/employee/login',
@@ -841,6 +842,7 @@ function AdminImportEmployees() {
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Position</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Depot</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Department</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Personal Email</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Source</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
                       </tr>
@@ -853,6 +855,7 @@ function AdminImportEmployees() {
                           <td className="px-3 py-2 text-sm text-gray-900">{row.position || '-'}</td>
                           <td className="px-3 py-2 text-sm text-gray-900">{row.depot}</td>
                           <td className="px-3 py-2 text-sm text-gray-900">{row.department || '-'}</td>
+                          <td className="px-3 py-2 text-sm text-gray-900">{row.personal_email || '-'}</td>
                           <td className="px-3 py-2 text-sm text-gray-900">
                             <span className={`px-2 py-1 text-xs rounded-full ${
                               row.source === 'Agency' ? 'bg-blue-100 text-blue-800' :
