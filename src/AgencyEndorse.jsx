@@ -166,9 +166,15 @@ function AgencyEndorse() {
     };
   };
 
+  const buildFullName = (firstName, middleName, lastName) =>
+    [firstName, middleName, lastName]
+      .map((v) => String(v || "").trim())
+      .filter(Boolean)
+      .join(" ");
+
   const getApplicantNameParts = (vals) => {
     const lname = String(vals.lastName || "").trim();
-    const fullName = String(vals.fullName || "").trim();
+    let fullName = String(vals.fullName || "").trim();
     let fname = String(vals.firstName || "").trim();
     let mname = String(vals.middleName || "").trim();
 
@@ -176,6 +182,10 @@ function AgencyEndorse() {
       const parsed = parseNameFromFullName(fullName, lname);
       fname = parsed.firstName;
       mname = parsed.middleName;
+    }
+
+    if (!fullName) {
+      fullName = buildFullName(fname, mname, lname);
     }
 
     return { fname, mname, lname, fullName };
@@ -190,40 +200,47 @@ function AgencyEndorse() {
   };
 
   const isApplicantBlank = (vals) => {
-    const baseline = makeEmptyValues();
-    const obj = vals || baseline;
+    const v = vals || makeEmptyValues();
 
-    for (const key of Object.keys(baseline)) {
-      const v = obj[key];
-      const b = baseline[key];
+    // Ignore auto-prefilled job fields from determining user input
+    const jobKeys = ["department", "position", "depot"];
 
-      if (typeof File !== 'undefined' && v instanceof File) return false;
-      if (v && typeof v === 'object' && v?.name) return false;
+    // If any primary identifying/contact field is present, treat as non-blank
+    const primaryFields = [
+      "firstName",
+      "middleName",
+      "lastName",
+      "fullName",
+      "email",
+      "contactNumber",
+      "birthday",
+      "street",
+      "province",
+      "city",
+      "barangay",
+      "zip",
+      "dateAvailable",
+    ];
 
-      if (Array.isArray(v) || Array.isArray(b)) {
-        const arr = Array.isArray(v) ? v : [];
-        if (arr.length > 0) return false;
-        continue;
-      }
-
-      if (typeof b === 'boolean') {
-        if (v !== b) return false;
-        continue;
-      }
-
-      if (typeof b === 'number') {
-        const num = Number(v);
-        const baseNum = Number(b);
-        if (Number.isFinite(num) && Number.isFinite(baseNum) && num !== baseNum) return false;
-        if (Number.isFinite(num) && !Number.isFinite(baseNum)) return false;
-        continue;
-      }
-
-      // Treat default strings (e.g., "no") as blank.
-      const vs = String(v ?? '').trim();
-      const bs = String(b ?? '').trim();
-      if (vs !== bs) return false;
+    for (const key of primaryFields) {
+      if (jobKeys.includes(key)) continue;
+      if (String(v[key] ?? "").trim() !== "") return false;
     }
+
+    // If any uploads exist, treat as non-blank
+    if (typeof File !== "undefined") {
+      if (v.resumeFile instanceof File) return false;
+      if (v.trainingCertFile instanceof File) return false;
+      if (v.licenseFile instanceof File) return false;
+    }
+
+    // If any list selections exist, treat as non-blank
+    if (Array.isArray(v.restrictionCodes) && v.restrictionCodes.length > 0) return false;
+    if (Array.isArray(v.vehicleTypes) && v.vehicleTypes.length > 0) return false;
+    if (Array.isArray(v.troubleshootingTasks) && v.troubleshootingTasks.length > 0) return false;
+
+    // If explicit answers differ from defaults (e.g., employed "yes"), treat as non-blank
+    if (String(v.employed ?? "").trim().toLowerCase() === "yes") return false;
 
     return true;
   };
@@ -568,15 +585,13 @@ function AgencyEndorse() {
         };
       }
 
-      if (key === "lastName" && current.fullName) {
-        const parsed = parseNameFromFullName(current.fullName, value);
+      if (key === "firstName" || key === "middleName" || key === "lastName") {
+        const next = { ...current, [key]: value };
         return {
           ...prev,
           [appId]: {
-            ...current,
-            lastName: value,
-            firstName: parsed.firstName,
-            middleName: parsed.middleName,
+            ...next,
+            fullName: buildFullName(next.firstName, next.middleName, next.lastName),
           },
         };
       }
@@ -979,6 +994,8 @@ function AgencyEndorse() {
       const parsed = parseNameFromFullName(values.fullName, values.lastName);
       if (!values.firstName && parsed.firstName) values.firstName = parsed.firstName;
       if (!values.middleName && parsed.middleName) values.middleName = parsed.middleName;
+    } else if (values.firstName || values.middleName || values.lastName) {
+      values.fullName = buildFullName(values.firstName, values.middleName, values.lastName);
     }
 
     return values;
@@ -1073,18 +1090,18 @@ function AgencyEndorse() {
       setCsvError('');
       if (csvInputRef.current) csvInputRef.current.value = '';
 
-      // After import, open Summary so the CSV flow can proceed to endorsement.
-      // If validation fails, users will see a validation alert.
+      // After import, show a success message (do not auto-open summary).
       setTimeout(() => {
+        const baseMsg = `Successfully imported ${data.length} employee(s).`;
         if (isDeliveryDriverJob) {
           setSuccessMessage(
-            `Successfully imported ${data.length} employee(s). Please upload the required License Photocopy for each employee before endorsing.`
+            `${baseMsg} Please upload the required License Photocopy for each employee before endorsing.`
           );
-          setSuccessNavigatePath(null);
-          setShowSuccessAlert(true);
         } else {
-          handleOpenSummary();
+          setSuccessMessage(baseMsg);
         }
+        setSuccessNavigatePath(null);
+        setShowSuccessAlert(true);
       }, 0);
     };
     reader.readAsText(csvFile);
@@ -1175,10 +1192,9 @@ function AgencyEndorse() {
       req("employed", "Currently Employed");
 
       req("lastName", "Last Name");
-      const hasFirstOrFull =
-        (typeof vals.firstName === "string" && vals.firstName.trim()) ||
-        (typeof vals.fullName === "string" && vals.fullName.trim());
-      if (!hasFirstOrFull) errors.push("Full Name");
+      const hasFirstName =
+        typeof vals.firstName === "string" && vals.firstName.trim();
+      if (!hasFirstName) errors.push("First Name");
       req("birthday", "Birthday");
       req("maritalStatus", "Marital Status");
       req("sex", "Sex");
@@ -1349,7 +1365,7 @@ function AgencyEndorse() {
     const depot = vals.depot || null;
 
     if (!fname || !lname || !email || !contact) {
-      throw new Error("Please fill required fields before endorsing: Full Name, Last Name, Contact Number, Email.");
+      throw new Error("Please fill required fields before endorsing: First Name, Last Name, Contact Number, Email.");
     }
     if (!/^09\d{9}$/.test(contact)) {
       throw new Error("Contact Number must be exactly 11 digits and start with 09.");
@@ -2196,14 +2212,18 @@ function AgencyEndorse() {
                   <h2 className="text-base font-semibold text-gray-800">Personal Information</h2>
                 </div>
                 <div className="p-6 space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name <span className="text-[#800000]">*</span></label>
                       <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter last name" value={fv.lastName} onChange={(e) => handleChange(activeApplicant, "lastName", e.target.value)} />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Full Name <span className="text-[#800000]">*</span></label>
-                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter full name (first + middle)" value={fv.fullName} onChange={(e) => handleChange(activeApplicant, "fullName", e.target.value)} />
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name <span className="text-[#800000]">*</span></label>
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter first name" value={fv.firstName} onChange={(e) => handleChange(activeApplicant, "firstName", e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Middle Name</label>
+                      <input className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]" placeholder="Enter middle name" value={fv.middleName} onChange={(e) => handleChange(activeApplicant, "middleName", e.target.value)} />
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2236,6 +2256,12 @@ function AgencyEndorse() {
             </div>
           </div>
 
+              {/* Contact Information */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                  <h2 className="text-base font-semibold text-gray-800">Contact Information</h2>
+                </div>
+                <div className="p-6 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-[#800000]">*</span></label>
@@ -2261,6 +2287,8 @@ function AgencyEndorse() {
                       />
                     </div>
                   </div>
+                </div>
+              </div>
 
               {/* Address */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-visible">
@@ -3082,10 +3110,9 @@ function AgencyEndorse() {
                 return (
                   <div key={a.id} className="border border-gray-200 rounded-xl overflow-hidden">
                     <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-                      <div className="font-semibold text-gray-800">{a.name}</div>
-                      {a.id === activeApplicant && (
-                        <span className="text-xs px-2 py-1 rounded-full bg-[#800000]/10 text-[#800000]">Active</span>
-                      )}
+                      <div className="font-semibold text-gray-800">
+                        {getApplicantDisplayNameFromValues(formValues[a.id] || makeEmptyValues()) || a.name}
+                      </div>
                     </div>
                     <div className="p-5 space-y-5">
                       <div>
@@ -3461,7 +3488,7 @@ function AgencyEndorse() {
                     <p className="text-sm font-medium text-blue-800 mb-1">CSV Format Requirements</p>
                     <p className="text-xs text-blue-700">Your CSV file should include column headers. Download the template below for the full supported list.</p>
                     <p className="text-xs text-blue-600 mt-1 font-mono bg-blue-100 px-2 py-1 rounded">
-                      fullname, lastname, email, contact, position, department, depot, available_start_date, employed, birthday, marital_status, sex, unit_house_number, street, barangay, city, province, zip, education, ...
+                      lastname, firstname, middlename, email, contact, position, department, depot, available_start_date, employed, birthday, marital_status, sex, unit_house_number, street, barangay, city, province, zip, education, ...
                     </p>
                     <p className="text-xs text-blue-700 mt-2">
                       Notes: booleans accept <span className="font-mono">yes/no</span>, <span className="font-mono">true/false</span>, or <span className="font-mono">1/0</span>. Lists use <span className="font-mono">|</span> (e.g. <span className="font-mono">restriction_codes=1|2</span>). File uploads (resume/license/certificates) are not supported by CSV and must be uploaded manually.
@@ -3644,6 +3671,26 @@ function AgencyEndorse() {
                 </svg>
                 Import Employees
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Submitting Endorsement Loading Modal */}
+      {isSubmitting && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-sm mx-4 overflow-hidden border shadow-lg">
+            <div className="p-6 text-center">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 rounded-full bg-[#800000]/10 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-[#800000] animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                </div>
+              </div>
+              <div className="text-lg font-semibold text-gray-800">Submitting endorsement...</div>
+              <div className="text-sm text-gray-500 mt-1">Please wait while we process your submission.</div>
             </div>
           </div>
         </div>

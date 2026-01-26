@@ -52,6 +52,13 @@ function SkillsInput({ skills = [], onChange }) {
     }
   };
 
+  const normalizeSkillValue = (value) => String(value ?? '').replace(/\s+/g, ' ').trim();
+
+  const handleSkillCommit = (index, rawValue) => {
+    const value = normalizeSkillValue(rawValue);
+    handleSkillChange(index, value);
+  };
+
   const handleSkillRemove = (index) => {
     const newInputs = skillInputs.filter((_, i) => i !== index);
     // Ensure at least one empty input remains
@@ -98,6 +105,7 @@ function SkillsInput({ skills = [], onChange }) {
               options={getFilteredSuggestions(skill, index)}
               placeholder={index === skillInputs.length - 1 ? "Type to add a skill..." : "Skill"}
               onSelect={(option) => handleSkillSelect(index, option)}
+              onBlur={(value) => handleSkillCommit(index, value)}
               listId={`skill-input-${index}`}
             />
           </div>

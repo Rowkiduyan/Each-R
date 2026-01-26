@@ -700,7 +700,7 @@ function AgencyRequirements() {
   const handleUploadSubmit = async () => {
     // Validate form
     if (uploadTarget?.type === 'default' && !uploadForm.idNumber.trim()) {
-      setAlertMessage('Please enter the ID number');
+      setAlertMessage('Please enter the number');
       setShowErrorAlert(true);
       return;
     }
@@ -1759,7 +1759,7 @@ function AgencyRequirements() {
               {uploadTarget.type === 'default' && (
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
-                    ID Number <span className="text-red-500">*</span>
+                    Number <span className="text-red-500">*</span>
                   </label>
                   <div className="relative">
                     <div className="absolute left-3 top-1/2 -translate-y-1/2">
@@ -1771,11 +1771,11 @@ function AgencyRequirements() {
                       type="text"
                       value={uploadForm.idNumber}
                       onChange={(e) => setUploadForm(prev => ({ ...prev, idNumber: e.target.value }))}
-                      placeholder={`Enter ${uploadTarget.name} ID Number`}
+                      placeholder={`Enter ${uploadTarget.name} Number`}
                       className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 transition-all"
                     />
                   </div>
-                  <p className="text-xs text-gray-500 mt-1.5">Enter the ID number exactly as it appears on the document</p>
+                  <p className="text-xs text-gray-500 mt-1.5">Enter the number exactly as it appears on the document</p>
                 </div>
               )}
 

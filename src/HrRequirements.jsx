@@ -216,6 +216,31 @@ function HrRequirements() {
         if (empError) throw empError;
 
         if (employeesData && employeesData.length > 0) {
+          // Fetch agency names for employees endorsed by agencies (similar to Employees.jsx)
+          const agencyIds = Array.from(new Set(
+            employeesData
+              .map((e) => e?.endorsed_by_agency_id || e?.agency_profile_id)
+              .filter(Boolean)
+          ));
+
+          const agencyNamesMap = {};
+          if (agencyIds.length > 0) {
+            try {
+              const { data: agencyProfiles } = await supabase
+                .from('profiles')
+                .select('id, agency_name')
+                .in('id', agencyIds);
+              if (agencyProfiles) {
+                agencyProfiles.forEach((profile) => {
+                  if (profile && profile.id && profile.agency_name) {
+                    agencyNamesMap[profile.id] = profile.agency_name;
+                  }
+                });
+              }
+            } catch (e) {
+              console.warn('[HrRequirements] Failed to load agency names:', e);
+            }
+          }
           // Pull marital status + educational attainment from the recruitment/applicants record.
           // In this project, `applications.user_id` matches `applicants.id` and also becomes `employees.id` on hire.
           // (See HrRecruitment.jsx: applications -> applicants, then employees.id = applicationData.user_id)
@@ -492,6 +517,10 @@ function HrRequirements() {
               employeeId: emp.id,
               email: emp.email,
               isAgency: emp.is_agency === true,
+              agency_name: (() => {
+                const key = emp?.endorsed_by_agency_id || emp?.agency_profile_id;
+                return key && agencyNamesMap[key] ? agencyNamesMap[key] : null;
+              })(),
               employmentStatus,
               marital_status: emp.marital_status ?? enrichedApplicant?.marital_status ?? null,
               educational_attainment: emp.educational_attainment ?? enrichedApplicant?.educational_attainment ?? null,
@@ -2487,7 +2516,11 @@ function HrRequirements() {
                                 <div className="flex items-center gap-2">
                                   <p className="text-sm font-medium text-gray-800">{employee.name}</p>
                                   {employee.isAgency && (
-                                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">AGENCY</span>
+                                    employee.agency_name ? (
+                                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">{employee.agency_name}</span>
+                                    ) : (
+                                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded">Agency</span>
+                                    )
                                   )}
                                 </div>
                                 <p className="text-xs text-gray-500">Deployed {formatDate(employee.deployedDate)}</p>

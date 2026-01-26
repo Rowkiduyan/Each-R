@@ -3390,7 +3390,7 @@ function Employees() {
                                     )}
                                   </div>
                                   <div>
-                                    <span className="text-gray-500">Application Form:</span>
+                                    <span className="text-gray-500"></span>
                                     {applicationFormData && applicationFormData.url ? (
                                       <a 
                                         href={applicationFormData.url} 
@@ -3401,7 +3401,7 @@ function Employees() {
                                         View File
                                       </a>
                                     ) : (
-                                      <span className="ml-2 text-gray-400 italic">No file</span>
+                                      <span className="ml-2 text-gray-400 italic"></span>
                                     )}
                                   </div>
                                 </div>

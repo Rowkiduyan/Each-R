@@ -12,6 +12,7 @@ function AutocompleteInput({
   className = '',
   helperText = '',
   onSelect = null,
+  onBlur = null,
 }) {
   console.log('AutocompleteInput rendered with value:', value, 'options count:', Array.isArray(options) ? options.length : 0, 'onChange type:', typeof onChange);
   const [filteredOptions, setFilteredOptions] = useState([]);
@@ -204,6 +205,15 @@ function AutocompleteInput({
           value={internalValue}
           onChange={handleInputChange}
           onInput={handleInputChange}
+          onBlur={(e) => {
+            if (!disabled) {
+              setShowSuggestions(false);
+              setHighlightedIndex(-1);
+            }
+            if (onBlur && typeof onBlur === 'function') {
+              onBlur(e.target.value);
+            }
+          }}
           onFocus={(e) => {
             console.log('🔥 AutocompleteInput onFocus fired');
             e.stopPropagation();
