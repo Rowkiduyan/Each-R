@@ -2536,7 +2536,8 @@ function HrTrainings() {
                             </div>
                           </div>
                         </div>
-                        <p className="text-xs text-gray-600 mb-4">Add up to 4 signatories for the certificate</p>
+                        <p className="text-xs text-gray-600 mb-2">Add up to 4 signatories for the certificate</p>
+                        <p className="text-xs text-gray-500 italic mb-4">Ideal signature image size: 200px width × 100px height</p>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Operations Manager */}

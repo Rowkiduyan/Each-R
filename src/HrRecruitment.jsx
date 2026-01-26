@@ -302,6 +302,9 @@ function HrRecruitment() {
   const [pendingJobApprove, setPendingJobApprove] = useState(null); // { jobId, jobTitle }
   const [isProcessingConfirm, setIsProcessingConfirm] = useState(false);
   const [isOpeningConfirmDialog, setIsOpeningConfirmDialog] = useState(false);
+  const [showRejectionReasonModal, setShowRejectionReasonModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [pendingJobReject, setPendingJobReject] = useState(null); // { jobId, jobTitle, approvalStatus }
   
   // Filters for unified applications table
   const [departmentFilter, setDepartmentFilter] = useState("All");
@@ -4315,9 +4318,20 @@ function HrRecruitment() {
     }
   };
 
-  // ---- REMOVE JOB POST: Show confirmation dialog
+  // ---- REMOVE JOB POST: Show confirmation dialog or rejection reason modal for pending posts
   const handleRemoveJobPost = (jobId, jobTitle) => {
-    // Clear any previous state
+    // Find the job post to check if it's pending
+    const jobPost = jobPosts.find(job => job.actualJobId === jobId);
+    
+    // If it's a pending job post AND user is HR, show rejection reason modal instead
+    if (jobPost && jobPost.approval_status === 'pending' && currentUser?.role?.toUpperCase() === 'HR') {
+      setPendingJobReject({ jobId, jobTitle, approvalStatus: jobPost.approval_status });
+      setRejectionReason('');
+      setShowRejectionReasonModal(true);
+      return;
+    }
+    
+    // For non-pending posts or non-HR users, show regular confirmation dialog
     setPendingJobDelete(null);
     setConfirmCallback(null);
     setIsProcessingConfirm(false);
@@ -4329,7 +4343,7 @@ function HrRecruitment() {
   };
 
   // Execute job post deletion - called ONLY from OK button
-  const executeJobPostDeletion = async (jobId, jobTitle) => {
+  const executeJobPostDeletion = async (jobId, jobTitle, reason = null) => {
     try {
       // First, fetch the job post details to check if we need to notify the creator
       const { data: jobPost, error: fetchError } = await supabase
@@ -4356,15 +4370,19 @@ function HrRecruitment() {
         if (jobPost?.approval_status === 'pending' && jobPost?.created_by) {
           try {
             const { createNotification } = await import('./notifications');
+            const notificationMessage = reason 
+              ? `Your pending job post "${jobTitle}" has been rejected by the HR Manager.\n\nReason: ${reason}`
+              : `Your pending job post "${jobTitle}" has been rejected by the HR Manager.`;
+            
             await createNotification({
               userId: jobPost.created_by,
               applicationId: null,
-              type: 'job_post_removed',
-              title: 'Job Post Removed',
-              message: `Your pending job post "${jobTitle}" has been removed by the HR Manager.`,
+              type: 'job_post_rejected',
+              title: 'Job Post Rejected',
+              message: notificationMessage,
               userType: 'profile'
             });
-            console.log('Notification sent to HRC user about job post removal');
+            console.log('Notification sent to HRC user about job post rejection');
           } catch (notifError) {
             console.error('Error sending notification to HRC user:', notifError);
           }
@@ -7733,7 +7751,7 @@ function HrRecruitment() {
                                 }}
                                 className="px-3 py-1.5 rounded-full border border-red-300 text-xs text-red-700 hover:bg-red-50"
                               >
-                                Remove
+                                {job.status === "Pending" && currentUser?.role?.toUpperCase() === 'HR' ? 'Reject' : 'Remove'}
                               </button>
                             </>
                           ) : (
@@ -8445,6 +8463,71 @@ function HrRecruitment() {
                 }}
               >
                 {isProcessingConfirm ? "Processing..." : "OK"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Reason Modal (for pending job posts only) */}
+      {showRejectionReasonModal && pendingJobReject && (
+        <div 
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowRejectionReasonModal(false);
+              setPendingJobReject(null);
+              setRejectionReason('');
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg shadow-lg w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold mb-4 text-gray-800">Reject Job Post</h3>
+            <p className="text-sm text-gray-600 mb-2">
+              You are about to reject the pending job post "<span className="font-semibold">{pendingJobReject.jobTitle}</span>".
+            </p>
+            <p className="text-sm text-gray-600 mb-4">
+              <span className="font-semibold">Note:</span> Rejecting this will remove the pending job post. Please provide a reason for the rejection:
+            </p>
+            <textarea
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Enter reason for rejection..."
+              className="w-full border border-gray-300 rounded-md p-3 text-sm focus:outline-none focus:ring-2 focus:ring-red-500 resize-none"
+              rows={4}
+            />
+            <div className="flex justify-end gap-3 mt-4">
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300"
+                onClick={() => {
+                  setShowRejectionReasonModal(false);
+                  setPendingJobReject(null);
+                  setRejectionReason('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                disabled={!rejectionReason.trim()}
+                onClick={async () => {
+                  if (!rejectionReason.trim()) return;
+                  
+                  const { jobId, jobTitle } = pendingJobReject;
+                  setShowRejectionReasonModal(false);
+                  setPendingJobReject(null);
+                  
+                  // Execute deletion with reason
+                  await executeJobPostDeletion(jobId, jobTitle, rejectionReason.trim());
+                  setRejectionReason('');
+                }}
+              >
+                Reject Job Post
               </button>
             </div>
           </div>
