@@ -1215,12 +1215,57 @@ function AgencyEndorsements() {
 
   // Keep selectedEmployee in sync with latest endorsedEmployees data
   useEffect(() => {
-    if (!selectedEmployee) return;
-    const updated = endorsedEmployees.find(e => e.id === selectedEmployee.id);
-    if (updated && updated !== selectedEmployee) {
-      setSelectedEmployee(updated);
-    }
-  }, [endorsedEmployees, selectedEmployee]);
+    const selectedId = selectedEmployee?.id;
+    if (!selectedId) return;
+    const updated = endorsedEmployees.find((e) => e?.id === selectedId);
+    if (!updated) return;
+
+    const stableStringify = (v) => {
+      try {
+        return typeof v === 'string' ? v : JSON.stringify(v);
+      } catch {
+        return String(v);
+      }
+    };
+
+    setSelectedEmployee((prev) => {
+      if (!prev || prev.id !== selectedId) return prev;
+
+      const merged = {
+        ...prev,
+        ...updated,
+      };
+
+      // Preserve any resolved employee linkage we already computed locally
+      if (prev.endorsed_employee_id && !merged.endorsed_employee_id) {
+        merged.endorsed_employee_id = prev.endorsed_employee_id;
+      }
+
+      // Prefer previous raw overrides if present
+      if (prev.raw || updated.raw) {
+        merged.raw = { ...(updated.raw || {}), ...(prev.raw || {}) };
+      }
+
+      const keys = [
+        'status',
+        'endorsed',
+        'interview_date',
+        'interview_time',
+        'interview_location',
+        'interviewer',
+        'interview_confirmed',
+        'endorsed_employee_id',
+        'payload',
+      ];
+
+      const changed = keys.some((k) => {
+        if (k === 'payload') return stableStringify(prev.payload) !== stableStringify(merged.payload);
+        return String(prev?.[k] ?? '') !== String(merged?.[k] ?? '');
+      });
+
+      return changed ? merged : prev;
+    });
+  }, [endorsedEmployees, selectedEmployee?.id]);
 
   // Load requirements for selected employee
   useEffect(() => {
@@ -1251,7 +1296,15 @@ function AgencyEndorsements() {
           const hiredMatch = findHiredEmployeeMatch(selectedEmployee);
           if (hiredMatch?.id) {
             employeeId = hiredMatch.id;
-            setSelectedEmployee((prev) => (prev ? { ...prev, endorsed_employee_id: employeeId } : prev));
+            setSelectedEmployee((prev) => {
+              if (!prev) return prev;
+              if (String(prev.endorsed_employee_id || '') === String(employeeId || '')) return prev;
+              return {
+                ...prev,
+                endorsed_employee_id: employeeId,
+                raw: { ...(prev.raw || {}), endorsed_employee_id: employeeId },
+              };
+            });
           }
         }
 
@@ -1275,7 +1328,15 @@ function AgencyEndorsements() {
 
           if (!error && data?.id) {
             employeeId = data.id;
-            setSelectedEmployee((prev) => prev ? { ...prev, endorsed_employee_id: employeeId } : prev);
+            setSelectedEmployee((prev) => {
+              if (!prev) return prev;
+              if (String(prev.endorsed_employee_id || '') === String(employeeId || '')) return prev;
+              return {
+                ...prev,
+                endorsed_employee_id: employeeId,
+                raw: { ...(prev.raw || {}), endorsed_employee_id: employeeId },
+              };
+            });
           }
         } else if (selectedEmployee.email) {
           // Fallback: try to find employee by email (same logic Requirements tab uses)
@@ -1290,7 +1351,15 @@ function AgencyEndorsements() {
             data = result.data[0];
             employeeId = data.id;
             // Update selectedEmployee to remember this mapping for next time
-            setSelectedEmployee(prev => prev ? { ...prev, endorsed_employee_id: employeeId } : prev);
+            setSelectedEmployee((prev) => {
+              if (!prev) return prev;
+              if (String(prev.endorsed_employee_id || '') === String(employeeId || '')) return prev;
+              return {
+                ...prev,
+                endorsed_employee_id: employeeId,
+                raw: { ...(prev.raw || {}), endorsed_employee_id: employeeId },
+              };
+            });
           }
         }
         
@@ -1329,7 +1398,16 @@ function AgencyEndorsements() {
     };
     
     loadEmployeeRequirements();
-  }, [selectedEmployee, hiredEmployees]);
+  }, [
+    selectedEmployee?.id,
+    selectedEmployee?.endorsed_employee_id,
+    selectedEmployee?.raw?.endorsed_employee_id,
+    selectedEmployee?.employee_id,
+    selectedEmployee?.raw?.employee_id,
+    selectedEmployee?.user_id,
+    selectedEmployee?.email,
+    hiredEmployees,
+  ]);
   
   // Subscribe to employees table changes to refresh requirements
   useEffect(() => {

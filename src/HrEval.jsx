@@ -4,6 +4,7 @@ import { createNotification } from './notifications';
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { buildEachRAutoTableDefaults } from "./utils/eachrPdf";
 import { validateNoSunday } from "./utils/dateTimeRules";
 
 function HrEval() {
@@ -1010,16 +1011,17 @@ function HrEval() {
 
       // 1) Build a summary PDF page(s) via jsPDF (table-friendly)
       const summaryDoc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
-      summaryDoc.setFontSize(16);
-      summaryDoc.text("Employee Evaluation Report", 28, 40);
 
-      summaryDoc.setFontSize(10);
-      summaryDoc.setTextColor(80);
-      summaryDoc.text(`Employee: ${safeText(employee.name)} (${safeText(employee.id)})`, 28, 60);
-      summaryDoc.text(`Position: ${safeText(employee.position)} | Depot: ${safeText(employee.depot)}`, 28, 74);
-      summaryDoc.text(`Employment: ${safeText(employee.employmentType)} | Exported: ${exportedAtLabel}`, 28, 88);
-      if (filterSummary) summaryDoc.text(`Filters: ${filterSummary}`, 28, 102);
-      summaryDoc.setTextColor(0);
+      const autoTableDefaults = buildEachRAutoTableDefaults({
+        title: "Employee Evaluation Report",
+        subtitle: safeText(employee.name),
+        leftMetaLines: [
+          `Employee: ${safeText(employee.name)} (${safeText(employee.id)})`,
+          `Position: ${safeText(employee.position)} | Depot: ${safeText(employee.depot)} | Employment: ${safeText(employee.employmentType)}`,
+          filterSummary ? `Filters: ${filterSummary}` : null,
+        ].filter(Boolean),
+        rightMetaLines: [`Exported: ${exportedAtLabel}`],
+      });
 
       const body = evaluations.map((ev) => {
         const fileName = ev?.file_path ? String(ev.file_path).split("/").pop() : "None";
@@ -1034,13 +1036,9 @@ function HrEval() {
       });
 
       autoTable(summaryDoc, {
-        startY: filterSummary ? 120 : 108,
+        ...autoTableDefaults,
         head: [["Date", "Evaluator", "Score", "Remarks", "Reason", "Record File"]],
         body,
-        theme: "grid",
-        styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
-        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
-        margin: { left: 28, right: 28 },
         columnStyles: {
           0: { cellWidth: 60 },
           1: { cellWidth: 90 },
@@ -1071,6 +1069,10 @@ function HrEval() {
           summaryDoc.textWithLink("Open", x, y, { url });
         },
       });
+
+      if (typeof summaryDoc.putTotalPages === 'function') {
+        summaryDoc.putTotalPages(autoTableDefaults.totalPagesExp);
+      }
 
       const summaryBuffer = summaryDoc.output("arraybuffer");
 

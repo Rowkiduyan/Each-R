@@ -6,6 +6,7 @@ import { supabase } from "./supabaseClient";
 import { getStoredJson } from "./authStorage";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { buildEachRAutoTableDefaults } from "./utils/eachrPdf";
 import ExcelJS from "exceljs";
 
 function Employees() {
@@ -249,6 +250,7 @@ function Employees() {
   };
 
   const isDriverRole = (position) => /\bdriver\b/i.test(String(position || ""));
+  const isDeliveryCrewRole = (text) => /\bdelivery\s*crew\b/i.test(String(text || ""));
 
   // extract candidate email(s) from a payload object
   const extractEmailsFromPayload = (payloadObj) => {
@@ -697,22 +699,14 @@ function Employees() {
         return Number.isNaN(d.getTime()) ? safeText(v) : d.toLocaleDateString("en-US");
       };
 
-      const doc = new jsPDF({
-        orientation: "portrait",
-        unit: "pt",
-        format: "a4",
+      const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+
+      const autoTableDefaults = buildEachRAutoTableDefaults({
+        title: `${title} (${list.length})`,
+        subtitle: "Employee List Export",
+        leftMetaLines: filterSummary ? [filterSummary] : [],
+        rightMetaLines: [`Exported: ${exportedAtLabel}`],
       });
-
-      doc.setFontSize(16);
-      doc.text(`${title} (${list.length})`, 28, 40);
-
-      doc.setFontSize(10);
-      doc.setTextColor(80);
-      doc.text(`Exported: ${exportedAtLabel}`, 28, 58);
-      if (filterSummary) {
-        doc.text(filterSummary, 28, 74);
-      }
-      doc.setTextColor(0);
 
       const body = list.map((e) => {
         const recruitmentType = e.agency ? "Agency" : "Direct";
@@ -728,13 +722,9 @@ function Employees() {
       });
 
       autoTable(doc, {
-        startY: filterSummary ? 90 : 78,
+        ...autoTableDefaults,
         head: [["Employee", "Email", "Position", "Depot", "Employment Status", "Date Hired", "Recruitment"]],
         body,
-        theme: "grid",
-        styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
-        headStyles: { fillColor: [245, 245, 245], textColor: 20 },
-        margin: { left: 28, right: 28 },
         columnStyles: {
           0: { cellWidth: 95 },
           1: { cellWidth: 110 },
@@ -745,6 +735,10 @@ function Employees() {
           6: { cellWidth: 55 },
         },
       });
+
+      if (typeof doc.putTotalPages === 'function') {
+        doc.putTotalPages(autoTableDefaults.totalPagesExp);
+      }
 
       const yyyyMmDd = exportedAt.toISOString().slice(0, 10);
       const rawParts = [
@@ -1457,7 +1451,14 @@ function Employees() {
           applicationData?.jobTitle ||
           applicationData?.job_title ||
           '';
-        const isDriver = !!selectedEmployee?.id && isDriverRole(positionText);
+        const jobTitleText =
+          applicationData?.job_posts?.title ||
+          applicationData?.jobTitle ||
+          applicationData?.job_title ||
+          '';
+        const isDriver =
+          !!selectedEmployee?.id &&
+          (isDriverRole(positionText) || isDeliveryCrewRole(positionText) || isDeliveryCrewRole(jobTitleText));
 
         if (!isDriver) {
           setDriverLicense({ frontUrl: null, backUrl: null, photocopyUrl: null });
@@ -3265,101 +3266,124 @@ function Employees() {
                                 );
                                 const shouldShowDrivingHistory = isDriverRole(positionText) || hasDrivingHistoryData;
 
+                                const jobTitleText =
+                                  applicationData?.job_posts?.title ||
+                                  applicationData?.jobTitle ||
+                                  applicationData?.job_title ||
+                                  '';
+                                const isDriverLikeRole =
+                                  isDriverRole(positionText) ||
+                                  isDeliveryCrewRole(positionText) ||
+                                  isDeliveryCrewRole(jobTitleText);
+
+                                const hasLicenseData = !!(
+                                  licenseClassification ||
+                                  licenseExpiry ||
+                                  (Array.isArray(restrictionCodes) && restrictionCodes.filter(Boolean).length > 0) ||
+                                  driverLicense?.photocopyUrl ||
+                                  driverLicense?.frontUrl ||
+                                  driverLicense?.backUrl
+                                );
+
+                                const shouldShowLicenseInfo = isDriverLikeRole || hasLicenseData;
+
                                 return (
                                   <>
-                                    <div>
-                                      <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
-                                      <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
-                                          <div>
-                                            <span className="text-gray-500">License Classification:</span>
-                                            <span className="ml-2">{licenseClassification ? displayValue(licenseClassification) : renderNone()}</span>
+                                    {shouldShowLicenseInfo && (
+                                      <div>
+                                        <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">License Information</h5>
+                                        <div className="border border-gray-200 rounded-lg p-4 text-sm text-gray-800">
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                                            <div>
+                                              <span className="text-gray-500">License Classification:</span>
+                                              <span className="ml-2">{licenseClassification ? displayValue(licenseClassification) : renderNone()}</span>
+                                            </div>
+                                            <div>
+                                              <span className="text-gray-500">License Expiry Date:</span>
+                                              <span className="ml-2">{displayDate(licenseExpiry)}</span>
+                                            </div>
+                                            {Array.isArray(restrictionCodes) && restrictionCodes.filter(Boolean).length > 0 && (
+                                              <div className="md:col-span-2">
+                                                <span className="text-gray-500">Restriction Codes:</span>
+                                                {displayValue(restrictionCodes)}
+                                              </div>
+                                            )}
                                           </div>
-                                          <div>
-                                            <span className="text-gray-500">License Expiry Date:</span>
-                                            <span className="ml-2">{displayDate(licenseExpiry)}</span>
-                                          </div>
-                                          {Array.isArray(restrictionCodes) && restrictionCodes.filter(Boolean).length > 0 && (
-                                            <div className="md:col-span-2">
-                                              <span className="text-gray-500">Restriction Codes:</span>
-                                              {displayValue(restrictionCodes)}
+
+                                          {isDriverLikeRole && (
+                                            <div className="mt-4 pt-4 border-t border-gray-200">
+                                              <div className="text-xs font-semibold text-gray-600 mb-2">Photocopy of License</div>
+                                              {(() => {
+                                                const isPdfUrl = (url) => /\.pdf($|\?|#)/i.test(String(url || ''));
+                                                const isImageUrl = (url) => /\.(png|jpe?g|webp|gif)($|\?|#)/i.test(String(url || ''));
+
+                                                if (loadingDriverInfo) {
+                                                  return <div className="text-xs text-gray-400">Loading…</div>;
+                                                }
+
+                                                if (driverLicense.photocopyUrl) {
+                                                  const url = driverLicense.photocopyUrl;
+                                                  return (
+                                                    <div className="space-y-3">
+                                                      <div>
+                                                        <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
+                                                          Open
+                                                        </a>
+                                                      </div>
+                                                      {isImageUrl(url) ? (
+                                                        <a href={url} target="_blank" rel="noopener noreferrer">
+                                                          <img src={url} alt="License Photocopy" className="w-full max-h-[420px] object-contain bg-gray-50 rounded" />
+                                                        </a>
+                                                      ) : isPdfUrl(url) ? (
+                                                        <iframe title="License Photocopy" src={url} className="w-full h-[420px] rounded bg-gray-50 border" />
+                                                      ) : (
+                                                        <div className="text-xs text-gray-400">Preview unavailable. Use Open.</div>
+                                                      )}
+                                                    </div>
+                                                  );
+                                                }
+
+                                                const hasAny = !!(driverLicense.frontUrl || driverLicense.backUrl);
+                                                if (!hasAny) return <div className="text-xs text-gray-400 italic">None</div>;
+
+                                                return (
+                                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                    <div className="border border-gray-200 rounded-lg p-3">
+                                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
+                                                      {driverLicense.frontUrl ? (
+                                                        <a href={driverLicense.frontUrl} target="_blank" rel="noopener noreferrer">
+                                                          <img
+                                                            src={driverLicense.frontUrl}
+                                                            alt="Driver's License Front"
+                                                            className="w-full h-40 object-contain bg-gray-50 rounded"
+                                                          />
+                                                        </a>
+                                                      ) : (
+                                                        <div className="text-xs text-gray-400 italic">None</div>
+                                                      )}
+                                                    </div>
+                                                    <div className="border border-gray-200 rounded-lg p-3">
+                                                      <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
+                                                      {driverLicense.backUrl ? (
+                                                        <a href={driverLicense.backUrl} target="_blank" rel="noopener noreferrer">
+                                                          <img
+                                                            src={driverLicense.backUrl}
+                                                            alt="Driver's License Back"
+                                                            className="w-full h-40 object-contain bg-gray-50 rounded"
+                                                          />
+                                                        </a>
+                                                      ) : (
+                                                        <div className="text-xs text-gray-400 italic">None</div>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })()}
                                             </div>
                                           )}
                                         </div>
-
-                                        {isDriver && (
-                                          <div className="mt-4 pt-4 border-t border-gray-200">
-                                            <div className="text-xs font-semibold text-gray-600 mb-2">Photocopy of License</div>
-                                            {(() => {
-                                              const isPdfUrl = (url) => /\.pdf($|\?|#)/i.test(String(url || ''));
-                                              const isImageUrl = (url) => /\.(png|jpe?g|webp|gif)($|\?|#)/i.test(String(url || ''));
-
-                                              if (loadingDriverInfo) {
-                                                return <div className="text-xs text-gray-400">Loading…</div>;
-                                              }
-
-                                              if (driverLicense.photocopyUrl) {
-                                                const url = driverLicense.photocopyUrl;
-                                                return (
-                                                  <div className="space-y-3">
-                                                    <div>
-                                                      <a href={url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline">
-                                                        Open
-                                                      </a>
-                                                    </div>
-                                                    {isImageUrl(url) ? (
-                                                      <a href={url} target="_blank" rel="noopener noreferrer">
-                                                        <img src={url} alt="License Photocopy" className="w-full max-h-[420px] object-contain bg-gray-50 rounded" />
-                                                      </a>
-                                                    ) : isPdfUrl(url) ? (
-                                                      <iframe title="License Photocopy" src={url} className="w-full h-[420px] rounded bg-gray-50 border" />
-                                                    ) : (
-                                                      <div className="text-xs text-gray-400">Preview unavailable. Use Open.</div>
-                                                    )}
-                                                  </div>
-                                                );
-                                              }
-
-                                              const hasAny = !!(driverLicense.frontUrl || driverLicense.backUrl);
-                                              if (!hasAny) return <div className="text-xs text-gray-400 italic">None</div>;
-
-                                              return (
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                  <div className="border border-gray-200 rounded-lg p-3">
-                                                    <div className="text-xs font-semibold text-gray-600 mb-2">License (Front)</div>
-                                                    {driverLicense.frontUrl ? (
-                                                      <a href={driverLicense.frontUrl} target="_blank" rel="noopener noreferrer">
-                                                        <img
-                                                          src={driverLicense.frontUrl}
-                                                          alt="Driver's License Front"
-                                                          className="w-full h-40 object-contain bg-gray-50 rounded"
-                                                        />
-                                                      </a>
-                                                    ) : (
-                                                      <div className="text-xs text-gray-400 italic">None</div>
-                                                    )}
-                                                  </div>
-                                                  <div className="border border-gray-200 rounded-lg p-3">
-                                                    <div className="text-xs font-semibold text-gray-600 mb-2">License (Back)</div>
-                                                    {driverLicense.backUrl ? (
-                                                      <a href={driverLicense.backUrl} target="_blank" rel="noopener noreferrer">
-                                                        <img
-                                                          src={driverLicense.backUrl}
-                                                          alt="Driver's License Back"
-                                                          className="w-full h-40 object-contain bg-gray-50 rounded"
-                                                        />
-                                                      </a>
-                                                    ) : (
-                                                      <div className="text-xs text-gray-400 italic">None</div>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              );
-                                            })()}
-                                          </div>
-                                        )}
                                       </div>
-                                    </div>
+                                    )}
 
                                     {shouldShowDrivingHistory && (
                                       <div>

@@ -654,10 +654,50 @@ function AgencyRequirements() {
   };
 
   // Count requirements progress
-  const getRequirementsProgress = (employee) => {
-    const reqs = Object.values(employee.requirements);
-    const approved = reqs.filter(r => r.status === 'approved').length;
-    return { approved, total: reqs.length };
+  const getRequirementsProgress = (employee, { includeHrRequests = true } = {}) => {
+    if (!employee) return { approved: 0, pending: 0, submitted: 0, total: 0 };
+
+    const entries = [];
+    const reqs = employee.requirements && typeof employee.requirements === 'object' ? employee.requirements : {};
+
+    // Government IDs (always required for agency employees)
+    for (const r of Object.values(reqs)) {
+      if (!r || typeof r !== 'object') continue;
+      const submitted = Boolean(r.hasFile || r.filePath);
+      let status = String(r.status || 'missing').trim().toLowerCase();
+
+      // Normalize to our internal buckets
+      if (status === 'validated') status = 'approved';
+      if (status === 're-submit') status = 'resubmit';
+      if (status === 'submitted') status = 'pending';
+
+      // If a file exists but status is still missing/empty, treat as pending validation.
+      if (submitted && (status === 'missing' || status === '')) status = 'pending';
+
+      entries.push({ status, submitted });
+    }
+
+    // HR requested docs (variable count; required once requested)
+    if (includeHrRequests && Array.isArray(employee.hrRequests) && employee.hrRequests.length > 0) {
+      for (const r of employee.hrRequests) {
+        const submitted = Boolean(r?.file_path || r?.filePath);
+        let status = String(r?.status || 'pending').trim().toLowerCase();
+
+        if (status === 'validated') status = 'approved';
+        if (status === 're-submit') status = 'resubmit';
+        if (status === 'submitted') status = 'pending';
+        if (submitted && (status === 'missing' || status === '')) status = 'pending';
+
+        entries.push({ status, submitted });
+      }
+    }
+
+    const total = entries.length;
+    const approved = entries.filter((e) => e.status === 'approved').length;
+    const pending = entries.filter((e) => (e.status === 'pending' || e.status === 'resubmit') && e.submitted).length;
+    const submitted = approved + pending;
+
+    return { approved, pending, submitted, total };
   };
 
   // Upload Modal Functions
@@ -1255,7 +1295,7 @@ function AgencyRequirements() {
                   const statusStyle = getEmployeeStatusBadge(status);
                   const progress = getRequirementsProgress(employee);
                   const isUnviewed = hasUnviewedUpdate(employee);
-                  const pendingHrRequests = employee.hrRequests.filter(r => r.status === 'pending' || r.status === 'resubmit').length;
+                  const pendingHrRequests = employee.hrRequests.filter(r => r.status === 'pending' || r.status === 'submitted' || r.status === 'resubmit').length;
                   
                   return (
                     <React.Fragment key={employee.id}>
@@ -1304,11 +1344,11 @@ function AgencyRequirements() {
                           <div className="flex items-center gap-2">
                             <div className="flex-1 h-2 bg-gray-200 rounded-full max-w-[80px]">
                               <div 
-                                className={`h-2 rounded-full ${progress.approved === progress.total ? 'bg-green-500' : 'bg-yellow-500'}`}
-                                style={{ width: `${(progress.approved / progress.total) * 100}%` }}
+                                className={`h-2 rounded-full ${progress.submitted === progress.total ? 'bg-green-500' : 'bg-yellow-500'}`}
+                                style={{ width: `${progress.total > 0 ? (progress.submitted / progress.total) * 100 : 0}%` }}
                               ></div>
                             </div>
-                            <span className="text-xs text-gray-600">{progress.approved}/{progress.total}</span>
+                            <span className="text-xs text-gray-600">{progress.submitted}/{progress.total}</span>
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -1351,7 +1391,12 @@ function AgencyRequirements() {
                                     </div>
                                     <p className="text-sm font-semibold text-gray-800">Government IDs</p>
                                   </div>
-                                  <span className="text-xs text-gray-500">{getRequirementsProgress(employee).approved} of {getRequirementsProgress(employee).total} approved</span>
+                                  {(() => {
+                                    const idsProgress = getRequirementsProgress(employee, { includeHrRequests: false });
+                                    return (
+                                      <span className="text-xs text-gray-500">{idsProgress.submitted} of {idsProgress.total} submitted</span>
+                                    );
+                                  })()}
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                   {defaultRequirements.map((req) => {
