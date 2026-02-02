@@ -548,19 +548,16 @@ function HrCreateJob() {
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
               Job Title <span className="text-red-600">*</span>
             </label>
-            <input
-              list="job-title-options"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+            <select
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all bg-white"
               value={form.title}
               onChange={(e) => setField("title", e.target.value)}
-              placeholder="e.g., Driver"
-            />
-            <datalist id="job-title-options">
+            >
+              <option value="">Select Job Title</option>
               {allJobTitles.map((title) => (
-                <option key={title} value={title} />
+                <option key={title} value={title}>{title}</option>
               ))}
-            </datalist>
-           
+            </select>
           </div>
 
           {/* Department + Depot (shared row) */}
@@ -582,20 +579,18 @@ function HrCreateJob() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot <span className="text-red-600">*</span></label>
-              <input
-                list="depot-options"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all"
+              <select
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all bg-white"
                 value={form.depot}
                 onChange={(e) => setField("depot", e.target.value)}
-                placeholder="e.g., Batangas"
                 disabled={currentUser?.role?.toUpperCase() === 'HRC'}
                 style={currentUser?.role?.toUpperCase() === 'HRC' ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
-              />
-              <datalist id="depot-options">
+              >
+                <option value="">Select Depot</option>
                 {depotOptions.map((depot) => (
-                  <option key={depot} value={depot} />
+                  <option key={depot} value={depot}>{depot}</option>
                 ))}
-              </datalist>
+              </select>
               {currentUser?.role?.toUpperCase() === 'HRC' && (
                 <p className="text-xs text-gray-500 mt-1">HRC users can only create jobs for their assigned depot</p>
               )}

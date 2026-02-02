@@ -3840,20 +3840,16 @@ const getApplicationFilesPublicUrl = (path) => {
                             <div>
                               <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Depot</label>
                               {isEditMode ? (
-                                <>
-                                  <input
-                                    list="profile-depot-list"
-                                    value={profileForm.preferred_depot || ''}
-                                    onChange={(e) => handleFormChange('preferred_depot', e.target.value)}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
-                                    placeholder="Select preferred depot"
-                                  />
-                                  <datalist id="profile-depot-list">
-                                    {depotOptions.map((depot) => (
-                                      <option key={depot} value={depot} />
-                                    ))}
-                                  </datalist>
-                                </>
+                                <select
+                                  value={profileForm.preferred_depot || ''}
+                                  onChange={(e) => handleFormChange('preferred_depot', e.target.value)}
+                                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                                >
+                                  <option value="">Select Depot</option>
+                                  {depotOptions.map((depot) => (
+                                    <option key={depot} value={depot}>{depot}</option>
+                                  ))}
+                                </select>
                               ) : (
                                 <div className="text-gray-900">{profileForm.preferred_depot || 'Not provided'}</div>
                               )}

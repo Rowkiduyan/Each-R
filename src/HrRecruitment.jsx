@@ -1296,6 +1296,7 @@ function HrRecruitment() {
           created_at,
           updated_at,
           payload,
+          retract_remarks,
           interview_date,
           interview_time,
           interview_location,
@@ -1368,6 +1369,7 @@ function HrRecruitment() {
             ? new Date(row.created_at).toLocaleDateString("en-US", { month: "short", day: "2-digit", year: "numeric" })
             : "—",
           retractedAt: row.updated_at || row.created_at || null,
+          retract_remarks: row.retract_remarks || null,
           payload: payloadObj,
           interview_date: row.interview_date || null,
           interview_time: row.interview_time || null,
@@ -6318,6 +6320,16 @@ function HrRecruitment() {
                 {/* Application Tab - styled similarly to Employees profiling tab */}
                 {activeDetailTab === "Application" && (
                   <section className="p-5 space-y-5">
+                    {/* Retraction Remarks - only show for retracted applications */}
+                    {selectedApplicant?.status?.toLowerCase() === 'retracted' && selectedApplicant?.retract_remarks && (
+                      <div className="border border-yellow-200 rounded-lg p-4 bg-yellow-50">
+                        <h5 className="font-semibold text-gray-800 mb-2">
+                          Retraction Reason
+                        </h5>
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{selectedApplicant.retract_remarks}</p>
+                      </div>
+                    )}
+                    
                     {/* Job Details */}
                     <div>
                       <h5 className="font-semibold text-gray-800 mb-3 bg-gray-100 px-3 py-2 rounded">
@@ -8604,7 +8616,7 @@ function HrRecruitment() {
               {/* Location */}
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Location / Meeting Link <span className="text-red-500">*</span>
+                  Location<span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2">
@@ -8617,7 +8629,7 @@ function HrRecruitment() {
                     type="text"
                     value={agreementSigningForm.location}
                     onChange={(e) => setAgreementSigningForm((f) => ({ ...f, location: e.target.value }))}
-                    placeholder="Enter location address or meeting link"
+                    placeholder="Enter location address"
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     required
                   />

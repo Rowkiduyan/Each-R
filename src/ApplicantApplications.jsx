@@ -108,6 +108,7 @@ function ApplicantApplications() {
   const [retracting, setRetracting] = useState(false);
   const [showRetractSuccess, setShowRetractSuccess] = useState(false);
   const [retractError, setRetractError] = useState('');
+  const [retractRemarks, setRetractRemarks] = useState('');
   const [certificateUrls, setCertificateUrls] = useState({});
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [historyApplications, setHistoryApplications] = useState([]);
@@ -612,12 +613,19 @@ function ApplicantApplications() {
         depot
       });
       
+      const updates = {
+        status: 'retracted',
+        payload: updatedPayload,
+      };
+      
+      // Add retract_remarks if provided
+      if (retractRemarks && retractRemarks.trim()) {
+        updates.retract_remarks = retractRemarks.trim();
+      }
+      
       const { error } = await supabase
         .from('applications')
-        .update({
-          status: 'retracted',
-          payload: updatedPayload,
-        })
+        .update(updates)
         .eq('id', applicationData.id)
         .eq('user_id', applicationData.user_id);
 
@@ -634,6 +642,8 @@ function ApplicantApplications() {
         Agreements: 'waiting',
       });
       setShowRetractDialog(false);
+      setRetractRemarks('');
+      setRetractError('');
       setShowRetractSuccess(true);
     } catch (err) {
       console.error('Error retracting application:', err);
@@ -1760,13 +1770,33 @@ function ApplicantApplications() {
 
       {/* Retract Application Dialog */}
       {showRetractDialog && (
-        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => setShowRetractDialog(false)}>
+        <div className="fixed inset-0 bg-transparent flex items-center justify-center z-50" onClick={() => {
+          setShowRetractDialog(false);
+          setRetractRemarks('');
+          setRetractError('');
+        }}>
           <div className="bg-white rounded-md w-full max-w-md mx-4 overflow-hidden border" onClick={(e) => e.stopPropagation()}>
             <div className="p-4 border-b">
               <h3 className="text-lg font-semibold text-gray-800">Retract Application</h3>
             </div>
-            <div className="p-4 text-sm text-gray-700">
-              Are you sure you want to retract your application? This action cannot be undone and you will need to reapply if you change your mind.
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-gray-700">
+                Are you sure you want to retract your application? This action cannot be undone and you will need to reapply if you change your mind.
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Reason for Retraction <span className="text-red-600">*</span>
+                </label>
+                <textarea
+                  value={retractRemarks}
+                  onChange={(e) => setRetractRemarks(e.target.value)}
+                  placeholder="Please provide a reason for retracting your application..."
+                  rows={4}
+                  maxLength={500}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">{retractRemarks.length}/500 characters</p>
+              </div>
             </div>
             {retractError && (
               <div className="px-4 pb-4">
@@ -1776,16 +1806,25 @@ function ApplicantApplications() {
               </div>
             )}
             <div className="p-4 border-t flex justify-end gap-2">
-              <button type="button" className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" onClick={() => setShowRetractDialog(false)} disabled={retracting}>
+              <button 
+                type="button" 
+                className="px-4 py-2 rounded bg-gray-200 text-gray-700 hover:bg-gray-300" 
+                onClick={() => {
+                  setShowRetractDialog(false);
+                  setRetractRemarks('');
+                  setRetractError('');
+                }} 
+                disabled={retracting}
+              >
                 Cancel
               </button>
               <button
                 type="button"
                 className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700 disabled:bg-red-300 disabled:cursor-not-allowed"
                 onClick={handleRetractApplication}
-                disabled={retracting}
+                disabled={retracting || !retractRemarks.trim()}
               >
-                Retract Application
+                {retracting ? 'Retracting...' : 'Retract Application'}
               </button>
             </div>
           </div>
