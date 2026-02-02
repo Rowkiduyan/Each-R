@@ -1765,11 +1765,14 @@ function HrRecruitment() {
         })
       );
 
-      // Sort: Pending posts first (for HR), then by created_at descending
+      // Sort: Pending posts first, Closed posts last, others by created_at
       const sortedJobPosts = jobPostsWithStats.sort((a, b) => {
         // Pending posts always come first
         if (a.status === "Pending" && b.status !== "Pending") return -1;
         if (a.status !== "Pending" && b.status === "Pending") return 1;
+        // Closed posts always come last
+        if (a.status === "Closed" && b.status !== "Closed") return 1;
+        if (a.status !== "Closed" && b.status === "Closed") return -1;
         // Otherwise sort by created_at (newest first)
         return new Date(b.created_at) - new Date(a.created_at);
       });
