@@ -289,6 +289,7 @@ function HrRecruitment() {
   const [actionType, setActionType] = useState(null);
   const [showRejectedModal, setShowRejectedModal] = useState(false);
   const [rejectionRemarks, setRejectionRemarks] = useState("");
+  const [selectedRejectionReason, setSelectedRejectionReason] = useState("");
   const [rejectedApplicants, setRejectedApplicants] = useState([]);
   
   // Custom alert modals
@@ -8164,21 +8165,55 @@ function HrRecruitment() {
               <>
                 <h3 className="text-lg font-bold mb-2">Add Rejection Remarks</h3>
                 <p className="text-gray-600 text-sm mb-4">
-                  Please share your feedback or reasons for rejecting this applicant.
+                  Please select a reason for rejecting this applicant.
                 </p>
-                <textarea
-                  rows="4"
-                  className="w-full border rounded px-3 py-2"
-                  placeholder="Enter remarks..."
-                  value={rejectionRemarks}
-                  onChange={(e) => setRejectionRemarks(e.target.value)}
-                />
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Reason for Rejection <span className="text-red-600">*</span>
+                    </label>
+                    <select
+                      value={selectedRejectionReason}
+                      onChange={(e) => {
+                        setSelectedRejectionReason(e.target.value);
+                        if (e.target.value !== "Others") {
+                          setRejectionRemarks("");
+                        }
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    >
+                      <option value="">Select a reason</option>
+                      <option value="Did not meet minimum qualifications">Did not meet minimum qualifications</option>
+                      <option value="Lack of required technical skills">Lack of required technical skills</option>
+                      <option value="Insufficient relevant experience">Insufficient relevant experience</option>
+                      <option value="Position requires more senior-level background">Position requires more senior-level background</option>
+                      <option value="Better suited for a different role">Better suited for a different role</option>
+                      <option value="Others">Others (specify below)</option>
+                    </select>
+                  </div>
+                  
+                  {selectedRejectionReason === "Others" && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Please specify <span className="text-red-600">*</span>
+                      </label>
+                      <textarea
+                        rows="4"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-red-500"
+                        placeholder="Enter the reason..."
+                        value={rejectionRemarks}
+                        onChange={(e) => setRejectionRemarks(e.target.value)}
+                      />
+                    </div>
+                  )}
+                </div>
                 <div className="flex justify-end gap-4 mt-4">
                   <button
                     onClick={() => {
                       setShowActionModal(false);
                       setActionType(null);
                       setRejectionRemarks("");
+                      setSelectedRejectionReason("");
                     }}
                     className="px-4 py-2 bg-gray-300 rounded"
                   >
@@ -8187,35 +8222,34 @@ function HrRecruitment() {
                   <button
                     onClick={async () => {
                       if (!selectedApplicant) return;
-                      const remarks = rejectionRemarks.trim() || null;
-                      if (remarks === null) {
-                        setConfirmMessage("Reject without remarks?");
-                        setConfirmCallback(() => async () => {
-                          setShowConfirmDialog(false);
-                          await rejectApplication(
-                            selectedApplicant.id,
-                            selectedApplicant.name,
-                            remarks
-                          );
-                          setShowActionModal(false);
-                          setActionType(null);
-                          setRejectionRemarks("");
-                          setSelectedApplicant(null);
-                        });
-                        setShowConfirmDialog(true);
+                      
+                      // Determine final remarks based on selection
+                      let finalRemarks = null;
+                      if (selectedRejectionReason === "Others") {
+                        finalRemarks = rejectionRemarks.trim() || null;
+                      } else if (selectedRejectionReason) {
+                        finalRemarks = selectedRejectionReason;
+                      }
+                      
+                      // Validate that a reason is provided
+                      if (!finalRemarks) {
+                        alert("Please select a reason or provide remarks.");
                         return;
                       }
+                      
                       await rejectApplication(
                         selectedApplicant.id,
                         selectedApplicant.name,
-                        remarks
+                        finalRemarks
                       );
                       setShowActionModal(false);
                       setActionType(null);
                       setRejectionRemarks("");
+                      setSelectedRejectionReason("");
                       setSelectedApplicant(null);
                     }}
-                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600"
+                    className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-red-300 disabled:cursor-not-allowed"
+                    disabled={!selectedRejectionReason || (selectedRejectionReason === "Others" && !rejectionRemarks.trim())}
                   >
                     Submit
                   </button>

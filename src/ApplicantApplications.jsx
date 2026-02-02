@@ -911,6 +911,16 @@ function ApplicantApplications() {
 
                 {/* Application Details */}
                 <div className="space-y-4">
+                  {/* Rejection Remarks - only show for rejected applications */}
+                  {String(applicationData?.status || '').toLowerCase() === 'rejected' && applicationData?.rejection_remarks && (
+                    <div className="border border-red-200 rounded-lg p-4 bg-red-50">
+                      <h5 className="font-semibold text-gray-800 mb-2">
+                        Rejection Reason
+                      </h5>
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{applicationData.rejection_remarks}</p>
+                    </div>
+                  )}
+                  
                   {/* Applied Job Card */}
                   <div className="border border-gray-200 rounded-lg overflow-hidden shadow-sm">
                     <div className="bg-gradient-to-r from-gray-50 to-gray-100 text-gray-800 px-4 py-3 text-sm font-semibold border-b border-gray-200 flex items-center justify-between gap-3">
