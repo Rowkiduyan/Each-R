@@ -61,3 +61,30 @@ export function validateFutureTimeForDate(inputEl, dateStr, timeStr, message = "
   inputEl.setCustomValidity('');
   return true;
 }
+
+export function getTomorrowDateString() {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow.toISOString().split('T')[0];
+}
+
+export function isTomorrowOrLater(dateStr) {
+  if (!dateStr) return false;
+  const selectedDate = new Date(dateStr + 'T00:00');
+  if (Number.isNaN(selectedDate.getTime())) return false;
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(0, 0, 0, 0);
+  selectedDate.setHours(0, 0, 0, 0);
+  return selectedDate >= tomorrow;
+}
+
+export function validateMinimumTomorrow(inputEl, dateStr, message = 'Interview must be scheduled at least one day in advance. Please select tomorrow or a later date.') {
+  if (!isTomorrowOrLater(dateStr)) {
+    inputEl.setCustomValidity(message);
+    inputEl.reportValidity();
+    return false;
+  }
+  inputEl.setCustomValidity('');
+  return true;
+}

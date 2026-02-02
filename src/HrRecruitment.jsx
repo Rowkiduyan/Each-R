@@ -8,7 +8,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { buildEachRAutoTableDefaults } from "./utils/eachrPdf";
 import ExcelJS from "exceljs";
-import { validateNoSunday, validateOfficeHours, validateFutureTimeForDate } from "./utils/dateTimeRules";
+import { validateNoSunday, validateOfficeHours, validateFutureTimeForDate, getTomorrowDateString, validateMinimumTomorrow } from "./utils/dateTimeRules";
 
 // Invokes the Supabase Edge Function that schedules interviews + sends notifications.
 async function scheduleInterviewClient(applicationId, interview) {
@@ -8057,13 +8057,16 @@ function HrRecruitment() {
                                   Approve
                                 </button>
                               )}
-                              <button
-                                type="button"
-                                onClick={() => handleEditJobPost(job.actualJobId)}
-                                className="px-3 py-1.5 rounded-full border border-blue-300 text-xs text-blue-700 hover:bg-blue-50"
-                              >
-                                Edit
-                              </button>
+                              {/* Hide Edit button for pending HRC job posts (approval_status = 'pending') */}
+                              {job.approval_status !== 'pending' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleEditJobPost(job.actualJobId)}
+                                  className="px-3 py-1.5 rounded-full border border-blue-300 text-xs text-blue-700 hover:bg-blue-50"
+                                >
+                                  Edit
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -8354,6 +8357,11 @@ function HrRecruitment() {
                     value={interviewForm.date}
                     onChange={(e) => {
                       const v = e.target.value;
+                      if (!validateMinimumTomorrow(e.target, v)) {
+                        setErrorMessage('Interview must be scheduled at least one day in advance. Please select tomorrow or a later date.');
+                        setShowErrorAlert(true);
+                        return;
+                      }
                       if (!validateNoSunday(e.target, v)) {
                         setErrorMessage('Sundays are disabled. Please pick another date.');
                         setShowErrorAlert(true);
@@ -8361,7 +8369,7 @@ function HrRecruitment() {
                       }
                       setInterviewForm((f) => ({ ...f, date: v }));
                     }}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={getTomorrowDateString()}
                     className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                     required
                   />
