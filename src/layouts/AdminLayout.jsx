@@ -158,6 +158,19 @@ export default function AdminLayout() {
               >
                 Manage Accounts
               </NavLink>
+
+              <NavLink
+                to="/admin/depot"
+                className={({ isActive }) =>
+                  `pb-1 transition-colors ${
+                    isActive
+                      ? "text-red-600 border-b-2 border-red-600"
+                      : "hover:text-gray-900"
+                  }`
+                }
+              >
+                Depot
+              </NavLink>
             </nav>
                 
             <div className="flex items-center space-x-4">

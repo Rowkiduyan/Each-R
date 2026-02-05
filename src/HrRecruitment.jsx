@@ -308,6 +308,14 @@ function HrRecruitment() {
 
   // Get current user info from localStorage
   const [currentUser, setCurrentUser] = useState(null);
+
+  // Depot locations management
+  const [showDepotLocationsModal, setShowDepotLocationsModal] = useState(false);
+  const [depotLocationsList, setDepotLocationsList] = useState([]);
+  const [editingDepotLocation, setEditingDepotLocation] = useState(null);
+  const [depotLocationForm, setDepotLocationForm] = useState({ depot: '', address: '' });
+  const [depotSearchTerm, setDepotSearchTerm] = useState('');
+  const [showDepotUpdateSuccess, setShowDepotUpdateSuccess] = useState(false);
   useEffect(() => {
     const userData = getStoredJson("loggedInHR");
     if (userData) setCurrentUser(userData);
@@ -1678,6 +1686,25 @@ function HrRecruitment() {
     }
   };
 
+  // ---- Load depot locations from database
+  const loadDepotLocations = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('depot_locations')
+        .select('*')
+        .order('depot', { ascending: true });
+
+      if (error) {
+        console.error('Error loading depot locations:', error);
+        return;
+      }
+
+      setDepotLocationsList(data || []);
+    } catch (err) {
+      console.error('Error loading depot locations:', err);
+    }
+  }, []);
+
   // ---- Load job posts from database
   const loadJobPosts = useCallback(async () => {
     setLoadingJobPosts(true);
@@ -1826,6 +1853,7 @@ function HrRecruitment() {
   useEffect(() => {
     loadApplications();
     loadRetractedApplications();
+    loadDepotLocations(); // Load depot locations on mount
 
     // Polling: refetch every 30 seconds
     const interval = setInterval(() => {
@@ -3213,7 +3241,8 @@ function HrRecruitment() {
 
     // Get depot from application to set default location
     const depot = application?.depot || application?.raw?.job_posts?.depot || "";
-    const defaultLocation = depot ? (depotAddresses[depot.toUpperCase()] || "") : "";
+    const depotLocation = depotLocationsList.find(d => d.depot.toUpperCase() === depot.toUpperCase());
+    const defaultLocation = depotLocation ? (depotLocation.address || depot) : "";
 
     // Extract interview type safely (payload may be string or invalid JSON)
     let interviewType = application?.interview_type || "onsite";
@@ -3274,10 +3303,15 @@ function HrRecruitment() {
       payloadObj?.signingInterview ||
       {};
 
+    // Get depot from application to set default location
+    const depot = application?.depot || application?.raw?.job_posts?.depot || "";
+    const depotLocation = depotLocationsList.find(d => d.depot.toUpperCase() === depot.toUpperCase());
+    const defaultLocation = depotLocation ? (depotLocation.address || depot) : "";
+
     setAgreementSigningForm({
       date: signing?.date || application?.agreement_signing_date || "",
       time: signing?.time || application?.agreement_signing_time || "",
-      location: signing?.location || application?.agreement_signing_location || "",
+      location: signing?.location || application?.agreement_signing_location || defaultLocation,
     });
     setShowAgreementSigningModal(true);
   };
@@ -8331,7 +8365,7 @@ function HrRecruitment() {
 
       {/* Interview Modal */}
       {showInterviewModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={() => setShowInterviewModal(false)}>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowInterviewModal(false)}>
           <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
             {/* Header */}
             <div className="bg-gradient-to-r from-red-600 to-red-700 px-6 py-4">
@@ -8505,9 +8539,27 @@ function HrRecruitment() {
 
               {/* Location */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  {interviewForm.interview_type === 'online' ? 'Meeting Link' : 'Location'} <span className="text-red-500">*</span>
-                </label>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    {interviewForm.interview_type === 'online' ? 'Meeting Link' : 'Location'} <span className="text-red-500">*</span>
+                  </label>
+                  {interviewForm.interview_type !== 'online' && currentUser?.role?.toUpperCase() === 'HR' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        loadDepotLocations();
+                        setShowDepotLocationsModal(true);
+                      }}
+                      className="text-xs text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Manage Locations
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10">
                     <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -8532,17 +8584,19 @@ function HrRecruitment() {
                       value={interviewForm.location}
                       onChange={(e) => setInterviewForm((f) => ({ ...f, location: e.target.value }))}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      disabled={currentUser?.role?.toUpperCase() === 'HRC'}
                       required
                     >
                       <option value="">Select interview location</option>
-                      {Object.entries(depotAddresses)
-                        .filter(([_, address]) => address) // Filter out empty addresses
-                        .sort((a, b) => a[0].localeCompare(b[0])) // Sort by depot name
-                        .map(([depot, address]) => (
-                          <option key={depot} value={address}>
-                            {address}
+                      {depotLocationsList.map((item) => {
+                        const depot = item.depot;
+                        const address = item.address;
+                        return (
+                          <option key={item.id || depot} value={address || depot}>
+                            {address ? `${depot} - ${address}` : depot}
                           </option>
-                        ))}
+                        );
+                      })}
                     </select>
                   )}
                 </div>
@@ -8705,9 +8759,27 @@ function HrRecruitment() {
 
               {/* Location */}
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Location<span className="text-red-500">*</span>
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-semibold text-gray-700">
+                    Location<span className="text-red-500">*</span>
+                  </label>
+                  {currentUser?.role?.toUpperCase() === 'HR' && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowDepotLocationsModal(true);
+                      }}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Manage Locations
+                    </button>
+                  )}
+                </div>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2">
                     <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -8715,14 +8787,20 @@ function HrRecruitment() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                   </div>
-                  <input
-                    type="text"
+                  <select
                     value={agreementSigningForm.location}
                     onChange={(e) => setAgreementSigningForm((f) => ({ ...f, location: e.target.value }))}
-                    placeholder="Enter location address"
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent appearance-none bg-white"
                     required
-                  />
+                    disabled={currentUser?.role?.toUpperCase() === 'HRC'}
+                  >
+                    <option value="">Select location...</option>
+                    {depotLocationsList.map((location) => (
+                      <option key={location.id} value={location.address}>
+                        {location.depot} - {location.address || 'No address'}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>
@@ -9242,6 +9320,265 @@ function HrRecruitment() {
               >
                 {updatingJobPost ? "Saving..." : "Save Changes"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Depot Locations Management Modal */}
+      {showDepotLocationsModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60] p-4" onClick={() => {
+          setShowDepotLocationsModal(false);
+          setEditingDepotLocation(null);
+          setDepotLocationForm({ depot: '', address: '' });
+          loadDepotLocations(); // Reload locations after modal closes
+        }}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-600 to-red-700 px-6 py-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Manage Locations</h3>
+                    <p className="text-sm text-white/90">Edit or remove depot locations</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowDepotLocationsModal(false);
+                    setEditingDepotLocation(null);
+                    setDepotLocationForm({ depot: '', address: '' });
+                    loadDepotLocations(); // Reload locations after modal closes
+                  }}
+                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1" style={{ transform: 'translateZ(0)', WebkitOverflowScrolling: 'touch' }}>
+              {/* Edit Form - Only shown when editing */}
+              {editingDepotLocation && (
+                <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                  <h3 className="text-sm font-semibold text-gray-700 mb-3">
+                    Edit Location Address
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Depot Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={depotLocationForm.depot}
+                        placeholder="e.g., MANILA"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 bg-gray-100 cursor-not-allowed"
+                        disabled
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Depot name cannot be changed</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Address
+                      </label>
+                      <input
+                        type="text"
+                        value={depotLocationForm.address}
+                        onChange={(e) => setDepotLocationForm({ ...depotLocationForm, address: e.target.value })}
+                        placeholder="Full address"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const { error } = await supabase
+                            .from('depot_locations')
+                            .update({ address: depotLocationForm.address })
+                            .eq('id', editingDepotLocation.id);
+
+                          if (error) throw error;
+
+                          await loadDepotLocations();
+                          setDepotLocationForm({ depot: '', address: '' });
+                          setEditingDepotLocation(null);
+                          setShowDepotUpdateSuccess(true);
+                          setTimeout(() => setShowDepotUpdateSuccess(false), 3000);
+                        } catch (err) {
+                          console.error('Error saving depot location:', err);
+                          alert('Error saving location: ' + err.message);
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
+                    >
+                      Update
+                    </button>
+                    <button
+                      onClick={() => {
+                        setEditingDepotLocation(null);
+                        setDepotLocationForm({ depot: '', address: '' });
+                      }}
+                      className="px-4 py-2 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Locations List */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-700">Current Locations</h3>
+                  <span className="text-xs text-gray-500">
+                    {depotLocationsList.filter(loc => 
+                      loc.depot.toLowerCase().includes(depotSearchTerm.toLowerCase()) ||
+                      (loc.address || '').toLowerCase().includes(depotSearchTerm.toLowerCase())
+                    ).length} {depotLocationsList.filter(loc => 
+                      loc.depot.toLowerCase().includes(depotSearchTerm.toLowerCase()) ||
+                      (loc.address || '').toLowerCase().includes(depotSearchTerm.toLowerCase())
+                    ).length === 1 ? 'depot' : 'depots'}
+                  </span>
+                </div>
+                
+                {/* Search Bar */}
+                <div className="mb-3 relative">
+                  <input
+                    type="text"
+                    value={depotSearchTerm}
+                    onChange={(e) => setDepotSearchTerm(e.target.value)}
+                    placeholder="Search by depot name or address..."
+                    className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm"
+                  />
+                  <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  {depotSearchTerm && (
+                    <button
+                      onClick={() => setDepotSearchTerm('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {depotLocationsList
+                    .filter(loc => 
+                      loc.depot.toLowerCase().includes(depotSearchTerm.toLowerCase()) ||
+                      (loc.address || '').toLowerCase().includes(depotSearchTerm.toLowerCase())
+                    )
+                    .map((location) => {
+                      const isEditing = editingDepotLocation?.id === location.id;
+                      return (
+                    <div key={location.id} className={`flex items-start justify-between p-3 rounded-lg transition-all ${
+                      isEditing 
+                        ? 'bg-blue-50 border-2 border-blue-500 shadow-md' 
+                        : 'bg-white border border-gray-200 hover:border-gray-300'
+                    }`}>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <div className="font-medium text-gray-900">{location.depot}</div>
+                          {isEditing && (
+                            <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full font-medium">
+                              Editing
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600">{location.address || 'No address'}</div>
+                      </div>
+                      <div className="flex gap-2 ml-4">
+                        <button
+                          onClick={() => {
+                            setEditingDepotLocation(location);
+                            setDepotLocationForm({ depot: location.depot, address: location.address || '' });
+                          }}
+                          className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete ${location.depot}?`)) return;
+
+                            try {
+                              const { error } = await supabase
+                                .from('depot_locations')
+                                .delete()
+                                .eq('id', location.id);
+
+                              if (error) throw error;
+                              await loadDepotLocations();
+                            } catch (err) {
+                              console.error('Error deleting depot location:', err);
+                              alert('Error deleting location: ' + err.message);
+                            }
+                          }}
+                          className="text-red-600 hover:text-red-700 text-sm font-medium"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                      );
+                    })}
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowDepotLocationsModal(false);
+                  setEditingDepotLocation(null);
+                  setDepotLocationForm({ depot: '', address: '' });
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Depot Update Success Modal */}
+      {showDepotUpdateSuccess && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] p-4" onClick={() => setShowDepotUpdateSuccess(false)}>
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-green-600 to-green-700 px-6 py-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-semibold text-white">Success!</h3>
+              </div>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-700 mb-6">Location address updated successfully.</p>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowDepotUpdateSuccess(false)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  OK
+                </button>
+              </div>
             </div>
           </div>
         </div>

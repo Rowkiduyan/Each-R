@@ -81,10 +81,36 @@ function HrCreateJob() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
+  const [depotOptions, setDepotOptions] = useState([]);
 
   // Get current user info from localStorage and Supabase
   const [currentUser, setCurrentUser] = useState(null);
   const [userId, setUserId] = useState(null);
+  
+  // Load depot locations from database
+  useEffect(() => {
+    const loadDepotLocations = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('depot_locations')
+          .select('depot')
+          .order('depot', { ascending: true });
+
+        if (error) {
+          console.error('Error loading depot locations:', error);
+          return;
+        }
+
+        if (data) {
+          setDepotOptions(data.map(item => item.depot));
+        }
+      } catch (err) {
+        console.error('Error loading depot locations:', err);
+      }
+    };
+
+    loadDepotLocations();
+  }, []);
   
   useEffect(() => {
     const fetchUser = async () => {
@@ -108,14 +134,6 @@ function HrCreateJob() {
     
     fetchUser();
   }, []);
-
-  const depotOptions = [
-    "Batangas", "Bulacan", "Cagayan", "Calamba", "Calbayog", "Cebu", 
-    "Davao", "Dipolog", "Iloilo", "Isabela", "Kalibo", "Kidapawan", 
-    "La Union", "Liip", "Manggahan", "Mindoro", "Naga", "Ozamis", 
-    "Palawan", "Pampanga", "Pasig", "Sucat", "Tacloban", "Tarlac", 
-    "Taytay", "Tuguegarao", "Vigan"
-  ];
 
   const setField = (k, v) => {
     // Auto-fill department when job title matches a known position

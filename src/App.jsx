@@ -7,6 +7,7 @@ import ApplicantGHome from "./ApplicantGHome";
 import ApplicantLHome from "./ApplicantLHome";
 import EmployeeLogin from "./EmployeeLogin";
 import AdminHome from "./AdminHome";
+import AdminDepot from "./AdminDepot";
 import HrTrainings from "./HrTrainings";
 import EmployeeTrainings from "./EmployeeTrainings";
 import HrRecruitment from "./HrRecruitment";
@@ -123,6 +124,7 @@ function App() {
         <Route path="create" element={<AdminCreate />} />
         <Route path="import" element={<AdminImportEmployees />} />
         <Route path="enable-disable" element={<AdminEnableDisable />} />
+        <Route path="depot" element={<AdminDepot />} />
         <Route path="account-settings" element={<AccountSettings />} />
       </Route>
 
