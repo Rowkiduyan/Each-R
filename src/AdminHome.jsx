@@ -92,11 +92,6 @@ function AdminHome() {
   return (
     <div className="py-6">
         {/* Welcome Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-800">Welcome Admin!</h1>
-          <p className="text-gray-600 mt-2">Manage your system overview and statistics</p>
-        </div>
-
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {/* Total Employees Card */}

@@ -204,6 +204,39 @@ function HrRecruitment() {
     "Vigan",
   ];
 
+  // Depot address mapping for interview locations
+  const depotAddresses = {
+    "VIGAN": "JTC Industrial Zone Park, Brgy. Bahet, San Ildefonso, Ilocos Sur",
+    "TUGUEGARAO": "Ugac Highway, Tuguegarao City. JP75+MGJ, Tuguegarao, Cagayan",
+    "ISABELA": "Brgy. Quezon, San Isidro, Isabela",
+    "LA UNION": "Udiao-Nangcamotian Barangay Road, Rosario, 2506 La Union",
+    "TARLAC": "Luisita Industrial Park, San Miguel, Tarlac City",
+    "PAMPANGA": "Panipuan, Mexico, Pampanga",
+    "BULACAN": "Santan Street, San Jose Plaridel, Bulacan",
+    "MANGGAHAN": "Manggahang Light Industrial Park, Amang Rodriguez Ave., Manggahan, Pasig",
+    "PASIG": "1 Luis St., Brgy. San Miguel, Pasig City",
+    "TAYTAY": "Velasquez St., Sitio Bangiad, Taytay, Rizal",
+    "SUCAT": "8348 Dr. Arcadio Santos Ave., Parañaque, 1717 Metro Manila",
+    "LIIP": "Blk 3 Lot 5 Solid St., LIIP, Brgy. Mamplasan, Biñan, Laguna",
+    "CALAMBA": "Brgy. Prinza, Calamba, Laguna",
+    "BATANGAS": "Roadwise Garage, Purok 1, Santo Cristo, San Jose, Batangas (Near Chicken Statue)",
+    "MINDORO": "",
+    "NAGA": "Jentec Storage Inc. (Naga), Pili, Camarines Sur, Philippines",
+    "PALAWAN": "Jentec Storage Inc. (Palawan), Lomboy Street, Puerto Princesa, 5300 Palawan, Philippines",
+    "CEBU": "Jentec Storage Inc. (Cebu), G Ouano St., Mandaue City, Cebu, Philippines",
+    "ILOILO": "Jentec Cold Storage Iloilo, Iloilo R3 Rd., Pavia, Philippines",
+    "BACOLOD": "",
+    "KALIBO": "Jentec Storage Inc. (Kalibo), Osmeña Ave., Kalibo, 5600 Aklan, Philippines",
+    "CALBAYOG": "PMFTC SO Calbayog, Unnamed Road, Calbayog City, Samar",
+    "TACLOBAN": "Lot 4192 - Part, Purok 5, Slaughter House (Beside BFAR Office), Leyte, Tacloban, Brgy. 99 (DIIT)",
+    "CAGAYAN DE ORO": "Jentec Storage Inc. (Cagayan de Oro), 1100 Cagayan de Oro National Hwy, Cagayan de Oro, Misamis Oriental, Philippines",
+    "BUTUAN": "Jentec Storage Inc. (Butuan), Butuan City, Agusan Del Norte, Philippines",
+    "OZAMIS": "",
+    "DIPOLOG": "",
+    "DAVAO": "Jentec Cold Storage Davao, Tibungco, Davao City, Philippines",
+    "KIDAPAWAN": "",
+  };
+
   // Keep job titles/positions aligned with Employees.jsx
   const departments = [
     "Operations Department",
@@ -3178,6 +3211,10 @@ function HrRecruitment() {
     setInterviewModalMode(mode);
     setSelectedApplicationForInterview(application);
 
+    // Get depot from application to set default location
+    const depot = application?.depot || application?.raw?.job_posts?.depot || "";
+    const defaultLocation = depot ? (depotAddresses[depot.toUpperCase()] || "") : "";
+
     // Extract interview type safely (payload may be string or invalid JSON)
     let interviewType = application?.interview_type || "onsite";
     let preferredDate = '';
@@ -3214,7 +3251,7 @@ function HrRecruitment() {
     setInterviewForm({
       date: usePreferred ? preferredDate : (shouldReset ? "" : (application?.interview_date || "")),
       time: usePreferred ? preferredTime : (shouldReset ? "" : (application?.interview_time || "")),
-      location: shouldReset ? "" : (application?.interview_location || ""),
+      location: shouldReset ? defaultLocation : (application?.interview_location || defaultLocation),
       interviewer: shouldReset ? "" : (application?.interviewer || ""),
       interview_type: interviewType,
     });
@@ -8472,7 +8509,7 @@ function HrRecruitment() {
                   {interviewForm.interview_type === 'online' ? 'Meeting Link' : 'Location'} <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10">
                     <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       {interviewForm.interview_type === 'online' ? (
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -8481,14 +8518,33 @@ function HrRecruitment() {
                       )}
                     </svg>
                   </div>
-                  <input
-                    type="text"
-                    value={interviewForm.location}
-                    onChange={(e) => setInterviewForm((f) => ({ ...f, location: e.target.value }))}
-                    placeholder={interviewForm.interview_type === 'online' ? 'Google Meet, Zoom, etc.' : 'Enter location address'}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-                    required
-                  />
+                  {interviewForm.interview_type === 'online' ? (
+                    <input
+                      type="text"
+                      value={interviewForm.location}
+                      onChange={(e) => setInterviewForm((f) => ({ ...f, location: e.target.value }))}
+                      placeholder="Google Meet, Zoom, etc."
+                      className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                      required
+                    />
+                  ) : (
+                    <select
+                      value={interviewForm.location}
+                      onChange={(e) => setInterviewForm((f) => ({ ...f, location: e.target.value }))}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                      required
+                    >
+                      <option value="">Select interview location</option>
+                      {Object.entries(depotAddresses)
+                        .filter(([_, address]) => address) // Filter out empty addresses
+                        .sort((a, b) => a[0].localeCompare(b[0])) // Sort by depot name
+                        .map(([depot, address]) => (
+                          <option key={depot} value={address}>
+                            {address}
+                          </option>
+                        ))}
+                    </select>
+                  )}
                 </div>
               </div>
 
