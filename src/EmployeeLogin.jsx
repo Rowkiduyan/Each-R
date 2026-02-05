@@ -130,7 +130,7 @@ function EmployeeLogin() {
     } else if (roleForRedirect === "agency") {
       navigate("/agency/home");
     } else if (roleForRedirect === "admin") {
-      navigate("/admin/home");
+      navigate("/admin/enable-disable");
     } else {
       console.error("❌ Unknown role:", profile.role);
       setError(`Unknown role: ${profile.role}. Please contact support.`);

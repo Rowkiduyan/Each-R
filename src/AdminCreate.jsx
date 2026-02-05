@@ -565,15 +565,27 @@ function AdminCreate() {
 
   return (
     <div className="py-6 flex flex-col items-center">
-      {/* Header */}
-      <div className="mb-6 text-center">
-        <h1 className="text-3xl font-bold text-gray-800">Register New Agency</h1>
-        <p className="text-gray-600 mt-2">Create a new agency account in the system</p>
+      {/* Information Banner */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-6xl w-full mb-6">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 w-8 h-8 border-2 border-blue-600 text-blue-600 bg-white rounded-full flex items-center justify-center font-bold text-lg">
+            i
+          </div>
+          <div>
+            <h3 className="font-semibold text-blue-900 mb-1">Agency Registration</h3>
+            <p className="text-sm text-blue-800">
+              This module allows you to register new agency accounts in the system. You can create accounts manually using the form below or import multiple agencies at once using a CSV file. Each registered agency will receive login credentials via email.
+            </p>
+          </div>
+        </div>
       </div>
 
       {/* CSV Import Section */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 max-w-6xl w-full mb-6">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">CSV Import</h2>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-w-6xl w-full mb-6 overflow-hidden">
+        <div className="bg-gray-100 border-b border-gray-200 py-4">
+          <h2 className="text-xl font-semibold text-gray-900 text-center">CSV Import</h2>
+        </div>
+        <div className="p-6">
         
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
           <h3 className="font-semibold text-blue-800 mb-2">📋 Instructions:</h3>
@@ -752,11 +764,15 @@ function AdminCreate() {
             )}
           </div>
         )}
+        </div>
       </div>
 
       {/* Manual Registration Form */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 max-w-6xl w-full">
-        <h2 className="text-xl font-semibold text-gray-800 mb-4">Manual Registration</h2>
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 max-w-6xl w-full overflow-hidden">
+        <div className="bg-gray-100 border-b border-gray-200 py-4">
+          <h2 className="text-xl font-semibold text-gray-800 text-center">Manual Registration</h2>
+        </div>
+        <div className="p-6">
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Agency Information */}
           <div>
@@ -854,6 +870,7 @@ function AdminCreate() {
             </button>
           </div>
         </form>
+        </div>
       </div>
       
       {/* Confirmation Modal */}

@@ -108,7 +108,7 @@ export default function AdminLayout() {
 
             <nav className="flex items-center space-x-6 text-sm font-medium text-gray-600">
               <NavLink
-                to="/admin/home"
+                to="/admin/enable-disable"
                 className={({ isActive }) =>
                   `pb-1 transition-colors ${
                     isActive
@@ -117,7 +117,7 @@ export default function AdminLayout() {
                   }`
                 }
               >
-                Home
+                Manage Accounts
               </NavLink>
 
               <NavLink
@@ -144,19 +144,6 @@ export default function AdminLayout() {
                 }
               >
                 Import Employees
-              </NavLink>
-
-              <NavLink
-                to="/admin/enable-disable"
-                className={({ isActive }) =>
-                  `pb-1 transition-colors ${
-                    isActive
-                      ? "text-red-600 border-b-2 border-red-600"
-                      : "hover:text-gray-900"
-                  }`
-                }
-              >
-                Manage Accounts
               </NavLink>
 
               <NavLink

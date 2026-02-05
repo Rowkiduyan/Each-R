@@ -31,7 +31,7 @@ function AdminEnableDisable() {
       // Get all profiles with their account status
       const { data: profilesData, error: profilesError } = await supabase
         .from('profiles')
-        .select('id, email, first_name, last_name, role, account_disabled, disabled_at, disabled_by')
+        .select('id, email, first_name, last_name, role, depot, account_disabled, disabled_at, disabled_by')
         .order('email');
 
       if (profilesError) throw profilesError;
@@ -100,6 +100,11 @@ function AdminEnableDisable() {
         const employee = employeeMap[profile.email];
         const terminated = employee ? terminatedMap[employee.id] : null;
         
+        // For Admin, HR, HRC, Agency: use depot from profiles table
+        // For Employee: use depot from employees table
+        const isNonEmployeeRole = ['Admin', 'HR', 'HRC', 'Agency'].includes(profile.role);
+        const depot = isNonEmployeeRole ? (profile.depot || 'N/A') : (employee?.depot || 'N/A');
+        
         accountsSet.set(profile.email, {
           id: profile.id,
           email: profile.email,
@@ -107,7 +112,7 @@ function AdminEnableDisable() {
           last_name: profile.last_name || employee?.lname || 'N/A',
           role: profile.role,
           position: employee?.position || 'N/A',
-          depot: employee?.depot || 'N/A',
+          depot: depot,
           account_disabled: profile.account_disabled || false,
           disabled_at: profile.disabled_at,
           disabled_by: profile.disabled_by,
@@ -154,9 +159,9 @@ function AdminEnableDisable() {
       console.log('Final accounts:', Array.from(accountsSet.values()));
 
       const combinedAccounts = Array.from(accountsSet.values()).sort((a, b) => {
-        const emailA = a.email || '';
-        const emailB = b.email || '';
-        return emailA.localeCompare(emailB);
+        const nameA = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase();
+        const nameB = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
+        return nameA.localeCompare(nameB);
       });
 
       setAccounts(combinedAccounts);
@@ -422,9 +427,36 @@ function AdminEnableDisable() {
 
   return (
     <div className="py-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Enable/Disable Accounts</h1>
-        <p className="text-gray-600 mt-2">Manage account access and status</p>
+      {/* Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="text-sm text-gray-600">Total Accounts</div>
+          <div className="text-2xl font-bold text-gray-800">{accounts.length}</div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="text-sm text-gray-600">Active Accounts</div>
+          <div className="text-2xl font-bold text-green-600">
+            {accounts.filter(a => !a.account_disabled && !a.is_terminated).length}
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="text-sm text-gray-600">Inactive Accounts</div>
+          <div className="text-2xl font-bold text-red-600">
+            {accounts.filter(a => a.account_disabled || a.is_terminated).length}
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="text-sm text-gray-600">Total Employees</div>
+          <div className="text-2xl font-bold text-blue-600">
+            {accounts.filter(a => a.role === 'Employee').length}
+          </div>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div className="text-sm text-gray-600">Total Agencies</div>
+          <div className="text-2xl font-bold text-orange-600">
+            {accounts.filter(a => a.role === 'Agency').length}
+          </div>
+        </div>
       </div>
 
       {/* Filters */}
@@ -472,26 +504,6 @@ function AdminEnableDisable() {
               <option value="active">Active</option>
               <option value="disabled">Inactive (Disabled/Terminated)</option>
             </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="text-sm text-gray-600">Total Accounts</div>
-          <div className="text-2xl font-bold text-gray-800">{accounts.length}</div>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="text-sm text-gray-600">Active Accounts</div>
-          <div className="text-2xl font-bold text-green-600">
-            {accounts.filter(a => !a.account_disabled && !a.is_terminated).length}
-          </div>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-          <div className="text-sm text-gray-600">Inactive Accounts</div>
-          <div className="text-2xl font-bold text-red-600">
-            {accounts.filter(a => a.account_disabled || a.is_terminated).length}
           </div>
         </div>
       </div>
@@ -593,17 +605,13 @@ function AdminEnableDisable() {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
-                    {account.role === 'Admin' ? (
-                      <span className="text-gray-400 italic">-</span>
-                    ) : (account.role === 'Employee' || account.role === 'HR' || account.role === 'HRC' || account.role === 'Agency') ? (
+                    {(account.role === 'Employee' || account.role === 'HR' || account.role === 'HRC' || account.role === 'Agency') && (
                       <button
                         onClick={() => handleResetPassword(account)}
                         className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
                       >
                         Reset Password
                       </button>
-                    ) : (
-                      <span className="text-gray-400 italic">-</span>
                     )}
                   </td>
                 </tr>
