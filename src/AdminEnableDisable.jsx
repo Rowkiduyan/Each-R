@@ -210,27 +210,29 @@ function AdminEnableDisable() {
 
       // Initialize userData
       let userData = {
-        email: resetPasswordAccount.email,
+        email: resetPasswordAccount.email, // Work email for password reset
         fname: resetPasswordAccount.first_name,
         lname: resetPasswordAccount.last_name,
         position: resetPasswordAccount.position || resetPasswordAccount.role,
-        emailToNotify: resetPasswordAccount.email
+        emailToNotify: null // Will be set to personal email
       };
 
-      if (resetPasswordAccount.role === 'Employee') {
-        // Get employee-specific data from employees table
-        const { data: empData } = await supabase
-          .from('employees')
-          .select('id, email, fname, lname, position')
-          .eq('email', resetPasswordAccount.email)
-          .maybeSingle();
+      // Fetch personal email from employees table for all roles
+      const { data: empData } = await supabase
+        .from('employees')
+        .select('id, email, fname, lname, position, personal_email')
+        .eq('email', resetPasswordAccount.email)
+        .maybeSingle();
 
-        if (empData) {
-          userData.fname = empData.fname || userData.fname;
-          userData.lname = empData.lname || userData.lname;
-          userData.position = empData.position || userData.position;
-          userData.emailToNotify = empData.email || userData.emailToNotify;
-        }
+      if (empData && empData.personal_email) {
+        userData.fname = empData.fname || userData.fname;
+        userData.lname = empData.lname || userData.lname;
+        userData.position = empData.position || userData.position;
+        userData.emailToNotify = empData.personal_email; // Use personal email for notification
+      } else {
+        // Fallback to work email if personal email not found (shouldn't normally happen)
+        userData.emailToNotify = resetPasswordAccount.email;
+        console.warn('Personal email not found, using work email as fallback');
       }
 
       console.log('Final userData:', userData);
