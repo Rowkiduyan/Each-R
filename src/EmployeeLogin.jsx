@@ -175,8 +175,29 @@ function EmployeeLogin() {
       return;
     }
 
-    // Step 2+: role lookup + redirect
+    // Step 2: Check if account is disabled
     const user = data.user;
+    
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("account_disabled, is_active")
+      .eq("id", user.id)
+      .single();
+
+    if (profileError) {
+      console.error("Error checking account status:", profileError);
+    }
+
+    // If account is disabled or not active, prevent login
+    if (profile && (profile.account_disabled === true || profile.is_active === false)) {
+      await supabase.auth.signOut();
+      setError("Your account has been disabled. Please contact your administrator.");
+      setShowErrorModal(true);
+      setLoading(false);
+      return;
+    }
+
+    // Step 3+: role lookup + redirect
     await redirectAfterLogin(user);
   };
 

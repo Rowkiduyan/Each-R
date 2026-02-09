@@ -36,10 +36,13 @@ function AdminEnableDisable() {
 
       if (profilesError) throw profilesError;
 
-      // Get employees data for additional info
+      // Get employees data for additional info (including auth_user_id)
+      // Exclude agency employees who don't have their own accounts
       const { data: employeesData, error: empError } = await supabase
         .from('employees')
-        .select('id, email, fname, lname, position, depot');
+        .select('id, email, fname, lname, position, depot, auth_user_id, is_agency, source')
+        .or('is_agency.is.null,is_agency.eq.false') // Exclude agency employees
+        .or('source.is.null,source.neq.Agency'); // Also check source field
 
       if (empError) throw empError;
 
@@ -139,7 +142,7 @@ function AdminEnableDisable() {
             // Add new account for terminated employee without profile
             const profile = profileMap[empData.email];
             accountsSet.set(empData.email, {
-              id: profile?.id || empData.id,
+              id: profile?.id || empData.auth_user_id,  // Use auth_user_id for employees
               email: empData.email,
               first_name: profile?.first_name || empData.fname || 'N/A',
               last_name: profile?.last_name || empData.lname || 'N/A',
@@ -305,19 +308,68 @@ function AdminEnableDisable() {
       // Get current admin user
       const adminUser = getStoredJson("loggedInHR");
 
+      let profileIdToUpdate;
+      
+      // For Employee role, get the auth_user_id from employees table
+      if (selectedAccount.role === 'Employee') {
+        const { data: empData, error: empError } = await supabase
+          .from('employees')
+          .select('auth_user_id')
+          .eq('email', selectedAccount.email)
+          .maybeSingle();
+        
+        if (empError || !empData?.auth_user_id) {
+          console.error('Error finding employee auth_user_id:', empError);
+          alert('Failed to find employee account. Please try again.');
+          return;
+        }
+        
+        profileIdToUpdate = empData.auth_user_id;
+        console.log('Employee - Using auth_user_id:', profileIdToUpdate, 'for email:', selectedAccount.email);
+      } else {
+        // For HR, Agency, HRC, Applicant, Admin - use the profile id directly
+        profileIdToUpdate = selectedAccount.id;
+        console.log(`${selectedAccount.role} - Using profile id:`, profileIdToUpdate, 'for email:', selectedAccount.email);
+      }
+
       // Update account status in profiles table
       const updateData = {
         account_disabled: isDisabling,
+        is_active: !isDisabling,
         disabled_at: isDisabling ? new Date().toISOString() : null,
         disabled_by: isDisabling ? adminUser?.id : null
       };
 
-      const { error } = await supabase
+      console.log('Updating profile with id:', profileIdToUpdate, 'Data:', updateData);
+
+      // First, verify the profile exists
+      const { data: checkProfile, error: checkError } = await supabase
+        .from('profiles')
+        .select('id, email, account_disabled, is_active')
+        .eq('id', profileIdToUpdate)
+        .maybeSingle();
+
+      console.log('Profile check before update:', checkProfile, 'Error:', checkError);
+
+      const { data: updateResult, error } = await supabase
         .from('profiles')
         .update(updateData)
-        .eq('id', selectedAccount.id);
+        .eq('id', profileIdToUpdate)
+        .select();
 
-      if (error) throw error;
+      console.log('Update result:', updateResult, 'Error:', error);
+
+      if (error) {
+        console.error('Error updating profile:', error);
+        alert(`Failed to update account: ${error.message}`);
+        return;
+      }
+
+      if (!updateResult || updateResult.length === 0) {
+        console.error('No rows were updated. Profile ID might not exist:', profileIdToUpdate);
+        alert('Failed to update account. The profile was not found in the database.');
+        return;
+      }
 
       // If enabling account and user was terminated, also update employee_separations
       if (!isDisabling && selectedAccount.is_terminated) {
@@ -389,14 +441,14 @@ function AdminEnableDisable() {
     if (isTerminated) {
       return (
         <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
-          Terminated
+          Inactive
         </span>
       );
     }
     if (isDisabled) {
       return (
-        <span className="px-3 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800">
-          Disabled
+        <span className="px-3 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">
+          Inactive
         </span>
       );
     }
