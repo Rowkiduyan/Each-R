@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, Link, useLocation } from "react-router-dom";
 import { supabase } from "./supabaseClient";
 import LogoCropped from './layouts/photos/logo(cropped).png';
-import { notifyHRAboutInterviewResponse, notifyHRAboutApplicationRetraction } from './notifications';
+import { createNotification, notifyHRAboutInterviewResponse, notifyHRAboutApplicationRetraction } from './notifications';
 import { UploadedDocumentsSection } from './components/ApplicantArtifactsPanels';
 import { validateNoSunday, validateOfficeHours } from './utils/dateTimeRules';
 
@@ -16,7 +16,7 @@ function AgencyEndorsements() {
   
   // Check if navigated from Separation page to submit resignation
   const [showSeparationPrompt, setShowSeparationPrompt] = useState(false);
-  const [endorsementsTab, setEndorsementsTab] = useState('pending'); // 'pending' | 'deployed' | 'retracted'
+  const [endorsementsTab, setEndorsementsTab] = useState('pending'); // 'pending' | 'deployed' | 'myEmployees' | 'retracted'
   
   useEffect(() => {
     if (location.state?.openSeparationTab) {
@@ -50,8 +50,505 @@ function AgencyEndorsements() {
   const [positionFilter, setPositionFilter] = useState('All');
   const [depotFilter, setDepotFilter] = useState('All');
   const [employmentStatusFilter, setEmploymentStatusFilter] = useState('All');
-  const [recruitmentTypeFilter, setRecruitmentTypeFilter] = useState('All');
   const [employeeDetailTab, setEmployeeDetailTab] = useState('profiling');
+
+  // Add Employee modal (My Employees)
+  const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
+  const [addEmployeeStep, setAddEmployeeStep] = useState(1);
+  const addEmployeeCsvSectionRef = useRef(null);
+
+  // Add Employee (My Employees -> Add)
+  const [addEmployeeSubmitting, setAddEmployeeSubmitting] = useState(false);
+  const [addEmployeeError, setAddEmployeeError] = useState('');
+  const [addEmployeeSuccess, setAddEmployeeSuccess] = useState('');
+  const [addEmployeeDepotOptions, setAddEmployeeDepotOptions] = useState([]);
+  const [addEmployeeForm, setAddEmployeeForm] = useState({
+    fname: '',
+    mname: '',
+    lname: '',
+    email: '',
+    personal_email: '',
+    contact_number: '',
+    birthday: '',
+    depot: '',
+    department: 'Operations Department',
+    position: 'Helper',
+    employeeType: 'helper', // 'helper' | 'driver'
+    licenseClassification: '',
+    licenseExpiry: '',
+    restrictionCodes: [],
+    yearsDriving: '',
+    truckKnowledge: '', // 'yes' | 'no'
+    resumeFile: null,
+    licenseFile: null,
+  });
+
+  // Load depot locations for dropdowns
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('depot_locations')
+          .select('depot')
+          .order('depot', { ascending: true });
+
+        if (cancelled) return;
+        if (error) {
+          console.error('Error loading depot locations:', error);
+          return;
+        }
+
+        const list = (data || [])
+          .map((x) => (x?.depot ? String(x.depot).trim() : ''))
+          .filter(Boolean);
+        setAddEmployeeDepotOptions(list);
+      } catch (err) {
+        if (!cancelled) console.error('Error loading depot locations:', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // CSV Import (Add Employee)
+  const [csvFile, setCsvFile] = useState(null);
+  const [csvPreview, setCsvPreview] = useState([]);
+  const [csvRows, setCsvRows] = useState([]);
+  const [csvError, setCsvError] = useState('');
+  const [isDraggingCsv, setIsDraggingCsv] = useState(false);
+  const csvInputRef = useRef(null);
+
+  // Endorse existing employee -> pick a job first
+  const [showJobPickerModal, setShowJobPickerModal] = useState(false);
+  const [jobPickerLoading, setJobPickerLoading] = useState(false);
+  const [jobPickerSubmitting, setJobPickerSubmitting] = useState(false);
+  const [jobPickerError, setJobPickerError] = useState(null);
+  const [jobPickerSuccess, setJobPickerSuccess] = useState(null);
+  const [jobPickerJobs, setJobPickerJobs] = useState([]);
+  const [jobPickerQuery, setJobPickerQuery] = useState('');
+  const [employeeToEndorse, setEmployeeToEndorse] = useState(null);
+
+  useEffect(() => {
+    if (!showJobPickerModal) return;
+
+    let cancelled = false;
+    (async () => {
+      setJobPickerLoading(true);
+      setJobPickerSubmitting(false);
+      setJobPickerError(null);
+      setJobPickerSuccess(null);
+      setJobPickerQuery('');
+      try {
+        const { data, error } = await supabase
+          .from('job_posts')
+          .select('id, title, department, depot, created_at, is_active, positions_needed, expires_at')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false });
+
+        if (cancelled) return;
+        if (error) {
+          console.error('Job picker load error:', error);
+          setJobPickerError(error.message || String(error));
+          setJobPickerJobs([]);
+        } else {
+          setJobPickerJobs(data || []);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Job picker unexpected error:', err);
+        setJobPickerError(String(err));
+        setJobPickerJobs([]);
+      } finally {
+        if (!cancelled) setJobPickerLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showJobPickerModal]);
+
+  const isMyEmployeesTab = endorsementsTab === 'myEmployees';
+  const isAddEmployeeModalOpen = isMyEmployeesTab && showAddEmployeeModal;
+  const addEmployeeTotalSteps = addEmployeeForm.employeeType === 'driver' ? 2 : 1;
+
+  useEffect(() => {
+    if (addEmployeeStep > addEmployeeTotalSteps) {
+      setAddEmployeeStep(addEmployeeTotalSteps);
+    }
+  }, [addEmployeeTotalSteps, addEmployeeStep]);
+
+  const resetAddEmployeeState = () => {
+    setAddEmployeeError('');
+    setAddEmployeeSuccess('');
+    setAddEmployeeSubmitting(false);
+    setAddEmployeeForm({
+      fname: '',
+      mname: '',
+      lname: '',
+      email: '',
+      personal_email: '',
+      contact_number: '',
+      birthday: '',
+      depot: '',
+      department: 'Operations Department',
+      position: 'Helper',
+      employeeType: 'helper',
+      licenseClassification: '',
+      licenseExpiry: '',
+      restrictionCodes: [],
+      yearsDriving: '',
+      truckKnowledge: '',
+      resumeFile: null,
+      licenseFile: null,
+    });
+    setCsvFile(null);
+    setCsvPreview([]);
+    setCsvRows([]);
+    setCsvError('');
+    setIsDraggingCsv(false);
+  };
+
+  const closeAddEmployeeModal = () => {
+    setShowAddEmployeeModal(false);
+    setAddEmployeeStep(1);
+    setSelectedEmployee(null);
+    resetAddEmployeeState();
+  };
+
+  const openAddEmployeeModal = () => {
+    resetAddEmployeeState();
+    setAddEmployeeStep(1);
+    setShowAddEmployeeModal(true);
+    setSelectedEmployee(null);
+  };
+
+  const splitCsvLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === ',' && !inQuotes) {
+        result.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current);
+    return result;
+  };
+
+  const parseEmployeesCSV = (text) => {
+    const lines = String(text || '')
+      .split(/\r?\n/)
+      .map((l) => l.trimEnd())
+      .filter((l) => l && !/^\s*#/.test(l));
+    if (lines.length < 2) return { headers: [], data: [] };
+
+    const headers = splitCsvLine(lines[0])
+      .map((h) => String(h || '').trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+    const data = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const raw = splitCsvLine(lines[i]).map((v) => String(v || '').trim().replace(/^["']|["']$/g, ''));
+      if (raw.every((v) => !v)) continue;
+
+      const rowObj = {};
+      headers.forEach((h, idx) => {
+        rowObj[h] = raw[idx] ?? '';
+      });
+      data.push(rowObj);
+    }
+
+    return { headers, data };
+  };
+
+  const handleCsvFileSelect = (file) => {
+    setCsvError('');
+    setCsvPreview([]);
+    setCsvRows([]);
+    setCsvFile(null);
+    if (!file) return;
+
+    if (!String(file.name || '').toLowerCase().endsWith('.csv')) {
+      setCsvError('Please upload a CSV file');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setCsvError('File size must be less than 5MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const { data } = parseEmployeesCSV(e.target.result);
+        if (!data || data.length === 0) {
+          setCsvError('No valid data found in CSV file');
+          return;
+        }
+        if (data.length > 50) {
+          setCsvError('Maximum 50 employees can be imported at once');
+          return;
+        }
+        setCsvFile(file);
+        setCsvRows(data);
+        setCsvPreview(data.slice(0, 5));
+      } catch (err) {
+        console.error('CSV parse error:', err);
+        setCsvError('Error parsing CSV file. Please check the format.');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const normalizeCsvKey = (k) => String(k || '').trim().toLowerCase().replace(/\s+/g, '_');
+  const getCsvValue = (row, candidates) => {
+    const keys = Object.keys(row || {});
+    const map = {};
+    keys.forEach((k) => {
+      map[normalizeCsvKey(k)] = row[k];
+    });
+    for (const cand of candidates) {
+      const v = map[normalizeCsvKey(cand)];
+      if (v != null && String(v).trim() !== '') return String(v).trim();
+    }
+    return '';
+  };
+
+  const uploadEmployeeFile = async ({ employeeId, file, label }) => {
+    if (!file || !employeeId) return null;
+    const safeName = String(file.name || 'file').replace(/[^a-zA-Z0-9_.-]+/g, '_');
+    const path = `employees/${employeeId}/${Date.now()}_${safeName}`;
+    const { error } = await supabase.storage.from('application-files').upload(path, file);
+    if (error) throw error;
+    return {
+      label,
+      path,
+      originalName: file.name,
+      uploadedAt: new Date().toISOString(),
+    };
+  };
+
+  const submitAddEmployee = async (e) => {
+    e?.preventDefault?.();
+    setAddEmployeeError('');
+    setAddEmployeeSuccess('');
+
+    const email = String(addEmployeeForm.email || '').trim().toLowerCase();
+    if (!email) {
+      setAddEmployeeError('Email is required.');
+      return;
+    }
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      setAddEmployeeError('Please enter a valid email address.');
+      return;
+    }
+    const fname = String(addEmployeeForm.fname || '').trim();
+    const lname = String(addEmployeeForm.lname || '').trim();
+    if (!fname || !lname) {
+      setAddEmployeeError('First name and last name are required.');
+      return;
+    }
+
+    setAddEmployeeSubmitting(true);
+    try {
+      const { data: auth, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !auth?.user) throw new Error('Unable to verify user');
+
+      const { data: existing } = await supabase
+        .from('employees')
+        .select('id,email')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (existing?.id) {
+        setAddEmployeeError(`An employee with email "${email}" already exists.`);
+        setAddEmployeeSubmitting(false);
+        return;
+      }
+
+      const department = addEmployeeForm.department || null;
+      const position = addEmployeeForm.position || null;
+      const depot = String(addEmployeeForm.depot || '').trim() || null;
+      const birthday = addEmployeeForm.birthday || null;
+      const personal_email = String(addEmployeeForm.personal_email || '').trim() || null;
+      const contact_number = String(addEmployeeForm.contact_number || '').trim() || null;
+
+      const isDriver = String(addEmployeeForm.employeeType || '').toLowerCase() === 'driver' || /driver/i.test(String(position || ''));
+      const requirements = {
+        employeeType: isDriver ? 'driver' : 'helper',
+        driver: isDriver
+          ? {
+              licenseClassification: addEmployeeForm.licenseClassification || null,
+              licenseExpiry: addEmployeeForm.licenseExpiry || null,
+              restrictionCodes: Array.isArray(addEmployeeForm.restrictionCodes) ? addEmployeeForm.restrictionCodes : [],
+              yearsDriving: addEmployeeForm.yearsDriving || null,
+              truckKnowledge: addEmployeeForm.truckKnowledge || null,
+            }
+          : null,
+        documents: [],
+      };
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from('employees')
+        .insert([
+          {
+            email,
+            fname,
+            mname: String(addEmployeeForm.mname || '').trim() || null,
+            lname,
+            personal_email,
+            contact_number,
+            birthday,
+            depot,
+            department,
+            position,
+            role: 'Employee',
+            source: 'agency',
+            agency_profile_id: auth.user.id,
+            requirements,
+          },
+        ])
+        .select('id,requirements')
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      const employeeId = inserted?.id;
+      const docs = [];
+      if (addEmployeeForm.resumeFile) {
+        docs.push(await uploadEmployeeFile({ employeeId, file: addEmployeeForm.resumeFile, label: 'Resume' }));
+      }
+      if (isDriver && addEmployeeForm.licenseFile) {
+        docs.push(await uploadEmployeeFile({ employeeId, file: addEmployeeForm.licenseFile, label: 'License Photocopy' }));
+      }
+
+      if (docs.filter(Boolean).length > 0) {
+        const nextReq = {
+          ...(inserted?.requirements && typeof inserted.requirements === 'object' ? inserted.requirements : requirements),
+          documents: docs.filter(Boolean),
+        };
+        const { error: updErr } = await supabase
+          .from('employees')
+          .update({ requirements: nextReq })
+          .eq('id', employeeId);
+        if (updErr) throw updErr;
+      }
+
+      setAddEmployeeSuccess('Employee added successfully.');
+      await loadHired();
+      setAlertMessage('Employee added successfully.');
+      setShowSuccessAlert(true);
+      closeAddEmployeeModal();
+    } catch (err) {
+      console.error('Add employee error:', err);
+      setAddEmployeeError(err?.message || String(err));
+    } finally {
+      setAddEmployeeSubmitting(false);
+    }
+  };
+
+  const importEmployeesFromCsv = async () => {
+    setAddEmployeeError('');
+    setAddEmployeeSuccess('');
+    setCsvError('');
+    if (!csvRows || csvRows.length === 0) {
+      setCsvError('Please select a CSV file first.');
+      return;
+    }
+
+    setAddEmployeeSubmitting(true);
+    try {
+      const { data: auth, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !auth?.user) throw new Error('Unable to verify user');
+
+      const mapped = csvRows
+        .map((row) => {
+          const email = getCsvValue(row, ['email', 'Email Address', 'email_address']).toLowerCase();
+          const fname = getCsvValue(row, ['fname', 'first_name', 'first name', 'First Name']);
+          const mname = getCsvValue(row, ['mname', 'middle_name', 'middle name', 'Middle Name']);
+          const lname = getCsvValue(row, ['lname', 'last_name', 'last name', 'Last Name']);
+          const personal_email = getCsvValue(row, ['personal_email', 'personal email']);
+          const contact_number = getCsvValue(row, ['contact_number', 'contact', 'contact number', 'phone']);
+          const depot = getCsvValue(row, ['depot', 'Depot']);
+          const department = getCsvValue(row, ['department', 'Department']) || addEmployeeForm.department || null;
+          const position = getCsvValue(row, ['position', 'Position']) || addEmployeeForm.position || null;
+          const birthday = getCsvValue(row, ['birthday', 'Birthday', 'date_of_birth', 'dob']) || null;
+          if (!email || !/^\S+@\S+\.\S+$/.test(email)) return null;
+          if (!fname || !lname) return null;
+          return {
+            email,
+            fname,
+            mname: mname || null,
+            lname,
+            personal_email: personal_email || null,
+            contact_number: contact_number || null,
+            depot: depot || null,
+            department: department || null,
+            position: position || null,
+            birthday: birthday || null,
+            role: 'Employee',
+            source: 'agency',
+            agency_profile_id: auth.user.id,
+            requirements: {
+              employeeType: /driver/i.test(String(position || '')) ? 'driver' : 'helper',
+              driver: null,
+              documents: [],
+              importedFromCsv: true,
+            },
+          };
+        })
+        .filter(Boolean);
+
+      if (mapped.length === 0) {
+        setCsvError('No valid rows found. Required columns: email, fname/first name, lname/last name.');
+        setAddEmployeeSubmitting(false);
+        return;
+      }
+
+      const emails = Array.from(new Set(mapped.map((r) => r.email)));
+      const { data: existing } = await supabase
+        .from('employees')
+        .select('id,email')
+        .in('email', emails);
+      const existingEmails = new Set((existing || []).map((r) => String(r.email || '').toLowerCase()));
+
+      const toInsert = mapped.filter((r) => !existingEmails.has(r.email));
+      if (toInsert.length === 0) {
+        setCsvError('All emails in this CSV already exist in the system.');
+        setAddEmployeeSubmitting(false);
+        return;
+      }
+
+      const { error: insertErr } = await supabase.from('employees').insert(toInsert);
+      if (insertErr) throw insertErr;
+
+      setAddEmployeeSuccess(`Imported ${toInsert.length} employee(s) successfully.`);
+      await loadHired();
+      setAlertMessage(`Imported ${toInsert.length} employee(s) successfully.`);
+      setShowSuccessAlert(true);
+      closeAddEmployeeModal();
+    } catch (err) {
+      console.error('CSV import error:', err);
+      setCsvError(err?.message || String(err));
+    } finally {
+      setAddEmployeeSubmitting(false);
+    }
+  };
 
   // master department list (kept in sync with Employees.jsx)
   const departments = [
@@ -61,6 +558,12 @@ function AgencyEndorsements() {
     "Security & Safety Department",
     "Collections Department",
     "Repairs and Maintenance Specialist",
+  ];
+
+  const restrictionCodesCatalog = [
+    { code: '3', label: 'Code 3 (C equivalent)' },
+    { code: 'b2', label: 'Code B2 (up to 1T vehicles)' },
+    { code: 'c', label: 'Code C (1T and 2T vehicles)' },
   ];
 
   const departmentToPositions = {
@@ -434,8 +937,8 @@ function AgencyEndorsements() {
             last,
             email,
             contact,
-            position: pos || "—",
-            depot: depot || "—",
+            position: pos || null,
+            depot: depot || null,
             status,
             agency_profile_id: endorsedByProfileId,
             endorsed_by_auth_user_id: endorsedByAuthUserId,
@@ -556,8 +1059,8 @@ function AgencyEndorsements() {
           id: r.id,
           name: displayName,
           email,
-          position: pos || "—",
-          depot: depot || "—",
+          position: pos || null,
+          depot: depot || null,
           status: 'retracted',
           agency: true,
           retractedAt: r.updated_at || r.created_at || null,
@@ -591,7 +1094,7 @@ function AgencyEndorsements() {
 
       const { data, error } = await supabase
         .from("employees")
-        .select("id, auth_user_id, email, fname, lname, mname, contact_number, position, depot, hired_at, agency_profile_id, endorsed_by_agency_id, is_agency, source, status")
+        .select("id, auth_user_id, email, fname, lname, mname, contact_number, position, depot, department, hired_at, created_at, agency_profile_id, endorsed_by_agency_id, is_agency, source, status, requirements, birthday, personal_email")
         // Only include employees that belong to the current agency.
         .or(`agency_profile_id.eq.${user.id},endorsed_by_agency_id.eq.${user.id}`)
         .neq("source", "internal")
@@ -616,16 +1119,21 @@ function AgencyEndorsements() {
               name,
               auth_user_id: r.auth_user_id || null,
               email: r.email || null,
+              personal_email: r.personal_email || null,
               contact: r.contact_number || null,
               position: r.position || "Employee",
-              depot: r.depot || "—",
+              depot: r.depot || null,
+              department: r.department || null,
+              birthday: r.birthday || null,
               hired_at: r.hired_at || null,
+              created_at: r.created_at || null,
               agency_profile_id: r.agency_profile_id || null,
               endorsed_by_agency_id: r.endorsed_by_agency_id || null,
               is_agency: !!r.is_agency,
               source: r.source || null,
               status: r.status || null,
               employmentStatus,
+              requirements: r.requirements && typeof r.requirements === 'object' ? r.requirements : null,
               agency: true,
               raw: r,
             };
@@ -952,6 +1460,184 @@ function AgencyEndorsements() {
 
   const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 
+  const extractApplicantFromPayload = (payload) => {
+    if (!payload) return null;
+    if (typeof payload === 'string') {
+      try {
+        return extractApplicantFromPayload(JSON.parse(payload));
+      } catch {
+        return null;
+      }
+    }
+    return payload?.applicant || payload?.form || payload || null;
+  };
+
+  const extractEmailFromApplicationPayload = (payload) => {
+    const app = extractApplicantFromPayload(payload);
+    const raw =
+      app?.email ||
+      app?.Email ||
+      app?.contact ||
+      app?.contactNumber ||
+      payload?.email ||
+      payload?.Email ||
+      payload?.contact ||
+      null;
+    if (typeof raw !== 'string') return null;
+    if (!raw.includes('@')) return null;
+    return normalizeEmail(raw);
+  };
+
+  const closeJobPicker = () => {
+    setShowJobPickerModal(false);
+    setJobPickerLoading(false);
+    setJobPickerSubmitting(false);
+    setJobPickerError(null);
+    setJobPickerSuccess(null);
+    setJobPickerQuery('');
+    setJobPickerJobs([]);
+    setEmployeeToEndorse(null);
+  };
+
+  const endorseExistingEmployeeToJob = async (job) => {
+    setJobPickerSubmitting(true);
+    setJobPickerError(null);
+    setJobPickerSuccess(null);
+
+    try {
+      const employee = employeeToEndorse;
+      if (!employee) throw new Error('No employee selected for endorsement.');
+      if (!job?.id) throw new Error('No job selected.');
+
+      const empEmail = normalizeEmail(employee.email);
+      if (!empEmail) throw new Error('Employee email is required to endorse.');
+
+      const { data: authRes, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authRes?.user) throw new Error('Unable to verify user.');
+      const user = authRes.user;
+
+      const applicant = {
+        fname: employee?.raw?.fname || employee?.fname || employee?.first || employee?.firstName || null,
+        mname: employee?.raw?.mname || employee?.mname || employee?.middle || employee?.middleName || null,
+        lname: employee?.raw?.lname || employee?.lname || employee?.last || employee?.lastName || null,
+        firstName: employee?.raw?.fname || employee?.fname || employee?.first || employee?.firstName || null,
+        middleName: employee?.raw?.mname || employee?.mname || employee?.middle || employee?.middleName || null,
+        lastName: employee?.raw?.lname || employee?.lname || employee?.last || employee?.lastName || null,
+        email: employee.email,
+        contactNumber: employee.contact || employee.contact_number || employee?.raw?.contact_number || null,
+        contact: employee.contact || employee.contact_number || employee?.raw?.contact_number || null,
+        depot: employee.depot || employee?.raw?.depot || null,
+        position: employee.position || employee?.raw?.position || null,
+        department: employee.department || employee?.raw?.department || null,
+        fullName: employee.name || null,
+      };
+
+      const payload = {
+        applicant,
+        form: applicant,
+        job: {
+          id: job.id,
+          title: job.title || null,
+          depot: job.depot || null,
+          department: job.department || null,
+        },
+        meta: {
+          endorsed_by_auth_user_id: user.id,
+          endorsed_by_profile_id: user.id,
+          endorsed_at: new Date().toISOString(),
+          endorsement_source: 'employee_pool',
+          employee_id: employee.id,
+        },
+      };
+
+      // Try to find existing endorsement by matching email for the same job
+      let existing = null;
+      try {
+        const { data: apps, error: appsErr } = await supabase
+          .from('applications')
+          .select('id, payload, endorsed, status')
+          .eq('job_id', job.id)
+          .eq('endorsed', true)
+          .neq('status', 'retracted');
+
+        if (!appsErr && Array.isArray(apps) && apps.length > 0) {
+          const match = apps.find((a) => extractEmailFromApplicationPayload(a.payload) === empEmail);
+          if (match) existing = match;
+        }
+      } catch {
+        // If lookup fails, proceed with insert
+      }
+
+      let applicationId = null;
+      if (existing?.id) {
+        const { data: updated, error: updErr } = await supabase
+          .from('applications')
+          .update({ payload, status: 'submitted', endorsed: true })
+          .eq('id', existing.id)
+          .select('id')
+          .maybeSingle();
+
+        if (updErr) throw updErr;
+        applicationId = updated?.id || existing.id;
+      } else {
+        const { data: inserted, error: insErr } = await supabase
+          .from('applications')
+          .insert([{ job_id: job.id, payload, status: 'submitted', endorsed: true }])
+          .select('id')
+          .maybeSingle();
+
+        if (insErr) throw insErr;
+        applicationId = inserted?.id || null;
+      }
+
+      // Notify HR users
+      if (applicationId) {
+        try {
+          const { data: hrUsers, error: hrError } = await supabase
+            .from('profiles')
+            .select('id, role, depot')
+            .in('role', ['HR', 'HRC']);
+
+          if (!hrError && hrUsers && hrUsers.length > 0) {
+            const applicantName = employee.name || 'Unknown Employee';
+            const positionTitle = job.title || 'Unknown Position';
+            const jobDepot = job.depot || null;
+
+            for (const hrUser of hrUsers) {
+              if (hrUser.role === 'HRC' && hrUser.depot && jobDepot && hrUser.depot !== jobDepot) {
+                continue;
+              }
+
+              await createNotification({
+                userId: hrUser.id,
+                applicationId,
+                type: 'application',
+                title: 'New Agency Endorsement',
+                message: `${applicantName} was endorsed by agency for ${positionTitle}`,
+                userType: 'profile',
+              });
+            }
+          }
+        } catch (notifError) {
+          console.error('Error creating HR notifications:', notifError);
+        }
+      }
+
+      setJobPickerSuccess('Employee endorsed successfully.');
+      setAlertMessage('Employee endorsed successfully.');
+      setShowSuccessAlert(true);
+      closeJobPicker();
+      setEndorsementsTab('pending');
+      setSelectedEmployee(null);
+      await loadEndorsed();
+    } catch (err) {
+      console.error('Endorse employee error:', err);
+      setJobPickerError(err?.message || String(err));
+    } finally {
+      setJobPickerSubmitting(false);
+    }
+  };
+
   const normalizeNameToken = (value) => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
   const getPersonKey = ({ first, last, name }) => {
@@ -1046,7 +1732,7 @@ function AgencyEndorsements() {
           endorsed_employee_id: hiredEmp.id,
           // Prefer employee position/depot if application data is missing
           position: emp.position || hiredEmp.position || "Employee",
-          depot: emp.depot || hiredEmp.depot || "—",
+          depot: emp.depot || hiredEmp.depot || null,
           employmentStatus: emp.employmentStatus || hiredEmp.employmentStatus || null,
           agency: true,
         };
@@ -1100,7 +1786,7 @@ function AgencyEndorsements() {
     const set = new Set();
     for (const e of endorsedEmployees || []) {
       const d = e?.depot ? String(e.depot).trim() : "";
-      if (d && d !== "—") set.add(d);
+      if (d && d !== "—" && d !== "None") set.add(d);
     }
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [endorsedEmployees]);
@@ -1117,7 +1803,6 @@ function AgencyEndorsements() {
   }, [departmentFilter, positionFilter]);
 
   const employmentStatuses = ["All", "Regular", "Under Probation", "Part Time"];
-  const recruitmentTypes = ["All", "Agency", "Direct"];
 
   const getIsAgency = (emp) => {
     if (!emp) return false;
@@ -1158,12 +1843,18 @@ function AgencyEndorsements() {
       return hiredByEmail?.hired_at || null;
     };
 
-    const sourceList = endorsementsTab === 'retracted'
-      ? (retractedEndorsements || [])
-      : (endorsedEmployees || []);
+    const sourceList = endorsementsTab === 'myEmployees'
+      ? (hiredEmployees || [])
+      : endorsementsTab === 'retracted'
+        ? (retractedEndorsements || [])
+        : (endorsedEmployees || []);
 
     return sourceList
-      .filter((emp) => endorsementsTab === 'retracted' ? true : emp?.status === endorsementsTab)
+      .filter((emp) => {
+        if (endorsementsTab === 'myEmployees') return true;
+        if (endorsementsTab === 'retracted') return true;
+        return emp?.status === endorsementsTab;
+      })
       .filter((emp) => {
         if (!searchLower) return true;
         return (
@@ -1171,15 +1862,9 @@ function AgencyEndorsements() {
           String(emp?.position || "").toLowerCase().includes(searchLower) ||
           String(emp?.depot || "").toLowerCase().includes(searchLower) ||
           String(emp?.status || "").toLowerCase().includes(searchLower) ||
+          String(emp?.employmentStatus || "").toLowerCase().includes(searchLower) ||
           String(emp?.id || "").toLowerCase().includes(searchLower)
         );
-      })
-      .filter((emp) => {
-        if (recruitmentTypeFilter === "All") return true;
-        const isAgency = getIsAgency(emp);
-        if (recruitmentTypeFilter === "Agency") return !!isAgency;
-        if (recruitmentTypeFilter === "Direct") return !isAgency;
-        return true;
       })
       .filter((emp) => {
         if (departmentFilter === "All") return true;
@@ -1211,13 +1896,16 @@ function AgencyEndorsements() {
         const bn = String(b?.name || "");
         return isAsc ? an.localeCompare(bn) : bn.localeCompare(an);
       });
-  }, [endorsedEmployees, retractedEndorsements, hiredEmployees, endorsementsTab, endorsementsSearch, recruitmentTypeFilter, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
+  }, [endorsedEmployees, retractedEndorsements, hiredEmployees, endorsementsTab, endorsementsSearch, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
 
   // Keep selectedEmployee in sync with latest endorsedEmployees data
   useEffect(() => {
     const selectedId = selectedEmployee?.id;
     if (!selectedId) return;
-    const updated = endorsedEmployees.find((e) => e?.id === selectedId);
+    const backingList = endorsementsTab === 'myEmployees'
+      ? hiredEmployees
+      : endorsedEmployees;
+    const updated = (backingList || []).find((e) => e?.id === selectedId);
     if (!updated) return;
 
     const stableStringify = (v) => {
@@ -1265,7 +1953,7 @@ function AgencyEndorsements() {
 
       return changed ? merged : prev;
     });
-  }, [endorsedEmployees, selectedEmployee?.id]);
+  }, [endorsedEmployees, hiredEmployees, endorsementsTab, selectedEmployee?.id]);
 
   // Load requirements for selected employee
   useEffect(() => {
@@ -2236,10 +2924,12 @@ function AgencyEndorsements() {
   };
 
   const isRetractedTab = endorsementsTab === 'retracted';
-  const listLoading = isRetractedTab ? retractedLoading : endorsedLoading;
-  const listError = isRetractedTab ? retractedError : endorsedError;
-  const listCount = isRetractedTab ? retractedEndorsements.length : endorsedEmployees.length;
-  const emptyListMessage = isRetractedTab ? 'No retracted applications yet.' : 'No endorsements yet.';
+  const listLoading = isMyEmployeesTab ? hiredLoading : (isRetractedTab ? retractedLoading : endorsedLoading);
+  const listError = isMyEmployeesTab ? hiredError : (isRetractedTab ? retractedError : endorsedError);
+  const listCount = isMyEmployeesTab ? hiredEmployees.length : (isRetractedTab ? retractedEndorsements.length : endorsedEmployees.length);
+  const emptyListMessage = isMyEmployeesTab
+    ? 'No employees yet.'
+    : (isRetractedTab ? 'No retracted applications yet.' : 'No endorsements yet.');
 
   return (
     <>
@@ -2640,6 +3330,7 @@ function AgencyEndorsements() {
                         onClick={() => {
                           setEndorsementsTab('pending');
                           setSelectedEmployee(null);
+                          closeAddEmployeeModal();
                         }}
                         className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
                           endorsementsTab === 'pending'
@@ -2654,6 +3345,7 @@ function AgencyEndorsements() {
                         onClick={() => {
                           setEndorsementsTab('deployed');
                           setSelectedEmployee(null);
+                          closeAddEmployeeModal();
                         }}
                         className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
                           endorsementsTab === 'deployed'
@@ -2663,11 +3355,28 @@ function AgencyEndorsements() {
                       >
                         Deployed ({stats.totalDeployed})
                       </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEndorsementsTab('myEmployees');
+                          setSelectedEmployee(null);
+                          closeAddEmployeeModal();
+                        }}
+                        className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
+                          endorsementsTab === 'myEmployees'
+                            ? 'bg-white text-[#800000] shadow-sm'
+                            : 'text-gray-600 hover:text-gray-800'
+                        }`}
+                      >
+                        My Employees ({hiredEmployees.length})
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
                           setEndorsementsTab('retracted');
                           setSelectedEmployee(null);
+                          closeAddEmployeeModal();
                         }}
                         className={`px-4 py-2 font-medium text-sm rounded-lg transition-all whitespace-nowrap ${
                           endorsementsTab === 'retracted'
@@ -2682,7 +3391,7 @@ function AgencyEndorsements() {
                 </div>
 
                 {/* Filters + Export (responsive: one row on wide screens, wraps below on smaller) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))_auto] gap-2 items-center">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto] gap-2 items-center">
                     {/* Depot Filter */}
                     <select
                       value={depotFilter}
@@ -2731,18 +3440,6 @@ function AgencyEndorsements() {
                       ))}
                     </select>
 
-                    {/* Recruitment Type */}
-                    <select
-                      value={recruitmentTypeFilter}
-                      onChange={(e) => setRecruitmentTypeFilter(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
-                    >
-                      <option value="All">All Recruitment Type</option>
-                      {recruitmentTypes.filter((t) => t !== "All").map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
-
                     {/* Sort */}
                     <select
                       value={sortOption}
@@ -2756,13 +3453,24 @@ function AgencyEndorsements() {
                       <option value="hired-desc">Date Hired (Newest → Oldest)</option>
                     </select>
 
-                    {/* Export Button */}
-                    <button className="w-full xl:w-auto px-2.5 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      Export
-                    </button>
+                    {endorsementsTab === 'myEmployees' ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openAddEmployeeModal();
+                        }}
+                        className="w-full xl:w-auto px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors"
+                      >
+                        Add Employee
+                      </button>
+                    ) : (
+                      <button className="w-full xl:w-auto px-2.5 py-2 border border-gray-200 rounded-lg text-[13px] font-medium text-gray-600 hover:bg-gray-50 flex items-center justify-center gap-2 bg-white">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Export
+                      </button>
+                    )}
                 </div>
               </div>
             </div>
@@ -2796,7 +3504,7 @@ function AgencyEndorsements() {
             <div className="flex-1 flex flex-col overflow-hidden p-4 min-h-0">
               {listLoading ? (
                 <div className="p-6 text-gray-600">
-                  {isRetractedTab ? 'Loading retracted applications…' : 'Loading endorsements…'}
+                  {isRetractedTab ? 'Loading retracted applications…' : isMyEmployeesTab ? 'Loading employees…' : 'Loading endorsements…'}
                 </div>
               ) : listError ? (
                 <div className="p-4 bg-[#800000]/10 text-[#800000] rounded">{listError}</div>
@@ -2808,22 +3516,91 @@ function AgencyEndorsements() {
                     {/* Table on the left */}
                     <div className={`${selectedEmployee ? 'lg:w-[30%]' : 'w-full'} overflow-x-auto overflow-y-auto no-scrollbar`}>
                       {filteredEmployees.length === 0 ? (
-                        <div className="p-6 text-gray-600">No endorsements match your search.</div>
+                        <div className="p-6 text-gray-600">{isMyEmployeesTab ? 'No employees match your search.' : 'No endorsements match your search.'}</div>
+                      ) : isMyEmployeesTab ? (
+                        <table className="w-full">
+                          <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
+                              {!selectedEmployee && (
+                                <>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date Added</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider"></th>
+                                </>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {filteredEmployees.map((emp) => {
+                              const isSelected = selectedEmployee?.id === emp.id;
+                              const dateAdded = emp.created_at ? formatDate(emp.created_at) : 'None';
+                              return (
+                                <tr
+                                  key={emp.id}
+                                  className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${isSelected ? 'bg-[#800000]/10/50' : ''}`}
+                                  onClick={() => {
+                                    setEndorsementsTab('myEmployees');
+                                    setSelectedEmployee(emp);
+                                    setEmployeeDetailTab('profiling');
+                                  }}
+                                >
+                                  <td className="px-6 py-4">
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${getAvatarColor(emp.name)} flex items-center justify-center text-white text-sm font-medium shadow-sm`}>
+                                        {getInitials(emp.name)}
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium text-gray-800">{emp.name}</p>
+                                        <p className="text-xs text-gray-500">{emp.email || `#${emp.id}`}</p>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  {!selectedEmployee && (
+                                    <>
+                                      <td className="px-6 py-4">
+                                        <p className="text-sm text-gray-800">{emp.position || 'Employee'}</p>
+                                        <p className="text-xs text-gray-500">{emp.depot || 'None'}</p>
+                                      </td>
+                                      <td className="px-6 py-4">
+                                        <p className="text-sm text-gray-800">{dateAdded}</p>
+                                      </td>
+                                      <td className="px-6 py-4 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={(ev) => {
+                                            ev.preventDefault();
+                                            ev.stopPropagation();
+                                            setEmployeeToEndorse(emp);
+                                            setShowJobPickerModal(true);
+                                          }}
+                                          className="px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors"
+                                        >
+                                          Endorse
+                                        </button>
+                                      </td>
+                                    </>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       ) : (
-                      <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
-                            {!selectedEmployee && (
-                              <>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
-                                <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                              </>
-                            )}
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {filteredEmployees.map((emp) => {
+                        <table className="w-full">
+                          <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Employee</th>
+                              {!selectedEmployee && (
+                                <>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Position / Depot</th>
+                                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                </>
+                              )}
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {filteredEmployees.map((emp) => {
                               // Find deployed date from hiredEmployees if this endorsement was deployed
                               const deployedEmployee = emp.endorsed_employee_id 
                                 ? hiredEmployees.find(h => h.id === emp.endorsed_employee_id)
@@ -2906,14 +3683,130 @@ function AgencyEndorsements() {
                                 </tr>
                               );
                             })}
-                        </tbody>
-                      </table>
+                          </tbody>
+                        </table>
                       )}
 
                     </div>
 
                     {/* Detail panel on the right */}
                     {selectedEmployee && (() => {
+                      if (isMyEmployeesTab) {
+                        const req = selectedEmployee.requirements && typeof selectedEmployee.requirements === 'object' ? selectedEmployee.requirements : {};
+                        const docs = Array.isArray(req.documents) ? req.documents : [];
+                        const isDriver = String(req.employeeType || '').toLowerCase() === 'driver' || /driver/i.test(String(selectedEmployee.position || ''));
+
+                        const detailTabs = [
+                          { key: 'profiling', label: 'Profiling' },
+                          { key: 'documents', label: 'Documents' },
+                        ];
+                        const validTabKeys = detailTabs.map((t) => t.key);
+                        const currentTab = validTabKeys.includes(employeeDetailTab) ? employeeDetailTab : 'profiling';
+
+                        return (
+                          <div className="lg:w-[70%] overflow-y-auto flex flex-col">
+                            <div className="bg-white border border-gray-300 rounded-t-lg p-4 relative">
+                              <button
+                                onClick={() => setSelectedEmployee(null)}
+                                className="absolute top-2 right-2 w-8 h-8 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-700 transition-colors"
+                              >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                              </button>
+
+                              <div className="flex items-center gap-3 pr-10">
+                                <div className={`w-14 h-14 rounded-full bg-gradient-to-br ${getAvatarColor(selectedEmployee.name)} flex items-center justify-center text-white text-lg font-semibold shadow-md`}>
+                                  {getInitials(selectedEmployee.name)}
+                                </div>
+                                <div className="flex-1">
+                                  <h4 className="font-semibold text-gray-800 text-lg">{selectedEmployee.name}</h4>
+                                  <p className="text-sm text-gray-600">
+                                    {displayValue(selectedEmployee.position)}
+                                    <span className="text-gray-400"> | </span>
+                                    {displayValue(selectedEmployee.depot)}
+                                  </p>
+                                  <p className="text-xs text-gray-500">{selectedEmployee.email || `#${selectedEmployee.id}`}</p>
+                                </div>
+                                <div className="text-right">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEmployeeToEndorse(selectedEmployee);
+                                      setShowJobPickerModal(true);
+                                    }}
+                                    className="px-4 py-2 bg-[#800000] text-white rounded-lg text-sm font-medium hover:bg-[#990000] transition-colors"
+                                  >
+                                    Endorse
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex border-b border-gray-300 bg-white overflow-x-auto">
+                              {detailTabs.map((tab) => (
+                                <button
+                                  key={tab.key}
+                                  onClick={() => setEmployeeDetailTab(tab.key)}
+                                  className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                                    currentTab === tab.key
+                                      ? 'border-orange-500 text-orange-600 bg-orange-50'
+                                      : 'border-transparent text-gray-600 hover:text-gray-800 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  {tab.label}
+                                </button>
+                              ))}
+                            </div>
+
+                            <div className="bg-white border-l border-r border-b border-gray-300 p-4 space-y-4">
+                              {currentTab === 'profiling' ? (
+                                <div className="space-y-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                      <div className="text-xs font-semibold text-gray-600 mb-2">Contact</div>
+                                      <div className="text-sm text-gray-800">Email: <span className="font-semibold">{selectedEmployee.email || 'None'}</span></div>
+                                      <div className="text-sm text-gray-800">Personal Email: <span className="font-semibold">{selectedEmployee.personal_email || 'None'}</span></div>
+                                      <div className="text-sm text-gray-800">Contact: <span className="font-semibold">{selectedEmployee.contact || 'None'}</span></div>
+                                    </div>
+                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                      <div className="text-xs font-semibold text-gray-600 mb-2">Info</div>
+                                      <div className="text-sm text-gray-800">Department: <span className="font-semibold">{selectedEmployee.department || 'None'}</span></div>
+                                      <div className="text-sm text-gray-800">Birthday: <span className="font-semibold">{selectedEmployee.birthday ? String(selectedEmployee.birthday) : 'None'}</span></div>
+                                      <div className="text-sm text-gray-800">Date Added: <span className="font-semibold">{selectedEmployee.created_at ? formatDate(selectedEmployee.created_at) : 'None'}</span></div>
+                                    </div>
+                                  </div>
+
+                                  {isDriver && req.driver ? (
+                                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                                        <div className="text-sm font-semibold text-gray-900">Driver Details</div>
+                                      </div>
+                                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-800">
+                                        <div>License Classification: <span className="font-semibold">{req.driver.licenseClassification || 'None'}</span></div>
+                                        <div>License Expiry: <span className="font-semibold">{req.driver.licenseExpiry || 'None'}</span></div>
+                                        <div>Restriction Codes: <span className="font-semibold">{Array.isArray(req.driver.restrictionCodes) && req.driver.restrictionCodes.length ? req.driver.restrictionCodes.join(', ') : 'None'}</span></div>
+                                        <div>Years Driving: <span className="font-semibold">{req.driver.yearsDriving || 'None'}</span></div>
+                                        <div>Truck Knowledge: <span className="font-semibold">{req.driver.truckKnowledge || 'None'}</span></div>
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <UploadedDocumentsSection
+                                  title="Uploaded Documents"
+                                  emptyText="No documents uploaded for this employee."
+                                  documents={docs}
+                                  getPublicUrl={getFileUrl}
+                                  columns={2}
+                                  variant="list"
+                                />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
                       // Extract payload data for display
                       const payload = selectedEmployee.payload || {};
                       const formData = payload.form || payload.applicant || payload || {};
@@ -2928,10 +3821,10 @@ function AgencyEndorsements() {
                         selectedEmployee.created_at ||
                         selectedEmployee.raw?.created_at ||
                         null;
-                      const endorsedAtLabel = endorsedAtRaw ? formatDate(endorsedAtRaw) : '—';
+                      const endorsedAtLabel = endorsedAtRaw ? formatDate(endorsedAtRaw) : 'None';
 
                       const appliedAtRaw = selectedEmployee.created_at || selectedEmployee.raw?.created_at || null;
-                      const appliedAtLabel = appliedAtRaw ? formatDate(appliedAtRaw) : '—';
+                      const appliedAtLabel = appliedAtRaw ? formatDate(appliedAtRaw) : 'None';
 
                       const statusInfo = getEndorsementStatus(selectedEmployee);
                       const shortId = String(selectedEmployee.id || '').slice(0, 8);
@@ -3931,13 +4824,13 @@ function AgencyEndorsements() {
                                     {onboardingItems.map((ob) => (
                                       <div key={ob.id} className="flex px-6 py-4 hover:bg-gray-50 transition-colors">
                                         <div className="flex-1 text-sm text-gray-800 font-medium text-center">
-                                          {ob.item || '—'}
+                                          {ob.item || 'None'}
                                         </div>
                                         <div className="flex-1 text-sm text-gray-600 text-center">
                                           {ob.description || <span className="text-gray-400">None</span>}
                                         </div>
                                         <div className="flex-1 text-sm text-gray-600 text-center">
-                                          {ob.date ? new Date(ob.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                                          {ob.date ? new Date(ob.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'None'}
                                         </div>
                                         <div className="flex-1 text-sm flex justify-center">
                                           {ob.fileUrl ? (
@@ -4538,19 +5431,19 @@ function AgencyEndorsements() {
                                     <div className="grid grid-cols-1 gap-2 text-sm text-gray-700">
                                       <div className="grid grid-cols-[110px_1fr] gap-4">
                                         <span className="text-gray-500">Date</span>
-                                        <span className="font-semibold text-gray-900 text-left break-words">{interviewDate || '—'}</span>
+                                        <span className="font-semibold text-gray-900 text-left break-words">{interviewDate || 'None'}</span>
                                       </div>
                                       <div className="grid grid-cols-[110px_1fr] gap-4">
                                         <span className="text-gray-500">Time</span>
-                                        <span className="font-semibold text-gray-900 text-left break-words">{interviewTime || '—'}</span>
+                                        <span className="font-semibold text-gray-900 text-left break-words">{interviewTime || 'None'}</span>
                                       </div>
                                       <div className="grid grid-cols-[110px_1fr] gap-4">
                                         <span className="text-gray-500">Location</span>
-                                        <span className="font-semibold text-gray-900 text-left break-words">{selectedEmployee.interview_location || '—'}</span>
+                                        <span className="font-semibold text-gray-900 text-left break-words">{selectedEmployee.interview_location || 'None'}</span>
                                       </div>
                                       <div className="grid grid-cols-[110px_1fr] gap-4">
                                         <span className="text-gray-500">Interviewer</span>
-                                        <span className="font-semibold text-gray-900 text-left break-words">{selectedEmployee.interviewer || '—'}</span>
+                                        <span className="font-semibold text-gray-900 text-left break-words">{selectedEmployee.interviewer || 'None'}</span>
                                       </div>
                                     </div>
 
@@ -4825,15 +5718,15 @@ function AgencyEndorsements() {
                                       <div className="mt-3 grid grid-cols-1 gap-2 text-sm text-gray-700">
                                         <div className="grid grid-cols-[110px_1fr] gap-4">
                                           <span className="text-gray-500">Date</span>
-                                          <span className="font-semibold text-gray-900 text-left break-words">{signingDate || '—'}</span>
+                                          <span className="font-semibold text-gray-900 text-left break-words">{signingDate || 'None'}</span>
                                         </div>
                                         <div className="grid grid-cols-[110px_1fr] gap-4">
                                           <span className="text-gray-500">Time</span>
-                                          <span className="font-semibold text-gray-900 text-left break-words">{signingTime || '—'}</span>
+                                          <span className="font-semibold text-gray-900 text-left break-words">{signingTime || 'None'}</span>
                                         </div>
                                         <div className="grid grid-cols-[110px_1fr] gap-4">
                                           <span className="text-gray-500">Location</span>
-                                          <span className="font-semibold text-gray-900 text-left break-words">{signingLocation || '—'}</span>
+                                          <span className="font-semibold text-gray-900 text-left break-words">{signingLocation || 'None'}</span>
                                         </div>
                                       </div>
                                       {!(signingDate || signingTime || signingLocation) && (
@@ -4875,6 +5768,606 @@ function AgencyEndorsements() {
                     })()}
                   </div>
                 </>
+              )}
+
+              {/* Add Employee Modal (AgencyEndorse stepper style) */}
+              {isAddEmployeeModalOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={(e) => {
+                  if (e.target === e.currentTarget) closeAddEmployeeModal();
+                }}>
+                  <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                    <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-[#800000]/10 to-orange-50">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-[#800000]/20 rounded-xl flex items-center justify-center">
+                            <svg className="w-5 h-5 text-[#800000]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                            </svg>
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800">Add Employee</h3>
+                            <p className="text-sm text-gray-500">Adds to your agency’s employee pool</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={closeAddEmployeeModal}
+                          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                          aria-label="Close"
+                        >
+                          <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                      {addEmployeeError ? (
+                        <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{addEmployeeError}</div>
+                      ) : null}
+
+                      {/* Progress Indicator */}
+                      {(() => {
+                        const stepLabels = addEmployeeTotalSteps === 2
+                          ? [
+                              { num: 1, label: 'Employee Details' },
+                              { num: 2, label: 'Driver Information' },
+                            ]
+                          : [
+                              { num: 1, label: 'Employee Details' },
+                            ];
+                        return (
+                          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                            <div className="flex items-center justify-between">
+                              {stepLabels.map((s, idx) => (
+                                <div key={s.num} className="flex items-center flex-1">
+                                  <div className="flex flex-col items-center flex-shrink-0">
+                                    <div
+                                      className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all ${
+                                        addEmployeeStep === s.num
+                                          ? 'bg-[#800000] text-white ring-4 ring-[#800000]/10'
+                                          : addEmployeeStep > s.num
+                                            ? 'bg-green-500 text-white'
+                                            : 'bg-gray-200 text-gray-500'
+                                      }`}
+                                    >
+                                      {addEmployeeStep > s.num ? (
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                      ) : (
+                                        s.num
+                                      )}
+                                    </div>
+                                    <span
+                                      className={`text-xs mt-2 font-medium ${
+                                        addEmployeeStep === s.num
+                                          ? 'text-[#800000]'
+                                          : addEmployeeStep > s.num
+                                            ? 'text-green-600'
+                                            : 'text-gray-400'
+                                      }`}
+                                    >
+                                      {s.label}
+                                    </span>
+                                  </div>
+                                  {idx < stepLabels.length - 1 && (
+                                    <div
+                                      className={`flex-1 h-1 mx-3 rounded ${addEmployeeStep > s.num ? 'bg-green-500' : 'bg-gray-200'}`}
+                                    />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* CSV Import */}
+                      <div ref={addEmployeeCsvSectionRef} className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div className="px-4 py-3 bg-gradient-to-r from-[#800000] to-[#990000] flex items-center justify-between">
+                          <span className="text-white font-semibold flex items-center gap-2">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                            </svg>
+                            Import CSV
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCsvFile(null);
+                                setCsvPreview([]);
+                                setCsvRows([]);
+                                setCsvError('');
+                              }}
+                              className="px-4 py-2 rounded-lg text-sm font-medium bg-white/90 hover:bg-white text-gray-700 transition-colors"
+                            >
+                              Clear
+                            </button>
+                            <button
+                              type="button"
+                              onClick={importEmployeesFromCsv}
+                              disabled={addEmployeeSubmitting || !csvRows || csvRows.length === 0}
+                              className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors ${
+                                addEmployeeSubmitting || !csvRows || csvRows.length === 0
+                                  ? 'bg-white/40 cursor-not-allowed'
+                                  : 'bg-white/20 hover:bg-white/30'
+                              }`}
+                            >
+                              {addEmployeeSubmitting ? 'Importing…' : 'Import Employees'}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="p-5">
+                          {csvError ? (
+                            <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{csvError}</div>
+                          ) : null}
+                          <div
+                            className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors cursor-pointer ${
+                              isDraggingCsv ? 'border-[#800000] bg-[#800000]/5' : 'border-gray-300 hover:border-[#800000]/50 hover:bg-gray-50'
+                            }`}
+                            onClick={() => csvInputRef.current?.click?.()}
+                            onDragEnter={(e) => {
+                              e.preventDefault();
+                              setIsDraggingCsv(true);
+                            }}
+                            onDragOver={(e) => {
+                              e.preventDefault();
+                              setIsDraggingCsv(true);
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              setIsDraggingCsv(false);
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              setIsDraggingCsv(false);
+                              const file = e.dataTransfer?.files?.[0];
+                              if (file) handleCsvFileSelect(file);
+                            }}
+                          >
+                            <input
+                              ref={csvInputRef}
+                              type="file"
+                              accept=".csv"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleCsvFileSelect(file);
+                              }}
+                            />
+                            <div className="text-sm font-semibold text-gray-800">Drop your CSV here or click to upload</div>
+                            <div className="text-xs text-gray-500 mt-1">Required: email, first name, last name</div>
+                            {csvFile ? (
+                              <div className="mt-3 text-xs text-gray-600">
+                                Selected: <span className="font-semibold">{csvFile.name}</span> ({csvRows.length} row(s))
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {csvPreview && csvPreview.length > 0 ? (
+                            <div className="mt-4">
+                              <div className="text-xs font-semibold text-gray-700 mb-2">Preview</div>
+                              <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                                <table className="min-w-full text-xs">
+                                  <thead className="bg-gray-50">
+                                    <tr>
+                                      <th className="px-3 py-2 text-left font-semibold text-gray-600">Email</th>
+                                      <th className="px-3 py-2 text-left font-semibold text-gray-600">Name</th>
+                                      <th className="px-3 py-2 text-left font-semibold text-gray-600">Position</th>
+                                      <th className="px-3 py-2 text-left font-semibold text-gray-600">Depot</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-100">
+                                    {csvPreview.map((row, idx) => {
+                                      const email = getCsvValue(row, ['email', 'email_address', 'email address']);
+                                      const fname = getCsvValue(row, ['fname', 'first_name', 'first name']);
+                                      const lname = getCsvValue(row, ['lname', 'last_name', 'last name']);
+                                      const position = getCsvValue(row, ['position']);
+                                      const depot = getCsvValue(row, ['depot']);
+                                      return (
+                                        <tr key={idx}>
+                                          <td className="px-3 py-2 text-gray-700">{email || 'None'}</td>
+                                          <td className="px-3 py-2 text-gray-700">{[fname, lname].filter(Boolean).join(' ') || 'None'}</td>
+                                          <td className="px-3 py-2 text-gray-700">{position || 'None'}</td>
+                                          <td className="px-3 py-2 text-gray-700">{depot || 'None'}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      {/* Manual Add (Stepper) */}
+                      <form onSubmit={submitAddEmployee} className="space-y-6">
+                        {addEmployeeStep === 1 && (
+                          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                              <div>
+                                <h2 className="text-base font-semibold text-gray-800">Employee Details</h2>
+                                <p className="text-xs text-gray-500 mt-0.5">Fill out employee info before adding</p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={resetAddEmployeeState}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
+                              >
+                                Reset
+                              </button>
+                            </div>
+                            <div className="p-6 space-y-4">
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name</label>
+                                  <input
+                                    value={addEmployeeForm.fname}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, fname: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    placeholder="Juan"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Middle Name</label>
+                                  <input
+                                    value={addEmployeeForm.mname}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, mname: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    placeholder="D."
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name</label>
+                                  <input
+                                    value={addEmployeeForm.lname}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, lname: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    placeholder="Dela Cruz"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
+                                  <input
+                                    type="email"
+                                    value={addEmployeeForm.email}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, email: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    placeholder="employee@email.com"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Personal Email (optional)</label>
+                                  <input
+                                    type="email"
+                                    value={addEmployeeForm.personal_email}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, personal_email: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    placeholder="personal@email.com"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number</label>
+                                  <input
+                                    value={addEmployeeForm.contact_number}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, contact_number: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    placeholder="09xxxxxxxxx"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Birthday</label>
+                                  <input
+                                    type="date"
+                                    value={addEmployeeForm.birthday}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, birthday: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot</label>
+                                  <select
+                                    value={addEmployeeForm.depot}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, depot: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                  >
+                                    <option value="">Select depot…</option>
+                                    {(addEmployeeDepotOptions.length ? addEmployeeDepotOptions : depotOptions).map((d) => (
+                                      <option key={d} value={d}>{d}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
+                                  <select
+                                    value={addEmployeeForm.department}
+                                    onChange={(e) => {
+                                      const dep = e.target.value;
+                                      const posOptions = getPositionsForDepartment(dep).filter((p) => p !== 'All');
+                                      setAddEmployeeForm((p) => ({ ...p, department: dep, position: posOptions[0] || p.position }));
+                                    }}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                  >
+                                    {departments.map((d) => (
+                                      <option key={d} value={d}>{d}</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Position</label>
+                                  <select
+                                    value={addEmployeeForm.position}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, position: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                  >
+                                    {getPositionsForDepartment(addEmployeeForm.department)
+                                      .filter((p) => p !== 'All')
+                                      .map((p) => (
+                                        <option key={p} value={p}>{p}</option>
+                                      ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">Employee Type</label>
+                                  <div className="flex gap-3">
+                                    <label
+                                      className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${
+                                        addEmployeeForm.employeeType === 'helper'
+                                          ? 'border-[#800000] bg-[#800000]/10 text-[#800000]'
+                                          : 'border-gray-200 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name="employeeType"
+                                        className="accent-[#800000]"
+                                        checked={addEmployeeForm.employeeType === 'helper'}
+                                        onChange={() => setAddEmployeeForm((p) => ({ ...p, employeeType: 'helper', position: 'Helper', department: 'Operations Department' }))}
+                                      />
+                                      Helper
+                                    </label>
+                                    <label
+                                      className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${
+                                        addEmployeeForm.employeeType === 'driver'
+                                          ? 'border-[#800000] bg-[#800000]/10 text-[#800000]'
+                                          : 'border-gray-200 hover:bg-gray-50'
+                                      }`}
+                                    >
+                                      <input
+                                        type="radio"
+                                        name="employeeType"
+                                        className="accent-[#800000]"
+                                        checked={addEmployeeForm.employeeType === 'driver'}
+                                        onChange={() => setAddEmployeeForm((p) => ({ ...p, employeeType: 'driver', position: 'Driver', department: 'Operations Department' }))}
+                                      />
+                                      Driver
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Resume (optional)</label>
+                                  <input
+                                    type="file"
+                                    accept=".pdf,.doc,.docx"
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, resumeFile: e.target.files?.[0] || null }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+                                  />
+                                  {addEmployeeForm.resumeFile ? (
+                                    <div className="text-xs text-gray-500 mt-1">Selected: {addEmployeeForm.resumeFile.name}</div>
+                                  ) : null}
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">License Photocopy (driver only, optional)</label>
+                                  <input
+                                    type="file"
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                    disabled={addEmployeeForm.employeeType !== 'driver'}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, licenseFile: e.target.files?.[0] || null }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white disabled:bg-gray-50"
+                                  />
+                                  {addEmployeeForm.licenseFile ? (
+                                    <div className="text-xs text-gray-500 mt-1">Selected: {addEmployeeForm.licenseFile.name}</div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {addEmployeeStep === 2 && addEmployeeForm.employeeType === 'driver' && (
+                          <>
+                            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                              <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                                <h2 className="text-base font-semibold text-gray-800">Driver Information</h2>
+                              </div>
+                              <div className="p-6 space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">License Classification</label>
+                                    <select
+                                      value={addEmployeeForm.licenseClassification}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, licenseClassification: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                    >
+                                      <option value="">Select classification</option>
+                                      <option>Non-Professional</option>
+                                      <option>Professional</option>
+                                      <option>Student Permit</option>
+                                      <option>Conductor</option>
+                                      <option>International Driving Permit</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">License Expiry Date</label>
+                                    <input
+                                      type="date"
+                                      value={addEmployeeForm.licenseExpiry}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, licenseExpiry: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">Restriction Codes</label>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                    {restrictionCodesCatalog.map((item) => (
+                                      <label
+                                        key={item.code}
+                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
+                                          addEmployeeForm.restrictionCodes.includes(item.code)
+                                            ? 'border-[#800000] bg-[#800000]/10'
+                                            : 'border-gray-200 hover:bg-gray-50'
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          className="w-4 h-4 accent-[#800000]"
+                                          checked={addEmployeeForm.restrictionCodes.includes(item.code)}
+                                          onChange={() =>
+                                            setAddEmployeeForm((p) => {
+                                              const next = new Set(p.restrictionCodes || []);
+                                              if (next.has(item.code)) next.delete(item.code);
+                                              else next.add(item.code);
+                                              return { ...p, restrictionCodes: Array.from(next) };
+                                            })
+                                          }
+                                        />
+                                        <span className="text-sm text-gray-700">{item.label}</span>
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Years of Driving Experience</label>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={addEmployeeForm.yearsDriving}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, yearsDriving: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="e.g. 5"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Basic truck troubleshooting knowledge?</label>
+                                    <div className="flex gap-3">
+                                      <label
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${
+                                          addEmployeeForm.truckKnowledge === 'yes'
+                                            ? 'border-green-500 bg-green-50 text-green-700'
+                                            : 'border-gray-200 hover:bg-gray-50'
+                                        }`}
+                                      >
+                                        <input
+                                          type="radio"
+                                          name="truckKnowledge"
+                                          className="accent-green-600"
+                                          checked={addEmployeeForm.truckKnowledge === 'yes'}
+                                          onChange={() => setAddEmployeeForm((p) => ({ ...p, truckKnowledge: 'yes' }))}
+                                        />
+                                        Yes
+                                      </label>
+                                      <label
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${
+                                          addEmployeeForm.truckKnowledge === 'no'
+                                            ? 'border-red-500 bg-red-50 text-red-700'
+                                            : 'border-gray-200 hover:bg-gray-50'
+                                        }`}
+                                      >
+                                        <input
+                                          type="radio"
+                                          name="truckKnowledge"
+                                          className="accent-red-600"
+                                          checked={addEmployeeForm.truckKnowledge === 'no'}
+                                          onChange={() => setAddEmployeeForm((p) => ({ ...p, truckKnowledge: 'no' }))}
+                                        />
+                                        No
+                                      </label>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </>
+                        )}
+
+                        {/* Navigation Buttons */}
+                        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+                          <div className="flex items-center justify-between">
+                            <button
+                              type="button"
+                              onClick={() => setAddEmployeeStep((s) => Math.max(1, s - 1))}
+                              disabled={addEmployeeStep === 1}
+                              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg font-medium transition-all ${
+                                addEmployeeStep === 1
+                                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                              }`}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                              </svg>
+                              Previous
+                            </button>
+
+                            <span className="text-sm text-gray-500">Step {addEmployeeStep} of {addEmployeeTotalSteps}</span>
+
+                            {addEmployeeStep < addEmployeeTotalSteps ? (
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => addEmployeeCsvSectionRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+                                  className="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                                >
+                                  Import CSV
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setAddEmployeeStep((s) => Math.min(s + 1, addEmployeeTotalSteps))}
+                                  className="flex items-center gap-2 px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors"
+                                >
+                                  Next Step
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                  </svg>
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="submit"
+                                disabled={addEmployeeSubmitting}
+                                className={`flex items-center gap-2 px-6 py-2.5 text-white rounded-lg font-medium transition-colors ${
+                                  addEmployeeSubmitting ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'
+                                }`}
+                              >
+                                {addEmployeeSubmitting ? 'Adding…' : 'Add Employee'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
             </div>
@@ -5135,6 +6628,115 @@ function AgencyEndorsements() {
               >
                 OK
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Job Picker Modal (Endorse Existing Employee) */}
+      {showJobPickerModal && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-50"
+          onClick={closeJobPicker}
+        >
+          <div
+            className="bg-white rounded-xl max-w-2xl w-full mx-4 overflow-hidden shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">Select a Job to Endorse</h3>
+                <div className="text-xs text-gray-500">
+                  {employeeToEndorse?.name ? `Employee: ${employeeToEndorse.name}` : 'Employee'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="w-9 h-9 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500"
+                onClick={closeJobPicker}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {jobPickerError ? (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{jobPickerError}</div>
+              ) : null}
+              {jobPickerSuccess ? (
+                <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">{jobPickerSuccess}</div>
+              ) : null}
+
+              <div className="flex items-center gap-2">
+                <div className="flex-1 relative">
+                  <input
+                    value={jobPickerQuery}
+                    onChange={(e) => setJobPickerQuery(e.target.value)}
+                    placeholder="Search job title, depot, or department…"
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                  />
+                </div>
+              </div>
+
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <div className="max-h-[60vh] overflow-y-auto">
+                  {jobPickerLoading ? (
+                    <div className="p-4 text-sm text-gray-600">Loading jobs…</div>
+                  ) : (
+                    (() => {
+                      const q = String(jobPickerQuery || '').trim().toLowerCase();
+                      const filtered = (jobPickerJobs || []).filter((j) => {
+                        if (!q) return true;
+                        const hay = `${j?.title || ''} ${j?.depot || ''} ${j?.department || ''}`.toLowerCase();
+                        return hay.includes(q);
+                      });
+
+                      if (filtered.length === 0) {
+                        return <div className="p-4 text-sm text-gray-600">No matching jobs.</div>;
+                      }
+
+                      return (
+                        <table className="w-full">
+                          <thead className="bg-gray-50 border-b border-gray-100 sticky top-0 z-10">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Job</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Depot</th>
+                              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Department</th>
+                              <th className="px-4 py-3"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {filtered.map((job) => (
+                              <tr key={job.id} className="hover:bg-gray-50">
+                                <td className="px-4 py-3">
+                                  <div className="text-sm font-semibold text-gray-800">{job.title || 'Untitled'}</div>
+                                  <div className="text-xs text-gray-500">#{job.id}</div>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-700">{job.depot || 'None'}</td>
+                                <td className="px-4 py-3 text-sm text-gray-700">{job.department || 'None'}</td>
+                                <td className="px-4 py-3 text-right">
+                                  <button
+                                    type="button"
+                                    disabled={jobPickerSubmitting}
+                                    onClick={() => endorseExistingEmployeeToJob(job)}
+                                    className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors ${
+                                      jobPickerSubmitting ? 'bg-gray-400' : 'bg-[#800000] hover:bg-[#990000]'
+                                    }`}
+                                  >
+                                    {jobPickerSubmitting ? 'Endorsing…' : 'Endorse'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      );
+                    })()
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
