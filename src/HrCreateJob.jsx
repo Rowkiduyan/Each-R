@@ -65,6 +65,7 @@ function HrCreateJob() {
     depot: "",
     department: "",
     posted: "Just now",
+    includeSalaryRange: false,
     salary_range: "",
     description: "",
     mainResponsibilities: "",
@@ -215,7 +216,7 @@ function HrCreateJob() {
   const isFormComplete = () => {
     const hasTitle = form.title && form.title.trim() !== "";
     const hasDepot = form.depot && form.depot.trim() !== "";
-    const hasSalaryRange = isValidSalaryRange(form.salary_range);
+    const hasSalaryRange = !form.includeSalaryRange || isValidSalaryRange(form.salary_range);
     const hasDescription = form.description && form.description.trim() !== "";
     const hasResponsibilities = splitLines(form.mainResponsibilities).length > 0;
     return hasTitle && hasDepot && hasSalaryRange && hasDescription && hasResponsibilities;
@@ -425,7 +426,7 @@ function HrCreateJob() {
         title: form.title,
         depot: form.depot,
         department: form.department || null,
-        salary_range: form.salary_range || null,
+        salary_range: form.includeSalaryRange ? (form.salary_range || null) : null,
         description: form.description || null,
         responsibilities: combinedResponsibilities,
         urgent: form.urgent,
@@ -456,7 +457,7 @@ function HrCreateJob() {
       setSaving(false);
       return;
     }
-    if (!isValidSalaryRange(form.salary_range)) {
+    if (form.includeSalaryRange && !isValidSalaryRange(form.salary_range)) {
       setError("Invalid salary range. Please use the format ₱18,000.00 - ₱22,000.00 with minimum ≤ maximum.");
       setSaving(false);
       return;
@@ -475,7 +476,7 @@ function HrCreateJob() {
         title: form.title,
         depot: form.depot,
         department: form.department || null,
-        salary_range: form.salary_range || null,
+        salary_range: form.includeSalaryRange ? (form.salary_range || null) : null,
         description: form.description || null,
         responsibilities: combinedResponsibilities,
         urgent: form.urgent,
@@ -495,6 +496,7 @@ function HrCreateJob() {
         depot: "",
         department: "",
         posted: "Just now",
+        includeSalaryRange: false,
         salary_range: "",
         description: "",
         mainResponsibilities: "",
@@ -642,47 +644,68 @@ function HrCreateJob() {
           {/* Salary Range */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1.5">
-              Salary Range <span className="text-red-600">*</span>
+              Salary Range
             </label>
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg">
-                <span className="text-gray-700">₱</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  aria-label="Minimum salary"
-                  className="w-28 outline-none"
-                  value={salaryMinRaw}
-                  onChange={(e) => {
-                    const raw = normalizeDecimalInput(e.target.value);
-                    setSalaryMinRaw(raw);
-                    const combined = buildSalaryRange(raw, salaryMaxRaw);
-                    setField("salary_range", combined);
-                  }}
-                  placeholder="18000.50"
-                />
-              </div>
-              <span className="text-gray-700">-</span>
-              <div className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg">
-                <span className="text-gray-700">₱</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  aria-label="Maximum salary"
-                  className="w-28 outline-none"
-                  value={salaryMaxRaw}
-                  onChange={(e) => {
-                    const raw = normalizeDecimalInput(e.target.value);
-                    setSalaryMaxRaw(raw);
-                    const combined = buildSalaryRange(salaryMinRaw, raw);
-                    setField("salary_range", combined);
-                  }}
-                  placeholder="22000.00"
-                />
-              </div>
-            </div>
-            {!isValidSalaryRange(form.salary_range) && (
-              <p className="text-xs text-red-600 mt-1">Salary format must be like ₱18,000.00 - ₱22,000.00 and minimum ≤ maximum.</p>
+            <label className="inline-flex items-center gap-2 text-sm text-gray-700 mb-2">
+              <input
+                type="checkbox"
+                checked={Boolean(form.includeSalaryRange)}
+                onChange={(e) => {
+                  const enabled = e.target.checked;
+                  setField("includeSalaryRange", enabled);
+                  if (!enabled) {
+                    setSalaryMinRaw("");
+                    setSalaryMaxRaw("");
+                    setField("salary_range", "");
+                  }
+                }}
+              />
+              Add salary range (optional)
+            </label>
+
+            {form.includeSalaryRange && (
+              <>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg">
+                    <span className="text-gray-700">₱</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      aria-label="Minimum salary"
+                      className="w-28 outline-none"
+                      value={salaryMinRaw}
+                      onChange={(e) => {
+                        const raw = normalizeDecimalInput(e.target.value);
+                        setSalaryMinRaw(raw);
+                        const combined = buildSalaryRange(raw, salaryMaxRaw);
+                        setField("salary_range", combined);
+                      }}
+                      placeholder="18000.50"
+                    />
+                  </div>
+                  <span className="text-gray-700">-</span>
+                  <div className="flex items-center gap-1 px-3 py-2 border border-gray-300 rounded-lg">
+                    <span className="text-gray-700">₱</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      aria-label="Maximum salary"
+                      className="w-28 outline-none"
+                      value={salaryMaxRaw}
+                      onChange={(e) => {
+                        const raw = normalizeDecimalInput(e.target.value);
+                        setSalaryMaxRaw(raw);
+                        const combined = buildSalaryRange(salaryMinRaw, raw);
+                        setField("salary_range", combined);
+                      }}
+                      placeholder="22000.00"
+                    />
+                  </div>
+                </div>
+                {!isValidSalaryRange(form.salary_range) && (
+                  <p className="text-xs text-red-600 mt-1">Salary format must be like ₱18,000.00 - ₱22,000.00 and minimum ≤ maximum.</p>
+                )}
+              </>
             )}
           </div>
 
@@ -766,7 +789,7 @@ function HrCreateJob() {
               onClick={() => setShowConfirm(true)}
               className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
               disabled={saving || !isFormComplete()}
-              title={!isFormComplete() ? "Please complete all required fields (Title, Depot, and at least one Responsibility)" : ""}
+              title={!isFormComplete() ? "Please complete all required fields (Title, Depot, Job Title Description, and at least one Responsibility)" : ""}
             >
               {saving ? "Posting..." : "Post"}
             </button>

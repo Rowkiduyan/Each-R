@@ -371,6 +371,7 @@ function HrRecruitment() {
     title: "",
     depot: "",
     department: "",
+    includeSalaryRange: false,
     salary_range: "",
     description: "",
     mainResponsibilities: "",
@@ -4829,7 +4830,8 @@ function HrRecruitment() {
         title: data.title || "",
         depot: data.depot || "",
         department: dept || "",
-        salary_range: data.salary_range || "₱15,000 - ₱25,000",
+        includeSalaryRange: Boolean(String(data.salary_range || "").trim()),
+        salary_range: data.salary_range || "",
         description: data.description || "",
         mainResponsibilities: responsibilities.join('\n'),
         keyRequirements: others.join('\n'),
@@ -4961,8 +4963,8 @@ function HrRecruitment() {
       return;
     }
 
-    if (!editJobForm.salary_range || !String(editJobForm.salary_range).trim()) {
-      setErrorMessage("Salary range is required.");
+    if (editJobForm.includeSalaryRange && (!editJobForm.salary_range || !String(editJobForm.salary_range).trim())) {
+      setErrorMessage("Salary range is enabled but empty.");
       setShowErrorAlert(true);
       return;
     }
@@ -4994,7 +4996,7 @@ function HrRecruitment() {
         title: String(editJobForm.title).trim(),
         depot: String(editJobForm.depot).trim(),
         department: editJobForm.department || null,
-        salary_range: String(editJobForm.salary_range).trim(),
+        salary_range: editJobForm.includeSalaryRange ? String(editJobForm.salary_range).trim() : null,
         description: editJobForm.description || null,
         responsibilities: combinedResponsibilities,
         urgent: Boolean(editJobForm.urgent),
@@ -5025,6 +5027,7 @@ function HrRecruitment() {
         title: "",
         depot: "",
         department: "",
+        includeSalaryRange: false,
         salary_range: "",
         description: "",
         mainResponsibilities: "",
@@ -9063,6 +9066,7 @@ function HrRecruitment() {
                     title: "",
                     depot: "",
                     department: "",
+                    includeSalaryRange: false,
                     salary_range: "",
                     description: "",
                     mainResponsibilities: "",
@@ -9208,7 +9212,21 @@ function HrRecruitment() {
                 {/* Salary Range */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Salary Range <span className="text-red-600">*</span>
+                    Salary Range
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 mb-2">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(editJobForm.includeSalaryRange)}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        setEditJobField('includeSalaryRange', enabled);
+                        if (!enabled) {
+                          setEditJobField('salary_range', '');
+                        }
+                      }}
+                    />
+                    Add salary range (optional)
                   </label>
                   <input
                     type="text"
@@ -9216,6 +9234,8 @@ function HrRecruitment() {
                     value={editJobForm.salary_range}
                     onChange={(e) => setEditJobField("salary_range", e.target.value)}
                     placeholder="e.g., ₱15,000 - ₱25,000"
+                    disabled={!editJobForm.includeSalaryRange}
+                    style={!editJobForm.includeSalaryRange ? { backgroundColor: '#f3f4f6', cursor: 'not-allowed' } : {}}
                   />
                 </div>
 
@@ -9291,6 +9311,8 @@ function HrRecruitment() {
                     title: "",
                     depot: "",
                     department: "",
+                    includeSalaryRange: false,
+                    salary_range: "",
                     description: "",
                     mainResponsibilities: "",
                     keyRequirements: "",

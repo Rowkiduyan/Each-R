@@ -2750,7 +2750,9 @@ const getApplicationFilesPublicUrl = (path) => {
             <div className="flex justify-between items-center mb-2 text-sm text-gray-600">
               <div className="flex flex-col">
                 <span className={isPreferredDepot ? 'font-semibold text-blue-600' : ''}>{job.depot}</span>
-                <span className="text-xs text-gray-500">Salary: {job.salary_range || '₱15,000 - ₱25,000'}</span>
+                {String(job.salary_range || '').trim() && (
+                  <span className="text-xs text-gray-500">Salary: {String(job.salary_range || '').trim()}</span>
+                )}
                 {job.department && <span className="text-xs text-gray-500">{job.department}</span>}
               </div>
               <span>Posted {postedLabel}</span>
@@ -2759,8 +2761,8 @@ const getApplicationFilesPublicUrl = (path) => {
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
               <span className="px-2 py-1 bg-gray-100 rounded">
                 {job.positions_needed == null
-                  ? 'Slots Remaining: No limit'
-                  : `Slots Remaining: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)} / ${job.positions_needed || 1}`}
+                  ? 'Employees Needed: No limit'
+                  : `Employees Needed: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)}`}
               </span>
               <span className="px-2 py-1 bg-gray-100 rounded">
                 {job.expires_at
@@ -2894,6 +2896,52 @@ const getApplicationFilesPublicUrl = (path) => {
                         </button>
                       </div>
                     </div>
+
+                    {/* One-application reminder (under search bar) */}
+                    <div
+                      className={`rounded-2xl border px-4 py-3 shadow-sm backdrop-blur ${
+                        shouldLockToAppliedJob
+                          ? 'bg-red-50/80 border-red-200'
+                          : 'bg-white/80 border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3">
+                          <svg
+                            className={`h-5 w-5 ${shouldLockToAppliedJob ? 'text-red-600' : 'text-gray-500'}`}
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                            aria-hidden="true"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M18 10A8 8 0 11 2 10a8 8 0 0116 0zm-8-4a1 1 0 00-1 1v3a1 1 0 002 0V7a1 1 0 00-1-1zm0 8a1 1 0 100 2 1 1 0 000-2z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          <div className="text-sm">
+                            <div className={`font-semibold ${shouldLockToAppliedJob ? 'text-red-900' : 'text-gray-900'}`}>
+                              Reminder
+                            </div>
+                            <div className={`mt-0.5 ${shouldLockToAppliedJob ? 'text-red-800' : 'text-gray-700'}`}>
+                              {shouldLockToAppliedJob
+                                ? 'You currently have an active application. You can only apply to one job at a time.'
+                                : 'You can only apply to one job at a time.'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {shouldLockToAppliedJob && (
+                          <button
+                            type="button"
+                            onClick={() => navigate('/applicant/applications')}
+                            className="mt-0.5 text-sm font-semibold text-red-700 hover:text-red-800 hover:underline"
+                          >
+                            View status
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </form>
                 </div>
@@ -2929,6 +2977,7 @@ const getApplicationFilesPublicUrl = (path) => {
                     </div>
                   </div>
                 )}
+
                 {/* Jobs from DB */}
                 {jobsLoading ? (
                   <div className="text-gray-600">Loading jobs…</div>
@@ -3049,11 +3098,11 @@ const getApplicationFilesPublicUrl = (path) => {
                               <span className="text-xs text-gray-500">Posted {formatPostedLabel(selectedJob)}</span>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                                 <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
-                                  <div className="text-[11px] text-gray-500">Slots Remaining</div>
+                                  <div className="text-[11px] text-gray-500">Employees Needed</div>
                                   <div className="text-sm font-semibold text-gray-800">
                                     {selectedJob.positions_needed == null
                                       ? 'No limit'
-                                      : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)} / ${selectedJob.positions_needed || 1}`}
+                                      : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)}`}
                                   </div>
                                 </div>
                                 <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
@@ -3063,10 +3112,12 @@ const getApplicationFilesPublicUrl = (path) => {
                                   </div>
                                 </div>
                               </div>
-                              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2 mt-2">
-                                <div className="text-[11px] text-gray-500">Salary Range</div>
-                                <div className="text-sm font-semibold text-gray-800">{selectedJob.salary_range || '₱15,000 - ₱25,000'}</div>
-                              </div>
+                              {String(selectedJob.salary_range || '').trim() && (
+                                <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2 mt-2">
+                                  <div className="text-[11px] text-gray-500">Salary Range</div>
+                                  <div className="text-sm font-semibold text-gray-800">{String(selectedJob.salary_range || '').trim()}</div>
+                                </div>
+                              )}
                             </div>
                           </div>
                           <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
@@ -3132,7 +3183,9 @@ const getApplicationFilesPublicUrl = (path) => {
                                   </svg>
                                   <span className="font-semibold">{filteredJobs[0].depot}</span>
                                 </div>
-                                <div className="text-sm text-gray-600 mb-3">Salary: {filteredJobs[0].salary_range || '₱15,000 - ₱25,000'}</div>
+                                {String(filteredJobs[0].salary_range || '').trim() && (
+                                  <div className="text-sm text-gray-600 mb-3">Salary: {String(filteredJobs[0].salary_range || '').trim()}</div>
+                                )}
                                 {filteredJobs[0].job_type && (
                                   <>
                                     <span>•</span>
@@ -3240,11 +3293,11 @@ const getApplicationFilesPublicUrl = (path) => {
                                 </div>
                               )}
                               <div className="bg-gray-50 p-3 rounded">
-                                <div className="text-xs text-gray-600 mb-0.5">Slots Remaining</div>
+                                <div className="text-xs text-gray-600 mb-0.5">Employees Needed</div>
                                 <div className="font-semibold text-gray-800 text-sm">
                                   {filteredJobs[0].positions_needed == null
                                     ? 'No limit'
-                                    : `${typeof filteredJobs[0].remaining_slots === 'number' ? filteredJobs[0].remaining_slots : (filteredJobs[0].positions_needed || 1)} / ${filteredJobs[0].positions_needed || 1}`}
+                                    : `${typeof filteredJobs[0].remaining_slots === 'number' ? filteredJobs[0].remaining_slots : (filteredJobs[0].positions_needed || 1)}`}
                                 </div>
                               </div>
                             </div>

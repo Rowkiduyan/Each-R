@@ -618,13 +618,15 @@ function AgencyHome() {
                                   <span>{job.depot}</span>
                                   <span>Posted {job.posted}</span>
                                 </div>
-                                <div className="text-xs text-gray-500 mb-2">Salary: {job.salary_range || '₱15,000 - ₱25,000'}</div>
+                                {String(job.salary_range || '').trim() && (
+                                  <div className="text-xs text-gray-500 mb-2">Salary: {String(job.salary_range || '').trim()}</div>
+                                )}
                                 <p className="text-gray-700 line-clamp-3">{job.description}</p>
                                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
                                   <span className="px-2 py-1 bg-gray-100 rounded">
                                     {job.positions_needed == null
-                                      ? 'Slots Remaining: No limit'
-                                      : `Slots Remaining: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)} / ${job.positions_needed || 1}`}
+                                      ? 'Employees Needed: No limit'
+                                      : `Employees Needed: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)}`}
                                   </span>
                                   <span className="px-2 py-1 bg-gray-100 rounded">
                                     {job.expires_at
@@ -667,11 +669,11 @@ function AgencyHome() {
                             <span className="text-xs text-gray-500">Posted {selectedJob.posted}</span>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                               <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
-                                <div className="text-[11px] text-gray-500">Slots Remaining</div>
+                                <div className="text-[11px] text-gray-500">Employees Needed</div>
                                 <div className="text-sm font-semibold text-gray-800">
                                   {selectedJob.positions_needed == null
                                     ? 'No limit'
-                                    : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)} / ${selectedJob.positions_needed || 1}`}
+                                    : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)}`}
                                 </div>
                               </div>
                               <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
@@ -681,10 +683,12 @@ function AgencyHome() {
                                 </div>
                               </div>
                             </div>
-                            <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2 mt-2">
-                              <div className="text-[11px] text-gray-500">Salary Range</div>
-                              <div className="text-sm font-semibold text-gray-800">{selectedJob.salary_range || '₱15,000 - ₱25,000'}</div>
-                            </div>
+                            {String(selectedJob.salary_range || '').trim() && (
+                              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2 mt-2">
+                                <div className="text-[11px] text-gray-500">Salary Range</div>
+                                <div className="text-sm font-semibold text-gray-800">{String(selectedJob.salary_range || '').trim()}</div>
+                              </div>
+                            )}
                           </div>
                         </div>
                         <p className="text-gray-700">{selectedJob.description || 'No description provided.'}</p>
@@ -744,13 +748,15 @@ function AgencyHome() {
                           <span>{job.depot}</span>
                           <span>Posted {job.posted}</span>
                         </div>
-                        <div className="text-xs text-gray-500 mb-2">Salary: {job.salary_range || '₱15,000 - ₱25,000'}</div>
+                        {String(job.salary_range || '').trim() && (
+                          <div className="text-xs text-gray-500 mb-2">Salary: {String(job.salary_range || '').trim()}</div>
+                        )}
                         <p className="text-gray-700 line-clamp-3">{job.description}</p>
                         <div className="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
                           <span className="px-2 py-1 bg-gray-100 rounded">
                             {job.positions_needed == null
-                              ? 'Slots Remaining: No limit'
-                              : `Slots Remaining: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)} / ${job.positions_needed || 1}`}
+                              ? 'Employees Needed: No limit'
+                              : `Employees Needed: ${typeof job.remaining_slots === 'number' ? job.remaining_slots : (job.positions_needed || 1)}`}
                           </span>
                           <span className="px-2 py-1 bg-gray-100 rounded">
                             {job.expires_at
@@ -823,11 +829,11 @@ function AgencyHome() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
-                  <div className="text-[11px] text-gray-500">Slots Remaining</div>
+                  <div className="text-[11px] text-gray-500">Employees Needed</div>
                   <div className="text-sm font-semibold text-gray-800">
                     {selectedJob.positions_needed == null
                       ? 'No limit'
-                      : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)} / ${selectedJob.positions_needed || 1}`}
+                      : `${typeof selectedJob.remaining_slots === 'number' ? selectedJob.remaining_slots : (selectedJob.positions_needed || 1)}`}
                   </div>
                 </div>
                 <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
@@ -838,10 +844,12 @@ function AgencyHome() {
                 </div>
               </div>
 
-              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
-                <div className="text-[11px] text-gray-500">Salary Range</div>
-                <div className="text-sm font-semibold text-gray-800">{selectedJob.salary_range || '₱15,000 - ₱25,000'}</div>
-              </div>
+              {String(selectedJob.salary_range || '').trim() && (
+                <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                  <div className="text-[11px] text-gray-500">Salary Range</div>
+                  <div className="text-sm font-semibold text-gray-800">{String(selectedJob.salary_range || '').trim()}</div>
+                </div>
+              )}
 
               <div>
                 <h3 className="font-semibold text-gray-800 mb-2">Job Description</h3>

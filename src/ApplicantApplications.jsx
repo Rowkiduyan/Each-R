@@ -942,7 +942,7 @@ function ApplicantApplications() {
                         const title = appliedJob?.title || applicationData?.payload?.form?.position || '';
                         const depot = appliedJob?.depot || applicationData?.payload?.form?.depot || '';
                         const description = appliedJob?.description || '';
-                        const salaryRange = appliedJob?.salary_range || '₱15,000 - ₱25,000';
+                        const salaryRange = String(appliedJob?.salary_range || '').trim();
                         const posted = formatPostedDate(appliedJob);
                         const positionType = formatJobType(appliedJob?.job_type || appliedJob?.position_type);
                         const { responsibilities, keyRequirements } = splitJobDetails(appliedJob?.responsibilities);
@@ -959,7 +959,7 @@ function ApplicantApplications() {
                               <div className="text-gray-900 font-semibold">{title || <span className="text-gray-400 italic">None</span>}</div>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                            <div className={`grid grid-cols-1 ${salaryRange ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-3`}>
                               <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
                                 <div className="text-[11px] text-gray-500">Depot</div>
                                 <div className="text-sm font-semibold text-gray-800">{depot || <span className="text-gray-400 italic">None</span>}</div>
@@ -972,10 +972,12 @@ function ApplicantApplications() {
                                 <div className="text-[11px] text-gray-500">Position Type</div>
                                 <div className="text-sm font-semibold text-gray-800">{positionType || <span className="text-gray-400 italic">Unknown</span>}</div>
                               </div>
-                              <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
-                                <div className="text-[11px] text-gray-500">Salary Range</div>
-                                <div className="text-sm font-semibold text-gray-800">{salaryRange || <span className="text-gray-400 italic">None</span>}</div>
-                              </div>
+                              {salaryRange ? (
+                                <div className="bg-gray-50 border border-gray-200 rounded px-3 py-2">
+                                  <div className="text-[11px] text-gray-500">Salary Range</div>
+                                  <div className="text-sm font-semibold text-gray-800">{salaryRange}</div>
+                                </div>
+                              ) : null}
                             </div>
 
                             <div>
