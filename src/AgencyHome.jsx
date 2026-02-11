@@ -1,7 +1,8 @@
 // src/AgencyHome.jsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { supabase, supabasePublic } from "./supabaseClient";
+import { createNotification } from './notifications';
 import LogoCropped from './layouts/photos/logo(cropped).png';
 import Roadwise from './Roadwise.png';
 
@@ -37,6 +38,18 @@ function AgencyHome() {
   const [showEmployeeDetails, setShowEmployeeDetails] = useState(false);
   const [showJobModal, setShowJobModal] = useState(false);
   const [selectedJob, setSelectedJob] = useState(null);
+
+  // Endorse-from-job flow (select employees)
+  const [showEmployeePickerModal, setShowEmployeePickerModal] = useState(false);
+  const [employeePickerJob, setEmployeePickerJob] = useState(null);
+  const [employeePickerLoading, setEmployeePickerLoading] = useState(false);
+  const [employeePickerSubmitting, setEmployeePickerSubmitting] = useState(false);
+  const [employeePickerError, setEmployeePickerError] = useState(null);
+  const [employeePickerSuccess, setEmployeePickerSuccess] = useState(null);
+  const [employeePickerQuery, setEmployeePickerQuery] = useState('');
+  const [employeePickerEmployees, setEmployeePickerEmployees] = useState([]);
+  const [employeePickerSelectedIds, setEmployeePickerSelectedIds] = useState(() => new Set());
+  const [showConfirmBulkEndorse, setShowConfirmBulkEndorse] = useState(false);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -334,8 +347,445 @@ function AgencyHome() {
   
   }, []);
 
-  const handleEndorseNavigate = (job) => {
-    navigate("/agency/endorse", { state: { job } });
+  const parseRequirementsObject = (req) => {
+    if (!req) return null;
+    if (typeof req === 'object') return req;
+    if (typeof req === 'string') {
+      try { return JSON.parse(req); } catch { return null; }
+    }
+    return null;
+  };
+
+  const normalizeEmail = (v) => {
+    const s = String(v || '').trim().toLowerCase();
+    if (!s) return null;
+    if (!s.includes('@')) return null;
+    return s;
+  };
+
+  const extractApplicantFromPayload = (payload) => {
+    if (!payload) return null;
+    if (typeof payload === 'string') {
+      try { return extractApplicantFromPayload(JSON.parse(payload)); } catch { return null; }
+    }
+    return payload?.applicant || payload?.form || payload || null;
+  };
+
+  const extractEmailFromApplicationPayload = (payload) => {
+    const app = extractApplicantFromPayload(payload);
+    const raw =
+      app?.email ||
+      app?.Email ||
+      app?.contact ||
+      app?.contactNumber ||
+      payload?.email ||
+      payload?.Email ||
+      payload?.contact ||
+      null;
+    if (typeof raw !== 'string') return null;
+    if (!raw.includes('@')) return null;
+    return normalizeEmail(raw);
+  };
+
+  const getJobRoleForEligibility = (job) => {
+    const title = String(job?.title || '').toLowerCase();
+    if (!title) return null;
+    if (title.includes('driver')) return 'driver';
+    if (title.includes('helper')) return 'helper';
+    return null;
+  };
+
+  const isValidContactPH = (contact) => {
+    const s = String(contact || '').trim();
+    return /^09\d{9}$/.test(s);
+  };
+
+  const getEmployeeMissingFieldsForRole = (employee, role) => {
+    const missing = [];
+    const raw = employee?.raw || employee || {};
+    const req = parseRequirementsObject(employee?.requirements) || parseRequirementsObject(raw?.requirements) || {};
+    const profile = (req?.profile && typeof req.profile === 'object') ? req.profile : {};
+    const address = (profile?.address && typeof profile.address === 'object') ? profile.address : {};
+    const education = (profile?.education && typeof profile.education === 'object') ? profile.education : {};
+    const driver = (req?.driver && typeof req.driver === 'object') ? req.driver : {};
+    const documents = Array.isArray(req?.documents) ? req.documents : [];
+
+    const fname = raw?.fname || raw?.firstName || raw?.first_name || null;
+    const lname = raw?.lname || raw?.lastName || raw?.last_name || null;
+    const email = raw?.email || employee?.email || null;
+    const contact = raw?.contact_number || employee?.contact || raw?.contact || null;
+    const depot = raw?.depot || employee?.depot || null;
+    const department = raw?.department || employee?.department || null;
+    const position = raw?.position || employee?.position || null;
+    const birthday = raw?.birthday || employee?.birthday || null;
+
+    if (!fname) missing.push('First Name');
+    if (!lname) missing.push('Last Name');
+    if (!email) missing.push('Email Address');
+    if (!contact || !isValidContactPH(contact)) missing.push('Contact Number (must be 11 digits starting with 09)');
+    if (!depot) missing.push('Depot Assignment');
+    if (!department) missing.push('Department');
+    if (!position) missing.push('Position');
+    if (!birthday) missing.push('Birthday');
+
+    if (!profile?.sex) missing.push('Sex');
+    if (!profile?.maritalStatus) missing.push('Marital Status');
+
+    if (!address?.street) missing.push('Street Address');
+    if (!address?.barangay) missing.push('Barangay');
+    if (!address?.city) missing.push('City / Municipality');
+    if (!address?.province) missing.push('Province');
+    if (!address?.zip || !/^\d{4}$/.test(String(address.zip || '').trim())) missing.push('ZIP Code (4 digits)');
+
+    const eduLevel = String(education?.education || '').trim();
+    if (!eduLevel) {
+      missing.push('Educational Level');
+    } else if (eduLevel !== 'N/A') {
+      if (!String(education?.tertiarySchool || '').trim()) missing.push('School/Institution Name');
+      if (!String(education?.tertiaryProgram || '').trim()) missing.push('Course/Program');
+      if (!/^\d{4}$/.test(String(education?.tertiaryYear || '').trim())) missing.push('Year Graduated (4 digits)');
+    }
+
+    if (role === 'driver') {
+      if (!String(driver?.licenseClassification || '').trim()) missing.push('License Classification');
+      if (!String(driver?.licenseExpiry || '').trim()) missing.push('License Expiry Date');
+      if (!Array.isArray(driver?.restrictionCodes) || driver.restrictionCodes.length < 1) missing.push('Restriction Codes (select at least 1)');
+      if (!String(driver?.yearsDriving ?? '').trim()) missing.push('Years of Driving Experience');
+      if (!String(driver?.truckKnowledge || '').trim()) missing.push('Basic truck troubleshooting knowledge (Yes/No)');
+      if (!Array.isArray(driver?.vehicleTypes) || driver.vehicleTypes.length < 1) missing.push('Vehicles Driven (select at least 1)');
+
+      const hasLicenseDoc = documents.some((d) => {
+        const key = String(d?.key || d?.type || d?.name || '').toLowerCase();
+        const fp = d?.file_path || d?.filePath || d?.path || null;
+        if (!fp) return false;
+        return key.includes('license') || key.includes('drivers_license') || key.includes('license_photocopy');
+      });
+      if (!hasLicenseDoc) missing.push('License Photocopy (upload)');
+    }
+
+    return missing;
+  };
+
+  const closeEmployeePicker = () => {
+    setShowEmployeePickerModal(false);
+    setEmployeePickerJob(null);
+    setEmployeePickerLoading(false);
+    setEmployeePickerSubmitting(false);
+    setEmployeePickerError(null);
+    setEmployeePickerSuccess(null);
+    setEmployeePickerQuery('');
+    setEmployeePickerEmployees([]);
+    setEmployeePickerSelectedIds(new Set());
+    setShowConfirmBulkEndorse(false);
+  };
+
+  const openConfirmBulkEndorse = () => {
+    setEmployeePickerError(null);
+    setEmployeePickerSuccess(null);
+    setShowConfirmBulkEndorse(true);
+  };
+
+  const loadEmployeePickerEmployees = async (job) => {
+    setEmployeePickerLoading(true);
+    setEmployeePickerError(null);
+    try {
+      const { data: authRes, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authRes?.user) throw new Error('Unable to verify user.');
+      const user = authRes.user;
+
+      const { data, error } = await supabase
+        .from('employees')
+        .select('id, auth_user_id, email, fname, lname, mname, contact_number, position, depot, department, birthday, created_at, hired_at, agency_profile_id, endorsed_by_agency_id, is_agency, source, status, requirements, personal_email')
+        .or(`agency_profile_id.eq.${user.id},endorsed_by_agency_id.eq.${user.id}`)
+        .neq('source', 'internal')
+        .order('hired_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Exclude employees already in pending/deployed endorsements (match AgencyEndorsements behavior)
+      const hideIds = new Set();
+      try {
+        const { data: apps, error: appsErr } = await supabase
+          .from('applications')
+          .select('id, payload, endorsed, status')
+          .eq('endorsed', true)
+          .neq('status', 'retracted')
+          .neq('status', 'rejected')
+          .limit(2500);
+
+        if (!appsErr && Array.isArray(apps)) {
+          for (const a of apps) {
+            const payload = a?.payload;
+            let employeeId = null;
+            if (payload && typeof payload === 'object') {
+              employeeId = payload?.meta?.employee_id || payload?.meta?.employeeId || payload?.employee_id || payload?.employeeId || null;
+            }
+            if (employeeId != null) {
+              hideIds.add(String(employeeId));
+              continue;
+            }
+          }
+        }
+      } catch {
+        // Non-fatal; we can still show list
+      }
+
+      const normalized = (data || [])
+        .filter((r) => r?.source !== 'internal')
+        .filter((r) => !hideIds.has(String(r.id)))
+        .map((r) => {
+          const name = [r.fname, r.mname, r.lname].filter(Boolean).join(' ').trim() || r.email || 'Unnamed';
+          return {
+            id: r.id,
+            name,
+            auth_user_id: r.auth_user_id || null,
+            email: r.email || null,
+            personal_email: r.personal_email || null,
+            contact: r.contact_number || null,
+            position: r.position || 'Employee',
+            depot: r.depot || '—',
+            department: r.department || null,
+            birthday: r.birthday || null,
+            requirements: r.requirements && typeof r.requirements === 'object' ? r.requirements : (parseRequirementsObject(r.requirements) || null),
+            raw: r,
+          };
+        });
+
+      setEmployeePickerEmployees(normalized);
+
+      // If this job post is driver/helper, precompute warnings (UI-only)
+      const role = getJobRoleForEligibility(job);
+      if (role === 'driver' || role === 'helper') {
+        // no-op; computed on render
+      }
+    } catch (err) {
+      console.error('AgencyHome employee picker load error:', err);
+      setEmployeePickerEmployees([]);
+      setEmployeePickerError(err?.message || String(err));
+    } finally {
+      setEmployeePickerLoading(false);
+    }
+  };
+
+  const openEmployeePickerForJob = async (job) => {
+    setEmployeePickerJob(job);
+    setShowEmployeePickerModal(true);
+    setEmployeePickerSelectedIds(new Set());
+    setEmployeePickerSuccess(null);
+    setEmployeePickerError(null);
+    await loadEmployeePickerEmployees(job);
+  };
+
+  const toggleEmployeeSelection = (empId) => {
+    const id = String(empId);
+    setEmployeePickerSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectedEmployees = useMemo(() => {
+    const set = employeePickerSelectedIds;
+    const list = employeePickerEmployees || [];
+    if (!set || set.size === 0) return [];
+    const byId = new Map(list.map((e) => [String(e.id), e]));
+    const out = [];
+    for (const id of set) {
+      const emp = byId.get(String(id));
+      if (emp) out.push(emp);
+    }
+    return out;
+  }, [employeePickerEmployees, employeePickerSelectedIds]);
+
+  const bulkEndorseSelectedEmployees = async () => {
+    const job = employeePickerJob;
+    if (!job?.id) {
+      setEmployeePickerError('No job selected.');
+      return;
+    }
+    if (!selectedEmployees || selectedEmployees.length === 0) {
+      setEmployeePickerError('Select at least one employee.');
+      return;
+    }
+
+    setEmployeePickerSubmitting(true);
+    setEmployeePickerError(null);
+    setEmployeePickerSuccess(null);
+
+    try {
+      const { data: authRes, error: authErr } = await supabase.auth.getUser();
+      if (authErr || !authRes?.user) throw new Error('Unable to verify user.');
+      const user = authRes.user;
+
+      // Load existing endorsements for this job once
+      let existingByEmail = new Map();
+      try {
+        const { data: apps, error: appsErr } = await supabase
+          .from('applications')
+          .select('id, payload, endorsed, status')
+          .eq('job_id', job.id)
+          .eq('endorsed', true)
+          .neq('status', 'retracted');
+
+        if (!appsErr && Array.isArray(apps)) {
+          for (const a of apps) {
+            const em = extractEmailFromApplicationPayload(a.payload);
+            if (em) existingByEmail.set(em, a);
+          }
+        }
+      } catch {
+        // non-fatal
+      }
+
+      // Preload HR users once
+      let hrUsers = [];
+      try {
+        const { data: hrData, error: hrError } = await supabase
+          .from('profiles')
+          .select('id, role, depot')
+          .in('role', ['HR', 'HRC']);
+        if (!hrError && Array.isArray(hrData)) hrUsers = hrData;
+      } catch {
+        // non-fatal
+      }
+
+      const role = getJobRoleForEligibility(job);
+      const results = {
+        endorsed: 0,
+        skipped: 0,
+        failed: 0,
+        details: [],
+      };
+
+      for (const employee of selectedEmployees) {
+        try {
+          // Eligibility gate for Driver/Helper job posts
+          if (role === 'driver' || role === 'helper') {
+            const missing = getEmployeeMissingFieldsForRole(employee, role);
+            if (missing.length > 0) {
+              results.skipped += 1;
+              results.details.push({ employeeId: employee.id, name: employee.name, outcome: 'skipped', reason: `Incomplete info: ${missing.join(', ')}` });
+              continue;
+            }
+          }
+
+          const empEmail = normalizeEmail(employee.email);
+          if (!empEmail) {
+            results.failed += 1;
+            results.details.push({ employeeId: employee.id, name: employee.name, outcome: 'failed', reason: 'Missing email' });
+            continue;
+          }
+
+          const applicant = {
+            fname: employee?.raw?.fname || employee?.fname || employee?.first || employee?.firstName || null,
+            mname: employee?.raw?.mname || employee?.mname || employee?.middle || employee?.middleName || null,
+            lname: employee?.raw?.lname || employee?.lname || employee?.last || employee?.lastName || null,
+            firstName: employee?.raw?.fname || employee?.fname || employee?.first || employee?.firstName || null,
+            middleName: employee?.raw?.mname || employee?.mname || employee?.middle || employee?.middleName || null,
+            lastName: employee?.raw?.lname || employee?.lname || employee?.last || employee?.lastName || null,
+            email: employee.email,
+            contactNumber: employee.contact || employee.contact_number || employee?.raw?.contact_number || null,
+            contact: employee.contact || employee.contact_number || employee?.raw?.contact_number || null,
+            depot: employee.depot || employee?.raw?.depot || null,
+            position: employee.position || employee?.raw?.position || null,
+            department: employee.department || employee?.raw?.department || null,
+            fullName: employee.name || null,
+          };
+
+          const payload = {
+            applicant,
+            form: applicant,
+            job: {
+              id: job.id,
+              title: job.title || null,
+              depot: job.depot || null,
+              department: job.department || null,
+            },
+            meta: {
+              endorsed_by_auth_user_id: user.id,
+              endorsed_by_profile_id: user.id,
+              endorsed_at: new Date().toISOString(),
+              endorsement_source: 'agency_home_bulk',
+              employee_id: employee.id,
+            },
+          };
+
+          const existing = existingByEmail.get(empEmail) || null;
+          let applicationId = null;
+
+          if (existing?.id) {
+            const { data: updated, error: updErr } = await supabase
+              .from('applications')
+              .update({ payload, status: 'submitted', endorsed: true })
+              .eq('id', existing.id)
+              .select('id')
+              .maybeSingle();
+            if (updErr) throw updErr;
+            applicationId = updated?.id || existing.id;
+          } else {
+            const { data: inserted, error: insErr } = await supabase
+              .from('applications')
+              .insert([{ job_id: job.id, payload, status: 'submitted', endorsed: true }])
+              .select('id')
+              .maybeSingle();
+            if (insErr) throw insErr;
+            applicationId = inserted?.id || null;
+          }
+
+          // Notify HR users
+          if (applicationId && Array.isArray(hrUsers) && hrUsers.length > 0) {
+            const applicantName = employee.name || 'Unknown Employee';
+            const positionTitle = job.title || 'Unknown Position';
+            const jobDepot = job.depot || null;
+
+            for (const hrUser of hrUsers) {
+              if (hrUser.role === 'HRC' && hrUser.depot && jobDepot && hrUser.depot !== jobDepot) {
+                continue;
+              }
+              await createNotification({
+                userId: hrUser.id,
+                applicationId,
+                type: 'application',
+                title: 'New Agency Endorsement',
+                message: `${applicantName} was endorsed by agency for ${positionTitle}`,
+                userType: 'profile',
+              });
+            }
+          }
+
+          results.endorsed += 1;
+          results.details.push({ employeeId: employee.id, name: employee.name, outcome: 'endorsed' });
+        } catch (e) {
+          console.error('AgencyHome bulk endorse failed for employee:', employee?.id, e);
+          results.failed += 1;
+          results.details.push({ employeeId: employee.id, name: employee.name, outcome: 'failed', reason: e?.message || String(e) });
+        }
+      }
+
+      const msgParts = [];
+      if (results.endorsed > 0) msgParts.push(`Endorsed ${results.endorsed}`);
+      if (results.skipped > 0) msgParts.push(`Skipped ${results.skipped}`);
+      if (results.failed > 0) msgParts.push(`Failed ${results.failed}`);
+      const msg = msgParts.length > 0 ? `${msgParts.join(' · ')} employees.` : 'No changes made.';
+
+      if (results.endorsed > 0) {
+        setEmployeePickerSuccess(msg);
+        // Refresh job stats
+        await loadJobPosts();
+        // Reload employee pool to reflect removal from My Employees
+        await loadEmployeePickerEmployees(job);
+        setEmployeePickerSelectedIds(new Set());
+      } else {
+        setEmployeePickerError(msg);
+      }
+    } catch (err) {
+      console.error('AgencyHome bulk endorse error:', err);
+      setEmployeePickerError(err?.message || String(err));
+    } finally {
+      setEmployeePickerSubmitting(false);
+    }
   };
 
   const formatDate = (d) => {
@@ -652,7 +1102,7 @@ function AgencyHome() {
                             <h2 className="text-2xl font-bold text-gray-800">{selectedJob.title}</h2>
                             <button
                               className="px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors"
-                              onClick={() => handleEndorseNavigate(selectedJob)}
+                              onClick={() => openEmployeePickerForJob(selectedJob)}
                             >
                               Endorse
                             </button>
@@ -886,8 +1336,253 @@ function AgencyHome() {
 
               <div className="flex justify-end gap-3 pt-4 border-t">
                 <button onClick={() => setShowJobModal(false)} className="px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors">Close</button>
-                <button onClick={() => { setShowJobModal(false); navigate("/agency/endorse", { state: { job: selectedJob } }); }} className="px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors">
+                <button
+                  onClick={() => {
+                    setShowJobModal(false);
+                    openEmployeePickerForJob(selectedJob);
+                  }}
+                  className="px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors"
+                >
                   Endorse Employee
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Employee Picker Modal (Endorse from Job) */}
+      {showEmployeePickerModal && employeePickerJob && (
+        <div className="fixed inset-0 flex items-center justify-center z-50" onClick={closeEmployeePicker}>
+          <div
+            className="bg-white rounded-lg w-full max-w-5xl mx-4 max-h-[90vh] border border-gray-200 shadow-xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between p-4 border-b bg-gray-50">
+              <div>
+                <div className="text-sm text-gray-600">Select employees to endorse</div>
+                <div className="text-lg font-bold text-gray-900">{employeePickerJob.title || 'Job Post'}</div>
+                <div className="text-xs text-gray-500">{employeePickerJob.depot || '—'} · {employeePickerJob.department || '—'}</div>
+              </div>
+              <button
+                type="button"
+                onClick={closeEmployeePicker}
+                className="text-gray-500 hover:text-gray-700 text-2xl leading-none"
+                aria-label="Close"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="p-4">
+              {employeePickerError ? (
+                <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm whitespace-pre-wrap">{employeePickerError}</div>
+              ) : null}
+              {employeePickerSuccess ? (
+                <div className="mb-3 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">{employeePickerSuccess}</div>
+              ) : null}
+
+              <div className="flex items-center gap-3 mb-4">
+                <input
+                  value={employeePickerQuery}
+                  onChange={(e) => setEmployeePickerQuery(e.target.value)}
+                  placeholder="Search employee name, email, depot…"
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                />
+                <button
+                  type="button"
+                  onClick={() => loadEmployeePickerEmployees(employeePickerJob)}
+                  disabled={employeePickerLoading || employeePickerSubmitting}
+                  className={`px-4 py-2.5 rounded-lg text-sm font-semibold border ${
+                    (employeePickerLoading || employeePickerSubmitting) ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                  }`}
+                >
+                  Refresh
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* Employee list */}
+                <div className="lg:col-span-2 border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="max-h-[55vh] overflow-y-auto">
+                    {employeePickerLoading ? (
+                      <div className="p-4 text-sm text-gray-600">Loading employees…</div>
+                    ) : employeePickerEmployees.length === 0 ? (
+                      <div className="p-4 text-sm text-gray-600">No employees found in My Employees.</div>
+                    ) : (() => {
+                      const q = String(employeePickerQuery || '').trim().toLowerCase();
+                      const role = getJobRoleForEligibility(employeePickerJob);
+                      const filtered = (employeePickerEmployees || []).filter((emp) => {
+                        if (!q) return true;
+                        const hay = `${emp?.name || ''} ${emp?.email || ''} ${emp?.depot || ''} ${emp?.department || ''} ${emp?.position || ''}`.toLowerCase();
+                        return hay.includes(q);
+                      });
+
+                      if (filtered.length === 0) {
+                        return <div className="p-4 text-sm text-gray-600">No matching employees.</div>;
+                      }
+
+                      return (
+                        <div className="divide-y divide-gray-100">
+                          {filtered.map((emp) => {
+                            const id = String(emp.id);
+                            const checkboxId = `agency-home-endorse-emp-${id}`;
+                            const checked = employeePickerSelectedIds.has(id);
+                            const missing = (role === 'driver' || role === 'helper') ? getEmployeeMissingFieldsForRole(emp, role) : [];
+                            const blocked = missing.length > 0;
+
+                            return (
+                              <div
+                                key={id}
+                                className={`w-full p-4 flex items-start gap-3 transition-colors ${
+                                  blocked ? 'bg-gray-50' : 'hover:bg-gray-50'
+                                }`}
+                              >
+                                <div className="pt-0.5">
+                                  <input
+                                    id={checkboxId}
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => toggleEmployeeSelection(emp.id)}
+                                    disabled={employeePickerSubmitting || blocked}
+                                    className="h-4 w-4"
+                                  />
+                                </div>
+                                <label
+                                  htmlFor={checkboxId}
+                                  className={`flex-1 ${blocked ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="text-sm font-semibold text-gray-900">{emp.name}</div>
+                                    <div className="text-xs text-gray-500">#{emp.id}</div>
+                                  </div>
+                                  <div className="mt-1 text-xs text-gray-600">{emp.position || 'Employee'} · {emp.department || '—'} · {emp.depot || '—'}</div>
+                                  {emp.email ? <div className="mt-1 text-xs text-gray-500">{emp.email}</div> : null}
+                                  {blocked ? (
+                                    <div className="mt-2 text-xs text-red-600 font-medium">
+                                      Incomplete employee info for this {role} post
+                                    </div>
+                                  ) : null}
+                                </label>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Summary */}
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                    <div className="text-sm font-semibold text-gray-900">Selected ({selectedEmployees.length})</div>
+                    <div className="text-xs text-gray-500">Review before endorsing</div>
+                  </div>
+                  <div className="p-4 max-h-[55vh] overflow-y-auto">
+                    {selectedEmployees.length === 0 ? (
+                      <div className="text-sm text-gray-600">No employees selected yet.</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {selectedEmployees.map((emp) => (
+                          <div key={String(emp.id)} className="border border-gray-200 rounded-lg p-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="text-sm font-semibold text-gray-900">{emp.name}</div>
+                                <div className="text-xs text-gray-600">{emp.position || 'Employee'} · {emp.depot || '—'}</div>
+                                {emp.email ? <div className="text-xs text-gray-500">{emp.email}</div> : null}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleEmployeeSelection(emp.id)}
+                                disabled={employeePickerSubmitting}
+                                className="text-xs px-2 py-1 rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="p-4 border-t bg-white">
+                    <button
+                      type="button"
+                      onClick={openConfirmBulkEndorse}
+                      disabled={employeePickerSubmitting || selectedEmployees.length === 0}
+                      className={`w-full px-4 py-2.5 rounded-lg text-sm font-semibold text-white transition-colors ${
+                        (employeePickerSubmitting || selectedEmployees.length === 0) ? 'bg-gray-400' : 'bg-[#800000] hover:bg-[#990000]'
+                      }`}
+                    >
+                      {employeePickerSubmitting ? 'Endorsing…' : 'Endorse Selected'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmployeePickerSelectedIds(new Set())}
+                      disabled={employeePickerSubmitting || selectedEmployees.length === 0}
+                      className={`mt-2 w-full px-4 py-2.5 rounded-lg text-sm font-semibold border ${
+                        (employeePickerSubmitting || selectedEmployees.length === 0) ? 'bg-gray-100 text-gray-400 border-gray-200' : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      Clear Selection
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Bulk Endorse Modal */}
+      {showEmployeePickerModal && employeePickerJob && showConfirmBulkEndorse && (
+        <div
+          className="fixed inset-0 bg-black/30 flex items-center justify-center z-[60]"
+          onClick={() => setShowConfirmBulkEndorse(false)}
+        >
+          <div
+            className="bg-white rounded-lg w-full max-w-lg mx-4 border border-gray-200 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b bg-gray-50">
+              <div className="text-lg font-bold text-gray-900">Confirm endorsement</div>
+              <div className="text-xs text-gray-500">{employeePickerJob.title || 'Job Post'}</div>
+            </div>
+            <div className="p-4">
+              <div className="text-sm text-gray-700">
+                Are you sure you want to Summarize ({selectedEmployees.map((e) => e?.name || 'Unnamed').join(', ')})?
+              </div>
+              <div className="mt-3 border border-gray-200 rounded-lg max-h-56 overflow-y-auto">
+                {selectedEmployees.map((emp) => (
+                  <div key={String(emp.id)} className="px-3 py-2 border-b last:border-b-0">
+                    <div className="text-sm font-semibold text-gray-900">{emp.name}</div>
+                    <div className="text-xs text-gray-600">{emp.position || 'Employee'} · {emp.depot || '—'}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmBulkEndorse(false)}
+                  disabled={employeePickerSubmitting}
+                  className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 text-sm font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setShowConfirmBulkEndorse(false);
+                    await bulkEndorseSelectedEmployees();
+                  }}
+                  disabled={employeePickerSubmitting || selectedEmployees.length === 0}
+                  className={`px-4 py-2 rounded-lg text-sm font-semibold text-white ${
+                    (employeePickerSubmitting || selectedEmployees.length === 0) ? 'bg-gray-400' : 'bg-[#800000] hover:bg-[#990000]'
+                  }`}
+                >
+                  {employeePickerSubmitting ? 'Endorsing…' : 'Confirm'}
                 </button>
               </div>
             </div>

@@ -42,6 +42,19 @@ function AgencyEndorsements() {
 
   // UI helpers for details
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+
+  // My Employees -> Edit employee
+  const [isEditingEmployee, setIsEditingEmployee] = useState(false);
+  const [employeeEditDraft, setEmployeeEditDraft] = useState(null);
+  const [employeeEditSaving, setEmployeeEditSaving] = useState(false);
+  const [employeeEditError, setEmployeeEditError] = useState('');
+  const [employeeEditSuccess, setEmployeeEditSuccess] = useState('');
+  const [autoEditEmployeeId, setAutoEditEmployeeId] = useState(null);
+
+  // My Employees -> History
+  const [employeeHistoryRows, setEmployeeHistoryRows] = useState([]);
+  const [employeeHistoryLoading, setEmployeeHistoryLoading] = useState(false);
+  const [employeeHistoryError, setEmployeeHistoryError] = useState('');
   
   // Search and filter for endorsements
   const [endorsementsSearch, setEndorsementsSearch] = useState('');
@@ -51,6 +64,37 @@ function AgencyEndorsements() {
   const [depotFilter, setDepotFilter] = useState('All');
   const [employmentStatusFilter, setEmploymentStatusFilter] = useState('All');
   const [employeeDetailTab, setEmployeeDetailTab] = useState('profiling');
+
+  // Initialize/clear edit/history state when switching employees/tabs
+  useEffect(() => {
+    setEmployeeEditError('');
+    setEmployeeEditSuccess('');
+    setEmployeeHistoryRows([]);
+    setEmployeeHistoryError('');
+    setEmployeeHistoryLoading(false);
+
+    if (endorsementsTab === 'myEmployees' && selectedEmployee) {
+      setEmployeeEditDraft(makeEmployeeEditDraft(selectedEmployee));
+      if (autoEditEmployeeId && String(selectedEmployee?.id) === String(autoEditEmployeeId)) {
+        setIsEditingEmployee(true);
+        setAutoEditEmployeeId(null);
+      } else {
+        setIsEditingEmployee(false);
+      }
+    } else {
+      setEmployeeEditDraft(null);
+      setIsEditingEmployee(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endorsementsTab, selectedEmployee?.id]);
+
+  useEffect(() => {
+    if (endorsementsTab !== 'myEmployees') return;
+    if (!selectedEmployee) return;
+    if (employeeDetailTab !== 'history') return;
+    fetchEmployeeHistory(selectedEmployee);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [endorsementsTab, employeeDetailTab, selectedEmployee?.id]);
 
   // Add Employee modal (My Employees)
   const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
@@ -62,26 +106,115 @@ function AgencyEndorsements() {
   const [addEmployeeError, setAddEmployeeError] = useState('');
   const [addEmployeeSuccess, setAddEmployeeSuccess] = useState('');
   const [addEmployeeDepotOptions, setAddEmployeeDepotOptions] = useState([]);
-  const [addEmployeeForm, setAddEmployeeForm] = useState({
-    fname: '',
-    mname: '',
-    lname: '',
-    email: '',
-    personal_email: '',
-    contact_number: '',
-    birthday: '',
-    depot: '',
+
+  const todayIso = () => new Date().toISOString().split('T')[0];
+  const getBirthdayMaxForMinAge = (minAgeYears) => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - Number(minAgeYears || 0));
+    return d.toISOString().split('T')[0];
+  };
+
+  const sanitizeDigits = (value, maxLen) => String(value || '').replace(/\D+/g, '').slice(0, maxLen);
+  const sanitizeYear = (value) => sanitizeDigits(value, 4);
+  const sanitizeZip = (value) => sanitizeDigits(value, 4);
+  const sanitizeContact = (value) => sanitizeDigits(value, 11);
+  const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+  const getBirthYear = (birthdayStr) => {
+    const s = String(birthdayStr || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    const y = Number(s.slice(0, 4));
+    return Number.isFinite(y) ? y : null;
+  };
+  const getAgeFromBirthday = (birthdayStr) => {
+    const s = String(birthdayStr || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    const dob = new Date(s + 'T00:00:00');
+    if (Number.isNaN(dob.getTime())) return null;
+    const now = new Date();
+    let age = now.getFullYear() - dob.getFullYear();
+    const m = now.getMonth() - dob.getMonth();
+    if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
+    return age;
+  };
+
+  const makeEmptyAddEmployeeForm = () => ({
+    // Employment details
     department: 'Operations Department',
     position: 'Helper',
+    depot: '',
+    dateAvailable: '',
+    employed: 'no',
+
+    // Personal info
+    lname: '',
+    fname: '',
+    mname: '',
+    birthday: '',
+    maritalStatus: '',
+    sex: '',
+
+    // Address
+    unit_house_number: '',
+    street: '',
+    barangay: '',
+    city: '',
+    province: '',
+    zip: '',
+
+    // Alternate address (optional)
+    residenceNoAlt: '',
+    streetAlt: '',
+    cityAlt: '',
+    zipAlt: '',
+
+    // Contacts
+    contactNumber: '',
+    email: '',
+    personalEmail: '',
+
+    // Government IDs (availability flags)
+    hasSSS: false,
+    hasPAGIBIG: false,
+    hasTIN: false,
+    hasPhilHealth: false,
+
+    // Education & skills
+    education: '',
+    secondarySchool: '',
+    secondaryYear: '',
+    tertiarySchool: '',
+    tertiaryYear: '',
+    tertiaryProgram: '',
+    graduateSchool: '',
+    graduateYear: '',
+    graduateProgram: '',
+    specializedTraining: '',
+    specializedYear: '',
+    trainingCertFile: null,
+    skills: '',
+
+    // Medical
+    takingMedications: false,
+    medicationReason: '',
+    tookMedicalTest: false,
+    medicalTestDate: '',
+
+    // Driver fields
     employeeType: 'helper', // 'helper' | 'driver'
-    licenseClassification: '',
     licenseExpiry: '',
+    licenseClassification: '',
     restrictionCodes: [],
     yearsDriving: '',
-    truckKnowledge: '', // 'yes' | 'no'
+    truckKnowledge: 'no', // 'yes' | 'no'
+    vehicleTypes: [],
+    troubleshootingTasks: [],
+
+    // Files
     resumeFile: null,
     licenseFile: null,
   });
+
+  const [addEmployeeForm, setAddEmployeeForm] = useState(makeEmptyAddEmployeeForm);
 
   // Load depot locations for dropdowns
   useEffect(() => {
@@ -173,7 +306,7 @@ function AgencyEndorsements() {
 
   const isMyEmployeesTab = endorsementsTab === 'myEmployees';
   const isAddEmployeeModalOpen = isMyEmployeesTab && showAddEmployeeModal;
-  const addEmployeeTotalSteps = addEmployeeForm.employeeType === 'driver' ? 2 : 1;
+  const addEmployeeTotalSteps = addEmployeeForm.employeeType === 'driver' ? 4 : 2;
 
   useEffect(() => {
     if (addEmployeeStep > addEmployeeTotalSteps) {
@@ -185,26 +318,7 @@ function AgencyEndorsements() {
     setAddEmployeeError('');
     setAddEmployeeSuccess('');
     setAddEmployeeSubmitting(false);
-    setAddEmployeeForm({
-      fname: '',
-      mname: '',
-      lname: '',
-      email: '',
-      personal_email: '',
-      contact_number: '',
-      birthday: '',
-      depot: '',
-      department: 'Operations Department',
-      position: 'Helper',
-      employeeType: 'helper',
-      licenseClassification: '',
-      licenseExpiry: '',
-      restrictionCodes: [],
-      yearsDriving: '',
-      truckKnowledge: '',
-      resumeFile: null,
-      licenseFile: null,
-    });
+    setAddEmployeeForm(makeEmptyAddEmployeeForm());
     setCsvFile(null);
     setCsvPreview([]);
     setCsvRows([]);
@@ -253,22 +367,34 @@ function AgencyEndorsements() {
   const parseEmployeesCSV = (text) => {
     const lines = String(text || '')
       .split(/\r?\n/)
-      .map((l) => l.trimEnd())
+      .map((l) => String(l || '').trim())
       .filter((l) => l && !/^\s*#/.test(l));
     if (lines.length < 2) return { headers: [], data: [] };
 
     const headers = splitCsvLine(lines[0])
-      .map((h) => String(h || '').trim().replace(/^["']|["']$/g, ''))
+      .map((h, idx) => {
+        const cleaned = String(h || '').trim().replace(/^["']|["']$/g, '');
+        return idx === 0 ? cleaned.replace(/^\uFEFF/, '') : cleaned;
+      })
       .filter(Boolean);
     const data = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const raw = splitCsvLine(lines[i]).map((v) => String(v || '').trim().replace(/^["']|["']$/g, ''));
-      if (raw.every((v) => !v)) continue;
+      let values = splitCsvLine(lines[i]).map((v) => String(v || '').trim().replace(/^["']|["']$/g, ''));
+
+      if (!values.some((v) => String(v || '').trim() !== '')) continue;
+
+      if (values.length < headers.length) {
+        while (values.length < headers.length) values.push('');
+      } else if (values.length > headers.length) {
+        const head = values.slice(0, Math.max(0, headers.length - 1));
+        const tail = values.slice(Math.max(0, headers.length - 1)).join(',');
+        values = [...head, tail];
+      }
 
       const rowObj = {};
       headers.forEach((h, idx) => {
-        rowObj[h] = raw[idx] ?? '';
+        rowObj[h] = values[idx] ?? '';
       });
       data.push(rowObj);
     }
@@ -316,6 +442,70 @@ function AgencyEndorsements() {
   };
 
   const normalizeCsvKey = (k) => String(k || '').trim().toLowerCase().replace(/\s+/g, '_');
+
+  const toCsvBool = (v) => {
+    const s = String(v ?? '').trim().toLowerCase();
+    return s === '1' || s === 'true' || s === 'yes' || s === 'y' || s === 'checked';
+  };
+
+  const toCsvList = (v) => {
+    const s = String(v ?? '').trim();
+    if (!s) return [];
+    const parts = s.includes('|') ? s.split('|') : s.includes(';') ? s.split(';') : s.split(',');
+    return parts.map((p) => p.trim()).filter(Boolean);
+  };
+
+  const normalizeCsvDate = (value) => {
+    let raw = String(value ?? '').trim();
+    if (!raw) return '';
+
+    // Handle "1 01 2027" => "1/01/2027"
+    if (/^\d{1,2}\s+\d{1,2}\s+\d{4}$/.test(raw)) {
+      raw = raw.replace(/\s+/g, '/');
+    }
+
+    // Excel serial date
+    if (/^\d{5}$/.test(raw)) {
+      const serial = Number(raw);
+      const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+      const dt = new Date(excelEpoch.getTime() + serial * 86400 * 1000);
+      return dt.toISOString().slice(0, 10);
+    }
+
+    // DD/MM/YYYY or MM/DD/YYYY
+    const m = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (m) {
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      const year = Number(m[3]);
+
+      let month;
+      let day;
+      if (a > 12 && b <= 12) {
+        day = a;
+        month = b;
+      } else if (b > 12 && a <= 12) {
+        month = a;
+        day = b;
+      } else {
+        month = a;
+        day = b;
+      }
+
+      if (month < 1 || month > 12 || day < 1 || day > 31) return '';
+      const dt = new Date(Date.UTC(year, month - 1, day));
+      return dt.toISOString().slice(0, 10);
+    }
+
+    const parsed = new Date(raw);
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Date(Date.UTC(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()))
+        .toISOString()
+        .slice(0, 10);
+    }
+    return '';
+  };
+
   const getCsvValue = (row, candidates) => {
     const keys = Object.keys(row || {});
     const map = {};
@@ -329,18 +519,535 @@ function AgencyEndorsements() {
     return '';
   };
 
-  const uploadEmployeeFile = async ({ employeeId, file, label }) => {
+  const uploadEmployeeFile = async ({ employeeId, file, key, name }) => {
     if (!file || !employeeId) return null;
     const safeName = String(file.name || 'file').replace(/[^a-zA-Z0-9_.-]+/g, '_');
     const path = `employees/${employeeId}/${Date.now()}_${safeName}`;
     const { error } = await supabase.storage.from('application-files').upload(path, file);
     if (error) throw error;
     return {
-      label,
+      key: key || null,
+      name: name || null,
+      label: name || null,
+      file_path: path,
       path,
       originalName: file.name,
+      status: 'Submitted',
+      submitted_at: new Date().toISOString(),
       uploadedAt: new Date().toISOString(),
     };
+  };
+
+  const coerceArray = (val) => (Array.isArray(val) ? val : []);
+
+  const makeEmployeeEditDraft = (emp) => {
+    if (!emp) return null;
+    const req = emp?.requirements && typeof emp.requirements === 'object' ? emp.requirements : {};
+    const profile = req?.profile && typeof req.profile === 'object' ? req.profile : {};
+    const address = profile?.address && typeof profile.address === 'object' ? profile.address : {};
+    const education = profile?.education && typeof profile.education === 'object' ? profile.education : {};
+    const medical = profile?.medical && typeof profile.medical === 'object' ? profile.medical : {};
+    const driver = req?.driver && typeof req.driver === 'object' ? req.driver : {};
+
+    const employeeTypeInReq = String(req?.employeeType || '').toLowerCase();
+    const inferredIsDriver = employeeTypeInReq === 'driver' || /driver/i.test(String(emp?.position || emp?.raw?.position || ''));
+    const employeeType = inferredIsDriver ? 'driver' : 'helper';
+
+    return {
+      fname: String(emp?.raw?.fname ?? '').trim(),
+      mname: String(emp?.raw?.mname ?? '').trim(),
+      lname: String(emp?.raw?.lname ?? '').trim(),
+      email: String(emp?.email ?? '').trim(),
+      personal_email: String(emp?.personal_email ?? emp?.raw?.personal_email ?? '').trim(),
+      contact_number: String(emp?.contact ?? emp?.raw?.contact_number ?? '').trim(),
+      birthday: String(emp?.birthday ?? emp?.raw?.birthday ?? '').trim(),
+      depot: String(emp?.depot ?? emp?.raw?.depot ?? '').trim(),
+      department: String(emp?.department ?? emp?.raw?.department ?? '').trim(),
+      position: String(emp?.position ?? emp?.raw?.position ?? '').trim(),
+      requirements: {
+        employeeType,
+        profile: {
+          employed: profile?.employed ?? 'no',
+          dateAvailable: profile?.dateAvailable ?? '',
+          maritalStatus: profile?.maritalStatus ?? '',
+          sex: profile?.sex ?? '',
+          address: {
+            unit_house_number: address?.unit_house_number ?? profile?.unit_house_number ?? '',
+            street: address?.street ?? profile?.street ?? '',
+            barangay: address?.barangay ?? profile?.barangay ?? '',
+            city: address?.city ?? profile?.city ?? '',
+            province: address?.province ?? profile?.province ?? '',
+            zip: address?.zip ?? profile?.zip ?? '',
+          },
+          education: {
+            education: education?.education ?? profile?.education ?? '',
+            secondarySchool: education?.secondarySchool ?? '',
+            secondaryYear: education?.secondaryYear ?? '',
+            tertiarySchool: education?.tertiarySchool ?? '',
+            tertiaryYear: education?.tertiaryYear ?? '',
+            tertiaryProgram: education?.tertiaryProgram ?? '',
+            graduateSchool: education?.graduateSchool ?? '',
+            graduateYear: education?.graduateYear ?? '',
+            graduateProgram: education?.graduateProgram ?? '',
+            specializedTraining: education?.specializedTraining ?? profile?.specializedTraining ?? '',
+            specializedYear: education?.specializedYear ?? profile?.specializedYear ?? '',
+          },
+          skills: profile?.skills ?? '',
+          medical: {
+            takingMedications: Boolean(medical?.takingMedications),
+            medicationReason: medical?.medicationReason ?? '',
+            tookMedicalTest: Boolean(medical?.tookMedicalTest),
+            medicalTestDate: medical?.medicalTestDate ?? '',
+          },
+        },
+        driver: {
+          licenseClassification: driver?.licenseClassification ?? '',
+          licenseExpiry: driver?.licenseExpiry ?? '',
+          restrictionCodes: coerceArray(driver?.restrictionCodes),
+          yearsDriving: driver?.yearsDriving ?? '',
+          truckKnowledge: driver?.truckKnowledge ?? '',
+          vehicleTypes: coerceArray(driver?.vehicleTypes),
+          troubleshootingTasks: coerceArray(driver?.troubleshootingTasks),
+        },
+        documents: coerceArray(req?.documents),
+      },
+      files: {
+        resumeFile: null,
+        trainingCertFile: null,
+        licenseFile: null,
+        extraCertLabel: '',
+        extraCertFile: null,
+      },
+    };
+  };
+
+  const updateEmployeeEditDraft = (path, value) => {
+    setEmployeeEditDraft((prev) => {
+      const next = prev ? { ...prev } : {};
+      const parts = String(path || '').split('.').filter(Boolean);
+      if (parts.length === 0) return prev;
+      let cur = next;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const key = parts[i];
+        const existing = cur[key];
+        cur[key] = existing && typeof existing === 'object' ? { ...existing } : {};
+        cur = cur[key];
+      }
+      cur[parts[parts.length - 1]] = value;
+      return next;
+    });
+  };
+
+  const validateEmployeeEditDraft = (draft) => {
+    const errors = [];
+    if (!draft) return ['No changes to save.'];
+
+    const email = String(draft.email || '').trim().toLowerCase();
+    if (!email || !isValidEmail(email)) errors.push('Email Address must be a valid email format (e.g., name@domain.com)');
+
+    const contactStr = sanitizeContact(draft.contact_number || '');
+    if (!contactStr || !/^09\d{9}$/.test(contactStr)) {
+      errors.push('Contact Number must be exactly 11 digits and start with 09');
+    }
+
+    const fname = String(draft.fname || '').trim();
+    const lname = String(draft.lname || '').trim();
+    if (!fname) errors.push('First Name is required');
+    if (!lname) errors.push('Last Name is required');
+
+    const profile = draft?.requirements?.profile || {};
+    const addr = profile?.address || {};
+    const zipStr = String(addr?.zip || '').trim();
+    if (zipStr && !/^\d{4}$/.test(zipStr)) errors.push('ZIP Code must be exactly 4 digits');
+
+    return errors;
+  };
+
+  const mergeEmployeeDocuments = (existingDocs, newDocs) => {
+    let docs = coerceArray(existingDocs).filter(Boolean);
+    for (const d of coerceArray(newDocs)) {
+      if (!d) continue;
+      const key = String(d.key || '').trim();
+      if (['resume', 'training_certificate', 'license_photocopy'].includes(key)) {
+        docs = docs.filter((x) => String(x?.key || '') !== key);
+      }
+      docs.push(d);
+    }
+    return docs;
+  };
+
+  const saveEmployeeEdits = async () => {
+    setEmployeeEditError('');
+    setEmployeeEditSuccess('');
+
+    const emp = selectedEmployee;
+    const draft = employeeEditDraft;
+    if (!emp?.id || !draft) {
+      setEmployeeEditError('No employee selected.');
+      return;
+    }
+
+    const errs = validateEmployeeEditDraft(draft);
+    if (errs.length > 0) {
+      setEmployeeEditError(`Please fix the following before saving:\n\n- ${errs.join('\n- ')}`);
+      return;
+    }
+
+    setEmployeeEditSaving(true);
+    try {
+      const email = String(draft.email || '').trim().toLowerCase();
+      const prevEmail = normalizeEmail(emp?.email);
+
+      // Ensure email uniqueness if changed
+      if (prevEmail && normalizeEmail(email) !== prevEmail) {
+        const { data: existing, error: existingErr } = await supabase
+          .from('employees')
+          .select('id,email')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (existingErr) throw existingErr;
+        if (existing?.id && String(existing.id) !== String(emp.id)) {
+          throw new Error(`Another employee already uses the email "${email}".`);
+        }
+      }
+
+      const baseReq = emp?.requirements && typeof emp.requirements === 'object' ? emp.requirements : {};
+      const draftReq = draft?.requirements && typeof draft.requirements === 'object' ? draft.requirements : {};
+
+      const employeeType = String(draftReq?.employeeType || baseReq?.employeeType || 'helper').toLowerCase() === 'driver'
+        ? 'driver'
+        : 'helper';
+
+      const nextProfile = {
+        ...(baseReq?.profile && typeof baseReq.profile === 'object' ? baseReq.profile : {}),
+        ...(draftReq?.profile && typeof draftReq.profile === 'object' ? draftReq.profile : {}),
+      };
+      nextProfile.address = {
+        ...((baseReq?.profile?.address && typeof baseReq.profile.address === 'object') ? baseReq.profile.address : {}),
+        ...((draftReq?.profile?.address && typeof draftReq.profile.address === 'object') ? draftReq.profile.address : {}),
+      };
+      nextProfile.education = {
+        ...((baseReq?.profile?.education && typeof baseReq.profile.education === 'object') ? baseReq.profile.education : {}),
+        ...((draftReq?.profile?.education && typeof draftReq.profile.education === 'object') ? draftReq.profile.education : {}),
+      };
+      nextProfile.medical = {
+        ...((baseReq?.profile?.medical && typeof baseReq.profile.medical === 'object') ? baseReq.profile.medical : {}),
+        ...((draftReq?.profile?.medical && typeof draftReq.profile.medical === 'object') ? draftReq.profile.medical : {}),
+      };
+
+      const nextDriver = employeeType === 'driver'
+        ? {
+            ...((baseReq?.driver && typeof baseReq.driver === 'object') ? baseReq.driver : {}),
+            ...((draftReq?.driver && typeof draftReq.driver === 'object') ? draftReq.driver : {}),
+            restrictionCodes: coerceArray(draftReq?.driver?.restrictionCodes ?? baseReq?.driver?.restrictionCodes),
+            vehicleTypes: coerceArray(draftReq?.driver?.vehicleTypes ?? baseReq?.driver?.vehicleTypes),
+            troubleshootingTasks: coerceArray(draftReq?.driver?.troubleshootingTasks ?? baseReq?.driver?.troubleshootingTasks),
+          }
+        : null;
+
+      // Upload any new files and merge into requirements.documents
+      const uploads = [];
+      if (draft?.files?.resumeFile) {
+        uploads.push(uploadEmployeeFile({ employeeId: emp.id, file: draft.files.resumeFile, key: 'resume', name: 'Resume' }));
+      }
+      if (draft?.files?.trainingCertFile) {
+        uploads.push(uploadEmployeeFile({ employeeId: emp.id, file: draft.files.trainingCertFile, key: 'training_certificate', name: 'Training Certificate' }));
+      }
+      if (employeeType === 'driver' && draft?.files?.licenseFile) {
+        uploads.push(uploadEmployeeFile({ employeeId: emp.id, file: draft.files.licenseFile, key: 'license_photocopy', name: 'License Photocopy' }));
+      }
+      if (draft?.files?.extraCertFile && String(draft?.files?.extraCertLabel || '').trim()) {
+        const label = String(draft.files.extraCertLabel || '').trim();
+        uploads.push(uploadEmployeeFile({ employeeId: emp.id, file: draft.files.extraCertFile, key: 'certificate', name: label }));
+      }
+
+      const uploadedDocs = (await Promise.allSettled(uploads))
+        .map((r) => (r.status === 'fulfilled' ? r.value : null))
+        .filter(Boolean);
+
+      const nextDocuments = mergeEmployeeDocuments(
+        coerceArray(draftReq?.documents ?? baseReq?.documents),
+        uploadedDocs
+      );
+
+      const nextRequirements = {
+        ...(baseReq && typeof baseReq === 'object' ? baseReq : {}),
+        ...(draftReq && typeof draftReq === 'object' ? draftReq : {}),
+        employeeType,
+        profile: nextProfile,
+        driver: nextDriver,
+        documents: nextDocuments,
+      };
+
+      const updates = {
+        email,
+        fname: String(draft.fname || '').trim() || null,
+        mname: String(draft.mname || '').trim() || null,
+        lname: String(draft.lname || '').trim() || null,
+        personal_email: String(draft.personal_email || '').trim() || null,
+        contact_number: sanitizeContact(draft.contact_number || '') || null,
+        birthday: String(draft.birthday || '').trim() || null,
+        depot: String(draft.depot || '').trim() || null,
+        department: String(draft.department || '').trim() || null,
+        position: String(draft.position || '').trim() || null,
+        requirements: nextRequirements,
+      };
+
+      const { error: updErr } = await supabase
+        .from('employees')
+        .update(updates)
+        .eq('id', emp.id);
+      if (updErr) throw updErr;
+
+      const name = [updates.fname, updates.mname, updates.lname].filter(Boolean).join(' ').trim() || updates.email || 'Unnamed';
+      const mergedEmployee = {
+        ...emp,
+        name,
+        email: updates.email,
+        personal_email: updates.personal_email,
+        contact: updates.contact_number,
+        birthday: updates.birthday,
+        depot: updates.depot,
+        department: updates.department,
+        position: updates.position,
+        requirements: nextRequirements,
+        raw: {
+          ...(emp?.raw || {}),
+          email: updates.email,
+          fname: updates.fname,
+          mname: updates.mname,
+          lname: updates.lname,
+          personal_email: updates.personal_email,
+          contact_number: updates.contact_number,
+          birthday: updates.birthday,
+          depot: updates.depot,
+          department: updates.department,
+          position: updates.position,
+          requirements: nextRequirements,
+        },
+      };
+
+      setHiredEmployees((prev) => (Array.isArray(prev) ? prev.map((h) => (String(h?.id) === String(emp.id) ? mergedEmployee : h)) : prev));
+      setSelectedEmployee(mergedEmployee);
+      setEmployeeEditDraft(makeEmployeeEditDraft(mergedEmployee));
+      setIsEditingEmployee(false);
+      setEmployeeEditSuccess('Employee updated successfully.');
+    } catch (err) {
+      console.error('Save employee edits error:', err);
+      setEmployeeEditError(err?.message || String(err));
+    } finally {
+      setEmployeeEditSaving(false);
+    }
+  };
+
+  const fetchEmployeeHistory = async (emp) => {
+    if (!emp) return;
+    setEmployeeHistoryLoading(true);
+    setEmployeeHistoryError('');
+    setEmployeeHistoryRows([]);
+
+    const employeeId = emp?.id != null ? String(emp.id) : null;
+    const employeeEmail = normalizeEmail(emp?.email);
+    const employeeAuthUserId = emp?.auth_user_id ? String(emp.auth_user_id) : null;
+
+    const normalizeRow = (r) => {
+      let payloadObj = r?.payload ?? {};
+      if (typeof payloadObj === 'string') {
+        try { payloadObj = JSON.parse(payloadObj); } catch { payloadObj = {}; }
+      }
+
+      const meta = payloadObj?.meta || {};
+      const metaEmpId = meta?.employee_id || meta?.employeeId || meta?.employeeID || null;
+      const rowEmail = extractEmailFromApplicationPayload(payloadObj);
+
+      const matches =
+        (metaEmpId != null && employeeId && String(metaEmpId) === employeeId) ||
+        (rowEmail && employeeEmail && rowEmail === employeeEmail) ||
+        (employeeAuthUserId && r?.user_id != null && String(r.user_id) === employeeAuthUserId);
+
+      if (!matches) return null;
+
+      const jobTitle = r?.job_posts?.title || payloadObj?.job?.title || payloadObj?.job_title || null;
+      const depot = r?.job_posts?.depot || payloadObj?.job?.depot || null;
+      const department = r?.job_posts?.department || payloadObj?.job?.department || null;
+
+      const rejectionRemarks =
+        r?.rejection_remarks ||
+        payloadObj?.rejection_remarks ||
+        payloadObj?.rejectionRemarks ||
+        payloadObj?.meta?.rejection_remarks ||
+        payloadObj?.meta?.rejectionRemarks ||
+        null;
+
+      return {
+        id: r?.id,
+        status: String(r?.status || '').toLowerCase() || 'submitted',
+        endorsed: !!r?.endorsed,
+        created_at: r?.created_at || null,
+        updated_at: r?.updated_at || null,
+        jobTitle,
+        depot,
+        department,
+        rejectionRemarks: rejectionRemarks ? String(rejectionRemarks) : null,
+        raw: r,
+      };
+    };
+
+    try {
+      const selectWithRemarks = `id,user_id,job_id,status,created_at,updated_at,endorsed,payload,rejection_remarks,retract_remarks,job_posts:job_posts ( id, title, depot, department )`;
+      const selectWithoutRemarks = `id,user_id,job_id,status,created_at,updated_at,endorsed,payload,job_posts:job_posts ( id, title, depot, department )`;
+
+      let res = await supabase
+        .from('applications')
+        .select(selectWithRemarks)
+        .order('created_at', { ascending: false })
+        .limit(250);
+
+      if (res.error) {
+        const msg = String(res.error.message || '').toLowerCase();
+        const missingRemarksColumn = msg.includes('rejection_remarks') || msg.includes('retract_remarks');
+        if (missingRemarksColumn) {
+          res = await supabase
+            .from('applications')
+            .select(selectWithoutRemarks)
+            .order('created_at', { ascending: false })
+            .limit(250);
+        }
+      }
+
+      if (res.error) throw res.error;
+
+      const normalized = (res.data || [])
+        .map(normalizeRow)
+        .filter(Boolean);
+
+      setEmployeeHistoryRows(normalized);
+    } catch (err) {
+      console.error('Fetch employee history error:', err);
+      setEmployeeHistoryError(err?.message || String(err));
+      setEmployeeHistoryRows([]);
+    } finally {
+      setEmployeeHistoryLoading(false);
+    }
+  };
+
+  const validateYearAfterBirth = (yearStr, birthYear) => {
+    if (!yearStr) return null;
+    if (!/^\d{4}$/.test(yearStr)) return 'must be 4 digits';
+    if (birthYear && parseInt(yearStr, 10) <= birthYear) return `must be after birth year (${birthYear})`;
+    return null;
+  };
+
+  const validateAddEmployeeStep = (stepNum) => {
+    const v = addEmployeeForm || makeEmptyAddEmployeeForm();
+    const errors = [];
+    const req = (val, label) => {
+      if (Array.isArray(val)) {
+        if (!val.length) errors.push(label);
+        return;
+      }
+      if (typeof val === 'boolean') return;
+      if (val == null) {
+        errors.push(label);
+        return;
+      }
+      if (typeof val === 'string' && !val.trim()) {
+        errors.push(label);
+      }
+    };
+
+    const birthYear = getBirthYear(v.birthday);
+    const todayStr = todayIso();
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+    const isDriver = String(v.employeeType || '').toLowerCase() === 'driver' || /driver/i.test(String(v.position || ''));
+
+    if (stepNum === 1) {
+      req(v.department, 'Department');
+      req(v.position, 'Position');
+      req(v.depot, 'Depot Assignment');
+      req(v.dateAvailable, 'Available Start Date');
+      req(v.employed, 'Currently Employed');
+
+      req(v.lname, 'Last Name');
+      req(v.fname, 'First Name');
+      req(v.birthday, 'Birthday');
+      req(v.maritalStatus, 'Marital Status');
+      req(v.sex, 'Sex');
+
+      req(v.street, 'Street Address');
+      req(v.province, 'Province');
+      req(v.city, 'City / Municipality');
+      req(v.barangay, 'Barangay');
+      req(v.zip, 'ZIP Code');
+
+      req(v.contactNumber, 'Contact Number');
+      req(v.email, 'Email Address');
+
+      if (v.birthday && v.birthday > todayStr) errors.push('Birthday cannot be in the future');
+      const age = getAgeFromBirthday(v.birthday);
+      if (age != null && age < 15) errors.push('Employee must be at least 15 years old');
+
+      if (v.dateAvailable && v.dateAvailable < todayStr) errors.push('Available Start Date cannot be before today');
+      const zipStr = String(v.zip || '').trim();
+      if (zipStr && !/^\d{4}$/.test(zipStr)) errors.push('ZIP Code must be exactly 4 digits');
+
+      const contactStr = String(v.contactNumber || '').trim();
+      if (contactStr && !/^09\d{9}$/.test(contactStr)) {
+        errors.push('Contact Number must be exactly 11 digits and start with 09');
+      }
+      if (v.email && !isValidEmail(v.email)) {
+        errors.push('Email Address must be a valid email format (e.g., name@domain.com)');
+      }
+    }
+
+    if (stepNum === 2) {
+      req(v.education, 'Educational Level');
+      const educationIsNA = v.education === 'N/A';
+      if (!educationIsNA) {
+        req(v.tertiaryYear, 'Year Graduated');
+        req(v.tertiarySchool, 'School/Institution Name');
+        req(v.tertiaryProgram, 'Course/Program');
+      }
+
+      const yearGrad = sanitizeYear(v.tertiaryYear);
+      const yearGradErr = validateYearAfterBirth(yearGrad, birthYear);
+      if (yearGrad && yearGradErr) errors.push(`Year Graduated ${yearGradErr}`);
+
+      const specYear = sanitizeYear(v.specializedYear);
+      if (specYear) {
+        const specErr = validateYearAfterBirth(specYear, birthYear);
+        if (specErr) errors.push(`Year Completed ${specErr}`);
+      }
+    }
+
+    if (stepNum === 3 && isDriver) {
+      req(v.licenseClassification, 'License Classification');
+      req(v.licenseExpiry, 'License Expiry Date');
+      req(v.licenseFile, 'License Photocopy');
+      if (!Array.isArray(v.restrictionCodes) || v.restrictionCodes.length < 1) {
+        errors.push('Restriction Codes (select at least 1)');
+      }
+      if (v.licenseExpiry && v.licenseExpiry < tomorrowStr) {
+        errors.push('License Expiry Date must be from tomorrow onwards');
+      }
+    }
+
+    if (stepNum === 4 && isDriver) {
+      req(v.yearsDriving, 'Years of Driving Experience');
+      req(v.truckKnowledge, 'Truck Troubleshooting Knowledge');
+      req(v.vehicleTypes, 'Vehicles Driven');
+      const age = getAgeFromBirthday(v.birthday);
+      const years = v.yearsDriving === '' ? null : Number(v.yearsDriving);
+      if (years != null && Number.isFinite(years) && age != null && years > age) {
+        errors.push(`Years of Driving Experience cannot exceed age (${age})`);
+      }
+    }
+
+    return errors;
   };
 
   const submitAddEmployee = async (e) => {
@@ -348,21 +1055,18 @@ function AgencyEndorsements() {
     setAddEmployeeError('');
     setAddEmployeeSuccess('');
 
+    for (let s = 1; s <= addEmployeeTotalSteps; s++) {
+      const errs = validateAddEmployeeStep(s);
+      if (errs.length > 0) {
+        setAddEmployeeError(`Please complete the required fields (Step ${s}):\n\n- ${errs.join('\n- ')}`);
+        return;
+      }
+    }
+
     const email = String(addEmployeeForm.email || '').trim().toLowerCase();
-    if (!email) {
-      setAddEmployeeError('Email is required.');
-      return;
-    }
-    if (!/^\S+@\S+\.\S+$/.test(email)) {
-      setAddEmployeeError('Please enter a valid email address.');
-      return;
-    }
     const fname = String(addEmployeeForm.fname || '').trim();
     const lname = String(addEmployeeForm.lname || '').trim();
-    if (!fname || !lname) {
-      setAddEmployeeError('First name and last name are required.');
-      return;
-    }
+    const contactNumber = sanitizeContact(addEmployeeForm.contactNumber || '');
 
     setAddEmployeeSubmitting(true);
     try {
@@ -385,12 +1089,61 @@ function AgencyEndorsements() {
       const position = addEmployeeForm.position || null;
       const depot = String(addEmployeeForm.depot || '').trim() || null;
       const birthday = addEmployeeForm.birthday || null;
-      const personal_email = String(addEmployeeForm.personal_email || '').trim() || null;
-      const contact_number = String(addEmployeeForm.contact_number || '').trim() || null;
+      const dateAvailable = addEmployeeForm.dateAvailable || null;
+      const employed = addEmployeeForm.employed || 'no';
+
+      const personalEmail = String(addEmployeeForm.personalEmail || '').trim() || null;
+      const contact_number = contactNumber || null;
 
       const isDriver = String(addEmployeeForm.employeeType || '').toLowerCase() === 'driver' || /driver/i.test(String(position || ''));
       const requirements = {
         employeeType: isDriver ? 'driver' : 'helper',
+        profile: {
+          employed,
+          dateAvailable,
+          maritalStatus: addEmployeeForm.maritalStatus || null,
+          sex: addEmployeeForm.sex || null,
+          address: {
+            unit_house_number: addEmployeeForm.unit_house_number || null,
+            street: addEmployeeForm.street || null,
+            barangay: addEmployeeForm.barangay || null,
+            city: addEmployeeForm.city || null,
+            province: addEmployeeForm.province || null,
+            zip: addEmployeeForm.zip || null,
+          },
+          alternateAddress: {
+            residenceNoAlt: addEmployeeForm.residenceNoAlt || null,
+            streetAlt: addEmployeeForm.streetAlt || null,
+            cityAlt: addEmployeeForm.cityAlt || null,
+            zipAlt: addEmployeeForm.zipAlt || null,
+          },
+          id_availability: {
+            hasSSS: !!addEmployeeForm.hasSSS,
+            hasPAGIBIG: !!addEmployeeForm.hasPAGIBIG,
+            hasTIN: !!addEmployeeForm.hasTIN,
+            hasPhilHealth: !!addEmployeeForm.hasPhilHealth,
+          },
+          education: {
+            education: addEmployeeForm.education || null,
+            secondarySchool: addEmployeeForm.secondarySchool || null,
+            secondaryYear: addEmployeeForm.secondaryYear || null,
+            tertiarySchool: addEmployeeForm.tertiarySchool || null,
+            tertiaryYear: addEmployeeForm.tertiaryYear || null,
+            tertiaryProgram: addEmployeeForm.tertiaryProgram || null,
+            graduateSchool: addEmployeeForm.graduateSchool || null,
+            graduateYear: addEmployeeForm.graduateYear || null,
+            graduateProgram: addEmployeeForm.graduateProgram || null,
+            specializedTraining: addEmployeeForm.specializedTraining || null,
+            specializedYear: addEmployeeForm.specializedYear || null,
+          },
+          skills: addEmployeeForm.skills || null,
+          medical: {
+            takingMedications: !!addEmployeeForm.takingMedications,
+            medicationReason: addEmployeeForm.medicationReason || null,
+            tookMedicalTest: !!addEmployeeForm.tookMedicalTest,
+            medicalTestDate: addEmployeeForm.medicalTestDate || null,
+          },
+        },
         driver: isDriver
           ? {
               licenseClassification: addEmployeeForm.licenseClassification || null,
@@ -398,6 +1151,8 @@ function AgencyEndorsements() {
               restrictionCodes: Array.isArray(addEmployeeForm.restrictionCodes) ? addEmployeeForm.restrictionCodes : [],
               yearsDriving: addEmployeeForm.yearsDriving || null,
               truckKnowledge: addEmployeeForm.truckKnowledge || null,
+              vehicleTypes: Array.isArray(addEmployeeForm.vehicleTypes) ? addEmployeeForm.vehicleTypes : [],
+              troubleshootingTasks: Array.isArray(addEmployeeForm.troubleshootingTasks) ? addEmployeeForm.troubleshootingTasks : [],
             }
           : null,
         documents: [],
@@ -411,7 +1166,7 @@ function AgencyEndorsements() {
             fname,
             mname: String(addEmployeeForm.mname || '').trim() || null,
             lname,
-            personal_email,
+            personal_email: personalEmail,
             contact_number,
             birthday,
             depot,
@@ -431,10 +1186,13 @@ function AgencyEndorsements() {
       const employeeId = inserted?.id;
       const docs = [];
       if (addEmployeeForm.resumeFile) {
-        docs.push(await uploadEmployeeFile({ employeeId, file: addEmployeeForm.resumeFile, label: 'Resume' }));
+        docs.push(await uploadEmployeeFile({ employeeId, file: addEmployeeForm.resumeFile, key: 'resume', name: 'Resume' }));
+      }
+      if (addEmployeeForm.trainingCertFile) {
+        docs.push(await uploadEmployeeFile({ employeeId, file: addEmployeeForm.trainingCertFile, key: 'training_certificate', name: 'Training Certificate' }));
       }
       if (isDriver && addEmployeeForm.licenseFile) {
-        docs.push(await uploadEmployeeFile({ employeeId, file: addEmployeeForm.licenseFile, label: 'License Photocopy' }));
+        docs.push(await uploadEmployeeFile({ employeeId, file: addEmployeeForm.licenseFile, key: 'license_photocopy', name: 'License Photocopy' }));
       }
 
       if (docs.filter(Boolean).length > 0) {
@@ -478,25 +1236,138 @@ function AgencyEndorsements() {
 
       const mapped = csvRows
         .map((row) => {
-          const email = getCsvValue(row, ['email', 'Email Address', 'email_address']).toLowerCase();
-          const fname = getCsvValue(row, ['fname', 'first_name', 'first name', 'First Name']);
-          const mname = getCsvValue(row, ['mname', 'middle_name', 'middle name', 'Middle Name']);
-          const lname = getCsvValue(row, ['lname', 'last_name', 'last name', 'Last Name']);
-          const personal_email = getCsvValue(row, ['personal_email', 'personal email']);
-          const contact_number = getCsvValue(row, ['contact_number', 'contact', 'contact number', 'phone']);
-          const depot = getCsvValue(row, ['depot', 'Depot']);
+          const emailRaw = getCsvValue(row, ['email', 'Email Address', 'email_address']);
+          const email = String(emailRaw || '').trim().toLowerCase();
+          const fname = getCsvValue(row, ['fname', 'first_name', 'first name', 'firstname', 'First Name', 'Firstname']);
+          const mname = getCsvValue(row, ['mname', 'middle_name', 'middle name', 'middlename', 'Middle Name', 'Middlename']);
+          const lname = getCsvValue(row, ['lname', 'last_name', 'last name', 'lastname', 'Last Name', 'Lastname']);
+
+          const personalEmail = getCsvValue(row, ['personal_email', 'personal email', 'personalEmail']);
+          const contactNumber = sanitizeContact(
+            getCsvValue(row, ['contact_number', 'contact', 'contact number', 'phone', 'mobile'])
+          );
+
+          const depot = getCsvValue(row, ['depot', 'Depot']) || addEmployeeForm.depot || null;
           const department = getCsvValue(row, ['department', 'Department']) || addEmployeeForm.department || null;
           const position = getCsvValue(row, ['position', 'Position']) || addEmployeeForm.position || null;
-          const birthday = getCsvValue(row, ['birthday', 'Birthday', 'date_of_birth', 'dob']) || null;
-          if (!email || !/^\S+@\S+\.\S+$/.test(email)) return null;
+
+          const birthday = normalizeCsvDate(getCsvValue(row, ['birthday', 'Birthday', 'date_of_birth', 'dob', 'birthdate', 'date of birth'])) || null;
+          const dateAvailable = normalizeCsvDate(
+            getCsvValue(row, ['date_available', 'dateAvailable', 'available_start_date', 'available start date'])
+          ) || null;
+
+          const employedRaw = getCsvValue(row, ['employed', 'currently_employed', 'currently employed']);
+          const employed = employedRaw ? (toCsvBool(employedRaw) ? 'yes' : 'no') : 'no';
+
+          const maritalStatus = getCsvValue(row, ['marital_status', 'maritalStatus', 'marital status', 'civil status']) || null;
+          const sex = getCsvValue(row, ['sex', 'gender']) || null;
+
+          const unit_house_number = getCsvValue(row, ['unit_house_number', 'unit house number', 'house number', 'house no', 'house_no']) || null;
+          const street = getCsvValue(row, ['street', 'street_address', 'street address', 'address']) || null;
+          const province = getCsvValue(row, ['province']) || null;
+          const city = getCsvValue(row, ['city', 'city_municipality', 'city / municipality', 'municipality']) || null;
+          const barangay = getCsvValue(row, ['barangay']) || null;
+          const zip = sanitizeZip(getCsvValue(row, ['zip', 'zip_code', 'zip code', 'postal code', 'zipcode'])) || null;
+
+          const education = getCsvValue(row, ['education', 'educational_level', 'educational level', 'educational attainment']) || null;
+          const tertiarySchool = getCsvValue(row, ['tertiary_school', 'tertiarySchool', 'school', 'school/institution', 'institution']) || null;
+          const tertiaryYear = sanitizeYear(getCsvValue(row, ['tertiary_year', 'tertiaryYear', 'year_graduated', 'year graduated', 'yeargraduated'])) || null;
+          const tertiaryProgram = getCsvValue(row, ['tertiary_program', 'tertiaryProgram', 'course', 'course/program', 'program']) || null;
+
+          const skills = getCsvValue(row, ['skills']) || null;
+          const specializedTraining = getCsvValue(row, ['specialized_training', 'specialized training']) || null;
+          const specializedYear = sanitizeYear(getCsvValue(row, ['specialized_year', 'specialized year', 'year_completed', 'year completed'])) || null;
+
+          const hasSSS = toCsvBool(getCsvValue(row, ['has_sss', 'has sss', 'sss']));
+          const hasPAGIBIG = toCsvBool(getCsvValue(row, ['has_pagibig', 'has pagibig', 'pagibig']));
+          const hasTIN = toCsvBool(getCsvValue(row, ['has_tin', 'has tin', 'tin']));
+          const hasPhilHealth = toCsvBool(getCsvValue(row, ['has_philhealth', 'has philhealth', 'philhealth']));
+
+          const takingMedications = toCsvBool(getCsvValue(row, ['taking_medications', 'taking medications']));
+          const medicationReason = getCsvValue(row, ['medication_reason', 'medication reason']) || null;
+          const tookMedicalTest = toCsvBool(getCsvValue(row, ['took_medical_test', 'took medical test']));
+          const medicalTestDate = normalizeCsvDate(getCsvValue(row, ['medical_test_date', 'medical test date'])) || null;
+
+          const licenseClassification = getCsvValue(row, ['license_classification', 'license classification']) || null;
+          const licenseExpiry = normalizeCsvDate(getCsvValue(row, ['license_expiry', 'license expiry'])) || null;
+          const restrictionCodes = toCsvList(getCsvValue(row, ['restriction_codes', 'restriction codes']));
+          const yearsDriving = getCsvValue(row, ['years_driving', 'years driving', 'driving experience', 'yearsdriving']) || null;
+          const truckKnowledge = getCsvValue(row, ['truck_knowledge', 'truck knowledge']);
+          const vehicleTypes = toCsvList(getCsvValue(row, ['vehicles_driven', 'vehicles driven', 'vehicle types', 'vehicle_types']));
+          const troubleshootingTasks = toCsvList(getCsvValue(row, ['troubleshooting_tasks', 'troubleshooting tasks']));
+
+          const employeeTypeCsv = getCsvValue(row, ['employee_type', 'employeeType', 'type']) || '';
+          const isDriver =
+            /driver/i.test(String(employeeTypeCsv || position || '')) ||
+            !!licenseClassification ||
+            !!licenseExpiry ||
+            (restrictionCodes && restrictionCodes.length > 0) ||
+            !!yearsDriving ||
+            (vehicleTypes && vehicleTypes.length > 0);
+
+          if (!email || !isValidEmail(email)) return null;
           if (!fname || !lname) return null;
+          if (!contactNumber || !/^09\d{9}$/.test(contactNumber)) return null;
+
+          const requirements = {
+            employeeType: isDriver ? 'driver' : 'helper',
+            profile: {
+              employed,
+              dateAvailable: dateAvailable || null,
+              maritalStatus,
+              sex,
+              unit_house_number,
+              address: {
+                street,
+                province,
+                city,
+                barangay,
+                zip,
+              },
+              ids: {
+                hasSSS,
+                hasPAGIBIG,
+                hasTIN,
+                hasPhilHealth,
+              },
+              education: {
+                education,
+                tertiarySchool,
+                tertiaryYear,
+                tertiaryProgram,
+              },
+              skills,
+              specializedTraining,
+              specializedYear,
+              medical: {
+                takingMedications,
+                medicationReason,
+                tookMedicalTest,
+                medicalTestDate,
+              },
+            },
+            driver: isDriver
+              ? {
+                  licenseClassification,
+                  licenseExpiry,
+                  restrictionCodes,
+                  yearsDriving,
+                  truckKnowledge: truckKnowledge ? (toCsvBool(truckKnowledge) ? 'yes' : 'no') : null,
+                  vehicleTypes,
+                  troubleshootingTasks,
+                }
+              : null,
+            documents: [],
+            importedFromCsv: true,
+          };
+
           return {
             email,
             fname,
             mname: mname || null,
             lname,
-            personal_email: personal_email || null,
-            contact_number: contact_number || null,
+            personal_email: personalEmail || null,
+            contact_number: contactNumber || null,
             depot: depot || null,
             department: department || null,
             position: position || null,
@@ -504,18 +1375,13 @@ function AgencyEndorsements() {
             role: 'Employee',
             source: 'agency',
             agency_profile_id: auth.user.id,
-            requirements: {
-              employeeType: /driver/i.test(String(position || '')) ? 'driver' : 'helper',
-              driver: null,
-              documents: [],
-              importedFromCsv: true,
-            },
+            requirements,
           };
         })
         .filter(Boolean);
 
       if (mapped.length === 0) {
-        setCsvError('No valid rows found. Required columns: email, fname/first name, lname/last name.');
+        setCsvError('No valid rows found. Required columns: email, firstname, lastname, contact.');
         setAddEmployeeSubmitting(false);
         return;
       }
@@ -564,6 +1430,25 @@ function AgencyEndorsements() {
     { code: '3', label: 'Code 3 (C equivalent)' },
     { code: 'b2', label: 'Code B2 (up to 1T vehicles)' },
     { code: 'c', label: 'Code C (1T and 2T vehicles)' },
+  ];
+
+  const vehicleTypesCatalog = [
+    'Motorcycle',
+    'Sedan',
+    'SUV',
+    'Van',
+    'Pickup',
+    'Truck (Light)',
+    'Truck (Medium)',
+    'Truck (Heavy)',
+  ];
+
+  const troubleshootingTasksCatalog = [
+    'Tire change',
+    'Battery jumpstart',
+    'Basic engine check (fluids)',
+    'Replace light bulbs/fuses',
+    'Minor mechanical troubleshooting',
   ];
 
   const departmentToPositions = {
@@ -1460,6 +2345,98 @@ function AgencyEndorsements() {
 
   const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 
+  const parseRequirementsObject = (req) => {
+    if (!req) return null;
+    if (typeof req === 'string') {
+      try {
+        return parseRequirementsObject(JSON.parse(req));
+      } catch {
+        return null;
+      }
+    }
+    if (typeof req !== 'object') return null;
+    return req;
+  };
+
+  const getJobRoleForEligibility = (job) => {
+    const title = String(job?.title || '').toLowerCase();
+    if (!title) return null;
+    if (title.includes('driver')) return 'driver';
+    if (title.includes('helper')) return 'helper';
+    return null;
+  };
+
+  const isValidContactPH = (contact) => {
+    const s = String(contact || '').trim();
+    return /^09\d{9}$/.test(s);
+  };
+
+  const getEmployeeMissingFieldsForRole = (employee, role) => {
+    const missing = [];
+    const raw = employee?.raw || employee || {};
+    const req = parseRequirementsObject(employee?.requirements) || parseRequirementsObject(raw?.requirements) || {};
+    const profile = (req?.profile && typeof req.profile === 'object') ? req.profile : {};
+    const address = (profile?.address && typeof profile.address === 'object') ? profile.address : {};
+    const education = (profile?.education && typeof profile.education === 'object') ? profile.education : {};
+    const driver = (req?.driver && typeof req.driver === 'object') ? req.driver : {};
+    const documents = Array.isArray(req?.documents) ? req.documents : [];
+
+    const fname = raw?.fname || raw?.firstName || raw?.first_name || null;
+    const lname = raw?.lname || raw?.lastName || raw?.last_name || null;
+    const email = raw?.email || employee?.email || null;
+    const contact = raw?.contact_number || employee?.contact || raw?.contact || null;
+    const depot = raw?.depot || employee?.depot || null;
+    const department = raw?.department || employee?.department || null;
+    const position = raw?.position || employee?.position || null;
+    const birthday = raw?.birthday || employee?.birthday || null;
+
+    if (!fname) missing.push('First Name');
+    if (!lname) missing.push('Last Name');
+    if (!email) missing.push('Email Address');
+    if (!contact || !isValidContactPH(contact)) missing.push('Contact Number (must be 11 digits starting with 09)');
+    if (!depot) missing.push('Depot Assignment');
+    if (!department) missing.push('Department');
+    if (!position) missing.push('Position');
+    if (!birthday) missing.push('Birthday');
+
+    if (!profile?.sex) missing.push('Sex');
+    if (!profile?.maritalStatus) missing.push('Marital Status');
+
+    if (!address?.street) missing.push('Street Address');
+    if (!address?.barangay) missing.push('Barangay');
+    if (!address?.city) missing.push('City / Municipality');
+    if (!address?.province) missing.push('Province');
+    if (!address?.zip || !/^\d{4}$/.test(String(address.zip || '').trim())) missing.push('ZIP Code (4 digits)');
+
+    const eduLevel = String(education?.education || '').trim();
+    if (!eduLevel) {
+      missing.push('Educational Level');
+    } else if (eduLevel !== 'N/A') {
+      if (!String(education?.tertiarySchool || '').trim()) missing.push('School/Institution Name');
+      if (!String(education?.tertiaryProgram || '').trim()) missing.push('Course/Program');
+      if (!/^\d{4}$/.test(String(education?.tertiaryYear || '').trim())) missing.push('Year Graduated (4 digits)');
+    }
+
+    if (role === 'driver') {
+      if (!String(driver?.licenseClassification || '').trim()) missing.push('License Classification');
+      if (!String(driver?.licenseExpiry || '').trim()) missing.push('License Expiry Date');
+      if (!Array.isArray(driver?.restrictionCodes) || driver.restrictionCodes.length < 1) missing.push('Restriction Codes (select at least 1)');
+      if (!String(driver?.yearsDriving ?? '').trim()) missing.push('Years of Driving Experience');
+      if (!String(driver?.truckKnowledge || '').trim()) missing.push('Basic truck troubleshooting knowledge (Yes/No)');
+      if (!Array.isArray(driver?.vehicleTypes) || driver.vehicleTypes.length < 1) missing.push('Vehicles Driven (select at least 1)');
+
+      const hasLicenseDoc = documents.some((d) => {
+        const key = String(d?.key || d?.type || d?.name || '').toLowerCase();
+        const fp = d?.file_path || d?.filePath || d?.path || null;
+        if (!fp) return false;
+        return key.includes('license') || key.includes('drivers_license') || key.includes('license_photocopy');
+      });
+      if (!hasLicenseDoc) missing.push('License Photocopy (upload)');
+    }
+
+    return missing;
+  };
+
   const extractApplicantFromPayload = (payload) => {
     if (!payload) return null;
     if (typeof payload === 'string') {
@@ -1499,6 +2476,17 @@ function AgencyEndorsements() {
     setEmployeeToEndorse(null);
   };
 
+  const openEditEmployeeFromJobPicker = (emp) => {
+    // Bring the user back to My Employees and open the employee detail panel.
+    // Editing itself is handled in the My Employees detail panel (Edit button).
+    closeJobPicker();
+    setEndorsementsTab('myEmployees');
+    setSelectedEmployee(emp);
+    setEmployeeDetailTab('profiling');
+    setEmployeeEditDraft(makeEmployeeEditDraft(emp));
+    setAutoEditEmployeeId(emp?.id != null ? String(emp.id) : null);
+  };
+
   const endorseExistingEmployeeToJob = async (job) => {
     setJobPickerSubmitting(true);
     setJobPickerError(null);
@@ -1508,6 +2496,22 @@ function AgencyEndorsements() {
       const employee = employeeToEndorse;
       if (!employee) throw new Error('No employee selected for endorsement.');
       if (!job?.id) throw new Error('No job selected.');
+
+      // Eligibility gate for Driver/Helper job posts
+      const role = getJobRoleForEligibility(job);
+      if (role === 'driver' || role === 'helper') {
+        const missing = getEmployeeMissingFieldsForRole(employee, role);
+        if (missing.length > 0) {
+          const headline = role === 'driver'
+            ? 'This employee cannot be endorsed to a Driver job post yet.'
+            : 'This employee cannot be endorsed to a Helper job post yet.';
+
+          const msg = `${headline}\n\nMissing / incomplete information:\n- ${missing.join('\n- ')}\n\nTo proceed, open this employee in “My Employees” and add the missing information (Profiling / Driver Details), then try endorsing again.`;
+          setJobPickerError(msg);
+          setJobPickerSubmitting(false);
+          return;
+        }
+      }
 
       const empEmail = normalizeEmail(employee.email);
       if (!empEmail) throw new Error('Employee email is required to endorse.');
@@ -1813,6 +2817,42 @@ function AgencyEndorsements() {
     return false;
   };
 
+  // Hide employees from "My Employees" once they are already in the endorsed list
+  // (pending or deployed), so they don't show up in two tabs at once.
+  const visibleHiredEmployees = React.useMemo(() => {
+    const pool = Array.isArray(hiredEmployees) ? hiredEmployees : [];
+    const endorsements = Array.isArray(endorsedEmployees) ? endorsedEmployees : [];
+    if (pool.length === 0 || endorsements.length === 0) return pool;
+
+    const endorsedEmployeeIds = new Set();
+    const endorsedEmails = new Set();
+
+    for (const e of endorsements) {
+      if (!e) continue;
+
+      // If the application was rejected by HR, it should return to My Employees.
+      const rawStatus = String(e?.raw?.status || '').toLowerCase();
+      if (rawStatus === 'rejected') continue;
+
+      if (e.endorsed_employee_id != null) endorsedEmployeeIds.add(String(e.endorsed_employee_id));
+
+      const meta = e?.payload?.meta || {};
+      const metaEmpId = meta?.employee_id || meta?.employeeId || meta?.employeeID || null;
+      if (metaEmpId != null) endorsedEmployeeIds.add(String(metaEmpId));
+
+      const emailKey = normalizeEmail(e?.email);
+      if (emailKey) endorsedEmails.add(emailKey);
+    }
+
+    return pool.filter((emp) => {
+      if (!emp) return false;
+      if (emp?.id != null && endorsedEmployeeIds.has(String(emp.id))) return false;
+      const key = normalizeEmail(emp?.email);
+      if (key && endorsedEmails.has(key)) return false;
+      return true;
+    });
+  }, [hiredEmployees, endorsedEmployees]);
+
   const filteredEmployees = React.useMemo(() => {
     const [sortKey, sortDir] = String(sortOption || "name-asc").split("-");
     const isAsc = sortDir === "asc";
@@ -1844,7 +2884,7 @@ function AgencyEndorsements() {
     };
 
     const sourceList = endorsementsTab === 'myEmployees'
-      ? (hiredEmployees || [])
+      ? (visibleHiredEmployees || [])
       : endorsementsTab === 'retracted'
         ? (retractedEndorsements || [])
         : (endorsedEmployees || []);
@@ -1896,7 +2936,7 @@ function AgencyEndorsements() {
         const bn = String(b?.name || "");
         return isAsc ? an.localeCompare(bn) : bn.localeCompare(an);
       });
-  }, [endorsedEmployees, retractedEndorsements, hiredEmployees, endorsementsTab, endorsementsSearch, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
+  }, [endorsedEmployees, retractedEndorsements, hiredEmployees, visibleHiredEmployees, endorsementsTab, endorsementsSearch, departmentFilter, positionFilter, depotFilter, employmentStatusFilter, sortOption]);
 
   // Keep selectedEmployee in sync with latest endorsedEmployees data
   useEffect(() => {
@@ -2926,7 +3966,7 @@ function AgencyEndorsements() {
   const isRetractedTab = endorsementsTab === 'retracted';
   const listLoading = isMyEmployeesTab ? hiredLoading : (isRetractedTab ? retractedLoading : endorsedLoading);
   const listError = isMyEmployeesTab ? hiredError : (isRetractedTab ? retractedError : endorsedError);
-  const listCount = isMyEmployeesTab ? hiredEmployees.length : (isRetractedTab ? retractedEndorsements.length : endorsedEmployees.length);
+  const listCount = isMyEmployeesTab ? visibleHiredEmployees.length : (isRetractedTab ? retractedEndorsements.length : endorsedEmployees.length);
   const emptyListMessage = isMyEmployeesTab
     ? 'No employees yet.'
     : (isRetractedTab ? 'No retracted applications yet.' : 'No endorsements yet.');
@@ -3369,7 +4409,7 @@ function AgencyEndorsements() {
                             : 'text-gray-600 hover:text-gray-800'
                         }`}
                       >
-                        My Employees ({hiredEmployees.length})
+                        My Employees ({visibleHiredEmployees.length})
                       </button>
                       <button
                         type="button"
@@ -3696,9 +4736,15 @@ function AgencyEndorsements() {
                         const docs = Array.isArray(req.documents) ? req.documents : [];
                         const isDriver = String(req.employeeType || '').toLowerCase() === 'driver' || /driver/i.test(String(selectedEmployee.position || ''));
 
+                        const draft = employeeEditDraft;
+                        const effectiveReq = (isEditingEmployee && draft?.requirements && typeof draft.requirements === 'object') ? draft.requirements : req;
+                        const effectiveDocs = Array.isArray(effectiveReq?.documents) ? effectiveReq.documents : docs;
+                        const effectiveIsDriver = String(effectiveReq?.employeeType || '').toLowerCase() === 'driver' || isDriver;
+
                         const detailTabs = [
                           { key: 'profiling', label: 'Profiling' },
                           { key: 'documents', label: 'Documents' },
+                          { key: 'history', label: 'History' },
                         ];
                         const validTabKeys = detailTabs.map((t) => t.key);
                         const currentTab = validTabKeys.includes(employeeDetailTab) ? employeeDetailTab : 'profiling';
@@ -3729,16 +4775,58 @@ function AgencyEndorsements() {
                                   <p className="text-xs text-gray-500">{selectedEmployee.email || `#${selectedEmployee.id}`}</p>
                                 </div>
                                 <div className="text-right">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEmployeeToEndorse(selectedEmployee);
-                                      setShowJobPickerModal(true);
-                                    }}
-                                    className="px-4 py-2 bg-[#800000] text-white rounded-lg text-sm font-medium hover:bg-[#990000] transition-colors"
-                                  >
-                                    Endorse
-                                  </button>
+                                  {isEditingEmployee ? (
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={employeeEditSaving}
+                                        onClick={saveEmployeeEdits}
+                                        className={`px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors ${
+                                          employeeEditSaving ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'
+                                        }`}
+                                      >
+                                        {employeeEditSaving ? 'Saving…' : 'Save'}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={employeeEditSaving}
+                                        onClick={() => {
+                                          setEmployeeEditError('');
+                                          setEmployeeEditSuccess('');
+                                          setIsEditingEmployee(false);
+                                          setEmployeeEditDraft(makeEmployeeEditDraft(selectedEmployee));
+                                        }}
+                                        className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-2 justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEmployeeToEndorse(selectedEmployee);
+                                          setShowJobPickerModal(true);
+                                        }}
+                                        className="px-4 py-2 bg-[#800000] text-white rounded-lg text-sm font-medium hover:bg-[#990000] transition-colors"
+                                      >
+                                        Endorse
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEmployeeEditError('');
+                                          setEmployeeEditSuccess('');
+                                          setEmployeeEditDraft(makeEmployeeEditDraft(selectedEmployee));
+                                          setIsEditingEmployee(true);
+                                        }}
+                                        className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                                      >
+                                        Edit
+                                      </button>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
@@ -3760,47 +4848,523 @@ function AgencyEndorsements() {
                             </div>
 
                             <div className="bg-white border-l border-r border-b border-gray-300 p-4 space-y-4">
-                              {currentTab === 'profiling' ? (
-                                <div className="space-y-4">
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                      <div className="text-xs font-semibold text-gray-600 mb-2">Contact</div>
-                                      <div className="text-sm text-gray-800">Email: <span className="font-semibold">{selectedEmployee.email || 'None'}</span></div>
-                                      <div className="text-sm text-gray-800">Personal Email: <span className="font-semibold">{selectedEmployee.personal_email || 'None'}</span></div>
-                                      <div className="text-sm text-gray-800">Contact: <span className="font-semibold">{selectedEmployee.contact || 'None'}</span></div>
-                                    </div>
-                                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                                      <div className="text-xs font-semibold text-gray-600 mb-2">Info</div>
-                                      <div className="text-sm text-gray-800">Department: <span className="font-semibold">{selectedEmployee.department || 'None'}</span></div>
-                                      <div className="text-sm text-gray-800">Birthday: <span className="font-semibold">{selectedEmployee.birthday ? String(selectedEmployee.birthday) : 'None'}</span></div>
-                                      <div className="text-sm text-gray-800">Date Added: <span className="font-semibold">{selectedEmployee.created_at ? formatDate(selectedEmployee.created_at) : 'None'}</span></div>
-                                    </div>
-                                  </div>
+                              {employeeEditError ? (
+                                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm whitespace-pre-line">{employeeEditError}</div>
+                              ) : null}
+                              {employeeEditSuccess ? (
+                                <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">{employeeEditSuccess}</div>
+                              ) : null}
 
-                                  {isDriver && req.driver ? (
+                              {currentTab === 'profiling' ? (
+                                isEditingEmployee ? (
+                                  <div className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                                        <div className="text-xs font-semibold text-gray-600">Employee</div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Last Name</label>
+                                            <input
+                                              value={draft?.lname || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('lname', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">First Name</label>
+                                            <input
+                                              value={draft?.fname || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('fname', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Middle Name</label>
+                                            <input
+                                              value={draft?.mname || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('mname', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Email</label>
+                                            <input
+                                              value={draft?.email || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('email', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Personal Email</label>
+                                            <input
+                                              value={draft?.personal_email || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('personal_email', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            />
+                                          </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Contact Number</label>
+                                            <input
+                                              value={draft?.contact_number || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('contact_number', sanitizeContact(e.target.value))}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                              placeholder="09xxxxxxxxx"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Birthday</label>
+                                            <input
+                                              type="date"
+                                              value={draft?.birthday || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('birthday', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-3">
+                                        <div className="text-xs font-semibold text-gray-600">Employment</div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Department</label>
+                                            <select
+                                              value={draft?.department || ''}
+                                              onChange={(e) => {
+                                                const dept = e.target.value;
+                                                updateEmployeeEditDraft('department', dept);
+                                                const allowed = getPositionsForDepartment(dept);
+                                                const currentPos = String(draft?.position || '');
+                                                if (allowed.length && !allowed.includes(currentPos)) {
+                                                  updateEmployeeEditDraft('position', allowed[0]);
+                                                }
+                                              }}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            >
+                                              <option value="">Select department</option>
+                                              {departments.map((d) => (
+                                                <option key={d} value={d}>{d}</option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Position</label>
+                                            <select
+                                              value={draft?.position || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('position', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            >
+                                              <option value="">Select position</option>
+                                              {getPositionsForDepartment(draft?.department || '').map((p) => (
+                                                <option key={p} value={p}>{p}</option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Depot Assignment</label>
+                                            <input
+                                              list="agency-depots"
+                                              value={draft?.depot || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('depot', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            />
+                                            <datalist id="agency-depots">
+                                              {(addEmployeeDepotOptions || []).map((d) => (
+                                                <option key={d} value={d} />
+                                              ))}
+                                            </datalist>
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Employee Type</label>
+                                            <select
+                                              value={String(draft?.requirements?.employeeType || 'helper')}
+                                              onChange={(e) => updateEmployeeEditDraft('requirements.employeeType', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            >
+                                              <option value="helper">Helper</option>
+                                              <option value="driver">Driver</option>
+                                            </select>
+                                          </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Sex</label>
+                                            <select
+                                              value={draft?.requirements?.profile?.sex || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('requirements.profile.sex', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            >
+                                              <option value="">Select</option>
+                                              <option value="Male">Male</option>
+                                              <option value="Female">Female</option>
+                                            </select>
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Marital Status</label>
+                                            <input
+                                              value={draft?.requirements?.profile?.maritalStatus || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('requirements.profile.maritalStatus', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                              placeholder="e.g. Single"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
                                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                                       <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
-                                        <div className="text-sm font-semibold text-gray-900">Driver Details</div>
+                                        <div className="text-sm font-semibold text-gray-900">Address</div>
                                       </div>
-                                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-800">
-                                        <div>License Classification: <span className="font-semibold">{req.driver.licenseClassification || 'None'}</span></div>
-                                        <div>License Expiry: <span className="font-semibold">{req.driver.licenseExpiry || 'None'}</span></div>
-                                        <div>Restriction Codes: <span className="font-semibold">{Array.isArray(req.driver.restrictionCodes) && req.driver.restrictionCodes.length ? req.driver.restrictionCodes.join(', ') : 'None'}</span></div>
-                                        <div>Years Driving: <span className="font-semibold">{req.driver.yearsDriving || 'None'}</span></div>
-                                        <div>Truck Knowledge: <span className="font-semibold">{req.driver.truckKnowledge || 'None'}</span></div>
+                                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        {[
+                                          { key: 'street', label: 'Street Address' },
+                                          { key: 'barangay', label: 'Barangay' },
+                                          { key: 'city', label: 'City / Municipality' },
+                                          { key: 'province', label: 'Province' },
+                                          { key: 'zip', label: 'ZIP Code' },
+                                        ].map((item) => (
+                                          <div key={item.key}>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">{item.label}</label>
+                                            <input
+                                              value={draft?.requirements?.profile?.address?.[item.key] || ''}
+                                              onChange={(e) => {
+                                                const v = item.key === 'zip' ? sanitizeZip(e.target.value) : e.target.value;
+                                                updateEmployeeEditDraft(`requirements.profile.address.${item.key}`, v);
+                                              }}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                                            />
+                                          </div>
+                                        ))}
                                       </div>
                                     </div>
-                                  ) : null}
-                                </div>
-                              ) : (
+
+                                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                                        <div className="text-sm font-semibold text-gray-900">Education</div>
+                                      </div>
+                                      <div className="p-4 space-y-3">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Educational Level</label>
+                                            <select
+                                              value={draft?.requirements?.profile?.education?.education || ''}
+                                              onChange={(e) => {
+                                                const v = e.target.value;
+                                                updateEmployeeEditDraft('requirements.profile.education.education', v);
+                                                if (v === 'N/A') {
+                                                  updateEmployeeEditDraft('requirements.profile.education.tertiarySchool', '');
+                                                  updateEmployeeEditDraft('requirements.profile.education.tertiaryProgram', '');
+                                                  updateEmployeeEditDraft('requirements.profile.education.tertiaryYear', '');
+                                                }
+                                              }}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            >
+                                              <option value="">Select highest education</option>
+                                              <option value="N/A">N/A</option>
+                                              <option value="Elementary">Elementary</option>
+                                              <option value="Junior High School">Junior High School</option>
+                                              <option value="Senior High School">Senior High School</option>
+                                              <option value="Vocational">Vocational/Technical Course</option>
+                                              <option value="College">College</option>
+                                              <option value="Post Graduate">Post Graduate (Masters/Doctorate)</option>
+                                            </select>
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Year Graduated</label>
+                                            <input
+                                              value={draft?.requirements?.profile?.education?.tertiaryYear || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('requirements.profile.education.tertiaryYear', sanitizeYear(e.target.value))}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                                              maxLength={4}
+                                              inputMode="numeric"
+                                            />
+                                          </div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">School/Institution Name</label>
+                                            <input
+                                              value={draft?.requirements?.profile?.education?.tertiarySchool || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('requirements.profile.education.tertiarySchool', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Course/Program</label>
+                                            <input
+                                              value={draft?.requirements?.profile?.education?.tertiaryProgram || ''}
+                                              onChange={(e) => updateEmployeeEditDraft('requirements.profile.education.tertiaryProgram', e.target.value)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                      <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                                        <div className="text-sm font-semibold text-gray-900">Uploads (optional)</div>
+                                      </div>
+                                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                          <label className="block text-xs font-semibold text-gray-600 mb-1">Resume</label>
+                                          <input
+                                            type="file"
+                                            accept=".pdf,.doc,.docx"
+                                            onChange={(e) => updateEmployeeEditDraft('files.resumeFile', e.target.files?.[0] || null)}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                          />
+                                          {draft?.files?.resumeFile ? (
+                                            <div className="text-xs text-gray-500 mt-1">Selected: {draft.files.resumeFile.name}</div>
+                                          ) : null}
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-semibold text-gray-600 mb-1">Training Certificate</label>
+                                          <input
+                                            type="file"
+                                            accept=".pdf,.jpg,.jpeg,.png"
+                                            onChange={(e) => updateEmployeeEditDraft('files.trainingCertFile', e.target.files?.[0] || null)}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                          />
+                                          {draft?.files?.trainingCertFile ? (
+                                            <div className="text-xs text-gray-500 mt-1">Selected: {draft.files.trainingCertFile.name}</div>
+                                          ) : null}
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-semibold text-gray-600 mb-1">Extra Certificate Label</label>
+                                          <input
+                                            value={draft?.files?.extraCertLabel || ''}
+                                            onChange={(e) => updateEmployeeEditDraft('files.extraCertLabel', e.target.value)}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                                            placeholder="e.g. TESDA Certificate"
+                                          />
+                                        </div>
+                                        <div>
+                                          <label className="block text-xs font-semibold text-gray-600 mb-1">Extra Certificate File</label>
+                                          <input
+                                            type="file"
+                                            accept=".pdf,.jpg,.jpeg,.png"
+                                            onChange={(e) => updateEmployeeEditDraft('files.extraCertFile', e.target.files?.[0] || null)}
+                                            className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                          />
+                                          {draft?.files?.extraCertFile ? (
+                                            <div className="text-xs text-gray-500 mt-1">Selected: {draft.files.extraCertFile.name}</div>
+                                          ) : null}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {String(draft?.requirements?.employeeType || '') === 'driver' ? (
+                                      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                        <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                                          <div className="text-sm font-semibold text-gray-900">Driver Details</div>
+                                        </div>
+                                        <div className="p-4 space-y-3">
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-600 mb-1">License Classification</label>
+                                              <input
+                                                value={draft?.requirements?.driver?.licenseClassification || ''}
+                                                onChange={(e) => updateEmployeeEditDraft('requirements.driver.licenseClassification', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-600 mb-1">License Expiry</label>
+                                              <input
+                                                type="date"
+                                                value={draft?.requirements?.driver?.licenseExpiry || ''}
+                                                onChange={(e) => updateEmployeeEditDraft('requirements.driver.licenseExpiry', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                                              />
+                                            </div>
+                                          </div>
+
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Restriction Codes</label>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                              {restrictionCodesCatalog.map((item) => (
+                                                <label key={item.code} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                                                  <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 accent-[#800000]"
+                                                    checked={Array.isArray(draft?.requirements?.driver?.restrictionCodes) && draft.requirements.driver.restrictionCodes.includes(item.code)}
+                                                    onChange={() => {
+                                                      const prev = Array.isArray(draft?.requirements?.driver?.restrictionCodes) ? draft.requirements.driver.restrictionCodes : [];
+                                                      const next = new Set(prev);
+                                                      if (next.has(item.code)) next.delete(item.code);
+                                                      else next.add(item.code);
+                                                      updateEmployeeEditDraft('requirements.driver.restrictionCodes', Array.from(next));
+                                                    }}
+                                                  />
+                                                  <span className="text-sm text-gray-700">{item.code}</span>
+                                                </label>
+                                              ))}
+                                            </div>
+                                          </div>
+
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-600 mb-1">Years Driving</label>
+                                              <input
+                                                value={draft?.requirements?.driver?.yearsDriving || ''}
+                                                onChange={(e) => updateEmployeeEditDraft('requirements.driver.yearsDriving', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm"
+                                              />
+                                            </div>
+                                            <div>
+                                              <label className="block text-xs font-semibold text-gray-600 mb-1">Truck Knowledge (Yes/No)</label>
+                                              <select
+                                                value={draft?.requirements?.driver?.truckKnowledge || ''}
+                                                onChange={(e) => updateEmployeeEditDraft('requirements.driver.truckKnowledge', e.target.value)}
+                                                className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                              >
+                                                <option value="">Select</option>
+                                                <option value="yes">Yes</option>
+                                                <option value="no">No</option>
+                                              </select>
+                                            </div>
+                                          </div>
+
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">Vehicles Driven</label>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                              {vehicleTypesCatalog.map((vt) => (
+                                                <label key={vt} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                                                  <input
+                                                    type="checkbox"
+                                                    className="w-4 h-4 accent-[#800000]"
+                                                    checked={Array.isArray(draft?.requirements?.driver?.vehicleTypes) && draft.requirements.driver.vehicleTypes.includes(vt)}
+                                                    onChange={() => {
+                                                      const prev = Array.isArray(draft?.requirements?.driver?.vehicleTypes) ? draft.requirements.driver.vehicleTypes : [];
+                                                      const next = new Set(prev);
+                                                      if (next.has(vt)) next.delete(vt);
+                                                      else next.add(vt);
+                                                      updateEmployeeEditDraft('requirements.driver.vehicleTypes', Array.from(next));
+                                                    }}
+                                                  />
+                                                  <span className="text-sm text-gray-700">{vt}</span>
+                                                </label>
+                                              ))}
+                                            </div>
+                                          </div>
+
+                                          <div>
+                                            <label className="block text-xs font-semibold text-gray-600 mb-1">License Photocopy (required for driver endorsements)</label>
+                                            <input
+                                              type="file"
+                                              accept=".pdf,.jpg,.jpeg,.png"
+                                              onChange={(e) => updateEmployeeEditDraft('files.licenseFile', e.target.files?.[0] || null)}
+                                              className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm bg-white"
+                                            />
+                                            {draft?.files?.licenseFile ? (
+                                              <div className="text-xs text-gray-500 mt-1">Selected: {draft.files.licenseFile.name}</div>
+                                            ) : null}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <div className="space-y-4">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                        <div className="text-xs font-semibold text-gray-600 mb-2">Contact</div>
+                                        <div className="text-sm text-gray-800">Email: <span className="font-semibold">{selectedEmployee.email || 'None'}</span></div>
+                                        <div className="text-sm text-gray-800">Personal Email: <span className="font-semibold">{selectedEmployee.personal_email || 'None'}</span></div>
+                                        <div className="text-sm text-gray-800">Contact: <span className="font-semibold">{selectedEmployee.contact || 'None'}</span></div>
+                                      </div>
+                                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                                        <div className="text-xs font-semibold text-gray-600 mb-2">Info</div>
+                                        <div className="text-sm text-gray-800">Department: <span className="font-semibold">{selectedEmployee.department || 'None'}</span></div>
+                                        <div className="text-sm text-gray-800">Birthday: <span className="font-semibold">{selectedEmployee.birthday ? String(selectedEmployee.birthday) : 'None'}</span></div>
+                                        <div className="text-sm text-gray-800">Date Added: <span className="font-semibold">{selectedEmployee.created_at ? formatDate(selectedEmployee.created_at) : 'None'}</span></div>
+                                      </div>
+                                    </div>
+
+                                    {effectiveIsDriver && effectiveReq?.driver ? (
+                                      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                                        <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
+                                          <div className="text-sm font-semibold text-gray-900">Driver Details</div>
+                                        </div>
+                                        <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-gray-800">
+                                          <div>License Classification: <span className="font-semibold">{effectiveReq.driver.licenseClassification || 'None'}</span></div>
+                                          <div>License Expiry: <span className="font-semibold">{effectiveReq.driver.licenseExpiry || 'None'}</span></div>
+                                          <div>Restriction Codes: <span className="font-semibold">{Array.isArray(effectiveReq.driver.restrictionCodes) && effectiveReq.driver.restrictionCodes.length ? effectiveReq.driver.restrictionCodes.join(', ') : 'None'}</span></div>
+                                          <div>Years Driving: <span className="font-semibold">{effectiveReq.driver.yearsDriving || 'None'}</span></div>
+                                          <div>Truck Knowledge: <span className="font-semibold">{effectiveReq.driver.truckKnowledge || 'None'}</span></div>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                )
+                              ) : currentTab === 'documents' ? (
                                 <UploadedDocumentsSection
                                   title="Uploaded Documents"
                                   emptyText="No documents uploaded for this employee."
-                                  documents={docs}
+                                  documents={effectiveDocs}
                                   getPublicUrl={getFileUrl}
                                   columns={2}
                                   variant="list"
                                 />
+                              ) : (
+                                <div className="space-y-3">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div>
+                                      <div className="text-sm font-semibold text-gray-900">Application History</div>
+                                      <div className="text-xs text-gray-500">Shows applications matched by employee id / auth user id / email.</div>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => fetchEmployeeHistory(selectedEmployee)}
+                                      className="px-3 py-2 rounded-lg text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                                    >
+                                      Refresh
+                                    </button>
+                                  </div>
+
+                                  {employeeHistoryLoading ? (
+                                    <div className="p-4 text-sm text-gray-600">Loading history…</div>
+                                  ) : employeeHistoryError ? (
+                                    <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{employeeHistoryError}</div>
+                                  ) : employeeHistoryRows.length === 0 ? (
+                                    <div className="p-4 text-sm text-gray-600">No applications found for this employee.</div>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {employeeHistoryRows.map((row) => (
+                                        <div key={row.id} className="border border-gray-200 rounded-lg p-3 bg-white">
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                              <div className="text-sm font-semibold text-gray-800">{row.jobTitle || 'Untitled Job'}</div>
+                                              <div className="text-xs text-gray-500">{[row.department, row.depot].filter(Boolean).join(' • ') || '—'}</div>
+                                              <div className="text-xs text-gray-400 mt-0.5">Applied: {row.created_at ? formatDate(row.created_at) : '—'}{row.updated_at ? ` • Updated: ${formatDate(row.updated_at)}` : ''}</div>
+                                            </div>
+                                            <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
+                                              row.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                                              row.status === 'hired' ? 'bg-green-100 text-green-700' :
+                                              row.status === 'retracted' ? 'bg-slate-100 text-slate-700' :
+                                              'bg-gray-100 text-gray-700'
+                                            }`}>{String(row.status || 'submitted').toUpperCase()}</span>
+                                          </div>
+                                          {row.status === 'rejected' && row.rejectionRemarks ? (
+                                            <div className="mt-2 text-xs text-red-700 whitespace-pre-wrap">Remarks: {row.rejectionRemarks}</div>
+                                          ) : null}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
                               )}
                             </div>
                           </div>
@@ -5775,7 +7339,7 @@ function AgencyEndorsements() {
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onMouseDown={(e) => {
                   if (e.target === e.currentTarget) closeAddEmployeeModal();
                 }}>
-                  <div className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+                  <div className="bg-white rounded-2xl shadow-2xl max-w-5xl lg:max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
                     <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-[#800000]/10 to-orange-50">
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-3">
@@ -5809,13 +7373,16 @@ function AgencyEndorsements() {
 
                       {/* Progress Indicator */}
                       {(() => {
-                        const stepLabels = addEmployeeTotalSteps === 2
+                        const stepLabels = addEmployeeForm.employeeType === 'driver'
                           ? [
-                              { num: 1, label: 'Employee Details' },
-                              { num: 2, label: 'Driver Information' },
+                              { num: 1, label: 'Personal Info' },
+                              { num: 2, label: 'Education & Skills' },
+                              { num: 3, label: 'License Info' },
+                              { num: 4, label: 'Driving History' },
                             ]
                           : [
-                              { num: 1, label: 'Employee Details' },
+                              { num: 1, label: 'Personal Info' },
+                              { num: 2, label: 'Education & Skills' },
                             ];
                         return (
                           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -5904,48 +7471,82 @@ function AgencyEndorsements() {
                           {csvError ? (
                             <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{csvError}</div>
                           ) : null}
-                          <div
-                            className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors cursor-pointer ${
-                              isDraggingCsv ? 'border-[#800000] bg-[#800000]/5' : 'border-gray-300 hover:border-[#800000]/50 hover:bg-gray-50'
-                            }`}
-                            onClick={() => csvInputRef.current?.click?.()}
-                            onDragEnter={(e) => {
-                              e.preventDefault();
-                              setIsDraggingCsv(true);
-                            }}
-                            onDragOver={(e) => {
-                              e.preventDefault();
-                              setIsDraggingCsv(true);
-                            }}
-                            onDragLeave={(e) => {
-                              e.preventDefault();
-                              setIsDraggingCsv(false);
-                            }}
-                            onDrop={(e) => {
-                              e.preventDefault();
-                              setIsDraggingCsv(false);
-                              const file = e.dataTransfer?.files?.[0];
+                          <input
+                            ref={csvInputRef}
+                            type="file"
+                            accept=".csv"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
                               if (file) handleCsvFileSelect(file);
                             }}
-                          >
-                            <input
-                              ref={csvInputRef}
-                              type="file"
-                              accept=".csv"
-                              className="hidden"
-                              onChange={(e) => {
-                                const file = e.target.files?.[0];
+                          />
+
+                          {!csvFile ? (
+                            <div
+                              className={`border-2 border-dashed rounded-xl p-5 text-center transition-colors cursor-pointer ${
+                                isDraggingCsv ? 'border-[#800000] bg-[#800000]/5' : 'border-gray-300 hover:border-[#800000]/50 hover:bg-gray-50'
+                              }`}
+                              onClick={() => csvInputRef.current?.click?.()}
+                              onDragEnter={(e) => {
+                                e.preventDefault();
+                                setIsDraggingCsv(true);
+                              }}
+                              onDragOver={(e) => {
+                                e.preventDefault();
+                                setIsDraggingCsv(true);
+                              }}
+                              onDragLeave={(e) => {
+                                e.preventDefault();
+                                setIsDraggingCsv(false);
+                              }}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                setIsDraggingCsv(false);
+                                const file = e.dataTransfer?.files?.[0];
                                 if (file) handleCsvFileSelect(file);
                               }}
-                            />
-                            <div className="text-sm font-semibold text-gray-800">Drop your CSV here or click to upload</div>
-                            <div className="text-xs text-gray-500 mt-1">Required: email, first name, last name</div>
-                            {csvFile ? (
-                              <div className="mt-3 text-xs text-gray-600">
-                                Selected: <span className="font-semibold">{csvFile.name}</span> ({csvRows.length} row(s))
+                            >
+                              <div className="text-sm font-semibold text-gray-800">Drop your CSV here or click to upload</div>
+                              <div className="text-xs text-gray-500 mt-1">Required: email, firstname, lastname, contact</div>
+                            </div>
+                          ) : (
+                            <div className="border-2 border-emerald-200 bg-emerald-50 rounded-xl p-4">
+                              <div className="flex items-start gap-3">
+                                <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                  <svg className="w-5 h-5 text-emerald-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                  </svg>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm font-semibold text-gray-900 truncate">{csvFile.name}</div>
+                                  <div className="text-xs text-gray-600 mt-0.5">{csvRows?.length || 0} row(s) detected</div>
+                                  <div className="mt-2 flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => csvInputRef.current?.click?.()}
+                                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                                    >
+                                      Change file
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setCsvFile(null);
+                                        setCsvPreview([]);
+                                        setCsvRows([]);
+                                        setCsvError('');
+                                        if (csvInputRef.current) csvInputRef.current.value = '';
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                                    >
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
-                            ) : null}
-                          </div>
+                            </div>
+                          )}
 
                           {csvPreview && csvPreview.length > 0 ? (
                             <div className="mt-4">
@@ -5963,10 +7564,10 @@ function AgencyEndorsements() {
                                   <tbody className="divide-y divide-gray-100">
                                     {csvPreview.map((row, idx) => {
                                       const email = getCsvValue(row, ['email', 'email_address', 'email address']);
-                                      const fname = getCsvValue(row, ['fname', 'first_name', 'first name']);
-                                      const lname = getCsvValue(row, ['lname', 'last_name', 'last name']);
-                                      const position = getCsvValue(row, ['position']);
-                                      const depot = getCsvValue(row, ['depot']);
+                                      const fname = getCsvValue(row, ['fname', 'first_name', 'first name', 'firstname', 'First Name', 'Firstname']);
+                                      const lname = getCsvValue(row, ['lname', 'last_name', 'last name', 'lastname', 'Last Name', 'Lastname']);
+                                      const position = getCsvValue(row, ['position']) || addEmployeeForm.position;
+                                      const depot = getCsvValue(row, ['depot']) || addEmployeeForm.depot;
                                       return (
                                         <tr key={idx}>
                                           <td className="px-3 py-2 text-gray-700">{email || 'None'}</td>
@@ -5981,155 +7582,177 @@ function AgencyEndorsements() {
                               </div>
                             </div>
                           ) : null}
+
+                          <div className="mt-4 bg-blue-50 rounded-xl p-4 border border-blue-100">
+                            <div className="flex items-start gap-3">
+                              <svg className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              <div>
+                                <p className="text-sm font-medium text-blue-800 mb-1">CSV Format Requirements</p>
+                                <p className="text-xs text-blue-700">Your CSV file should include column headers. Download the template below for the full supported list.</p>
+                                <p className="text-xs text-blue-600 mt-1 font-mono bg-blue-100 px-2 py-1 rounded">
+                                  lastname, firstname, middlename, email, contact, available_start_date, employed, birthday, marital_status, sex, unit_house_number, street, barangay, city, province, zip, education, ...
+                                </p>
+                                <p className="text-xs text-blue-700 mt-2">
+                                  Notes: booleans accept <span className="font-mono">yes/no</span>, <span className="font-mono">true/false</span>, or <span className="font-mono">1/0</span>. Lists use <span className="font-mono">|</span> (e.g. <span className="font-mono">restriction_codes=1|2</span>).
+                                </p>
+                                <p className="text-xs text-blue-700 mt-1">
+                                  Dates: supports Excel serial dates (e.g. <span className="font-mono">46000</span>) or <span className="font-mono">DD/MM/YYYY</span> / <span className="font-mono">MM/DD/YYYY</span>. The import converts these to <span className="font-mono">YYYY-MM-DD</span>.
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-white rounded-lg border border-gray-200 flex items-center justify-center">
+                                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-gray-700">Need a template?</p>
+                                <p className="text-xs text-gray-500">Download our sample CSV file</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const template = 'firstname,lastname,middlename,email,contact,available_start_date,employed,birthday,marital_status,sex,unit_house_number,street,barangay,city,province,zip,education,tertiary_school,tertiary_program,tertiary_year,skills,specialized_training,specialized_year,has_sss,has_pagibig,has_tin,has_philhealth,license_classification,license_expiry,restriction_codes,years_driving,truck_knowledge,vehicles_driven,troubleshooting_tasks,taking_medications,medication_reason,took_medical_test,medical_test_date\nJuan,Dela Cruz,Santos,juan@email.com,09171234567,01/15/2026,yes,05/15/1990,Single,Male,123,Main Street,Barangay 1,Makati,Metro Manila,1200,College,ABC University,BS Logistics,2012,"Driving, Customer Service",Defensive Driving,2023,yes,no,yes,yes,Professional,01/01/2027,1|2,8,yes,Motorcycle|Van,Engine|Electrical,no,,yes,01/01/2026\nMaria,Santos,,maria@email.com,09181234567,01/15/2026,no,08/20/1992,Single,Female,456,Ortigas Avenue,Barangay 2,Pasig,Metro Manila,1600,Senior High School,,,"","Packing, Inventory",,,no,no,no,no,,,,,,no,,no,';
+                                const blob = new Blob([template], { type: 'text/csv' });
+                                const url = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = 'employee_template.csv';
+                                a.click();
+                                URL.revokeObjectURL(url);
+                              }}
+                              className="px-4 py-2 bg-white border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
+                            >
+                              Download Template
+                            </button>
+                          </div>
                         </div>
                       </div>
 
                       {/* Manual Add (Stepper) */}
                       <form onSubmit={submitAddEmployee} className="space-y-6">
                         {addEmployeeStep === 1 && (
-                          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                            <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                              <div>
-                                <h2 className="text-base font-semibold text-gray-800">Employee Details</h2>
-                                <p className="text-xs text-gray-500 mt-0.5">Fill out employee info before adding</p>
+                          <div className="space-y-6">
+                            {/* Employment Details */}
+                            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                              <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+                                <div>
+                                  <h2 className="text-base font-semibold text-gray-800">Employment Details</h2>
+                                  <p className="text-xs text-gray-500 mt-0.5">Assign department, position, and availability</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={resetAddEmployeeState}
+                                  className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
+                                >
+                                  Reset
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={resetAddEmployeeState}
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
-                              >
-                                Reset
-                              </button>
-                            </div>
-                            <div className="p-6 space-y-4">
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name</label>
-                                  <input
-                                    value={addEmployeeForm.fname}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, fname: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                                    placeholder="Juan"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Middle Name</label>
-                                  <input
-                                    value={addEmployeeForm.mname}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, mname: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                                    placeholder="D."
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name</label>
-                                  <input
-                                    value={addEmployeeForm.lname}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, lname: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                                    placeholder="Dela Cruz"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
-                                  <input
-                                    type="email"
-                                    value={addEmployeeForm.email}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, email: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                                    placeholder="employee@email.com"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Personal Email (optional)</label>
-                                  <input
-                                    type="email"
-                                    value={addEmployeeForm.personal_email}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, personal_email: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                                    placeholder="personal@email.com"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number</label>
-                                  <input
-                                    value={addEmployeeForm.contact_number}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, contact_number: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                                    placeholder="09xxxxxxxxx"
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Birthday</label>
-                                  <input
-                                    type="date"
-                                    value={addEmployeeForm.birthday}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, birthday: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                                  />
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot</label>
-                                  <select
-                                    value={addEmployeeForm.depot}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, depot: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
-                                  >
-                                    <option value="">Select depot…</option>
-                                    {(addEmployeeDepotOptions.length ? addEmployeeDepotOptions : depotOptions).map((d) => (
-                                      <option key={d} value={d}>{d}</option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Department</label>
-                                  <select
-                                    value={addEmployeeForm.department}
-                                    onChange={(e) => {
-                                      const dep = e.target.value;
-                                      const posOptions = getPositionsForDepartment(dep).filter((p) => p !== 'All');
-                                      setAddEmployeeForm((p) => ({ ...p, department: dep, position: posOptions[0] || p.position }));
-                                    }}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
-                                  >
-                                    {departments.map((d) => (
-                                      <option key={d} value={d}>{d}</option>
-                                    ))}
-                                  </select>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Position</label>
-                                  <select
-                                    value={addEmployeeForm.position}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, position: e.target.value }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
-                                  >
-                                    {getPositionsForDepartment(addEmployeeForm.department)
-                                      .filter((p) => p !== 'All')
-                                      .map((p) => (
-                                        <option key={p} value={p}>{p}</option>
+                              <div className="p-6 space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Department <span className="text-[#800000]">*</span></label>
+                                    <select
+                                      value={addEmployeeForm.department}
+                                      onChange={(e) => {
+                                        const dep = e.target.value;
+                                        const posOptions = getPositionsForDepartment(dep).filter((p) => p !== 'All');
+                                        setAddEmployeeForm((p) => ({ ...p, department: dep, position: posOptions[0] || p.position }));
+                                      }}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                    >
+                                      {departments.map((d) => (
+                                        <option key={d} value={d}>{d}</option>
                                       ))}
-                                  </select>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Position <span className="text-[#800000]">*</span></label>
+                                    <select
+                                      value={addEmployeeForm.position}
+                                      onChange={(e) => {
+                                        const nextPos = e.target.value;
+                                        const inferredDept = getDepartmentForPosition(nextPos) || addEmployeeForm.department;
+                                        setAddEmployeeForm((p) => ({ ...p, position: nextPos, department: inferredDept }));
+                                      }}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                    >
+                                      {getPositionsForDepartment(addEmployeeForm.department)
+                                        .filter((p) => p !== 'All')
+                                        .map((p) => (
+                                          <option key={p} value={p}>{p}</option>
+                                        ))}
+                                    </select>
+                                  </div>
                                 </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Depot Assignment <span className="text-[#800000]">*</span></label>
+                                    <select
+                                      value={addEmployeeForm.depot}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, depot: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                    >
+                                      <option value="">Select depot…</option>
+                                      {(addEmployeeDepotOptions.length ? addEmployeeDepotOptions : depotOptions).map((d) => (
+                                        <option key={d} value={d}>{d}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Available Start Date <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      type="date"
+                                      min={todayIso()}
+                                      value={addEmployeeForm.dateAvailable}
+                                      onChange={(e) => {
+                                        const v = e.target.value;
+                                        if (!validateNoSunday(e.target, v)) return;
+                                        setAddEmployeeForm((p) => ({ ...p, dateAvailable: v }));
+                                      }}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">Currently Employed? <span className="text-[#800000]">*</span></label>
+                                  <div className="flex gap-4">
+                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${addEmployeeForm.employed === 'yes' ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                      <input
+                                        type="radio"
+                                        name="add-emp-employed"
+                                        className="accent-[#800000]"
+                                        checked={addEmployeeForm.employed === 'yes'}
+                                        onChange={() => setAddEmployeeForm((p) => ({ ...p, employed: 'yes' }))}
+                                      />
+                                      Yes
+                                    </label>
+                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all ${addEmployeeForm.employed !== 'yes' ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                      <input
+                                        type="radio"
+                                        name="add-emp-employed"
+                                        className="accent-[#800000]"
+                                        checked={addEmployeeForm.employed !== 'yes'}
+                                        onChange={() => setAddEmployeeForm((p) => ({ ...p, employed: 'no' }))}
+                                      />
+                                      No
+                                    </label>
+                                  </div>
+                                </div>
+
                                 <div>
                                   <label className="block text-sm font-medium text-gray-700 mb-2">Employee Type</label>
                                   <div className="flex gap-3">
-                                    <label
-                                      className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${
-                                        addEmployeeForm.employeeType === 'helper'
-                                          ? 'border-[#800000] bg-[#800000]/10 text-[#800000]'
-                                          : 'border-gray-200 hover:bg-gray-50'
-                                      }`}
-                                    >
+                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${addEmployeeForm.employeeType === 'helper' ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
                                       <input
                                         type="radio"
                                         name="employeeType"
@@ -6139,13 +7762,7 @@ function AgencyEndorsements() {
                                       />
                                       Helper
                                     </label>
-                                    <label
-                                      className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${
-                                        addEmployeeForm.employeeType === 'driver'
-                                          ? 'border-[#800000] bg-[#800000]/10 text-[#800000]'
-                                          : 'border-gray-200 hover:bg-gray-50'
-                                      }`}
-                                    >
+                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${addEmployeeForm.employeeType === 'driver' ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
                                       <input
                                         type="radio"
                                         name="employeeType"
@@ -6158,156 +7775,588 @@ function AgencyEndorsements() {
                                   </div>
                                 </div>
                               </div>
+                            </div>
 
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Resume (optional)</label>
-                                  <input
-                                    type="file"
-                                    accept=".pdf,.doc,.docx"
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, resumeFile: e.target.files?.[0] || null }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
-                                  />
-                                  {addEmployeeForm.resumeFile ? (
-                                    <div className="text-xs text-gray-500 mt-1">Selected: {addEmployeeForm.resumeFile.name}</div>
-                                  ) : null}
+                            {/* Personal Information */}
+                            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                              <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                                <h2 className="text-base font-semibold text-gray-800">Personal Information</h2>
+                              </div>
+                              <div className="p-6 space-y-4">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Last Name <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      value={addEmployeeForm.lname}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, lname: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="Dela Cruz"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">First Name <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      value={addEmployeeForm.fname}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, fname: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="Juan"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Middle Name</label>
+                                    <input
+                                      value={addEmployeeForm.mname}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, mname: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="D."
+                                    />
+                                  </div>
                                 </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Birthday <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      type="date"
+                                      max={getBirthdayMaxForMinAge(15)}
+                                      value={addEmployeeForm.birthday}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, birthday: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Marital Status <span className="text-[#800000]">*</span></label>
+                                    <select
+                                      value={addEmployeeForm.maritalStatus}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, maritalStatus: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                    >
+                                      <option value="">Select status</option>
+                                      <option value="Single">Single</option>
+                                      <option value="Married">Married</option>
+                                      <option value="Widowed">Widowed</option>
+                                      <option value="Separated">Separated</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Sex <span className="text-[#800000]">*</span></label>
+                                    <div className="flex gap-3">
+                                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${addEmployeeForm.sex === 'Male' ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                        <input
+                                          type="radio"
+                                          name="add-emp-sex"
+                                          className="accent-[#800000]"
+                                          checked={addEmployeeForm.sex === 'Male'}
+                                          onChange={() => setAddEmployeeForm((p) => ({ ...p, sex: 'Male' }))}
+                                        />
+                                        Male
+                                      </label>
+                                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${addEmployeeForm.sex === 'Female' ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                        <input
+                                          type="radio"
+                                          name="add-emp-sex"
+                                          className="accent-[#800000]"
+                                          checked={addEmployeeForm.sex === 'Female'}
+                                          onChange={() => setAddEmployeeForm((p) => ({ ...p, sex: 'Female' }))}
+                                        />
+                                        Female
+                                      </label>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Unit/House No.</label>
+                                    <input
+                                      value={addEmployeeForm.unit_house_number}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, unit_house_number: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="Unit/House No."
+                                    />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Street Address <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      value={addEmployeeForm.street}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, street: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="Street"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                                  <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Province <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      value={addEmployeeForm.province}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, province: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="Province"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">City / Municipality <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      value={addEmployeeForm.city}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, city: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="City"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">ZIP Code <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      inputMode="numeric"
+                                      pattern="\d*"
+                                      maxLength={4}
+                                      value={addEmployeeForm.zip}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, zip: sanitizeZip(e.target.value) }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="0000"
+                                    />
+                                  </div>
+                                </div>
+
                                 <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">License Photocopy (driver only, optional)</label>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Barangay <span className="text-[#800000]">*</span></label>
                                   <input
-                                    type="file"
-                                    accept=".pdf,.jpg,.jpeg,.png"
-                                    disabled={addEmployeeForm.employeeType !== 'driver'}
-                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, licenseFile: e.target.files?.[0] || null }))}
-                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white disabled:bg-gray-50"
+                                    value={addEmployeeForm.barangay}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, barangay: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    placeholder="Barangay"
                                   />
-                                  {addEmployeeForm.licenseFile ? (
-                                    <div className="text-xs text-gray-500 mt-1">Selected: {addEmployeeForm.licenseFile.name}</div>
-                                  ) : null}
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Contact Number <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      value={addEmployeeForm.contactNumber}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, contactNumber: sanitizeContact(e.target.value) }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="09xxxxxxxxx"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Email Address <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      type="email"
+                                      value={addEmployeeForm.email}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, email: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="employee@email.com"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Personal Email (optional)</label>
+                                    <input
+                                      type="email"
+                                      value={addEmployeeForm.personalEmail}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, personalEmail: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="personal@email.com"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Resume (optional)</label>
+                                    <input
+                                      type="file"
+                                      accept=".pdf,.doc,.docx"
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, resumeFile: e.target.files?.[0] || null }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+                                    />
+                                    {addEmployeeForm.resumeFile ? (
+                                      <div className="text-xs text-gray-500 mt-1">Selected: {addEmployeeForm.resumeFile.name}</div>
+                                    ) : null}
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Government IDs (availability)</label>
+                                    <div className="grid grid-cols-2 gap-2">
+                                      {[
+                                        { key: 'hasSSS', label: 'SSS' },
+                                        { key: 'hasPAGIBIG', label: 'PAG-IBIG' },
+                                        { key: 'hasTIN', label: 'TIN' },
+                                        { key: 'hasPhilHealth', label: 'PhilHealth' },
+                                      ].map((item) => (
+                                        <label key={item.key} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
+                                          <input
+                                            type="checkbox"
+                                            className="w-4 h-4 accent-[#800000]"
+                                            checked={!!addEmployeeForm[item.key]}
+                                            onChange={() => setAddEmployeeForm((p) => ({ ...p, [item.key]: !p[item.key] }))}
+                                          />
+                                          <span className="text-sm text-gray-700">{item.label}</span>
+                                        </label>
+                                      ))}
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
                             </div>
                           </div>
                         )}
 
-                        {addEmployeeStep === 2 && addEmployeeForm.employeeType === 'driver' && (
-                          <>
+                        {addEmployeeStep === 2 && (
+                          <div className="space-y-6">
+                            {/* Highest Educational Attainment */}
                             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                               <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
-                                <h2 className="text-base font-semibold text-gray-800">Driver Information</h2>
+                                <h2 className="text-base font-semibold text-gray-800">Highest Educational Attainment</h2>
+                                <p className="text-xs text-gray-500 mt-0.5">Provide the highest level of education completed</p>
+                              </div>
+                              <div className="p-6 space-y-4">
+                                <div className="mb-2">
+                                  <p className="text-sm text-gray-600 italic">If not applicable, select N/A</p>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Educational Level <span className="text-[#800000]">*</span></label>
+                                    <select
+                                      value={addEmployeeForm.education || ''}
+                                      onChange={(e) => {
+                                        const selectedValue = e.target.value;
+                                        setAddEmployeeForm((p) => ({
+                                          ...p,
+                                          education: selectedValue,
+                                          ...(selectedValue === 'N/A'
+                                            ? { tertiaryYear: '', tertiarySchool: '', tertiaryProgram: '' }
+                                            : null),
+                                        }));
+                                      }}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                    >
+                                      <option value="">Select highest education</option>
+                                      <option value="N/A">N/A</option>
+                                      <option value="Elementary">Elementary</option>
+                                      <option value="Junior High School">Junior High School</option>
+                                      <option value="Senior High School">Senior High School</option>
+                                      <option value="Vocational">Vocational/Technical Course</option>
+                                      <option value="College">College</option>
+                                      <option value="Post Graduate">Post Graduate (Masters/Doctorate)</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Graduated <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      type="text"
+                                      inputMode="numeric"
+                                      pattern="\d*"
+                                      maxLength={4}
+                                      disabled={addEmployeeForm.education === 'N/A'}
+                                      value={addEmployeeForm.tertiaryYear || ''}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, tertiaryYear: sanitizeYear(e.target.value) }))}
+                                      className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${addEmployeeForm.education === 'N/A' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                      placeholder="e.g. 2020"
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">School/Institution Name <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      disabled={addEmployeeForm.education === 'N/A'}
+                                      value={addEmployeeForm.tertiarySchool || ''}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, tertiarySchool: e.target.value }))}
+                                      className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${addEmployeeForm.education === 'N/A' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                      placeholder="Enter school name"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Strand/Program <span className="text-[#800000]">*</span></label>
+                                    <input
+                                      disabled={addEmployeeForm.education === 'N/A'}
+                                      value={addEmployeeForm.tertiaryProgram || ''}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, tertiaryProgram: e.target.value }))}
+                                      className={`w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] ${addEmployeeForm.education === 'N/A' ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+                                      placeholder="e.g. BS Mechanical Engineering"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Skills, Training, Medical */}
+                            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                              <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                                <h2 className="text-base font-semibold text-gray-800">Skills & Additional Info</h2>
                               </div>
                               <div className="p-6 space-y-4">
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">License Classification</label>
-                                    <select
-                                      value={addEmployeeForm.licenseClassification}
-                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, licenseClassification: e.target.value }))}
-                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
-                                    >
-                                      <option value="">Select classification</option>
-                                      <option>Non-Professional</option>
-                                      <option>Professional</option>
-                                      <option>Student Permit</option>
-                                      <option>Conductor</option>
-                                      <option>International Driving Permit</option>
-                                    </select>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Specialized Training (optional)</label>
+                                    <input
+                                      value={addEmployeeForm.specializedTraining || ''}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, specializedTraining: e.target.value }))}
+                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="e.g. Forklift Training"
+                                    />
                                   </div>
                                   <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">License Expiry Date</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Year Completed (optional)</label>
                                     <input
-                                      type="date"
-                                      value={addEmployeeForm.licenseExpiry}
-                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, licenseExpiry: e.target.value }))}
+                                      type="text"
+                                      inputMode="numeric"
+                                      pattern="\d*"
+                                      maxLength={4}
+                                      value={addEmployeeForm.specializedYear || ''}
+                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, specializedYear: sanitizeYear(e.target.value) }))}
                                       className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      placeholder="e.g. 2022"
                                     />
                                   </div>
                                 </div>
 
                                 <div>
-                                  <label className="block text-sm font-medium text-gray-700 mb-2">Restriction Codes</label>
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                                    {restrictionCodesCatalog.map((item) => (
-                                      <label
-                                        key={item.code}
-                                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${
-                                          addEmployeeForm.restrictionCodes.includes(item.code)
-                                            ? 'border-[#800000] bg-[#800000]/10'
-                                            : 'border-gray-200 hover:bg-gray-50'
-                                        }`}
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          className="w-4 h-4 accent-[#800000]"
-                                          checked={addEmployeeForm.restrictionCodes.includes(item.code)}
-                                          onChange={() =>
-                                            setAddEmployeeForm((p) => {
-                                              const next = new Set(p.restrictionCodes || []);
-                                              if (next.has(item.code)) next.delete(item.code);
-                                              else next.add(item.code);
-                                              return { ...p, restrictionCodes: Array.from(next) };
-                                            })
-                                          }
-                                        />
-                                        <span className="text-sm text-gray-700">{item.label}</span>
-                                      </label>
-                                    ))}
-                                  </div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Training Certificate (optional)</label>
+                                  <input
+                                    type="file"
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, trainingCertFile: e.target.files?.[0] || null }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+                                  />
+                                  {addEmployeeForm.trainingCertFile ? (
+                                    <div className="text-xs text-gray-500 mt-1">Selected: {addEmployeeForm.trainingCertFile.name}</div>
+                                  ) : null}
+                                </div>
+
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Skills (optional)</label>
+                                  <textarea
+                                    rows={4}
+                                    value={addEmployeeForm.skills || ''}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, skills: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    placeholder="List skills and proficiencies"
+                                  />
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Years of Driving Experience</label>
-                                    <input
-                                      type="number"
-                                      min={0}
-                                      value={addEmployeeForm.yearsDriving}
-                                      onChange={(e) => setAddEmployeeForm((p) => ({ ...p, yearsDriving: e.target.value }))}
-                                      className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
-                                      placeholder="e.g. 5"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">Basic truck troubleshooting knowledge?</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Taking Medications? (optional)</label>
                                     <div className="flex gap-3">
-                                      <label
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${
-                                          addEmployeeForm.truckKnowledge === 'yes'
-                                            ? 'border-green-500 bg-green-50 text-green-700'
-                                            : 'border-gray-200 hover:bg-gray-50'
-                                        }`}
-                                      >
+                                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${addEmployeeForm.takingMedications ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
                                         <input
-                                          type="radio"
-                                          name="truckKnowledge"
-                                          className="accent-green-600"
-                                          checked={addEmployeeForm.truckKnowledge === 'yes'}
-                                          onChange={() => setAddEmployeeForm((p) => ({ ...p, truckKnowledge: 'yes' }))}
+                                          type="checkbox"
+                                          className="w-4 h-4 accent-[#800000]"
+                                          checked={!!addEmployeeForm.takingMedications}
+                                          onChange={() => setAddEmployeeForm((p) => ({ ...p, takingMedications: !p.takingMedications }))}
                                         />
                                         Yes
                                       </label>
-                                      <label
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${
-                                          addEmployeeForm.truckKnowledge === 'no'
-                                            ? 'border-red-500 bg-red-50 text-red-700'
-                                            : 'border-gray-200 hover:bg-gray-50'
-                                        }`}
-                                      >
+                                    </div>
+                                    {addEmployeeForm.takingMedications ? (
+                                      <input
+                                        value={addEmployeeForm.medicationReason || ''}
+                                        onChange={(e) => setAddEmployeeForm((p) => ({ ...p, medicationReason: e.target.value }))}
+                                        className="mt-2 w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                        placeholder="Reason (optional)"
+                                      />
+                                    ) : null}
+                                  </div>
+                                  <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">Took Medical Test? (optional)</label>
+                                    <div className="flex gap-3">
+                                      <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${addEmployeeForm.tookMedicalTest ? 'border-[#800000] bg-[#800000]/10 text-[#800000]' : 'border-gray-200 hover:bg-gray-50'}`}>
                                         <input
-                                          type="radio"
-                                          name="truckKnowledge"
-                                          className="accent-red-600"
-                                          checked={addEmployeeForm.truckKnowledge === 'no'}
-                                          onChange={() => setAddEmployeeForm((p) => ({ ...p, truckKnowledge: 'no' }))}
+                                          type="checkbox"
+                                          className="w-4 h-4 accent-[#800000]"
+                                          checked={!!addEmployeeForm.tookMedicalTest}
+                                          onChange={() => setAddEmployeeForm((p) => ({ ...p, tookMedicalTest: !p.tookMedicalTest }))}
                                         />
-                                        No
+                                        Yes
                                       </label>
                                     </div>
+                                    {addEmployeeForm.tookMedicalTest ? (
+                                      <input
+                                        type="date"
+                                        value={addEmployeeForm.medicalTestDate || ''}
+                                        onChange={(e) => setAddEmployeeForm((p) => ({ ...p, medicalTestDate: e.target.value }))}
+                                        className="mt-2 w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                      />
+                                    ) : null}
                                   </div>
                                 </div>
                               </div>
                             </div>
-                          </>
+                          </div>
+                        )}
+
+                        {addEmployeeStep === 3 && addEmployeeForm.employeeType === 'driver' && (
+                          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                              <h2 className="text-base font-semibold text-gray-800">License Information</h2>
+                            </div>
+                            <div className="p-6 space-y-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">License Classification <span className="text-[#800000]">*</span></label>
+                                  <select
+                                    value={addEmployeeForm.licenseClassification}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, licenseClassification: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000] bg-white"
+                                  >
+                                    <option value="">Select classification</option>
+                                    <option>Non-Professional</option>
+                                    <option>Professional</option>
+                                    <option>Student Permit</option>
+                                    <option>Conductor</option>
+                                    <option>International Driving Permit</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">License Expiry Date <span className="text-[#800000]">*</span></label>
+                                  <input
+                                    type="date"
+                                    value={addEmployeeForm.licenseExpiry}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, licenseExpiry: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                  />
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Restriction Codes <span className="text-[#800000]">*</span></label>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                  {restrictionCodesCatalog.map((item) => (
+                                    <label
+                                      key={item.code}
+                                      className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${addEmployeeForm.restrictionCodes.includes(item.code) ? 'border-[#800000] bg-[#800000]/10' : 'border-gray-200 hover:bg-gray-50'}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        className="w-4 h-4 accent-[#800000]"
+                                        checked={addEmployeeForm.restrictionCodes.includes(item.code)}
+                                        onChange={() =>
+                                          setAddEmployeeForm((p) => {
+                                            const next = new Set(p.restrictionCodes || []);
+                                            if (next.has(item.code)) next.delete(item.code);
+                                            else next.add(item.code);
+                                            return { ...p, restrictionCodes: Array.from(next) };
+                                          })
+                                        }
+                                      />
+                                      <span className="text-sm text-gray-700">{item.label}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">License Photocopy <span className="text-[#800000]">*</span></label>
+                                <input
+                                  type="file"
+                                  accept=".pdf,.jpg,.jpeg,.png"
+                                  onChange={(e) => setAddEmployeeForm((p) => ({ ...p, licenseFile: e.target.files?.[0] || null }))}
+                                  className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm bg-white"
+                                />
+                                {addEmployeeForm.licenseFile ? (
+                                  <div className="text-xs text-gray-500 mt-1">Selected: {addEmployeeForm.licenseFile.name}</div>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {addEmployeeStep === 4 && addEmployeeForm.employeeType === 'driver' && (
+                          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                            <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                              <h2 className="text-base font-semibold text-gray-800">Driving History</h2>
+                            </div>
+                            <div className="p-6 space-y-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Years of Driving Experience <span className="text-[#800000]">*</span></label>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={addEmployeeForm.yearsDriving}
+                                    onChange={(e) => setAddEmployeeForm((p) => ({ ...p, yearsDriving: e.target.value }))}
+                                    className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#800000]/20 focus:border-[#800000]"
+                                    placeholder="e.g. 5"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-2">Basic truck troubleshooting knowledge? <span className="text-[#800000]">*</span></label>
+                                  <div className="flex gap-3">
+                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${addEmployeeForm.truckKnowledge === 'yes' ? 'border-green-500 bg-green-50 text-green-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                      <input
+                                        type="radio"
+                                        name="truckKnowledge"
+                                        className="accent-green-600"
+                                        checked={addEmployeeForm.truckKnowledge === 'yes'}
+                                        onChange={() => setAddEmployeeForm((p) => ({ ...p, truckKnowledge: 'yes' }))}
+                                      />
+                                      Yes
+                                    </label>
+                                    <label className={`flex items-center gap-2 px-4 py-2 rounded-lg border cursor-pointer transition-all flex-1 justify-center ${addEmployeeForm.truckKnowledge === 'no' ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                      <input
+                                        type="radio"
+                                        name="truckKnowledge"
+                                        className="accent-red-600"
+                                        checked={addEmployeeForm.truckKnowledge === 'no'}
+                                        onChange={() => setAddEmployeeForm((p) => ({ ...p, truckKnowledge: 'no' }))}
+                                      />
+                                      No
+                                    </label>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Vehicles Driven <span className="text-[#800000]">*</span></label>
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                                  {vehicleTypesCatalog.map((vt) => (
+                                    <label key={vt} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${addEmployeeForm.vehicleTypes.includes(vt) ? 'border-[#800000] bg-[#800000]/10' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                      <input
+                                        type="checkbox"
+                                        className="w-4 h-4 accent-[#800000]"
+                                        checked={addEmployeeForm.vehicleTypes.includes(vt)}
+                                        onChange={() =>
+                                          setAddEmployeeForm((p) => {
+                                            const next = new Set(p.vehicleTypes || []);
+                                            if (next.has(vt)) next.delete(vt);
+                                            else next.add(vt);
+                                            return { ...p, vehicleTypes: Array.from(next) };
+                                          })
+                                        }
+                                      />
+                                      <span className="text-sm text-gray-700">{vt}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">Troubleshooting Tasks (optional)</label>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                  {troubleshootingTasksCatalog.map((task) => (
+                                    <label key={task} className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer transition-all ${addEmployeeForm.troubleshootingTasks.includes(task) ? 'border-[#800000] bg-[#800000]/10' : 'border-gray-200 hover:bg-gray-50'}`}>
+                                      <input
+                                        type="checkbox"
+                                        className="w-4 h-4 accent-[#800000]"
+                                        checked={addEmployeeForm.troubleshootingTasks.includes(task)}
+                                        onChange={() =>
+                                          setAddEmployeeForm((p) => {
+                                            const next = new Set(p.troubleshootingTasks || []);
+                                            if (next.has(task)) next.delete(task);
+                                            else next.add(task);
+                                            return { ...p, troubleshootingTasks: Array.from(next) };
+                                          })
+                                        }
+                                      />
+                                      <span className="text-sm text-gray-700">{task}</span>
+                                    </label>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
                         )}
 
                         {/* Navigation Buttons */}
@@ -6342,7 +8391,14 @@ function AgencyEndorsements() {
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => setAddEmployeeStep((s) => Math.min(s + 1, addEmployeeTotalSteps))}
+                                  onClick={() => {
+                                    const errs = validateAddEmployeeStep(addEmployeeStep);
+                                    if (errs.length > 0) {
+                                      setAddEmployeeError(`Please complete the required fields before proceeding:\n\n- ${errs.join('\n- ')}`);
+                                      return;
+                                    }
+                                    setAddEmployeeStep((s) => Math.min(s + 1, addEmployeeTotalSteps));
+                                  }}
                                   className="flex items-center gap-2 px-5 py-2.5 bg-[#800000] text-white rounded-lg font-medium hover:bg-[#990000] transition-colors"
                                 >
                                   Next Step
@@ -6663,7 +8719,27 @@ function AgencyEndorsements() {
 
             <div className="p-5 space-y-4">
               {jobPickerError ? (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{jobPickerError}</div>
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+                  <div className="whitespace-pre-line">{jobPickerError}</div>
+                  {employeeToEndorse ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditEmployeeFromJobPicker(employeeToEndorse)}
+                        className="px-3 py-2 rounded-lg text-xs font-semibold bg-white border border-red-200 text-red-700 hover:bg-red-50"
+                      >
+                        Go to My Employees
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setJobPickerError(null)}
+                        className="px-3 py-2 rounded-lg text-xs font-semibold bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               {jobPickerSuccess ? (
                 <div className="p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">{jobPickerSuccess}</div>
@@ -6708,10 +8784,22 @@ function AgencyEndorsements() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                            {filtered.map((job) => (
+                            {filtered.map((job) => {
+                              const role = getJobRoleForEligibility(job);
+                              const missing = (role === 'driver' || role === 'helper')
+                                ? getEmployeeMissingFieldsForRole(employeeToEndorse, role)
+                                : [];
+                              const blocked = missing.length > 0;
+
+                              return (
                               <tr key={job.id} className="hover:bg-gray-50">
                                 <td className="px-4 py-3">
                                   <div className="text-sm font-semibold text-gray-800">{job.title || 'Untitled'}</div>
+                                  {blocked ? (
+                                    <div className="mt-1 text-xs text-red-600 font-medium">
+                                      Incomplete employee info for this {role} post
+                                    </div>
+                                  ) : null}
                                   <div className="text-xs text-gray-500">#{job.id}</div>
                                 </td>
                                 <td className="px-4 py-3 text-sm text-gray-700">{job.depot || 'None'}</td>
@@ -6719,17 +8807,27 @@ function AgencyEndorsements() {
                                 <td className="px-4 py-3 text-right">
                                   <button
                                     type="button"
-                                    disabled={jobPickerSubmitting}
-                                    onClick={() => endorseExistingEmployeeToJob(job)}
+                                    disabled={jobPickerSubmitting || blocked}
+                                    onClick={() => {
+                                      if (blocked) {
+                                        const headline = role === 'driver'
+                                          ? 'This employee cannot be endorsed to a Driver job post yet.'
+                                          : 'This employee cannot be endorsed to a Helper job post yet.';
+                                        setJobPickerError(`${headline}\n\nMissing / incomplete information:\n- ${missing.join('\n- ')}\n\nTo proceed, open this employee in “My Employees” and add the missing information, then try endorsing again.`);
+                                        return;
+                                      }
+                                      endorseExistingEmployeeToJob(job);
+                                    }}
                                     className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors ${
-                                      jobPickerSubmitting ? 'bg-gray-400' : 'bg-[#800000] hover:bg-[#990000]'
+                                      (jobPickerSubmitting || blocked) ? 'bg-gray-400' : 'bg-[#800000] hover:bg-[#990000]'
                                     }`}
                                   >
                                     {jobPickerSubmitting ? 'Endorsing…' : 'Endorse'}
                                   </button>
                                 </td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       );
