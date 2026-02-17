@@ -338,7 +338,7 @@ function ApplicantGHome() {
                       onFocus={() => setShowSearchSuggestions(true)}
                       onBlur={() => setTimeout(() => setShowSearchSuggestions(false), 200)}
                       className="w-full bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none"
-                      placeholder=" Job title, keywords, or company"
+                      placeholder=" Job title or keywords"
                     />
                     {showSearchSuggestions && filteredSearchSuggestions.length > 0 && (
                       <ul className="absolute top-full left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-xl max-h-48 overflow-y-auto z-[9999]">
