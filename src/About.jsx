@@ -1,7 +1,4 @@
 import { useState, useEffect } from 'react';
-import AboutPic1 from './layouts/photos/pic1.png';
-import AboutPic2 from './layouts/photos/pic2.png';
-import AboutPic3 from './layouts/photos/pic3.png';
 import AboutPic4 from './layouts/photos/pic4.jpg';
 import AboutPic5 from './layouts/photos/pic5.png';
 
@@ -9,9 +6,6 @@ function About() {
   const [currentSlide, setCurrentSlide] = useState(0);
   
   const slides = [
-    { image: AboutPic1, alt: 'Roadwise overview' },
-    { image: AboutPic2, alt: 'Roadwise team' },
-    { image: AboutPic3, alt: 'Roadwise operations' },
     { image: AboutPic4, alt: 'Each-R services' },
     { image: AboutPic5, alt: 'Healthcare professionals' }
   ];
@@ -41,7 +35,7 @@ function About() {
       <section className="w-full relative overflow-hidden">
         <div className="absolute inset-0">
           <img
-            src={AboutPic3}
+            src={AboutPic4}
             alt="Roadwise operations"
             className="w-full h-full object-cover"
             onError={(e) => {
